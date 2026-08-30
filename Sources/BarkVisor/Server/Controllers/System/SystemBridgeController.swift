@@ -43,49 +43,30 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    /// macOS socket_vmnet install/start/stop/remove. Linux host-net apply is #378.
-    private static func requireManagedBridgeDaemon() throws {
-        try PlatformCapabilities.requireManagedBridgeDaemon()
-    }
-
     @Sendable
     func installBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
         if PlatformCapabilities.supportsHostBridgeManagement {
             return try Self.linuxApply(req: req, defaultAction: .apply)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .setup)
+            return try Self.macHostApply(req: req, defaultAction: .apply)
         }
-        try Self.requireManagedBridgeDaemon()
+        try PlatformCapabilities.requireHostMutation()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
     @Sendable
-    func startBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        if PlatformCapabilities.supportsHostBridgeManagement {
-            throw BarkVisorError.badRequest(
-                "Linux host bridges use apply and revert, not start or stop.",
-            )
-        }
-        if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .start)
-        }
-        try Self.requireManagedBridgeDaemon()
-        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
+    func startBridge(req _: Vapor.Request) async throws -> BridgeActionResponse {
+        throw BarkVisorError.badRequest(
+            "Host bridges use apply and revert, not start or stop.",
+        )
     }
 
     @Sendable
-    func stopBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        if PlatformCapabilities.supportsHostBridgeManagement {
-            throw BarkVisorError.badRequest(
-                "Linux host bridges use apply and revert, not start or stop.",
-            )
-        }
-        if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
-        }
-        try Self.requireManagedBridgeDaemon()
-        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
+    func stopBridge(req _: Vapor.Request) async throws -> BridgeActionResponse {
+        throw BarkVisorError.badRequest(
+            "Host bridges use apply and revert, not start or stop.",
+        )
     }
 
     @Sendable
@@ -94,9 +75,9 @@ struct SystemBridgeController: RouteCollection {
             return try Self.linuxApply(req: req, defaultAction: .revert)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
+            return try Self.macHostApply(req: req, defaultAction: .revert)
         }
-        try Self.requireManagedBridgeDaemon()
+        try PlatformCapabilities.requireHostMutation()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
@@ -155,39 +136,34 @@ struct SystemBridgeController: RouteCollection {
         return defaultAction
     }
 
-    private static func socketVmnetApply(
+    private static func macHostApply(
         req: Vapor.Request,
-        defaultAction: SocketVmnetApplyAction,
-    ) async throws -> BridgeActionResponse {
-        try PlatformCapabilities.requireManagedBridgeDaemon()
+        defaultAction: MacHostBridgeApplyAction,
+    ) throws -> BridgeActionResponse {
+        try PlatformCapabilities.requireHostMutation()
         let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
-        let action = parseSocketAction(body, default: defaultAction)
-        let iface = body.interface ?? req.parameters.get("interface")
-        let result = try SocketVmnetApplyLive.run(
-            request: SocketVmnetApplyRequest(action: action, interface: iface),
+        let action = parseMacAction(body, default: defaultAction)
+        let addressing: MacHostBridgeAddressing =
+            body.addressing == MacHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
+        let nic = body.interface
+            ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
+        let request = MacHostBridgeApplyRequest(
+            action: action,
+            service: body.bridge,
+            nic: nic,
+            addressing: addressing,
+            address: body.address,
+            gateway: body.gateway,
+            dns: body.dns ?? [],
+            confirm: body.confirm == true,
         )
+        let result = try MacHostBridgeApplyLive.run(request: request)
         if result.applied {
-            await BridgeSyncService.syncOnce(db: req.db)
-            if action == .setup || action == .start, let name = iface, !name.isEmpty {
-                let before = try await req.db.read { db in
-                    try Network.filter(Column("bridge") == name).fetchOne(db)
-                }
-                let network = try await NetworkService.ensureBridgedNetwork(for: name, db: req.db)
-                if before == nil {
-                    AuditService.log(
-                        action: "network.create",
-                        resourceType: "network",
-                        resourceId: network.id,
-                        resourceName: network.name,
-                        req: req,
-                    )
-                }
-            }
             AuditService.log(
-                action: "socket-vmnet.\(action.rawValue)",
-                resourceType: "socket-vmnet",
-                resourceId: iface ?? SocketVmnetLaunchd.homebrewServiceLabel,
-                resourceName: iface ?? "socket_vmnet",
+                action: action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                resourceType: "host-bridge",
+                resourceId: request.service ?? request.nic ?? MacHostBridgeApply.backendName,
+                resourceName: request.service ?? "Device address",
                 req: req,
             )
         }
@@ -203,12 +179,13 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    private static func parseSocketAction(
+    private static func parseMacAction(
         _ body: BridgeRequest,
-        default defaultAction: SocketVmnetApplyAction,
-    ) -> SocketVmnetApplyAction {
+        default defaultAction: MacHostBridgeApplyAction,
+    ) -> MacHostBridgeApplyAction {
+        if body.dryRun == true { return .dryRun }
         if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            return SocketVmnetApplyAction(rawValue: raw) ?? defaultAction
+            return MacHostBridgeApplyAction(rawValue: raw) ?? defaultAction
         }
         return defaultAction
     }

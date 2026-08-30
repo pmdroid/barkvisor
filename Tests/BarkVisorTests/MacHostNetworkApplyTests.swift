@@ -76,4 +76,136 @@ struct MacHostNetworkApplyTests {
         #expect(missing.remediations[0].commands.contains("brew install socket_vmnet"))
         #expect(missing.remediations[1].commands.contains("\"USB 10/100/1000 LAN\""))
     }
+
+    private func facts(service: String? = "USB 10/100/1000 LAN") -> HostBridgeFacts {
+        HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+            bridges: [HostBridgeSnapshot(name: "en8", enslaved: [])],
+            defaultRouteInterface: "en8",
+            macSocketVmnet: true,
+            hardwarePortName: service,
+        ))
+    }
+
+    private func probe(
+        service: String? = "USB 10/100/1000 LAN",
+        wireless: Set<String> = [],
+        marker: MacHostNetworkSnapshot? = nil,
+    ) -> MacHostBridgeApplyProbe {
+        let assembled = facts(service: service)
+        return MacHostBridgeApplyProbe(
+            facts: assembled,
+            service: service,
+            wirelessServices: wireless,
+            marker: marker,
+            dataDir: FileManager.default.temporaryDirectory,
+        )
+    }
+
+    @Test func `evaluate refuses Wi-Fi and missing service name`() {
+        let wifi = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .apply, service: "Wi-Fi"),
+            probe: probe(service: "Wi-Fi", wireless: ["Wi-Fi"]),
+        )
+        #expect(wifi.refused)
+        #expect(wifi.message.contains("Wi-Fi"))
+        #expect(!wifi.message.contains("cluster"))
+        #expect(!wifi.message.contains("node"))
+        #expect(!wifi.message.contains("quorum"))
+
+        let missing = MacHostNetworkApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .apply),
+            probe: probe(service: nil),
+        )
+        #expect(missing.refused)
+        #expect(missing.message.contains("service name"))
+    }
+
+    @Test func `evaluate refuses static Device address without address or gateway`() {
+        let noAddress = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .dryRun, service: "USB 10/100/1000 LAN", addressing: .staticIP),
+            probe: probe(),
+        )
+        #expect(noAddress.refused)
+        #expect(noAddress.message.contains("Device"))
+        #expect(!noAddress.message.lowercased().contains("guest static"))
+
+        let noGateway = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(
+                action: .dryRun,
+                service: "USB 10/100/1000 LAN",
+                addressing: .staticIP,
+                address: "192.168.1.10/24",
+            ),
+            probe: probe(),
+        )
+        #expect(noGateway.refused)
+        #expect(noGateway.message.contains("gateway"))
+    }
+
+    @Test func `apply dry-run emits networksetup DHCP and static Device commands`() {
+        let dhcp = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .dryRun, service: "USB 10/100/1000 LAN", confirm: true),
+            probe: probe(),
+        )
+        #expect(dhcp.success)
+        #expect(dhcp.commands.contains { $0.contains("networksetup -setdhcp \"USB 10/100/1000 LAN\"") })
+        #expect(!dhcp.commands.joined().contains("socketVmnetApply"))
+
+        let staticOk = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(
+                action: .dryRun,
+                service: "USB 10/100/1000 LAN",
+                addressing: .staticIP,
+                address: "192.168.1.10/24",
+                gateway: "192.168.1.1",
+                confirm: true,
+            ),
+            probe: probe(),
+        )
+        #expect(staticOk.success)
+        #expect(staticOk.commands.contains {
+            $0.contains("networksetup -setmanual \"USB 10/100/1000 LAN\" 192.168.1.10 255.255.255.0 192.168.1.1")
+        })
+        #expect(staticOk.changes.contains { $0.contains("not the guest") })
+    }
+
+    @Test func `revert restores marker or falls back to DHCP`() {
+        let fallback = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .revert, service: "USB 10/100/1000 LAN"),
+            probe: probe(),
+        )
+        #expect(fallback.success)
+        #expect(fallback.commands == ["sudo networksetup -setdhcp \"USB 10/100/1000 LAN\""])
+        #expect(fallback.message.contains("DHCP"))
+
+        let restore = MacHostBridgeApply.evaluate(
+            request: MacHostBridgeApplyRequest(action: .revert, service: "USB 10/100/1000 LAN"),
+            probe: probe(marker: MacHostNetworkSnapshot(
+                service: "USB 10/100/1000 LAN",
+                addressing: "static",
+                address: "192.168.1.10/24",
+                subnet: "255.255.255.0",
+                gateway: "192.168.1.1",
+            )),
+        )
+        #expect(restore.success)
+        #expect(restore.commands.contains {
+            $0.contains("networksetup -setmanual \"USB 10/100/1000 LAN\" 192.168.1.10 255.255.255.0 192.168.1.1")
+        })
+    }
+
+    @Test func `live mutator records apply without touching the host`() throws {
+        let recorder = RecordingMacHostNetworkMutator()
+        let result = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(action: .apply, service: "USB 10/100/1000 LAN", confirm: true),
+            probe: probe(),
+            mutator: recorder,
+        )
+        #expect(result.applied)
+        #expect(result.success)
+        #expect(recorder.steps.contains { $0.contains("action=apply") })
+        #expect(recorder.steps.contains { $0.contains("networksetup -setdhcp") })
+        #expect(MacHostBridgeApply.markerDirName == "host-network")
+        #expect(MacHostNetworkApply.backendName == "networksetup")
+    }
 }

@@ -87,12 +87,15 @@ public enum MacHostNetwork {
         #endif
     }
 
-    private static func isWiredUplink(_ port: String) -> Bool {
+    public static func isWirelessService(_ port: String) -> Bool {
         let lower = port.lowercased()
-        if lower.contains("wi-fi") || lower.contains("wifi") || lower.contains("airport")
-            || lower.contains("wireless") {
-            return false
-        }
+        return lower.contains("wi-fi") || lower.contains("wifi") || lower.contains("airport")
+            || lower.contains("wireless")
+    }
+
+    private static func isWiredUplink(_ port: String) -> Bool {
+        if isWirelessService(port) { return false }
+        let lower = port.lowercased()
         if lower.contains("thunderbolt bridge") || lower.contains("bluetooth") {
             return false
         }
