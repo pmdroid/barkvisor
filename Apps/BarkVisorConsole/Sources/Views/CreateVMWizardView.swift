@@ -411,6 +411,9 @@ struct CreateVMWizardView: View {
         disks = await dsk ?? []
         templates = await tpl ?? []
         if let loaded = await imgs { images = loaded }
+        if let selectedTemplate, let match = templates.first(where: { $0.slug == selectedTemplate.slug }) {
+            self.selectedTemplate = match
+        }
         if !networkID.isEmpty, !networks.contains(where: { $0.id == networkID }) { networkID = "" }
     }
 

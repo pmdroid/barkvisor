@@ -29,7 +29,10 @@ struct CreateVMWizardTests {
             ],
             userDataTemplate: "",
             architectures: ["x86_64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
             compatible: true,
+            catalogImages: nil,
         )
         let key = SSHKeyRecord(
             id: "k1",
@@ -47,6 +50,87 @@ struct CreateVMWizardTests {
         )
         #expect(inputs["hostname"] == "dev")
         #expect(inputs["ssh_keys"] == "ssh-ed25519 AAA")
+    }
+
+    @Test func resolveTemplateBySlugOnMember() {
+        let home = VMTemplateRecord(
+            id: "self-id",
+            slug: "ubuntu",
+            name: "Ubuntu",
+            description: nil,
+            category: "linux",
+            icon: "linux",
+            imageSlug: "ubuntu",
+            cpuCount: 2,
+            memoryMB: 4096,
+            diskSizeGB: 32,
+            networkMode: "nat",
+            inputs: nil,
+            userDataTemplate: "",
+            architectures: ["x86_64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
+            compatible: true,
+            catalogImages: nil,
+        )
+        let member = VMTemplateRecord(
+            id: "member-id",
+            slug: "ubuntu",
+            name: "Ubuntu",
+            description: nil,
+            category: "linux",
+            icon: "linux",
+            imageSlug: "ubuntu",
+            cpuCount: 2,
+            memoryMB: 4096,
+            diskSizeGB: 32,
+            networkMode: "nat",
+            inputs: nil,
+            userDataTemplate: "",
+            architectures: ["x86_64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
+            compatible: true,
+            catalogImages: nil,
+        )
+        let resolved = CreateVMWizard.resolveTemplate(home, on: [member])
+        #expect(resolved.id == "member-id")
+    }
+
+    @Test func buildDeployRecipeFromCatalogImages() {
+        let template = VMTemplateRecord(
+            id: "tpl",
+            slug: "ubuntu",
+            name: "Ubuntu",
+            description: nil,
+            category: "linux",
+            icon: "linux",
+            imageSlug: "ubuntu",
+            cpuCount: 2,
+            memoryMB: 4096,
+            diskSizeGB: 32,
+            networkMode: "nat",
+            inputs: [],
+            userDataTemplate: "#cloud-config",
+            architectures: ["x86_64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
+            compatible: true,
+            catalogImages: [
+                TemplateCatalogImageRecord(
+                    slug: "ubuntu-noble",
+                    name: "Ubuntu",
+                    imageType: "cloud",
+                    arch: "x86_64",
+                    downloadUrl: "https://example.test/ubuntu.img",
+                    sha256: "abc",
+                    sha512: nil,
+                ),
+            ],
+        )
+        let recipe = CreateVMWizard.buildDeployRecipe(template: template, hostArch: "amd64")
+        #expect(recipe?.image.downloadUrl == "https://example.test/ubuntu.img")
+        #expect(recipe?.slug == "ubuntu")
     }
 
     @Test func wizardBodyIncludesSSHForCloudImage() throws {

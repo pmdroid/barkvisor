@@ -15,7 +15,10 @@ struct VMTemplateRecord: Decodable, Identifiable, Hashable {
     var inputs: [TemplateInputRecord]?
     var userDataTemplate: String?
     var architectures: [String]?
+    var minMemoryMB: Int?
+    var requiredFeatures: [String]?
     var compatible: Bool?
+    var catalogImages: [TemplateCatalogImageRecord]?
 
     var tagline: String {
         let trimmed = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -31,12 +34,47 @@ struct VMTemplateRecord: Decodable, Identifiable, Hashable {
     }
 }
 
-struct TemplateInputRecord: Decodable, Hashable {
+struct TemplateInputRecord: Decodable, Hashable, Encodable {
     var id: String
     var label: String?
     var required: Bool?
     var `default`: String?
     var minLength: Int?
+}
+
+struct TemplateCatalogImageRecord: Decodable, Hashable {
+    var slug: String
+    var name: String
+    var imageType: String
+    var arch: String
+    var downloadUrl: String
+    var sha256: String?
+    var sha512: String?
+}
+
+struct DeployRecipeImageBody: Encodable {
+    var downloadUrl: String
+    var arch: String
+    var imageType: String
+    var sha256: String?
+    var sha512: String?
+    var name: String?
+    var slug: String?
+}
+
+struct DeployRecipeBody: Encodable {
+    var name: String?
+    var slug: String?
+    var inputs: [TemplateInputRecord]
+    var userDataTemplate: String
+    var cpuCount: Int
+    var memoryMB: Int
+    var diskSizeGB: Int
+    var networkMode: String?
+    var architectures: [String]?
+    var minMemoryMB: Int?
+    var requiredFeatures: [String]?
+    var image: DeployRecipeImageBody
 }
 
 struct SSHKeyRecord: Decodable, Identifiable, Hashable {
@@ -57,6 +95,8 @@ struct DeployTemplateBody: Encodable {
     var memoryMB: Int?
     var diskSizeGB: Int?
     var networkId: String?
+    /// Catalog recipe for deploy when the template row is not on the target Device (same as web wizard).
+    var recipe: DeployRecipeBody?
 }
 
 struct DeployTemplateResponse: Decodable {

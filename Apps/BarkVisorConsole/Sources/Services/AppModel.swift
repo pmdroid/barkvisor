@@ -876,14 +876,18 @@ final class AppModel {
         do {
             let client = try requireClient()
             if kind == .template, let template {
+                let deviceTemplates = try await client.templates(on: device)
+                let resolved = CreateVMWizard.resolveTemplate(template, on: deviceTemplates)
+                let hostArch = device.platform?.arch
                 let body = DeployTemplateBody(
-                    templateId: template.id,
+                    templateId: resolved.id,
                     vmName: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    inputs: CreateVMWizard.deployInputs(template: template, values: templateInputs, sshKey: sshKey),
+                    inputs: CreateVMWizard.deployInputs(template: resolved, values: templateInputs, sshKey: sshKey),
                     cpuCount: preset.cpu,
                     memoryMB: preset.memoryMB,
                     diskSizeGB: diskSource == .new ? diskSizeGB : nil,
                     networkId: network?.id,
+                    recipe: CreateVMWizard.buildDeployRecipe(template: resolved, hostArch: hostArch),
                 )
                 let created = try await client.deployTemplate(body, on: device)
                 await refreshDeviceScoped()

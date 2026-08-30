@@ -154,6 +154,54 @@ enum CreateVMWizard {
         return inputs
     }
 
+    /// Match the target Device's template row by slug (ids differ per host in a Home).
+    static func resolveTemplate(_ picked: VMTemplateRecord, on deviceTemplates: [VMTemplateRecord]) -> VMTemplateRecord {
+        deviceTemplates.first { $0.slug == picked.slug } ?? picked
+    }
+
+    static func normalizedImageArch(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        switch raw.lowercased() {
+        case "arm64", "aarch64": return "arm64"
+        case "x86_64", "amd64", "x86-64": return "x86_64"
+        default: return raw.lowercased()
+        }
+    }
+
+    static func catalogImage(for template: VMTemplateRecord, hostArch: String?) -> TemplateCatalogImageRecord? {
+        guard let want = normalizedImageArch(hostArch) else { return nil }
+        return (template.catalogImages ?? []).first {
+            normalizedImageArch($0.arch) == want && !$0.downloadUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    /// Same as web `buildDeployRecipe` — lets deploy succeed without a local GRDB template row.
+    static func buildDeployRecipe(template: VMTemplateRecord, hostArch: String?) -> DeployRecipeBody? {
+        guard let image = catalogImage(for: template, hostArch: hostArch) else { return nil }
+        return DeployRecipeBody(
+            name: template.name,
+            slug: template.slug,
+            inputs: template.inputs ?? [],
+            userDataTemplate: template.userDataTemplate ?? "",
+            cpuCount: template.cpuCount,
+            memoryMB: template.memoryMB,
+            diskSizeGB: template.diskSizeGB,
+            networkMode: template.networkMode,
+            architectures: template.architectures,
+            minMemoryMB: template.minMemoryMB,
+            requiredFeatures: template.requiredFeatures,
+            image: DeployRecipeImageBody(
+                downloadUrl: image.downloadUrl,
+                arch: image.arch,
+                imageType: image.imageType,
+                sha256: image.sha256,
+                sha512: image.sha512,
+                name: image.name,
+                slug: image.slug,
+            ),
+        )
+    }
+
     static func unusedDisks(_ disks: [DiskRecord]) -> [DiskRecord] {
         disks.filter { ($0.vmId ?? "").isEmpty && $0.status.lowercased() != "error" }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
