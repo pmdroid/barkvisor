@@ -131,17 +131,18 @@ describe('useFeature (PAS-38)', () => {
     expect(bridgeManagementMode({ platform: '', supportsHostBridgeManagement: false })).toBe('hidden')
   })
 
-  test('macos-guide has Setup/Start/Stop, Linux has none, Remove stays gone', () => {
-    expect(bridgeGuideActionKeys('macos-guide')).toEqual(['setup', 'start', 'stop'])
+  test('macos-guide and linux-guide share Apply/Revert, Remove stays gone', () => {
+    expect(bridgeGuideActionKeys('macos-guide')).toEqual([])
     expect(bridgeGuideActionKeys('linux-guide')).toEqual([])
     expect(bridgeGuideActionKeys('hidden')).toEqual([])
     expect(bridgeGuideActionKeys('macos-guide')).not.toContain('remove')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
+      expect(bridgeGuideActionKeys('macos-guide')).not.toContain(action)
       expect(bridgeGuideActionKeys('linux-guide')).not.toContain(action)
     }
   })
 
-  test('NetworkView renders Linux apply/revert and macOS Setup/Start/Stop', () => {
+  test('NetworkView renders Device address DHCP/static and Apply/Revert on Mac and Linux', () => {
     const src = readFileSync(join(here, '../views/NetworkView.vue'), 'utf8')
     expect(src).toContain('bridgeManagementMode')
     expect(src).toContain('macosSocketVmnetSetupGroups')
@@ -150,15 +151,19 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('Bridge setup')
     expect(src).toContain('applyLinuxBridge')
     expect(src).toContain('revertLinuxBridge')
-    expect(src).toContain('linuxBridgeCanApply')
-    expect(src).toContain('macosSocketVmnetCanManage')
-    expect(src).toContain('runMacosSocket')
-    expect(src).toContain("runMacosSocket('setup')")
-    expect(src).toContain("runMacosSocket('start')")
-    expect(src).toContain("runMacosSocket('stop')")
-    expect(src).toContain('>Setup</AppButton>')
-    expect(src).toContain('>Start</AppButton>')
-    expect(src).toContain('>Stop</AppButton>')
+    expect(src).toContain('hostBridgeCanMutate')
+    expect(src).toContain('hostBridgeApplyPayload')
+    expect(src).toContain('Device address')
+    expect(src).toContain('value="dhcp"')
+    expect(src).toContain('value="static"')
+    expect(src).toMatch(/> DHCP/)
+    expect(src).toMatch(/> static/)
+    expect(src).toContain('>Apply</AppButton>')
+    expect(src).toContain('>Revert</AppButton>')
+    expect(src).not.toContain('runMacosSocket')
+    expect(src).not.toContain('>Setup</AppButton>')
+    expect(src).not.toContain('>Start</AppButton>')
+    expect(src).not.toContain('>Stop</AppButton>')
     expect(src).not.toContain('removeBridge')
     expect(src).not.toContain('>Remove</AppButton>')
     expect(src).not.toContain('setupBridgeInline')

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { HostBridgeReadiness } from '../api/types'
 import {
   BRIDGE_MUTATION_ACTION_KEYS,
+  hostBridgeApplyPayload,
+  hostBridgeCanMutate,
   hostBridgeSetupPending,
   linuxBridgeApplyCommands,
   linuxBridgeCanApply,
@@ -171,6 +173,35 @@ describe('linuxBridgeApply', () => {
     expect(macosSocketVmnetCanManage({ supportsManagedBridgeDaemon: true })).toBe(true)
     expect(macosSocketVmnetCanManage({ platform: 'Linux', supportsManagedBridgeDaemon: false })).toBe(false)
     expect(macosSocketVmnetCanManage({ platform: 'Linux', supportsHostMutation: true })).toBe(false)
+  })
+
+  test('Mac and Linux can mutate host bridge with the same Apply payload shape', () => {
+    expect(hostBridgeCanMutate({ platform: 'Linux' })).toBe(true)
+    expect(hostBridgeCanMutate({ platform: 'macOS' })).toBe(true)
+    expect(hostBridgeCanMutate({})).toBe(false)
+    expect(hostBridgeApplyPayload({ addressing: 'dhcp' })).toEqual({
+      action: 'apply',
+      addressing: 'dhcp',
+      confirm: undefined,
+      interface: undefined,
+    })
+    expect(hostBridgeApplyPayload({
+      nic: 'eth0',
+      addressing: 'static',
+      address: '192.168.1.10/24',
+      gateway: '192.168.1.1',
+      dns: '1.1.1.1, 8.8.8.8',
+      action: 'check',
+    })).toEqual({
+      action: 'check',
+      interface: 'eth0',
+      addressing: 'static',
+      address: '192.168.1.10/24',
+      gateway: '192.168.1.1',
+      dns: ['1.1.1.1', '8.8.8.8'],
+      confirm: undefined,
+    })
+    expect(hostBridgeApplyPayload({ addressing: 'dhcp', action: 'check' }).addressing).toBe('dhcp')
   })
 })
 

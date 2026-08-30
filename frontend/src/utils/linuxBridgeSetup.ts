@@ -179,6 +179,56 @@ export function linuxBridgeCanApply(caps: {
   return caps.supportsHostBridgeManagement === true || platform === 'linux'
 }
 
+export function hostBridgeCanMutate(caps: {
+  platform?: string | null
+  supportsHostMutation?: boolean | null
+  supportsHostBridgeManagement?: boolean | null
+  supportsManagedBridgeDaemon?: boolean | null
+}): boolean {
+  return linuxBridgeCanApply(caps) || macosSocketVmnetCanManage(caps)
+}
+
+export function hostBridgeApplyPayload(input: {
+  nic?: string
+  addressing: 'dhcp' | 'static'
+  address?: string
+  gateway?: string
+  dns?: string
+  confirm?: boolean
+  action?: 'apply' | 'check' | 'dry-run'
+}): {
+  action: 'apply' | 'check' | 'dry-run'
+  interface?: string
+  addressing: 'dhcp' | 'static'
+  address?: string
+  gateway?: string
+  dns?: string[]
+  confirm?: boolean
+} {
+  const action = input.action ?? 'apply'
+  const dns = (input.dns ?? '')
+    .split(/[,\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (input.addressing === 'static') {
+    return {
+      action,
+      interface: input.nic,
+      addressing: 'static',
+      address: input.address?.trim() || undefined,
+      gateway: input.gateway?.trim() || undefined,
+      dns: dns.length ? dns : undefined,
+      confirm: input.confirm === true ? true : undefined,
+    }
+  }
+  return {
+    action,
+    interface: input.nic,
+    addressing: 'dhcp',
+    confirm: input.confirm === true ? true : undefined,
+  }
+}
+
 /** Root Device daemon may Setup/Start/Stop socket_vmnet on a Mac Device. */
 export function macosSocketVmnetCanManage(caps: {
   platform?: string | null

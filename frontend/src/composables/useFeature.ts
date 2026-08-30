@@ -1,6 +1,5 @@
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
 
 export { BRIDGE_MUTATION_ACTION_KEYS, MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
 
@@ -84,7 +83,6 @@ export function bridgeGuideActionKeys(
 ): readonly string[] {
   switch (mode) {
     case 'macos-guide':
-      return [...MACOS_SOCKET_VMNET_ACTION_KEYS]
     case 'linux-guide':
     case 'hidden':
       return []
