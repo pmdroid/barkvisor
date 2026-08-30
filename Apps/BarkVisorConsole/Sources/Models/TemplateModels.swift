@@ -37,9 +37,46 @@ struct VMTemplateRecord: Decodable, Identifiable, Hashable {
 struct TemplateInputRecord: Decodable, Hashable, Encodable {
     var id: String
     var label: String?
+    var type: String
     var required: Bool?
     var `default`: String?
     var minLength: Int?
+
+    init(
+        id: String,
+        label: String? = nil,
+        type: String = "text",
+        required: Bool? = nil,
+        default defaultValue: String? = nil,
+        minLength: Int? = nil,
+    ) {
+        self.id = id
+        self.label = label
+        self.type = type
+        self.required = required
+        self.default = defaultValue
+        self.minLength = minLength
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        if let decoded = try container.decodeIfPresent(String.self, forKey: .type) {
+            type = decoded
+        } else {
+            type = id == "ssh_keys" ? "textarea" : "text"
+        }
+        required = try container.decodeIfPresent(Bool.self, forKey: .required)
+        `default` = try container.decodeIfPresent(String.self, forKey: .default)
+        minLength = try container.decodeIfPresent(Int.self, forKey: .minLength)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, label, type, required
+        case `default`
+        case minLength
+    }
 }
 
 struct TemplateCatalogImageRecord: Decodable, Hashable {

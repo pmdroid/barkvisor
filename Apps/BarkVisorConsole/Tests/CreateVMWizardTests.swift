@@ -176,6 +176,50 @@ struct CreateVMWizardTests {
         #expect(recipe?.slug == "ubuntu")
     }
 
+    @Test func deployRecipeInputsIncludeType() throws {
+        let template = VMTemplateRecord(
+            id: "t1",
+            slug: "rocky-cloud",
+            name: "Rocky Linux 9",
+            description: nil,
+            category: "linux",
+            icon: "linux",
+            imageSlug: "rocky-9-arm64",
+            cpuCount: 2,
+            memoryMB: 2048,
+            diskSizeGB: 20,
+            networkMode: "nat",
+            inputs: [
+                TemplateInputRecord(id: "username", label: "Username", type: "text", required: true, default: "rocky", minLength: nil),
+                TemplateInputRecord(id: "ssh_keys", label: "SSH", type: "textarea", required: true, default: nil, minLength: nil),
+            ],
+            userDataTemplate: "#cloud-config",
+            architectures: ["arm64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
+            compatible: true,
+            catalogImages: [
+                TemplateCatalogImageRecord(
+                    slug: "rocky-9-arm64",
+                    name: "Rocky",
+                    imageType: "cloud",
+                    arch: "arm64",
+                    downloadUrl: "https://example.test/rocky.img",
+                    sha256: "abc",
+                    sha512: nil,
+                ),
+            ],
+        )
+        guard let recipe = CreateVMWizard.buildDeployRecipe(template: template, hostArch: "arm64") else {
+            Issue.record("Expected deploy recipe")
+            return
+        }
+        let data = try JSONEncoder().encode(recipe)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json.contains("\"type\":\"text\""))
+        #expect(json.contains("\"type\":\"textarea\""))
+    }
+
     @Test func wizardBodyIncludesSSHForCloudImage() throws {
         let image = LibraryImage(
             id: "img1",
