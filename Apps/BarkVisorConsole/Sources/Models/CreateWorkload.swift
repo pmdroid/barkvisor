@@ -159,6 +159,7 @@ enum CreateWorkload {
         var guestAddressing: GuestAddressingInfo?
         var uefi: Bool?
         var tpmEnabled: Bool?
+        var sharedPaths: [String]?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -180,11 +181,14 @@ enum CreateWorkload {
             try container.encodeIfPresent(guestAddressing, forKey: .guestAddressing)
             try container.encodeIfPresent(uefi, forKey: .uefi)
             try container.encodeIfPresent(tpmEnabled, forKey: .tpmEnabled)
+            if let sharedPaths, !sharedPaths.isEmpty {
+                try container.encode(sharedPaths, forKey: .sharedPaths)
+            }
         }
 
         private enum CodingKeys: String, CodingKey {
             case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, existingDiskId, isoId, cloudImageId, networkId,
-                 workloadClass, cloudInit, guestAddressing, uefi, tpmEnabled
+                 workloadClass, cloudInit, guestAddressing, uefi, tpmEnabled, sharedPaths
         }
     }
 
@@ -270,6 +274,7 @@ enum CreateWorkload {
         network: NetworkRecord? = nil,
         addressing: GuestAddressingDraft? = nil,
         sshPublicKey: String? = nil,
+        sharedPaths: [String] = [],
     ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DraftError.emptyName }
@@ -303,6 +308,7 @@ enum CreateWorkload {
             }
         }
         let useExisting = diskSource == .existing && !existingDiskID.isEmpty
+        let shared = workloadClass == "agent" ? [] : sharedPaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return Body(
             name: trimmed,
             osFamily: family,
@@ -319,6 +325,7 @@ enum CreateWorkload {
             guestAddressing: guestAddressing,
             uefi: family == "windows" ? true : nil,
             tpmEnabled: family == "windows" ? true : nil,
+            sharedPaths: shared.isEmpty ? nil : shared,
         )
     }
 }

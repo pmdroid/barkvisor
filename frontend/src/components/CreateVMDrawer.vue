@@ -107,10 +107,14 @@ const imagePinVariant = computed(() => wizard.galleryKind.value === 'windows' ? 
           :block-devices="wizard.blockDevices.value"
           :block-device-path="wizard.blockDevicePath.value"
           :format-bytes="wizard.formatBytes"
+          :shared-paths="wizard.sharedPaths.value"
+          :show-shared-folders="!wizard.isAgent.value"
+          :device="wizard.selectedDevice.value"
           @update:disk-source="wizard.diskSource.value = $event"
           @update:disk-size-g-b="wizard.diskSizeGB.value = $event"
           @update:existing-disk-id="wizard.existingDiskId.value = $event"
           @update:block-device-path="wizard.blockDevicePath.value = $event"
+          @update:shared-paths="wizard.sharedPaths.value = $event"
         />
 
         <p v-if="wizard.error.value" class="mag-error">{{ wizard.error.value }}</p>

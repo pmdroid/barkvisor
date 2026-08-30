@@ -128,6 +128,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/setup/device-name", stability: .evolving),
         Route(method: "PUT", path: "/api/setup/device-name", stability: .evolving),
         Route(method: "GET", path: "/api/setup/browse", stability: .evolving),
+        Route(method: "POST", path: "/api/setup/browse/mkdir", stability: .evolving),
         Route(method: "GET", path: "/api/system/disk/settings", stability: .evolving),
         Route(method: "PUT", path: "/api/system/disk/settings", stability: .evolving),
         Route(method: "GET", path: "/api/system/block-devices", stability: .evolving),

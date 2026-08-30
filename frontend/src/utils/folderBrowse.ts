@@ -11,6 +11,15 @@ export function folderBrowseRequestPath(
   return deviceBrowsePath(device)
 }
 
+export function folderMkdirRequestPath(
+  device?: DeviceApiTarget | null,
+  source: 'system' | 'setup' = 'system',
+): string {
+  if (source === 'setup') return '/browse/mkdir'
+  const browse = folderBrowseRequestPath(device, source)
+  return `${browse}/mkdir`
+}
+
 export function folderBrowseParams(path: string): { path?: string } {
   return path ? { path } : {}
 }

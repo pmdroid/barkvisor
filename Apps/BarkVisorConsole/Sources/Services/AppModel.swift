@@ -591,6 +591,18 @@ final class AppModel {
         }
     }
 
+    func browseFolders(path: String, on device: HomeDeviceHealthSnapshot?) async throws -> [FolderEntry] {
+        try await requireClient().browseFolders(path: path, on: device)
+    }
+
+    func createBrowseFolder(
+        parent: String,
+        name: String,
+        on device: HomeDeviceHealthSnapshot?,
+    ) async throws -> FolderEntry {
+        try await requireClient().createBrowseFolder(parent: parent, name: name, on: device)
+    }
+
     @discardableResult
     func saveOllamaSettings(_ body: OllamaSettingsUpdate) async -> Bool {
         do {
@@ -869,6 +881,7 @@ final class AppModel {
         workloadClass: String,
         openaiBaseURL: String?,
         openaiAPIKey: String?,
+        sharedPaths: [String] = [],
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
         actionIDs.insert(key)
@@ -918,6 +931,7 @@ final class AppModel {
                 network: network,
                 addressing: addressing,
                 sshPublicKey: sshKey?.publicKey,
+                sharedPaths: sharedPaths,
             )
             let created = try await client.createWorkload(body, on: device)
             await refreshDeviceScoped()

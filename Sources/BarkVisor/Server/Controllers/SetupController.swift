@@ -25,6 +25,7 @@ struct SetupController: RouteCollection {
         setup.get("device-name", use: getDeviceName)
         setup.put("device-name", use: updateDeviceName)
         setup.get("browse", use: browseDirectory)
+        setup.post("browse", "mkdir", use: createBrowseFolder)
         setup.post("complete", use: complete)
     }
 
@@ -485,6 +486,14 @@ struct SetupController: RouteCollection {
             throw Abort(.notFound)
         }
         return try await SystemHostController.listDirectory(req: req)
+    }
+
+    @Sendable
+    func createBrowseFolder(req: Request) async throws -> BrowseEntry {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        return try await SystemHostController.createDirectory(req: req)
     }
 
     private func setupFinished(req: Request) async throws -> Bool {

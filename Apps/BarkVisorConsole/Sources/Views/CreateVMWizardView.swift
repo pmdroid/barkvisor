@@ -35,6 +35,8 @@ struct CreateVMWizardView: View {
     @State private var loading = false
     @State private var creating = false
     @State private var localError: String?
+    @State private var sharedPaths: [String] = []
+    @State private var showFolderPicker = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,6 +81,13 @@ struct CreateVMWizardView: View {
         .disabled(creating || loading)
         .task { await bootstrap() }
         .task(id: deviceID) { await reloadDeviceData() }
+        .sheet(isPresented: $showFolderPicker) {
+            FolderPickerView(device: device) { path in
+                if !sharedPaths.contains(path) {
+                    sharedPaths.append(path)
+                }
+            }
+        }
     }
 
     private var wizardHeader: some View {
@@ -265,6 +274,31 @@ struct CreateVMWizardView: View {
         } header: {
             Text("Disk")
         }
+
+        if showsSharedFolders {
+            Section {
+                ForEach(sharedPaths, id: \.self) { path in
+                    HStack {
+                        Text(path).font(.caption.monospaced()).lineLimit(1)
+                        Spacer()
+                        Button("Remove", role: .destructive) {
+                            sharedPaths.removeAll { $0 == path }
+                        }
+                    }
+                }
+                Button("Add shared folder") {
+                    showFolderPicker = true
+                }
+            } header: {
+                Text("Shared folders")
+            } footer: {
+                Text("Optional host directories shared via virtio-9p.")
+            }
+        }
+    }
+
+    private var showsSharedFolders: Bool {
+        kind != .codingAgent && workloadClass != "agent"
     }
 
     private func galleryCard(title: String, subtitle: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -485,6 +519,7 @@ struct CreateVMWizardView: View {
             workloadClass: workloadClass,
             openaiBaseURL: kind == .codingAgent ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL) : nil,
             openaiAPIKey: kind == .codingAgent && openaiPreset == "byo" ? byoOpenAIAPIKey : nil,
+            sharedPaths: sharedPaths,
         ) {
             onCreated(HomeWorkloadRow(workload: created, device: device))
             dismiss()

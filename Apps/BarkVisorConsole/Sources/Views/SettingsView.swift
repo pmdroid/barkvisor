@@ -96,6 +96,9 @@ private struct DiskDirectorySection: View {
     @Environment(AppModel.self) private var model
     @State private var draft = ""
     @State private var saving = false
+    #if os(iOS)
+        @State private var showFolderPicker = false
+    #endif
 
     var body: some View {
         Section {
@@ -106,6 +109,12 @@ private struct DiskDirectorySection: View {
             #if os(iOS)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+            #endif
+            #if os(iOS)
+            Button("Browse") {
+                showFolderPicker = true
+            }
+            .disabled(saving)
             #endif
             if let settings = model.diskSettings {
                 Text(settings.isDefault ? "Using the default path on this Device." : "Using a custom disk directory.")
@@ -136,6 +145,13 @@ private struct DiskDirectorySection: View {
             await model.refreshDiskSettings()
             draft = model.diskSettings?.diskDirectory ?? ""
         }
+        #if os(iOS)
+            .sheet(isPresented: $showFolderPicker) {
+                FolderPickerView(device: nil) { path in
+                    draft = path
+                }
+            }
+        #endif
     }
 }
 

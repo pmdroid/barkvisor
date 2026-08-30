@@ -10,6 +10,7 @@ struct SystemHostController: RouteCollection {
         system.get("host-bridge-readiness", use: getHostBridgeReadiness)
         system.get("doctor", use: getDoctor)
         system.get("browse", use: browseDirectory)
+        system.post("browse", "mkdir", use: createBrowseFolder)
         system.get("usb-devices", use: listUSBDevices)
         system.get("usb", use: listUSBDevices)
         system.get("gpu-devices", use: listGPUDevices)
@@ -35,17 +36,37 @@ struct SystemHostController: RouteCollection {
         try await Self.listDirectory(req: req)
     }
 
+    @Sendable
+    func createBrowseFolder(req: Vapor.Request) async throws -> BrowseEntry {
+        try await Self.createDirectory(req: req)
+    }
+
     static func listDirectory(req: Vapor.Request) async throws -> [BrowseEntry] {
-        let extraRoots = try await req.db.read { db in
+        let extraRoots = try await browseExtraRoots(req: req)
+        let rawPath = (try? req.query.get(String.self, at: "path")) ?? ""
+        return try DirectoryBrowser.list(path: rawPath, extraRoots: extraRoots).map {
+            BrowseEntry(name: $0.name, path: $0.path, isDirectory: true)
+        }
+    }
+
+    static func createDirectory(req: Vapor.Request) async throws -> BrowseEntry {
+        let body = try req.content.decode(BrowseCreateFolderRequest.self)
+        let extraRoots = try await browseExtraRoots(req: req)
+        let entry = try DirectoryBrowser.createFolder(
+            parentPath: body.parent,
+            name: body.name,
+            extraRoots: extraRoots,
+        )
+        return BrowseEntry(name: entry.name, path: entry.path, isDirectory: true)
+    }
+
+    private static func browseExtraRoots(req: Vapor.Request) async throws -> [String] {
+        try await req.db.read { db in
             try [
                 Config.dataDir.path,
                 LibrarySettings.resolvedDirectory(from: db).path,
                 DiskSettings.resolvedDirectory(from: db).path,
             ]
-        }
-        let rawPath = (try? req.query.get(String.self, at: "path")) ?? ""
-        return try DirectoryBrowser.list(path: rawPath, extraRoots: extraRoots).map {
-            BrowseEntry(name: $0.name, path: $0.path, isDirectory: true)
         }
     }
 

@@ -69,6 +69,11 @@ struct BrowseEntry: Content {
     let isDirectory: Bool
 }
 
+struct BrowseCreateFolderRequest: Content {
+    let parent: String
+    let name: String
+}
+
 struct HostBlockDeviceResponse: Content {
     let path: String
     let name: String

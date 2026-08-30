@@ -1186,6 +1186,7 @@ export function useCreateVMWizard(
     blockDevicePath,
     rawDiskAvailable,
     rawDiskWhy,
+    sharedPaths,
     showSshKeyRow,
     sshKeyRequired,
     templateInputs,

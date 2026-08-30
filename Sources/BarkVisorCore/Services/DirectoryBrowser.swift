@@ -95,6 +95,47 @@ public enum DirectoryBrowser {
         return entries
     }
 
+    public static func createFolder(
+        parentPath rawParent: String,
+        name rawName: String,
+        extraRoots: [String] = [],
+        home: String = NSHomeDirectory(),
+    ) throws -> Entry {
+        let parent = rawParent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !parent.isEmpty else {
+            throw BarkVisorError.badRequest("Open a folder before creating a subfolder")
+        }
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw BarkVisorError.badRequest("Folder name is required")
+        }
+        guard name != "..", !name.contains("/"), !name.contains("\\"), !name.hasPrefix(".") else {
+            throw BarkVisorError.badRequest("Invalid folder name")
+        }
+
+        let resolvedParent = (parent as NSString).resolvingSymlinksInPath
+        guard isAllowed(resolvedParent, extraRoots: extraRoots, home: home) else {
+            throw BarkVisorError.forbidden("Access denied: path is outside allowed directories")
+        }
+
+        var parentIsDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolvedParent, isDirectory: &parentIsDir),
+              parentIsDir.boolValue
+        else {
+            throw BarkVisorError.badRequest("Parent path is not a directory")
+        }
+
+        let newPath = (resolvedParent as NSString).appendingPathComponent(name)
+        guard isAllowed(newPath, extraRoots: extraRoots, home: home) else {
+            throw BarkVisorError.forbidden("Access denied: path is outside allowed directories")
+        }
+        if FileManager.default.fileExists(atPath: newPath) {
+            throw BarkVisorError.badRequest("A file or folder with that name already exists")
+        }
+        try FileManager.default.createDirectory(atPath: newPath, withIntermediateDirectories: false)
+        return Entry(name: name, path: newPath)
+    }
+
     public static func parentPath(
         of path: String,
         extraRoots: [String] = [],

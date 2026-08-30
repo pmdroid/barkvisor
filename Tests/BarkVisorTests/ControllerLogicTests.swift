@@ -205,6 +205,19 @@ struct ControllerLogicTests {
         }
     }
 
+    @Test func `directory browser createFolder`() throws {
+        let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: base) }
+        let created = try DirectoryBrowser.createFolder(parentPath: base, name: "vms", extraRoots: [base])
+        #expect(created.path == (base as NSString).appendingPathComponent("vms"))
+        var isDir: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: created.path, isDirectory: &isDir) && isDir.boolValue)
+        #expect(throws: BarkVisorError.self) {
+            try DirectoryBrowser.createFolder(parentPath: "", name: "x")
+        }
+    }
+
     // MARK: - Repo Type Validation
 
     @Test func `repository type validation`() {

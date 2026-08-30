@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import FolderPicker from '../FolderPicker.vue'
 import type { Disk, HostBlockDevice } from '../../api/types'
+import type { DeviceApiTarget } from '../../utils/homeDeviceApi'
 
 const props = defineProps<{
   diskSource: 'new' | 'existing' | 'raw'
@@ -12,6 +15,9 @@ const props = defineProps<{
   blockDevices: HostBlockDevice[]
   blockDevicePath: string
   formatBytes: (b: number) => string
+  sharedPaths?: string[]
+  showSharedFolders?: boolean
+  device?: DeviceApiTarget | null
 }>()
 
 const emit = defineEmits<{
@@ -19,7 +25,23 @@ const emit = defineEmits<{
   'update:diskSizeGB': [value: number]
   'update:existingDiskId': [value: string]
   'update:blockDevicePath': [value: string]
+  'update:sharedPaths': [value: string[]]
 }>()
+
+const showFolderPicker = ref(false)
+
+function addSharedPath(path: string) {
+  const current = props.sharedPaths ?? []
+  if (!current.includes(path)) {
+    emit('update:sharedPaths', [...current, path])
+  }
+}
+
+function removeSharedPath(index: number) {
+  const next = [...(props.sharedPaths ?? [])]
+  next.splice(index, 1)
+  emit('update:sharedPaths', next)
+}
 
 function pickExisting(id: string, event: Event) {
   event.stopPropagation()
@@ -118,6 +140,28 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
     </svg>
     <span>BarkVisor will not format or wipe this device. The host must not be using it.</span>
   </div>
+
+  <div v-if="showSharedFolders" class="mag-shared">
+    <div class="mag-shared-head">
+      <b>Shared folders</b>
+      <button type="button" class="mag-shared-add" @click="showFolderPicker = true">Add</button>
+    </div>
+    <p>Optional host directories shared via virtio-9p.</p>
+    <div v-if="(sharedPaths ?? []).length" class="mag-shared-list">
+      <div v-for="(path, i) in sharedPaths" :key="path" class="mag-shared-row">
+        <code>{{ path }}</code>
+        <button type="button" class="mag-shared-remove" @click="removeSharedPath(i)">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <FolderPicker
+    v-if="showFolderPicker"
+    model-value=""
+    :device="device"
+    @update:model-value="addSharedPath($event)"
+    @close="showFolderPicker = false"
+  />
 </template>
 
 <style scoped>
@@ -192,4 +236,58 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
   color: var(--mag-text);
 }
 .mag-confirm svg { flex-shrink: 0; color: #fbbf24; margin-top: 1px; }
+.mag-shared {
+  margin-top: 16px;
+  border: 1px solid var(--mag-line);
+  border-radius: 2px;
+  padding: 14px 16px;
+  background: var(--mag-panel);
+}
+.mag-shared-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mag-shared-head b { font-size: 14px; }
+.mag-shared-add {
+  margin-left: auto;
+  border: 1px solid var(--mag-line);
+  border-radius: 2px;
+  background: none;
+  color: var(--mag-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.mag-shared > p { margin: 6px 0 0; font-size: 12px; color: var(--mag-dim); line-height: 1.5; }
+.mag-shared-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mag-shared-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--mag-line);
+  border-radius: 2px;
+  font-size: 12px;
+}
+.mag-shared-row code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mag-shared-remove {
+  border: 0;
+  background: none;
+  color: var(--red);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
 </style>

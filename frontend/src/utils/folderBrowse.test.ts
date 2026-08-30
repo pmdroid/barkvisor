@@ -3,6 +3,7 @@ import {
   asFolderEntries,
   folderBrowseParams,
   folderBrowseRequestPath,
+  folderMkdirRequestPath,
   folderHasRealEntries,
 } from './folderBrowse'
 
@@ -17,6 +18,12 @@ describe('folderBrowse', () => {
     expect(folderBrowseRequestPath(member)).toBe('/home/devices/peer%2F1/v1/system/browse')
     expect(folderBrowseRequestPath(undefined, 'setup')).toBe('/browse')
     expect(folderBrowseRequestPath(member, 'setup')).toBe('/browse')
+  })
+
+  test('mkdir path is local for this Device and proxied for members', () => {
+    expect(folderMkdirRequestPath()).toBe('/system/browse/mkdir')
+    expect(folderMkdirRequestPath(member)).toBe('/home/devices/peer%2F1/v1/system/browse/mkdir')
+    expect(folderMkdirRequestPath(undefined, 'setup')).toBe('/browse/mkdir')
   })
 
   test('empty path omits the query so the host lists roots', () => {

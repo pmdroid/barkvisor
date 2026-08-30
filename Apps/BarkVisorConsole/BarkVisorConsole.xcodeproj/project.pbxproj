@@ -14,6 +14,7 @@
 		D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */; };
 		9D53C45BE9DB7194C767FE9A /* CreateVMWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8733097F71D17719F82581C4 /* CreateVMWizard.swift */; };
 		D3486A2707487AB3271F268E /* TemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68709496B2CE346B893A9D2 /* TemplateModels.swift */; };
+		3C0C81EEB5F672E6C134EF3D /* FolderBrowse.swift in Sources */ = {isa = PBXBuildFile; fileRef = D600DB692158B97E476D7F46 /* FolderBrowse.swift */; };
 		875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1434A82B342472B527529F12 /* CodingAgentImage.swift */; };
 		2C1455014BD97A73B1AB56E5 /* CodingAgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D923A534712593A9114E15 /* CodingAgentSession.swift */; };
 		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
@@ -44,6 +45,7 @@
 		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
 		11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */; };
 		3A9F4D7927448344E21DF5CC /* CreateVMWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9A66D3F42AE589D2674E510 /* CreateVMWizardView.swift */; };
+		68A8FDBA99BDD66209F0A512 /* FolderPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CC925160CB631F8ED0480F /* FolderPickerView.swift */; };
 		9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */; };
 		DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */; };
 		02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */; };
@@ -84,6 +86,7 @@
 		4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkload.swift; sourceTree = "<group>"; };
 		8733097F71D17719F82581C4 /* CreateVMWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateVMWizard.swift; sourceTree = "<group>"; };
 		A68709496B2CE346B893A9D2 /* TemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateModels.swift; sourceTree = "<group>"; };
+		D600DB692158B97E476D7F46 /* FolderBrowse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderBrowse.swift; sourceTree = "<group>"; };
 		1434A82B342472B527529F12 /* CodingAgentImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentImage.swift; sourceTree = "<group>"; };
 		E4D923A534712593A9114E15 /* CodingAgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentSession.swift; sourceTree = "<group>"; };
 		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
@@ -114,6 +117,7 @@
 		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
 		623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkloadSheet.swift; sourceTree = "<group>"; };
 		F9A66D3F42AE589D2674E510 /* CreateVMWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateVMWizardView.swift; sourceTree = "<group>"; };
+		94CC925160CB631F8ED0480F /* FolderPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPickerView.swift; sourceTree = "<group>"; };
 		5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailView.swift; sourceTree = "<group>"; };
 		5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SerialConsoleView.swift; sourceTree = "<group>"; };
 		9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayView.swift; sourceTree = "<group>"; };
@@ -220,6 +224,7 @@
 				4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */,
 				8733097F71D17719F82581C4 /* CreateVMWizard.swift */,
 				A68709496B2CE346B893A9D2 /* TemplateModels.swift */,
+				D600DB692158B97E476D7F46 /* FolderBrowse.swift */,
 				1434A82B342472B527529F12 /* CodingAgentImage.swift */,
 				E4D923A534712593A9114E15 /* CodingAgentSession.swift */,
 				F479E78AC8E6DA04341B1D0A /* LoginURI.swift */,
@@ -264,6 +269,7 @@
 				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
 				623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */,
 				F9A66D3F42AE589D2674E510 /* CreateVMWizardView.swift */,
+				94CC925160CB631F8ED0480F /* FolderPickerView.swift */,
 				5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */,
 				5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */,
 				9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */,
@@ -415,6 +421,7 @@
 				D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */,
 				9D53C45BE9DB7194C767FE9A /* CreateVMWizard.swift in Sources */,
 				D3486A2707487AB3271F268E /* TemplateModels.swift in Sources */,
+				3C0C81EEB5F672E6C134EF3D /* FolderBrowse.swift in Sources */,
 				875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */,
 				2C1455014BD97A73B1AB56E5 /* CodingAgentSession.swift in Sources */,
 				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
@@ -445,6 +452,7 @@
 				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
 				11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */,
 				3A9F4D7927448344E21DF5CC /* CreateVMWizardView.swift in Sources */,
+				68A8FDBA99BDD66209F0A512 /* FolderPickerView.swift in Sources */,
 				9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */,
 				DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */,
 				02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */,

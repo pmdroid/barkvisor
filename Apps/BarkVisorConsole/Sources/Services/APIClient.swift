@@ -411,6 +411,22 @@ struct APIClient {
         try await get(scoped("/networks", on: device))
     }
 
+    func browseFolders(path: String, on device: HomeDeviceHealthSnapshot?) async throws -> [FolderEntry] {
+        let query = path.isEmpty ? [] : [URLQueryItem(name: "path", value: path)]
+        return try await get(scoped("/system/browse", on: device), query: query)
+    }
+
+    func createBrowseFolder(
+        parent: String,
+        name: String,
+        on device: HomeDeviceHealthSnapshot?,
+    ) async throws -> FolderEntry {
+        try await post(
+            scoped("/system/browse/mkdir", on: device),
+            body: BrowseCreateFolderBody(parent: parent, name: name),
+        )
+    }
+
     func applyHostBridge(
         interface: String?,
         action: String,

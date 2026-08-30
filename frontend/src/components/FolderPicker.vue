@@ -8,6 +8,7 @@ import {
   asFolderEntries,
   folderBrowseParams,
   folderBrowseRequestPath,
+  folderMkdirRequestPath,
   type FolderEntry,
 } from '../utils/folderBrowse'
 import FormError from './ui/FormError.vue'
@@ -23,7 +24,9 @@ const currentPath = ref('')
 const pendingSelect = ref('')
 const entries = ref<FolderEntry[]>([])
 const loading = ref(false)
+const creating = ref(false)
 const error = ref('')
+const newFolderName = ref('')
 
 function browseClient() {
   return props.source === 'setup' ? setupApi : api
@@ -85,6 +88,27 @@ function select() {
   emit('update:modelValue', path)
   emit('close')
 }
+
+async function createFolder() {
+  const parent = currentPath.value.trim()
+  const name = newFolderName.value.trim()
+  if (!parent || !name) return
+  creating.value = true
+  error.value = ''
+  try {
+    const { data } = await browseClient().post(folderMkdirRequestPath(props.device, props.source), {
+      parent,
+      name,
+    })
+    newFolderName.value = ''
+    if (data?.path) pendingSelect.value = data.path
+    await browse(parent)
+  } catch (err) {
+    error.value = apiErrorMessage(err, 'Could not create folder')
+  } finally {
+    creating.value = false
+  }
+}
 </script>
 
 <template>
@@ -119,6 +143,24 @@ function select() {
               </button>
               <div v-if="!entries.length" class="folder-empty">No folders</div>
             </div>
+            <div v-if="currentPath" class="folder-create">
+              <input
+                v-model="newFolderName"
+                type="text"
+                placeholder="New folder name"
+                :disabled="creating || loading"
+                @keydown.enter.prevent="createFolder"
+              />
+              <button
+                type="button"
+                class="btn-ghost btn-sm"
+                :disabled="creating || loading || !newFolderName.trim()"
+                @click="createFolder"
+              >
+                {{ creating ? 'Creating…' : 'Create folder' }}
+              </button>
+            </div>
+            <p v-else class="folder-hint">Open a folder to create a subfolder inside it.</p>
           </div>
           <div class="split-foot">
             <button class="btn-ghost" @click="emit('close')">Cancel</button>
@@ -168,5 +210,20 @@ function select() {
   text-align: center;
   color: var(--text-dim);
   font-size: 13px;
+}
+.folder-create {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+.folder-create input {
+  flex: 1;
+  min-width: 0;
+}
+.folder-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
 }
 </style>
