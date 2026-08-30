@@ -52,6 +52,10 @@ run = "./scripts/dev-instance.sh start"
 description = "Stop a throwaway BarkVisor daemon"
 run = "./scripts/dev-instance.sh stop"
 
+[tasks.local-updates]
+description = "Serve a local GitHub-shaped update feed from dist/"
+run = "scripts/serve-local-updates.sh --dir dist"
+
 [tasks.api-bdd]
 description = "Opt-in API contract BDD: probe every OpenAPI operation (fast, no QEMU)"
 run = "./scripts/api-contract-bdd.sh"

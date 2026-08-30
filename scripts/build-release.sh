@@ -763,6 +763,7 @@ if [ -f "$BUILD_DIR/BarkVisor-${VERSION}-standalone.tar.gz" ]; then
 fi
 if [ -f "$BUILD_DIR/BarkVisor-${VERSION}.pkg" ]; then
     log_sub "Installer:  $BUILD_DIR/BarkVisor-${VERSION}.pkg"
+    log_sub "Local Apply test: scripts/serve-local-updates.sh --dir build"
 fi
 echo ""
 log "Install layout:"
