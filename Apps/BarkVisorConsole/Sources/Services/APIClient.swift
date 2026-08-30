@@ -509,6 +509,19 @@ struct APIClient {
         try await delete(APIKeyRoutes.item(id))
     }
 
+    /// Admin-only read. Inference callers get 403 from `JWTAuthMiddleware`.
+    func auditLog(
+        limit: Int,
+        offset: Int,
+        action: String? = nil,
+        resourceType: String? = nil,
+    ) async throws -> AuditLogResponse {
+        try await get(
+            AuditLogRoutes.collection,
+            query: AuditLogQuery.items(limit: limit, offset: offset, action: action, resourceType: resourceType),
+        )
+    }
+
     private func makeRequest(method: String, path: String, query: [URLQueryItem]) throws -> URLRequest {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
