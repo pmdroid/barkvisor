@@ -22,4 +22,8 @@ if [[ -z "$NAME" ]]; then
 fi
 
 mkdir -p "$SKILL_DIR/current"
+FRONTEND_DIR="$ROOT/Sources/BarkVisor/Resources/frontend/dist"
+if [[ -f "$FRONTEND_DIR/index.html" ]]; then
+  export BARKVISOR_FRONTEND_DIR="$FRONTEND_DIR"
+fi
 "$ROOT/scripts/dev-instance.sh" start "${ARGS[@]}" | tee "$SKILL_DIR/current/meta.json"
