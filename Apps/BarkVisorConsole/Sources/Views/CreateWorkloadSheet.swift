@@ -20,6 +20,9 @@ struct CreateWorkloadSheet: View {
     @State private var openaiPreset = "home-ollama"
     @State private var byoOpenAIURL = CodingAgentImage.homeOllamaGrantURL
     @State private var byoOpenAIAPIKey = ""
+    @State private var networks: [NetworkRecord] = []
+    @State private var networkID = ""
+    @State private var addressing = GuestAddressingDraft()
 
     var body: some View {
         Form {
@@ -88,6 +91,54 @@ struct CreateWorkloadSheet: View {
                 Text(footerCopy)
             }
 
+            if !bridgedNetworks.isEmpty {
+                Section {
+                    Picker("Network", selection: $networkID) {
+                        Text("Shared (NAT)").tag("")
+                        ForEach(bridgedNetworks) { network in
+                            Text(network.name).tag(network.id)
+                        }
+                    }
+                    if selectedNetwork != nil {
+                        if cloudInitCapable {
+                            Picker("Addressing", selection: $addressing.mode) {
+                                Text("DHCP (LAN)").tag(GuestAddressingDraft.modeDHCP)
+                                Text("Static IPv4").tag(GuestAddressingDraft.modeStatic)
+                            }
+                            if addressing.isStatic {
+                                TextField("IPv4", text: $addressing.ipv4, prompt: Text("192.168.1.40"))
+                                #if os(iOS)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.numbersAndPunctuation)
+                                #endif
+                                Stepper(
+                                    "Prefix: \(addressing.prefixLength ?? GuestAddressingDraft.defaultPrefixLength)",
+                                    value: addressingPrefix,
+                                    in: 1 ... 32,
+                                )
+                                TextField("Gateway", text: $addressing.gateway, prompt: Text("192.168.1.1"))
+                                #if os(iOS)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.numbersAndPunctuation)
+                                #endif
+                                TextField("DNS", text: $addressing.nameservers, prompt: Text("1.1.1.1, 8.8.8.8"))
+                                #if os(iOS)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.numbersAndPunctuation)
+                                #endif
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Network")
+                } footer: {
+                    Text(networkFooterCopy)
+                }
+            }
+
             if let localError {
                 Section {
                     Text(localError)
@@ -118,7 +169,11 @@ struct CreateWorkloadSheet: View {
             .disabled(creating)
             .task { await bootstrap() }
             .task(id: deviceID) { await loadImages() }
+            .task(id: deviceID) { await loadNetworks() }
             .onChange(of: imageID) { _, _ in applyCodingAgentDefaults() }
+            .onChange(of: networkID) { _, _ in
+                if selectedNetwork == nil { addressing.mode = GuestAddressingDraft.modeDHCP }
+            }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
@@ -146,6 +201,37 @@ struct CreateWorkloadSheet: View {
 
     private var isCodingAgent: Bool {
         CodingAgentImage.matches(name: selectedImage?.name)
+    }
+
+    private var bridgedNetworks: [NetworkRecord] {
+        networks.filter { $0.mode.lowercased() == GuestAddressingDraft.networkModeBridged }
+    }
+
+    /// Nil means implicit NAT (networkId omitted), same as before this picker existed.
+    private var selectedNetwork: NetworkRecord? {
+        bridgedNetworks.first { $0.id == networkID }
+    }
+
+    /// Cloud images run cloud-init; installer ISOs do not, so static stays off there.
+    private var cloudInitCapable: Bool {
+        selectedImage.map { !CreateWorkload.isISO($0) } ?? false
+    }
+
+    private var addressingPrefix: Binding<Int> {
+        Binding(
+            get: { addressing.prefixLength ?? GuestAddressingDraft.defaultPrefixLength },
+            set: { addressing.prefixLength = $0 },
+        )
+    }
+
+    private var networkFooterCopy: String {
+        if selectedNetwork == nil {
+            return "NAT out with port forwards. \(CreateWorkload.webEditCopy)"
+        }
+        if cloudInitCapable {
+            return "Default is DHCP from your router. The Workload MAC is shown after create for a reservation."
+        }
+        return "After create, copy the Workload MAC and set the address in the guest or on the router. BarkVisor does not configure installer ISOs."
     }
 
     private var footerCopy: String {
@@ -209,6 +295,20 @@ struct CreateWorkloadSheet: View {
         }
     }
 
+    private func loadNetworks() async {
+        guard let device else {
+            networks = []
+            networkID = ""
+            return
+        }
+        let loaded = await model.networkList(on: device)
+        guard !Task.isCancelled else { return }
+        networks = loaded ?? []
+        if !networkID.isEmpty, !(loaded ?? []).contains(where: { $0.id == networkID }) {
+            networkID = ""
+        }
+    }
+
     private func submit() async {
         guard !loadingImages, let device, let selectedImage else { return }
         creating = true
@@ -225,6 +325,8 @@ struct CreateWorkloadSheet: View {
             workloadClass: workloadClass,
             openaiBaseURL: openaiURL,
             openaiAPIKey: openaiKey,
+            network: selectedNetwork,
+            addressing: addressing,
         ) else {
             localError = model.banner ?? "Could not create the Workload"
             return

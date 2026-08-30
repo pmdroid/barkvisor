@@ -16,6 +16,10 @@ struct WorkloadDetailView: View {
     @State private var deviceCaps: SystemCapabilities?
     @State private var hostGPUs: [HostGPUDevice] = []
     @State private var hostUSBs: [HostUSBDevice] = []
+    @State private var editingAddressing = false
+    @State private var addressDraft = GuestAddressingDraft()
+    @State private var addressError: String?
+    @State private var savingAddressing = false
 
     var body: some View {
         List {
@@ -35,10 +39,66 @@ struct WorkloadDetailView: View {
                     LabeledContent("MAC", value: mac)
                         .textSelection(.enabled)
                 }
-                LabeledContent(
-                    "Addressing",
-                    value: WorkloadGuestSummary.addressingSummary(workload: workload),
-                )
+                if editingAddressing {
+                    Picker("Addressing", selection: $addressDraft.mode) {
+                        Text("DHCP (LAN)").tag(GuestAddressingDraft.modeDHCP)
+                        Text("Static IPv4").tag(GuestAddressingDraft.modeStatic)
+                    }
+                    if addressDraft.isStatic {
+                        TextField("IPv4", text: $addressDraft.ipv4, prompt: Text("192.168.1.40"))
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numbersAndPunctuation)
+                        #endif
+                        Stepper(
+                            "Prefix: \(addressDraft.prefixLength ?? GuestAddressingDraft.defaultPrefixLength)",
+                            value: Binding(
+                                get: { addressDraft.prefixLength ?? GuestAddressingDraft.defaultPrefixLength },
+                                set: { addressDraft.prefixLength = $0 },
+                            ),
+                            in: 1 ... 32,
+                        )
+                        TextField("Gateway", text: $addressDraft.gateway, prompt: Text("192.168.1.1"))
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numbersAndPunctuation)
+                        #endif
+                        TextField("DNS", text: $addressDraft.nameservers, prompt: Text("1.1.1.1, 8.8.8.8"))
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numbersAndPunctuation)
+                        #endif
+                    }
+                    if let addressError {
+                        Text(addressError)
+                            .foregroundStyle(.red)
+                    }
+                    Button("Save") {
+                        Task { await saveAddressing() }
+                    }
+                    .disabled(savingAddressing || busy)
+                    Button("Cancel", role: .cancel) {
+                        editingAddressing = false
+                        addressError = nil
+                    }
+                    .disabled(savingAddressing)
+                } else {
+                    LabeledContent(
+                        "Addressing",
+                        value: WorkloadGuestSummary.addressingSummary(workload: workload),
+                    )
+                    if canEditAddressing {
+                        Button("Edit Addressing") {
+                            addressDraft = GuestAddressingDraft(info: workload.guestAddressing)
+                            addressError = nil
+                            editingAddressing = true
+                        }
+                        .disabled(busy)
+                    }
+                }
                 Text(WorkloadGuestSummary.macGuidance(
                     bridged: networkMode == "bridged",
                     cloudInit: workload.cloudInitPath != nil,
@@ -384,6 +444,32 @@ struct WorkloadDetailView: View {
     private var busy: Bool {
         let key = WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id)
         return model.actionIDs.contains(key) || model.actionIDs.contains(workload.id)
+    }
+
+    /// Same gate as the SPA: bridged cloud-init Workloads on this Device, not member hop detail.
+    private var canEditAddressing: Bool {
+        device.isSelf
+            && device.isReachable
+            && networkMode == GuestAddressingDraft.networkModeBridged
+            && workload.cloudInitPath != nil
+    }
+
+    private func saveAddressing() async {
+        addressError = nil
+        savingAddressing = true
+        defer { savingAddressing = false }
+        do {
+            let payload = try addressDraft.editPayload()
+            if await model.setGuestAddressing(workload, addressing: payload, on: device) {
+                editingAddressing = false
+            } else {
+                addressError = model.banner ?? "Could not save addressing"
+            }
+        } catch let error as CreateWorkload.DraftError {
+            addressError = error.errorDescription
+        } catch {
+            addressError = error.localizedDescription
+        }
     }
 
     private func refreshGPUs() async {

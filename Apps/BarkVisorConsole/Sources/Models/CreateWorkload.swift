@@ -116,6 +116,12 @@ enum CreateWorkload {
         case invalidOpenAIBaseURL
         case missingOpenAIAPIKey
         case invalidOpenAIAPIKey
+        case staticAddressingNotBridged
+        case staticAddressingNotCloudInit
+        case invalidGuestIPv4
+        case invalidGuestPrefixLength
+        case invalidGuestGateway
+        case invalidGuestNameserver
 
         var errorDescription: String? {
             switch self {
@@ -124,11 +130,19 @@ enum CreateWorkload {
             case .invalidOpenAIBaseURL: "OPENAI_BASE_URL must be an http(s) URL"
             case .missingOpenAIAPIKey: "OPENAI_API_KEY is required"
             case .invalidOpenAIAPIKey: "OPENAI_API_KEY is invalid"
+            case .staticAddressingNotBridged:
+                "Static IPv4 is only for bridged Workloads. NAT uses port forwards."
+            case .staticAddressingNotCloudInit:
+                "Static IPv4 needs a cloud-init image. Installer ISOs: set it in the guest or on the router."
+            case .invalidGuestIPv4: "Enter a valid IPv4 address."
+            case .invalidGuestPrefixLength: "Prefix length must be 1–32."
+            case .invalidGuestGateway: "Enter a valid gateway IPv4."
+            case .invalidGuestNameserver: "Each DNS server must be an IPv4 address."
             }
         }
     }
 
-    /// Same keys as the web wizard `CreateVMRequest`. `networkId` is omitted (implicit NAT).
+    /// Same keys as the web wizard `CreateVMRequest`. `networkId` is omitted for implicit NAT.
     struct Body: Equatable, Encodable {
         var name: String
         var osFamily: String
@@ -138,8 +152,10 @@ enum CreateWorkload {
         var diskSizeGB: Int
         var isoId: String?
         var cloudImageId: String?
+        var networkId: String?
         var workloadClass: String?
         var cloudInit: CloudInitPayload?
+        var guestAddressing: GuestAddressingInfo?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -151,13 +167,15 @@ enum CreateWorkload {
             try container.encode(diskSizeGB, forKey: .diskSizeGB)
             try container.encodeIfPresent(isoId, forKey: .isoId)
             try container.encodeIfPresent(cloudImageId, forKey: .cloudImageId)
+            try container.encodeIfPresent(networkId, forKey: .networkId)
             try container.encodeIfPresent(workloadClass, forKey: .workloadClass)
             try container.encodeIfPresent(cloudInit, forKey: .cloudInit)
+            try container.encodeIfPresent(guestAddressing, forKey: .guestAddressing)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, workloadClass,
-                 cloudInit
+            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, networkId, workloadClass,
+                 cloudInit, guestAddressing
         }
     }
 
@@ -172,12 +190,18 @@ enum CreateWorkload {
         workloadClass: String? = nil,
         openaiBaseURL: String? = nil,
         openaiAPIKey: String? = nil,
+        network: NetworkRecord? = nil,
+        addressing: GuestAddressingDraft? = nil,
     ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DraftError.emptyName }
         guard image.isReady else { throw DraftError.imageNotReady }
         let family = osFamily(for: image)
         let iso = isISO(image)
+        let guestAddressing = try addressing?.payload(
+            bridged: network?.mode.lowercased() == GuestAddressingDraft.networkModeBridged,
+            cloudInit: !iso,
+        )
         let coding = CodingAgentImage.matches(name: image.name)
         let memory = coding ? max(memoryMB(osFamily: family), CodingAgentImage.defaultMemoryMB) : memoryMB(
             osFamily: family,
@@ -215,10 +239,101 @@ enum CreateWorkload {
             diskSizeGB: disk,
             isoId: iso ? image.id : nil,
             cloudImageId: iso ? nil : image.id,
+            networkId: network?.id,
             workloadClass: klass,
             cloudInit: cloudInit,
+            guestAddressing: guestAddressing,
         )
     }
+}
+
+/// Form state for bridged guest addressing, matching the SPA (#385). DHCP is the
+/// default and sends nothing on create; static IPv4 is validated here and sent as
+/// `guestAddressing` so the Device writes NoCloud network-config on the cloud-init ISO.
+struct GuestAddressingDraft: Equatable {
+    static let modeDHCP = "dhcp"
+    static let modeStatic = "static"
+    static let networkModeBridged = "bridged"
+    static let defaultPrefixLength = 24
+
+    var mode: String
+    var ipv4: String
+    var prefixLength: Int?
+    var gateway: String
+    /// Comma- or space-separated IPv4 list, same input shape as the SPA DNS field.
+    var nameservers: String
+
+    init(
+        mode: String = modeDHCP,
+        ipv4: String = "",
+        prefixLength: Int? = defaultPrefixLength,
+        gateway: String = "",
+        nameservers: String = "",
+    ) {
+        self.mode = mode
+        self.ipv4 = ipv4
+        self.prefixLength = prefixLength
+        self.gateway = gateway
+        self.nameservers = nameservers
+    }
+
+    /// Prefill the edit form from the Workload's current addressing.
+    init(info: GuestAddressingInfo?) {
+        self.init(
+            mode: info?.isStatic == true ? Self.modeStatic : Self.modeDHCP,
+            ipv4: info?.ipv4 ?? "",
+            prefixLength: info?.prefixLength ?? Self.defaultPrefixLength,
+            gateway: info?.gateway ?? "",
+            nameservers: (info?.nameservers ?? []).joined(separator: ", "),
+        )
+    }
+
+    var isStatic: Bool {
+        mode == Self.modeStatic
+    }
+
+    /// Create payload: DHCP (or an ineligible form) sends nothing. Static on NAT or an
+    /// installer ISO is refused, same as the SPA and the server.
+    func payload(bridged: Bool, cloudInit: Bool) throws -> GuestAddressingInfo? {
+        guard isStatic else { return nil }
+        guard bridged else { throw CreateWorkload.DraftError.staticAddressingNotBridged }
+        guard cloudInit else { throw CreateWorkload.DraftError.staticAddressingNotCloudInit }
+        return try validatedStatic()
+    }
+
+    /// Edit payload: DHCP is sent as `{ "mode": "dhcp" }` so static reverts to LAN DHCP.
+    func editPayload() throws -> GuestAddressingInfo {
+        guard isStatic else { return GuestAddressingInfo(mode: Self.modeDHCP) }
+        return try validatedStatic()
+    }
+
+    private func validatedStatic() throws -> GuestAddressingInfo {
+        let ip = ipv4.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isIPv4(ip) else { throw CreateWorkload.DraftError.invalidGuestIPv4 }
+        guard let prefix = prefixLength, (1 ... 32).contains(prefix) else {
+            throw CreateWorkload.DraftError.invalidGuestPrefixLength
+        }
+        let gw = gateway.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isIPv4(gw) else { throw CreateWorkload.DraftError.invalidGuestGateway }
+        let servers = nameservers.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map(String.init)
+        for server in servers where !Self.isIPv4(server) {
+            throw CreateWorkload.DraftError.invalidGuestNameserver
+        }
+        return GuestAddressingInfo(
+            mode: Self.modeStatic,
+            ipv4: ip,
+            prefixLength: prefix,
+            gateway: gw,
+            nameservers: servers.isEmpty ? nil : servers,
+        )
+    }
+
+    static func isIPv4(_ value: String) -> Bool {
+        value.wholeMatch(of: ipv4Pattern) != nil
+    }
+
+    /// Same octet rule as the SPA `validateGuestAddressing`.
+    private static let ipv4Pattern = #/(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}/#
 }
 
 extension LibraryImage {

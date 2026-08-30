@@ -120,7 +120,7 @@ enum WorkloadGuestSummary {
 
     static func macGuidance(bridged: Bool, cloudInit: Bool) -> String {
         if bridged, cloudInit {
-            return "Paste this MAC into your router for a DHCP reservation. Or set a static IPv4 on the Workload in the web UI."
+            return "Paste this MAC into your router for a DHCP reservation. Or set a static IPv4 here — cloud-init writes it on next boot."
         }
         return "Set the address in the guest or on the router. BarkVisor did not configure the OS."
     }
