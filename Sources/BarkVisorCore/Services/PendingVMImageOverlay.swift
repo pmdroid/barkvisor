@@ -4,10 +4,12 @@ import GRDB
 public struct PendingVMImageOverlay: Sendable, Equatable {
     public var pendingImageId: String
     public var downloadPercent: Int?
+    public var imageStatus: String?
 
-    public init(pendingImageId: String, downloadPercent: Int?) {
+    public init(pendingImageId: String, downloadPercent: Int?, imageStatus: String? = nil) {
         self.pendingImageId = pendingImageId
         self.downloadPercent = downloadPercent
+        self.imageStatus = imageStatus
     }
 
     public static func load(
@@ -36,6 +38,7 @@ public struct PendingVMImageOverlay: Sendable, Equatable {
                     status: status,
                     lastProgress: lastProgress[row.imageId],
                 ),
+                imageStatus: status,
             )
         }
         return out

@@ -47,17 +47,14 @@ extension VMController {
         let signals = try await healthSignals(for: vm, db: db)
         let overlays = try await pendingOverlays(vmIDs: [vm.id], db: db)
         let overlay = overlays[vm.id]
-        return VMResponse(
-            from: vm,
-            signals: signals,
-            pendingImageId: overlay?.pendingImageId,
-            downloadPercent: overlay?.downloadPercent,
-        )
+        let lastProgress = await lastProgress(for: overlays)
+        return await vmResponse(vm, signals: signals, overlay: overlay, lastProgressMap: lastProgress)
     }
 
     func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
         let lastSeen = try await GuestHealthStore.lastSeen(ids: vms.map(\.id), db: db)
         let overlays = try await pendingOverlays(vmIDs: vms.map(\.id), db: db)
+        let lastProgress = await lastProgress(for: overlays)
         var responses: [VMResponse] = []
         responses.reserveCapacity(vms.count)
         for vm in vms {
@@ -66,14 +63,13 @@ extension VMController {
                 for: vm, lastSeenAt: lastSeen[vm.id], probes: probes,
             )
             let overlay = overlays[vm.id]
-            responses.append(
-                VMResponse(
-                    from: vm,
-                    signals: signals,
-                    pendingImageId: overlay?.pendingImageId,
-                    downloadPercent: overlay?.downloadPercent,
-                ),
+            let response = await vmResponse(
+                vm,
+                signals: signals,
+                overlay: overlay,
+                lastProgressMap: lastProgress,
             )
+            responses.append(response)
         }
         return responses
     }
@@ -87,6 +83,42 @@ extension VMController {
         return try await db.read { db in
             try PendingVMImageOverlay.load(db: db, vmIDs: vmIDs, lastProgress: lastProgress)
         }
+    }
+
+    private func vmResponse(
+        _ vm: VM,
+        signals: WorkloadHealthSignals,
+        overlay: PendingVMImageOverlay?,
+        lastProgressMap: [String: ImageProgressEvent],
+    ) async -> VMResponse {
+        let progress = overlay.flatMap { lastProgressMap[$0.pendingImageId] }
+        let task = await provisionTask(for: vm.id)
+        return VMResponse(
+            from: vm,
+            signals: signals,
+            pendingImageId: overlay?.pendingImageId,
+            downloadPercent: overlay?.downloadPercent,
+            lastProgress: progress,
+            provisionTaskStatus: task?.status,
+            imageStatus: overlay?.imageStatus,
+        )
+    }
+
+    private func lastProgress(
+        for overlays: [String: PendingVMImageOverlay],
+    ) async -> [String: ImageProgressEvent] {
+        let imageIDs = overlays.values.map(\.pendingImageId)
+        if imageIDs.isEmpty { return [:] }
+        return await imageDownloader.lastProgress(imageIDs: imageIDs)
+    }
+
+    private func provisionTask(for vmID: String) async -> BackgroundTaskManager.TaskEvent? {
+        for id in WorkloadCreationProgressProjector.provisionTaskIDs(vmID: vmID) {
+            if let event = await backgroundTasks.status(id) {
+                return event
+            }
+        }
+        return nil
     }
 
     private func projectHealth(_ vm: VM, db: DatabasePool) async throws -> WorkloadHealthStatus {
