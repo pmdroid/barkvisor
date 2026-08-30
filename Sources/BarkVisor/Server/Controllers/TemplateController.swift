@@ -231,15 +231,22 @@ struct TemplateController: RouteCollection {
                 action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
             let image = try await req.db.read { db in try VMImage.fetchOne(db, key: imageId) }
-            let percent = await ImageTransferPercent.current(
+            let progress = await imageDownloader.lastProgress(imageID: imageId)
+            let percent = ImageTransferPercent.current(
                 status: image?.status,
-                lastProgress: imageDownloader.lastProgress(imageID: imageId),
+                lastProgress: progress,
             )
             let body = DeployTemplateResponse(
                 status: "downloading",
                 imageId: imageId,
                 taskID: nil,
-                vm: VMResponse(from: vm, pendingImageId: imageId, downloadPercent: percent),
+                vm: VMResponse(
+                    from: vm,
+                    pendingImageId: imageId,
+                    downloadPercent: percent,
+                    lastProgress: progress,
+                    imageStatus: image?.status,
+                ),
             )
             return try Response.json(body, status: .accepted)
 
@@ -257,7 +264,10 @@ struct TemplateController: RouteCollection {
                 action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
             let body = DeployTemplateResponse(
-                status: "provisioning", imageId: nil, taskID: taskID, vm: VMResponse(from: vm),
+                status: "provisioning",
+                imageId: nil,
+                taskID: taskID,
+                vm: VMResponse(from: vm, provisionTaskStatus: .running),
             )
             // 202 Accepted — client polls taskID (same pattern as POST /api/vms cloud-image create).
             return try Response.json(body, status: .accepted)

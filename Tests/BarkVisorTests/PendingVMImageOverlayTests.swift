@@ -22,6 +22,7 @@ struct PendingVMImageOverlayTests {
         }
         #expect(overlays["vm-1"]?.pendingImageId == "img-1")
         #expect(overlays["vm-1"]?.downloadPercent == 42)
+        #expect(overlays["vm-1"]?.imageStatus == "downloading")
         #expect(
             ImageTransferPercent.current(status: "downloading", lastProgress: last["img-1"]) == 42,
         )

@@ -40,12 +40,16 @@ struct VMResponse: Content {
     let updatedAt: String
     let pendingImageId: String?
     let downloadPercent: Int?
+    let creationProgress: WorkloadCreationProgress
 
     init(
         from vm: VM,
         signals: WorkloadHealthSignals = .unobserved,
         pendingImageId: String? = nil,
         downloadPercent: Int? = nil,
+        lastProgress: ImageProgressEvent? = nil,
+        provisionTaskStatus: BackgroundTaskManager.TaskStatus? = nil,
+        imageStatus: String? = nil,
     ) {
         let spec = WorkloadSpecProjector.fromVM(vm)
         self.spec = spec
@@ -93,6 +97,20 @@ struct VMResponse: Content {
         }
         self.pendingImageId = pendingImageId
         self.downloadPercent = downloadPercent
+        let overlay = pendingImageId.map {
+            PendingVMImageOverlay(
+                pendingImageId: $0,
+                downloadPercent: downloadPercent,
+                imageStatus: imageStatus,
+            )
+        }
+        self.creationProgress = WorkloadCreationProgressProjector.project(
+            vmState: vm.state,
+            overlay: overlay,
+            lastProgress: lastProgress,
+            provisionTaskStatus: provisionTaskStatus,
+            imageStatus: imageStatus,
+        )
     }
 }
 
@@ -315,7 +333,10 @@ struct VMController: RouteCollection {
                 action: "vm.create", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
             return try Response.json(
-                VMTaskAcceptedResponse(taskID: taskID, vm: VMResponse(from: vm)),
+                VMTaskAcceptedResponse(
+                    taskID: taskID,
+                    vm: VMResponse(from: vm, provisionTaskStatus: .running),
+                ),
                 status: .accepted,
             )
         }

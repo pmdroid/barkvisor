@@ -2833,6 +2833,7 @@ components:
         - pendingChanges
         - createdAt
         - updatedAt
+        - creationProgress
       properties:
         spec:
           $ref: "#/components/schemas/WorkloadSpec"
@@ -2928,17 +2929,47 @@ components:
         pendingImageId:
           type: string
           nullable: true
+          deprecated: true
           description: >
-            Library image this VM is waiting on while a pending deploy exists.
-            Null when there is no pending deploy.
+            Library image this Workload is waiting on while a pending deploy exists.
+            Null when there is no pending deploy. Prefer creationProgress.
         downloadPercent:
           type: integer
           minimum: 0
           maximum: 100
           nullable: true
+          deprecated: true
           description: >
             In-flight download percent (0-100) for pendingImageId.
             Null when total size is unknown, the image is ready, or no pending deploy.
+            Prefer creationProgress.
+        creationProgress:
+          $ref: "#/components/schemas/WorkloadCreationProgress"
+
+    WorkloadCreationProgress:
+      type: object
+      description: >
+        Create-phase overlay projected at read time from pending Library image,
+        download progress, provision task, and Workload state. Not persisted.
+      required: [phase]
+      properties:
+        phase:
+          type: string
+          enum:
+            - initiating
+            - downloading
+            - decompressing
+            - provisioning
+            - created
+            - failed
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: >
+            In-flight download percent (0-100) while phase is downloading.
+            Null for other phases and when total size is unknown.
 
     CodingAgentSession:
       type: object

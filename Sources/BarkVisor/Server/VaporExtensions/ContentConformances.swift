@@ -18,6 +18,7 @@ extension WorkloadSpec: Content {}
 extension WorkloadApplyResult: Content {}
 extension VMRuntimeStatus: Content {}
 extension WorkloadHealthStatus: Content {}
+extension WorkloadCreationProgress: Content {}
 extension WorkloadHealthSummary: Content {}
 extension WorkloadHealthSpec: Content {}
 extension ProcessHealthStatus: Content {}

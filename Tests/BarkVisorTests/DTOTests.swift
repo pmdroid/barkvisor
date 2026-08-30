@@ -194,6 +194,10 @@ struct DTOTests {
         #expect(dict?["uefi"] as? Bool == true)
         #expect(response.pendingImageId == nil)
         #expect(response.downloadPercent == nil)
+        #expect(response.creationProgress.phase == .created)
+        #expect(dict?["creationProgress"] is [String: Any])
+        let progress = dict?["creationProgress"] as? [String: Any]
+        #expect(progress?["phase"] as? String == "created")
     }
 
     @Test func `vm response encodes pending image while downloading`() throws {
@@ -210,11 +214,16 @@ struct DTOTests {
         #expect(response.state == "provisioning")
         #expect(response.pendingImageId == "img-1")
         #expect(response.downloadPercent == 42)
+        #expect(response.creationProgress.phase == .downloading)
+        #expect(response.creationProgress.percent == 42)
         let data = try JSONEncoder().encode(response)
         let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(dict?["pendingImageId"] as? String == "img-1")
         #expect(dict?["downloadPercent"] as? Int == 42)
         #expect(dict?["state"] as? String == "provisioning")
+        let progress = dict?["creationProgress"] as? [String: Any]
+        #expect(progress?["phase"] as? String == "downloading")
+        #expect(progress?["percent"] as? Int == 42)
     }
 
     @Test func `vm state event decodes pending image keys`() throws {
