@@ -8,7 +8,7 @@ Words: **Home**, **Device**, **Workload**. Host addressing on `br0` is this Devi
 
 ## Toolbar
 
-- **Bridge setup** — Linux Apply/Revert for `br0`; macOS Setup/Start/Stop for `socket_vmnet`. Copyable commands stay on the sheet.
+- **Bridge setup** — Apply/Revert Device address (DHCP or static) on Linux `br0` and macOS `socket_vmnet`. Copyable commands stay on the sheet.
 - **Create Network** — opens the create modal
 
 ## The list
@@ -24,7 +24,7 @@ Selecting a network shows:
 - Attached Workloads
 - Interfaces table
 
-Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) plus **Setup / Start / Stop** on a Mac Device, then **Re-check**. NAT still works when `socket_vmnet` is down.
+Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) plus **Apply / Revert**, then **Re-check**. NAT still works when `socket_vmnet` is down.
 
 ## Bridge setup
 
@@ -57,7 +57,7 @@ Install the formula as your user:
 brew install socket_vmnet
 ```
 
-Do not `sudo brew install`. The root daemon starts and stops a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service). NAT Workloads work with the service down. The Mac LAN NIC is not enslaved.
+Do not `sudo brew install`. Open **Networks → Bridge setup**. Set **Device address** to DHCP or static, then **Apply**. **Revert** restores the previous Device address. Copyable `networksetup` commands stay on the page and use the resolved hardware-port name. NAT Workloads work with the service down. The Mac LAN NIC is not enslaved.
 
 ## Create Network
 

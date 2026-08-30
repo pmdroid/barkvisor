@@ -82,7 +82,7 @@ Linux install guide: [Installation (Linux)](getting-started-linux.md).
 
 - **QEMU not found:** install distro QEMU (see the Linux install checklist).
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** use **Networks → Bridge setup → Apply**, or run the equivalent commands on that page. Rollback is a host timer. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
+- **Bridge fails:** use **Networks → Bridge setup → Device address (DHCP/static) → Apply/Revert**, or run the equivalent commands on that page. Rollback is a host timer. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
 - **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. The daemon is root; dropped QEMU needs group `kvm` when KVM is present.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
@@ -188,7 +188,7 @@ sudo launchctl kickstart system/dev.barkvisor
 
 ### macOS: Homebrew socket_vmnet
 
-On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. Install the package as your user (`brew install socket_vmnet`). Do not `sudo brew install`. The root Device daemon starts a BarkVisor-owned plist via launchctl. There is no XPC helper.
+On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. Install the package as your user (`brew install socket_vmnet`). Do not `sudo brew install`. Then use the same sheet as Linux: **Networks → Bridge setup → Device address (DHCP/static) → Apply/Revert**. Copyable `networksetup` commands stay on that page. There is no XPC helper.
 
 ```sh
 brew install socket_vmnet
@@ -196,7 +196,7 @@ brew install socket_vmnet
 
 The default service socket is `/opt/homebrew/var/run/socket_vmnet` (Intel Homebrew: `/usr/local/var/run/socket_vmnet`). If a Workload cannot attach:
 
-- Confirm the service is started
+- Confirm **Bridge setup** Applied and Re-check is green
 - Confirm the socket file exists
 - NAT Workloads do not need this service
 
@@ -212,7 +212,7 @@ NAT Workloads do not need `socket_vmnet`.
 
 ### Linux: host bridge
 
-On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. Prefer **Networks → Bridge setup → Apply**. See [Bridged networking](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
+On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. Prefer **Networks → Bridge setup → Device address (DHCP/static) → Apply/Revert**. See [Bridged networking](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
 
 ## Frontend
 

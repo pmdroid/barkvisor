@@ -55,14 +55,47 @@ struct ApplianceDocsTests {
         let text = try read("docs/using-networks.md")
         #expect(text.contains("Apply"))
         #expect(text.contains("Revert"))
+        #expect(text.contains("Device address"))
         #expect(text.contains("host timer"))
         #expect(text.contains("Wi-Fi is refused"))
         #expect(text.contains("linux-bridge-apply.sh"))
         #expect(text.contains("brew install socket_vmnet"))
         #expect(text.contains("Do not `sudo brew install`"))
         #expect(text.contains("Guest static IP"))
+        #expect(text.contains("networksetup"))
+        #expect(!text.contains("Setup/Start/Stop"))
+        #expect(!text.contains("Setup / Start / Stop"))
         #expect(!text.contains("cluster"))
         #expect(!text.contains("quorum"))
+    }
+
+    @Test func `getting started bridge docs match linux and macos apply revert`() throws {
+        let files = [
+            "docs/getting-started-first-launch.md",
+            "docs/getting-started-troubleshooting.md",
+            "docs/getting-started-linux.md",
+            "docs/getting-started-installation.md",
+            "docs/using-networks.md",
+            "website/src/content/docs/docs/using/networks.md",
+        ]
+        for relative in files {
+            let text = try read(relative)
+            #expect(text.contains("Bridge setup"), "\(relative) missing Bridge setup")
+            #expect(text.contains("Device address"), "\(relative) missing Device address")
+            #expect(text.contains("Apply"), "\(relative) missing Apply")
+            #expect(text.contains("Revert") || text.contains("Apply/Revert"), "\(relative) missing Revert")
+            #expect(text.contains("DHCP"), "\(relative) missing DHCP")
+            #expect(!text.contains("Setup/Start/Stop"), "\(relative) still has Setup/Start/Stop")
+            #expect(!text.contains("Setup / Start / Stop"), "\(relative) still has Setup / Start / Stop")
+        }
+        let firstLaunch = try read("docs/getting-started-first-launch.md")
+        #expect(firstLaunch.contains("networksetup"))
+        let troubleshooting = try read("docs/getting-started-troubleshooting.md")
+        #expect(troubleshooting.contains("networksetup"))
+        let changelog = try read("docs/changelog.md")
+        #expect(!changelog.contains("Setup/Start/Stop"))
+        let siteChange = try read("website/src/content/docs/docs/changelog.md")
+        #expect(!siteChange.contains("Setup/Start/Stop"))
     }
 
     @Test func `settings docs include updates tab`() throws {

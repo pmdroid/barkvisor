@@ -77,7 +77,7 @@ brew install qemu swtpm socket_vmnet
 
 Do not `sudo brew install`. Do not `brew upgrade barkvisor`. The Homebrew keg is not the appliance channel. App updates are [Settings → Updates](settings-updates.md).
 
-The root Device daemon starts `socket_vmnet` through a BarkVisor-owned LaunchDaemon. NAT Workloads do not need that service.
+Open **Networks → Bridge setup**. Set **Device address** to DHCP or static, then **Apply**. **Revert** restores the previous Device address. NAT Workloads do not need `socket_vmnet`.
 
 ## Root daemon
 

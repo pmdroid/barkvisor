@@ -17,7 +17,7 @@ When BarkVisor starts for the first time:
 
 Open your browser and navigate to `http://localhost:7777`. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, the UI presents a setup wizard.
 
-Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, install Homebrew `socket_vmnet` as your user. The root Device daemon starts it. Linux applies `br0` from **Networks → Bridge setup**. NAT works without either.
+Screenshots below were captured from a first-run setup on **Linux** (OrbStack). Bridged networking on macOS and Linux is the same sheet: **Networks → Bridge setup → Device address (DHCP/static) → Apply/Revert**. NAT works without that.
 
 ### 1. Welcome
 
@@ -79,17 +79,17 @@ NAT works out of the box on every host. Bridged networking uses the native path 
 
 ### macOS
 
-Install **socket_vmnet** with Homebrew as your user. Do not `sudo brew install`. The root Device daemon starts the service via launchctl. There is no XPC helper:
+Install **socket_vmnet** with Homebrew as your user. Do not `sudo brew install`.
 
 ```sh
 brew install socket_vmnet
 ```
 
-NAT Workloads work without this.
+Then open **Networks → Bridge setup**. Set **Device address** to DHCP or static and **Apply**. **Revert** restores the previous Device address. Equivalent `networksetup` commands stay on that page. There is no XPC helper. NAT Workloads work without this.
 
 ### Linux
 
-Open **Networks → Bridge setup → Apply**. Equivalent commands stay on that page. Rollback is a host timer, not a browser Confirm after the uplink dies. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
+Open **Networks → Bridge setup**. Set **Device address** to DHCP or static and **Apply**. **Revert** removes the tagged host files. Equivalent commands stay on that page. Rollback is a host timer, not a browser Confirm after the uplink dies. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
 
 ## Catalog Sync
 

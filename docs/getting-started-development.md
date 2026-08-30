@@ -329,7 +329,8 @@ BarkVisor does not ship a privileged helper. For bridged/vmnet on macOS:
 brew install socket_vmnet
 ```
 
-Do not `sudo brew install`. A root Device starts socket_vmnet via launchctl.
+Do not `sudo brew install`. Bridged networking uses **Networks → Bridge
+setup → Device address (DHCP/static) → Apply/Revert**, same as Linux.
 Dev instances that are not root still need a running socket. NAT Workloads
 do not need that service. `APPLE_TEAM_ID` is still required when notarizing
 a release pkg, not for a helper.

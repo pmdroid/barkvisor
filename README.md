@@ -197,8 +197,8 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 ### Getting Started (source Markdown)
 
 - [Installation (macOS)](docs/getting-started-installation.md) — Apple Silicon `.pkg`, inspect-then-run bootstrap, Settings → Updates
-- [Installation (Linux)](docs/getting-started-linux.md) — Ubuntu / Debian `.deb`, root systemd, Networks Apply
-- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, socket_vmnet (macOS) vs host bridge (Linux)
+- [Installation (Linux)](docs/getting-started-linux.md) — Ubuntu / Debian `.deb`, root systemd, Networks Apply/Revert
+- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, Bridge setup Device address Apply/Revert on macOS and Linux
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing
 - [Ollama](docs/ollama.md) — Install, pull, Start, library search

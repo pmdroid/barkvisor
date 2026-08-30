@@ -14,3 +14,8 @@ Feature: Host-bridge Apply and Revert
     Given Sources/BarkVisor/Server/Controllers/System/SystemBridgeController.swift
     Then the file does not contain socketVmnetApply or parseSocketAction
     And POST and DELETE call linuxApply or macHostApply only
+
+  Scenario: getting-started docs match Apply Revert Device address
+    Given docs/getting-started-first-launch.md and docs/getting-started-troubleshooting.md
+    Then macOS and Linux describe Networks Bridge setup Device address DHCP or static then Apply and Revert
+    And user-facing docs do not say Setup/Start/Stop for Bridge setup
