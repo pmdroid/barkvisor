@@ -292,6 +292,41 @@ final class AppModel {
         }
     }
 
+    func signInWithPasskey() async {
+        #if os(iOS) || os(macOS)
+            banner = nil
+            let url: URL
+            do {
+                url = try DeviceURL.normalize(serverURLText)
+            } catch {
+                banner = error.localizedDescription
+                return
+            }
+            if let block = PasskeySupport.passkeyBlock(for: url) {
+                banner = block.message
+                return
+            }
+            busy = true
+            defer { busy = false }
+            do {
+                serverURLText = url.absoluteString
+                var api = APIClient(baseURL: url, token: nil)
+                let begin = try await api.beginPasskeyLogin()
+                let credential = try await PasskeyAuth.performLogin(publicKey: begin.publicKey.value)
+                let session = try await api.finishPasskeyLogin(sessionId: begin.sessionId, credential: credential)
+                persistSession(session, origin: url)
+                password = ""
+                try await refreshAll()
+                phase = .ready
+                startPolling()
+            } catch APIError.setupRequired {
+                phase = .setupRequired
+            } catch {
+                banner = error.localizedDescription
+            }
+        #endif
+    }
+
     func logout() {
         let presented = refreshToken
         let url = sessionURL
@@ -779,6 +814,99 @@ final class AppModel {
                 addressing: addressing,
             )
             let created = try await requireClient().createWorkload(body, on: device)
+            await refreshDeviceScoped()
+            await refreshHomeUnion()
+            return created
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
+    func templateList(on device: HomeDeviceHealthSnapshot?) async -> [VMTemplateRecord]? {
+        guard device?.isReachable != false else { return nil }
+        do {
+            return try await requireClient().templates(on: device)
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
+    func sshKeyList() async -> [SSHKeyRecord]? {
+        do {
+            return try await requireClient().sshKeys()
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
+    func diskList(on device: HomeDeviceHealthSnapshot) async -> [DiskRecord]? {
+        guard device.isReachable else { return nil }
+        do {
+            return try await requireClient().disks(on: device)
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
+    func createFromWizard(
+        kind: CreateVMWizard.GalleryKind,
+        name: String,
+        device: HomeDeviceHealthSnapshot,
+        template: VMTemplateRecord?,
+        templateInputs: [String: String],
+        image: LibraryImage?,
+        sshKey: SSHKeyRecord?,
+        preset: CreateVMWizard.SizePreset,
+        network: NetworkRecord?,
+        addressing: GuestAddressingDraft,
+        diskSource: CreateVMWizard.DiskSource,
+        diskSizeGB: Int,
+        existingDiskID: String,
+        workloadClass: String,
+        openaiBaseURL: String?,
+        openaiAPIKey: String?,
+    ) async -> Workload? {
+        let key = "create/\(device.hostId)"
+        actionIDs.insert(key)
+        defer { actionIDs.remove(key) }
+        do {
+            let client = try requireClient()
+            if kind == .template, let template {
+                let body = DeployTemplateBody(
+                    templateId: template.id,
+                    vmName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    inputs: CreateVMWizard.deployInputs(template: template, values: templateInputs, sshKey: sshKey),
+                    cpuCount: preset.cpu,
+                    memoryMB: preset.memoryMB,
+                    diskSizeGB: diskSource == .new ? diskSizeGB : nil,
+                    networkId: network?.id,
+                )
+                let created = try await client.deployTemplate(body, on: device)
+                await refreshDeviceScoped()
+                await refreshHomeUnion()
+                return created
+            }
+            guard let image else { return nil }
+            let body = try CreateWorkload.wizardBody(
+                name: name,
+                image: image,
+                hostCPUCount: device.resources?.cpuCount,
+                preset: preset,
+                diskSource: diskSource,
+                diskSizeGB: diskSizeGB,
+                existingDiskID: existingDiskID,
+                workloadClass: workloadClass,
+                openaiBaseURL: openaiBaseURL,
+                openaiAPIKey: openaiAPIKey,
+                network: network,
+                addressing: addressing,
+                sshPublicKey: sshKey?.publicKey,
+            )
+            let created = try await client.createWorkload(body, on: device)
             await refreshDeviceScoped()
             await refreshHomeUnion()
             return created
