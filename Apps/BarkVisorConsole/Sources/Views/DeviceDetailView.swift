@@ -74,6 +74,27 @@ struct DeviceDetailView: View {
                         }
                     }
                 }
+
+                Section("Doctor") {
+                    if deviceCaps == nil {
+                        Text(DeviceDoctor.loadFailedCopy)
+                            .foregroundStyle(.secondary)
+                    } else if doctorRows.isEmpty {
+                        Text(DeviceDoctor.emptyCopy)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(doctorRows, id: \.code) { detail in
+                            LabeledContent(
+                                DeviceDoctor.title(for: detail.code),
+                                value: DeviceDoctor.statusLabel(supported: detail.supported),
+                            )
+                            if let note = DeviceDoctor.note(for: detail) {
+                                Text(note)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
 
             if !DeviceStatsHistory.shouldFetch(device) {
@@ -188,6 +209,10 @@ struct DeviceDetailView: View {
 
     private var device: HomeDeviceHealthSnapshot {
         model.devices.first(where: { $0.hostId == deviceID }) ?? fallbackDevice
+    }
+
+    private var doctorRows: [CapabilityDetail] {
+        DeviceDoctor.rows(from: deviceCaps)
     }
 
     private var cpuNow: String {

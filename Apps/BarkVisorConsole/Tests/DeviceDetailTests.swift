@@ -142,6 +142,98 @@ struct DeviceDetailTests {
         )
     }
 
+    @Test func `doctor decodes details with reason and remediation`() throws {
+        let json = """
+        {
+          "platform": "Linux",
+          "supportsGPUPassthrough": false,
+          "details": [
+            {
+              "code": "kvmDevice",
+              "supported": false,
+              "reasonCode": "kvm_missing",
+              "remediation": "KVM is not available (/dev/kvm missing). Guests run under TCG (software emulation)."
+            },
+            {
+              "code": "tcgOnly",
+              "supported": true,
+              "reasonCode": "kvm_missing",
+              "remediation": "This host is using TCG software emulation (no hardware accelerator)."
+            },
+            { "code": "usbPassthrough", "supported": true },
+            { "code": "futureProbe", "supported": false, "reasonCode": "os_unsupported" }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let caps = try decoder.decode(SystemCapabilities.self, from: json)
+        let rows = DeviceDoctor.rows(from: caps)
+        #expect(rows.count == 4)
+
+        let kvm = try #require(caps.detail(code: "kvmDevice"))
+        #expect(kvm.supported == false)
+        #expect(kvm.reasonCode == "kvm_missing")
+        #expect(kvm.remediation?.contains("/dev/kvm") == true)
+        #expect(DeviceDoctor.title(for: kvm.code) == "KVM device")
+        #expect(DeviceDoctor.statusLabel(supported: kvm.supported) == "Not supported")
+        #expect(DeviceDoctor.note(for: kvm)?.contains("/dev/kvm") == true)
+
+        // tcgOnly is supported yet degraded: the server note still shows.
+        let tcg = try #require(caps.detail(code: "tcgOnly"))
+        #expect(tcg.supported)
+        #expect(DeviceDoctor.title(for: tcg.code) == "TCG software emulation")
+        #expect(DeviceDoctor.statusLabel(supported: tcg.supported) == "Supported")
+        #expect(DeviceDoctor.note(for: tcg)?.contains("TCG") == true)
+
+        let usb = try #require(caps.detail(code: "usbPassthrough"))
+        #expect(DeviceDoctor.note(for: usb) == nil)
+
+        // Unknown codes fall back to the raw code so new server rows still render.
+        #expect(DeviceDoctor.title(for: "futureProbe") == "futureProbe")
+        #expect(DeviceDoctor.note(for: try #require(caps.detail(code: "futureProbe"))) == nil)
+    }
+
+    @Test func `doctor path uses local api or home proxy`() throws {
+        let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio")
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        #expect(client.scoped("/system/capabilities", on: nil) == "/api/system/capabilities")
+        #expect(client.scoped("/system/capabilities", on: studio) == "/api/system/capabilities")
+        #expect(
+            client.scoped("/system/capabilities", on: living)
+                == "/api/home/devices/peer/v1/system/capabilities",
+        )
+        let slashMember = snapshot(hostId: "peer/1", role: "member", title: "Slash")
+        #expect(
+            client.scoped("/system/capabilities", on: slashMember)
+                == "/api/home/devices/peer%2F1/v1/system/capabilities",
+        )
+    }
+
+    @Test func `unreachable device skips doctor fetch`() {
+        let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: false)
+        // Same rule as stats: unreachable members skip the capabilities fetch.
+        #expect(!DeviceStatsHistory.shouldFetch(garage))
+        #expect(DeviceStatsHistory.shouldFetch(studio))
+        // No capabilities document means no doctor rows, never invented ones.
+        #expect(DeviceDoctor.rows(from: nil).isEmpty)
+        #expect(DeviceDoctor.rows(from: SystemCapabilities(platform: "Linux")).isEmpty)
+    }
+
+    @Test func `device detail lists doctor rows from capabilities details`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/DeviceDetailView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("Section(\"Doctor\")"))
+        #expect(source.contains("DeviceDoctor.rows(from: deviceCaps)"))
+        #expect(source.contains("DeviceDoctor.note(for: detail)"))
+        #expect(!source.contains("system/doctor"))
+    }
+
     @Test func `resources line is cpu and memory never gpu`() {
         var studio = snapshot(hostId: "self", role: "self", title: "Studio")
         studio.platform = HomeDevicePlatformSummary(os: "macOS", arch: "arm64")
