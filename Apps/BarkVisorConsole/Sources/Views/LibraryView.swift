@@ -166,13 +166,16 @@ struct DisksView: View {
                 .platformListStyle()
             }
         }
+        .task { await model.open(.disks) }
     }
 }
 
 struct NetworksView: View {
     @Environment(AppModel.self) private var model
-    @State private var applyBusy = false
-    @State private var applyNote: String?
+    #if os(macOS)
+        @State private var applyBusy = false
+        @State private var applyNote: String?
+    #endif
 
     var body: some View {
         List {
@@ -188,69 +191,74 @@ struct NetworksView: View {
                     }
                 }
             }
-            if model.capabilities?.linuxHostBridgeApplySupported == true {
-                Section("Host bridge") {
-                    Text("Apply persists br0 on this Device. Equivalent commands stay in the web UI. Rollback is a host timer.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    if let applyNote {
-                        Text(applyNote)
+            #if os(macOS)
+                if model.capabilities?.linuxHostBridgeApplySupported == true {
+                    Section("Host bridge") {
+                        Text("Apply persists br0 on this Device. Equivalent commands stay in the web UI. Rollback is a host timer.")
                             .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        if let applyNote {
+                            Text(applyNote)
+                                .font(.footnote)
+                        }
+                        Button("Apply br0") {
+                            Task { await runBridge(action: "apply") }
+                        }
+                        .disabled(applyBusy)
+                        Button("Revert BarkVisor files") {
+                            Task { await runBridge(action: "revert") }
+                        }
+                        .disabled(applyBusy)
                     }
-                    Button("Apply br0") {
-                        Task { await runBridge(action: "apply") }
-                    }
-                    .disabled(applyBusy)
-                    Button("Revert BarkVisor files") {
-                        Task { await runBridge(action: "revert") }
-                    }
-                    .disabled(applyBusy)
                 }
-            }
-            if model.capabilities?.macosSocketVmnetSupported == true {
-                Section("socket_vmnet") {
-                    Text("The Device starts Homebrew socket_vmnet. NAT still works when the service is down.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    if let applyNote {
-                        Text(applyNote)
+                if model.capabilities?.macosSocketVmnetSupported == true {
+                    Section("socket_vmnet") {
+                        Text("The Device starts Homebrew socket_vmnet. NAT still works when the service is down.")
                             .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        if let applyNote {
+                            Text(applyNote)
+                                .font(.footnote)
+                        }
+                        Button("Setup") {
+                            Task { await runBridge(action: "setup") }
+                        }
+                        .disabled(applyBusy)
+                        Button("Start") {
+                            Task { await runBridge(action: "start") }
+                        }
+                        .disabled(applyBusy)
+                        Button("Stop") {
+                            Task { await runBridge(action: "stop") }
+                        }
+                        .disabled(applyBusy)
                     }
-                    Button("Setup") {
-                        Task { await runBridge(action: "setup") }
-                    }
-                    .disabled(applyBusy)
-                    Button("Start") {
-                        Task { await runBridge(action: "start") }
-                    }
-                    .disabled(applyBusy)
-                    Button("Stop") {
-                        Task { await runBridge(action: "stop") }
-                    }
-                    .disabled(applyBusy)
                 }
-            }
+            #endif
         }
         .platformListStyle()
+        .task { await model.open(.networks) }
     }
 
-    private func runBridge(action: String) async {
-        guard let client = model.client else { return }
-        applyBusy = true
-        defer { applyBusy = false }
-        do {
-            var result = try await client.applyHostBridge(interface: nil, action: action, confirm: false)
-            if result.needsConfirm == true {
-                result = try await client.applyHostBridge(interface: nil, action: action, confirm: true)
+    #if os(macOS)
+        private func runBridge(action: String) async {
+            guard let client = model.client else { return }
+            applyBusy = true
+            defer { applyBusy = false }
+            do {
+                var result = try await client.applyHostBridge(interface: nil, action: action, confirm: false)
+                if result.needsConfirm == true {
+                    result = try await client.applyHostBridge(interface: nil, action: action, confirm: true)
+                }
+                applyNote = result.message
+                if let changes = result.changes, !changes.isEmpty {
+                    applyNote = ([result.message].compactMap { $0 } + changes).joined(separator: "\n")
+                }
+            } catch {
+                applyNote = error.localizedDescription
             }
-            applyNote = result.message
-            if let changes = result.changes, !changes.isEmpty {
-                applyNote = ([result.message].compactMap { $0 } + changes).joined(separator: "\n")
-            }
-        } catch {
-            applyNote = error.localizedDescription
         }
-    }
+    #endif
 }
 
 struct LogsView: View {
