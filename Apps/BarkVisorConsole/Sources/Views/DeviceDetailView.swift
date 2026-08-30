@@ -26,6 +26,31 @@ struct DeviceDetailView: View {
                 }
             }
 
+            #if os(iOS)
+                Section {
+                    NavigationLink {
+                        DisksView()
+                            .navigationTitle(AppRoute.disks.title)
+                    } label: {
+                        Label(AppRoute.disks.title, systemImage: AppRoute.disks.symbol)
+                    }
+                    NavigationLink {
+                        NetworksView()
+                            .navigationTitle(AppRoute.networks.title)
+                    } label: {
+                        Label(AppRoute.networks.title, systemImage: AppRoute.networks.symbol)
+                    }
+                    NavigationLink {
+                        LogsView()
+                            .navigationTitle(AppRoute.logs.title)
+                    } label: {
+                        Label(AppRoute.logs.title, systemImage: AppRoute.logs.symbol)
+                    }
+                } footer: {
+                    Text("Read-only. Create and the depot path stay in the web UI.")
+                }
+            #endif
+
             if DeviceStatsHistory.shouldFetch(device) {
                 Section("About") {
                     if let deviceAbout {

@@ -2,7 +2,7 @@
 
 Native SwiftUI console for macOS 14+ and iOS 26+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
 
-The UI is stock SwiftUI: `NavigationSplitView` on Mac, a four-tab `TabView` (Home / Library / Devices / Settings) on iOS, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
+The UI is stock SwiftUI: `NavigationSplitView` on Mac, a five-tab `TabView` (Home / Library / Ollama / Devices / Settings) on iOS, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
 
 Product words in the UI: **Home**, **Device**, **Workload**, **Library**.
 
@@ -52,7 +52,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop / ACPI restart. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
-| Library / Disks / Networks / Logs | Library lists images on the Device, downloads from the image catalog (`POST /api/repositories/images/{id}/download`), and can create a Workload from a ready image. Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. |
+| Library / Disks / Networks / Logs | Library lists images on the Device, downloads from the image catalog (`POST /api/repositories/images/{id}/download`), and can create a Workload from a ready image. Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. On iOS they are not tabs: Device detail pushes them onto the navigation stack. |
 | Device detail | Version, platform, arch, accelerator, uptime, and GPU passthrough readiness for that Device. Self uses `/api/system/about` and capabilities; members use `/api/home/devices/{id}/v1/system/...`. Unreachable members keep the unknown copy. |
 | Settings | URL, logout, Add Device pairing code, API keys (`GET/POST/DELETE /api/auth/keys`: list, mint inference-by-default, show-once secret, revoke). Admin-only; 403 is an inline banner. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
 

@@ -31,4 +31,14 @@ struct PhoneTabTests {
         #expect(PhoneTab.home.appRoute == .dashboard)
         #expect(PhoneTab.devices.appRoute == .devices)
     }
+
+    @Test func `disks networks and logs push from Device detail without becoming tabs`() {
+        #expect(PhoneTab.allCases.count == 5)
+        #expect(PhoneTab(route: .disks) == nil)
+        #expect(PhoneTab(route: .networks) == nil)
+        #expect(PhoneTab(route: .logs) == nil)
+        #expect(AppRoute.disks.title == "Disks")
+        #expect(AppRoute.networks.title == "Networks")
+        #expect(AppRoute.logs.title == "Logs")
+    }
 }
