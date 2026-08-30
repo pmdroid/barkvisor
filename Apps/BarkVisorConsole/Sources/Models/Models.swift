@@ -298,7 +298,6 @@ struct Workload: Decodable, Identifiable, Hashable {
     var downloadPercent: Int? = nil
     var macAddress: String? = nil
     var cloudInitPath: String? = nil
-    var guestAddressing: GuestAddressingInfo? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -505,28 +504,6 @@ struct GuestListeningPort: Decodable, Hashable {
         8_384, 8_443, 8_686, 8_888, 8_883, 8_989, 9_000, 9_090, 9_091, 9_443, 9_696,
         11_434, 18_789, 27_017, 32_400,
     ]
-}
-
-/// Guest LAN addressing for a bridged Workload. Same JSON keys as the SPA (#385):
-/// DHCP is the default; static IPv4 is written as NoCloud network-config by the Device.
-struct GuestAddressingInfo: Codable, Hashable {
-    var mode: String
-    var ipv4: String?
-    var prefixLength: Int?
-    var gateway: String?
-    var nameservers: [String]?
-
-    var isStatic: Bool {
-        mode == "static"
-    }
-
-    var summary: String {
-        if isStatic, let ipv4 {
-            if let prefixLength { return "Static \(ipv4)/\(prefixLength)" }
-            return "Static \(ipv4)"
-        }
-        return "DHCP (LAN)"
-    }
 }
 
 struct GuestInfo: Decodable, Hashable {
@@ -1187,6 +1164,9 @@ struct HostBridgeApplyBody: Encodable {
     var interface: String?
     var action: String
     var addressing: String
+    var address: String?
+    var gateway: String?
+    var dns: [String]?
     var confirm: Bool
 }
 
@@ -1368,11 +1348,6 @@ struct WorkloadStopBody: Encodable {
 
 struct WorkloadStartOnBootBody: Encodable, Equatable {
     var startOnBoot: Bool
-}
-
-/// PATCH /vms/:id guest addressing edit. DHCP sends `{ "mode": "dhcp" }` to clear static.
-struct WorkloadGuestAddressingBody: Encodable, Equatable {
-    var guestAddressing: GuestAddressingInfo
 }
 
 struct ISOMediaBody: Encodable {

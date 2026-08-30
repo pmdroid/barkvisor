@@ -58,10 +58,6 @@ extension VM {
         JSONColumnCoding.decode(CodingAgentSessionState.self, from: sessionJson)
     }
 
-    public var decodedGuestAddressing: GuestAddressing? {
-        JSONColumnCoding.decode(GuestAddressing.self, from: guestAddressingJson)
-    }
-
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
@@ -106,13 +102,5 @@ extension VM {
 
     public mutating func setSession(_ session: CodingAgentSessionState?) {
         sessionJson = JSONColumnCoding.encode(session)
-    }
-
-    public mutating func setGuestAddressing(_ addressing: GuestAddressing?) {
-        if let addressing {
-            guestAddressingJson = JSONColumnCoding.encode(addressing)
-        } else {
-            guestAddressingJson = nil
-        }
     }
 }

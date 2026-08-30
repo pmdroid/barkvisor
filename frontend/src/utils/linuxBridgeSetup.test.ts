@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { HostBridgeReadiness } from '../api/types'
 import {
   BRIDGE_MUTATION_ACTION_KEYS,
+  buildLinuxBridgeApplyBody,
+  hostBridgeCanApply,
   hostBridgeSetupPending,
   linuxBridgeApplyCommands,
   linuxBridgeCanApply,
@@ -75,13 +77,11 @@ describe('linuxBridgeSetup (PAS-222)', () => {
 })
 
 describe('macosSocketVmnetSetup', () => {
-  test('fallback is copyable Homebrew commands, not mutation actions', () => {
+  test('fallback includes socket_vmnet install and networksetup examples', () => {
     const groups = macosSocketVmnetSetupGroups(null)
-    expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet'])
-    expect(groups[0].commands).toBe(SOCKET_VMNET_INSTALL_COMMANDS)
+    expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet', 'device-address'])
     expect(groups[0].commands).toContain('brew install socket_vmnet')
-    expect(groups[0].commands).not.toContain('brew services start')
-    expect(groups[0].commands).not.toContain('sudo brew install')
+    expect(groups[1].commands).toContain('networksetup -setdhcp')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -103,7 +103,7 @@ describe('macosSocketVmnetSetup', () => {
     }
   })
 
-  test('ready Device has no command nag', () => {
+  test('ready Device still shows address commands when no server remediations', () => {
     const groups = macosSocketVmnetSetupGroups(
       base({
         ready: true,
@@ -111,7 +111,7 @@ describe('macosSocketVmnetSetup', () => {
         bridges: [{ name: 'en0', enslaved: [] }],
       }),
     )
-    expect(groups).toEqual([])
+    expect(groups.map((g) => g.id)).toEqual(['device-address'])
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -203,5 +203,43 @@ describe('readinessAppliesTo', () => {
     expect(readinessAppliesTo('host-1', 'host-1', 'linux-guide', 'macos-guide')).toBe(false)
     expect(readinessAppliesTo('host-1', 'host-1', 'macos-guide', 'macos-guide')).toBe(true)
     expect(readinessAppliesTo('host-1', 'linux-1', 'macos-guide', 'linux-guide')).toBe(false)
+  })
+
+  test('hostBridgeCanApply is true on macOS with managed bridge + host mutation', () => {
+    expect(hostBridgeCanApply({
+      platform: 'macos',
+      supportsHostMutation: true,
+      supportsManagedBridgeDaemon: true,
+    })).toBe(true)
+    expect(linuxBridgeCanApply({ platform: 'macos', supportsHostMutation: true })).toBe(false)
+  })
+
+  test('buildLinuxBridgeApplyBody sends dhcp or static host fields', () => {
+    expect(buildLinuxBridgeApplyBody({
+      nic: 'eth0',
+      addressing: 'dhcp',
+      confirm: false,
+    })).toEqual({
+      interface: 'eth0',
+      action: 'apply',
+      addressing: 'dhcp',
+      confirm: false,
+    })
+    expect(buildLinuxBridgeApplyBody({
+      nic: 'eth0',
+      addressing: 'static',
+      address: ' 192.168.1.10/24 ',
+      gateway: ' 192.168.1.1 ',
+      dns: '1.1.1.1, 8.8.8.8',
+      confirm: true,
+    })).toEqual({
+      interface: 'eth0',
+      action: 'apply',
+      addressing: 'static',
+      address: '192.168.1.10/24',
+      gateway: '192.168.1.1',
+      dns: ['1.1.1.1', '8.8.8.8'],
+      confirm: true,
+    })
   })
 })

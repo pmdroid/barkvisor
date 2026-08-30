@@ -1,4 +1,4 @@
-import type { HostBridgeReadiness } from '../api/types'
+import type { HostBridgeApplyRequest, HostBridgeReadiness } from '../api/types'
 import type { GuestCommandGroup } from './guestAgentInstall'
 import {
   HOST_BRIDGE_ACL_PATH,
@@ -6,7 +6,7 @@ import {
   HOST_BRIDGE_SUGGESTED,
 } from './hostBridgeFacts'
 
-/** Linux must not render these. macOS Setup/Start/Stop are #379. Remove stays gone. */
+/** Legacy mutation keys — UI uses Apply/Revert on both platforms. Remove stays gone. */
 export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] as const
 export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
 export const MACOS_SOCKET_VMNET_ACTION_KEYS = ['setup', 'start', 'stop'] as const
@@ -104,7 +104,7 @@ export function linuxBridgeStatusSummary(
   return `${name} is not ready for Bridged networks yet. Run the steps below, then Re-check.`
 }
 
-/** Copyable macOS socket_vmnet steps. Prefer remediations from HostBridgeFacts. */
+/** Copyable macOS steps: socket_vmnet + optional networksetup for Device address. */
 export function macosSocketVmnetSetupGroups(
   ready?: HostBridgeReadiness | null,
 ): GuestCommandGroup[] {
@@ -115,14 +115,25 @@ export function macosSocketVmnetSetupGroups(
       commands: step.commands,
     }))
   }
-  if (ready?.ready) return []
-  return [
-    {
+  const iface = ready?.defaultRouteInterface || 'en0'
+  const groups: GuestCommandGroup[] = []
+  if (!ready?.ready) {
+    groups.push({
       id: 'homebrew-socket-vmnet',
       label: 'Install socket_vmnet (the Device starts the service)',
       commands: SOCKET_VMNET_INSTALL_COMMANDS,
-    },
-  ]
+    })
+  }
+  groups.push({
+    id: 'device-address',
+    label: 'Device address (DHCP or static)',
+    commands: [
+      'networksetup -listallhardwareports',
+      `sudo networksetup -setdhcp "Ethernet"  # or your hardware port for ${iface}`,
+      `# Static: sudo networksetup -setmanual "Ethernet" 192.168.1.10 255.255.255.0 192.168.1.1`,
+    ].join('\n'),
+  })
+  return groups
 }
 
 export function macosSocketVmnetStatusSummary(
@@ -141,13 +152,39 @@ export function macosSocketVmnetStatusSummary(
 }
 
 /** Equivalent apply commands. Addressing stays on the script, not the SPA. */
+export function buildLinuxBridgeApplyBody(input: {
+  nic?: string
+  confirm?: boolean
+  addressing: 'dhcp' | 'static'
+  address?: string
+  gateway?: string
+  dns?: string
+}): HostBridgeApplyRequest {
+  const body: HostBridgeApplyRequest = {
+    interface: input.nic,
+    action: 'apply',
+    addressing: input.addressing,
+    confirm: input.confirm ?? false,
+  }
+  if (input.addressing === 'static') {
+    const address = input.address?.trim()
+    if (address) body.address = address
+    const gateway = input.gateway?.trim()
+    if (gateway) body.gateway = gateway
+    const dns = input.dns?.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean) ?? []
+    if (dns.length) body.dns = dns
+  }
+  return body
+}
+
 export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
   const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
   const nic = ready.defaultRouteInterface || '<wired-uplink>'
   return [
     `# Persist ${br} with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.`,
-    `# Host address on ${br} is this Device (DHCP or static). Guest static IP is separate.`,
+    `# Host address on ${br} is DHCP or static for this Device.`,
     `sudo ${LINUX_BRIDGE_APPLY_SCRIPT} --apply --nic ${nic} --dhcp`,
+    `# Static example: sudo ${LINUX_BRIDGE_APPLY_SCRIPT} --apply --nic ${nic} --address 192.168.1.10/24 --gateway 192.168.1.1`,
     '# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.',
   ]
 }
@@ -163,7 +200,22 @@ export function linuxBridgeCanApply(caps: {
   return caps.supportsHostBridgeManagement === true || platform === 'linux'
 }
 
-/** Root Device daemon may Setup/Start/Stop socket_vmnet on a Mac Device. */
+export function hostBridgeCanApply(caps: {
+  platform?: string | null
+  supportsHostMutation?: boolean | null
+  supportsHostBridgeManagement?: boolean | null
+  supportsManagedBridgeDaemon?: boolean | null
+}): boolean {
+  if (linuxBridgeCanApply(caps)) return true
+  const platform = (caps.platform || '').toLowerCase()
+  return (
+    (platform === 'macos' || platform === 'darwin')
+    && caps.supportsHostMutation === true
+    && caps.supportsManagedBridgeDaemon === true
+  )
+}
+
+/** @deprecated Use hostBridgeCanApply — macOS Apply/Revert uses the same gate. */
 export function macosSocketVmnetCanManage(caps: {
   platform?: string | null
   supportsManagedBridgeDaemon?: boolean | null

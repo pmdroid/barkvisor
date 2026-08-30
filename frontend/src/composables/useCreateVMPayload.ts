@@ -1,4 +1,4 @@
-import type { CreateVMRequest, GuestAddressing, PortForwardRule, USBPassthroughDevice } from '../api/types'
+import type { CreateVMRequest, PortForwardRule, USBPassthroughDevice } from '../api/types'
 
 export interface CreateVMPayloadInput {
   name: string
@@ -25,7 +25,6 @@ export interface CreateVMPayloadInput {
   usbAvailable: boolean
   usbDevices: USBPassthroughDevice[]
   workloadClass?: 'house' | 'agent'
-  guestAddressing?: GuestAddressing
 }
 
 /** Assemble CreateVMRequest. Guest-type (`vmType`) is a call-site value, not resolved here (PAS-241). */
@@ -65,7 +64,6 @@ export function buildCreateVMPayload(input: CreateVMPayloadInput): CreateVMReque
   if (input.usbAvailable && input.usbDevices.length > 0 && input.workloadClass !== 'agent') {
     req.usbDevices = input.usbDevices
   }
-  if (input.guestAddressing) req.guestAddressing = input.guestAddressing
   if (input.workloadClass === 'agent') {
     req.workloadClass = 'agent'
     delete req.usbDevices

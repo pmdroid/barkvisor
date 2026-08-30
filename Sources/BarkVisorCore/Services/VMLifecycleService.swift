@@ -109,7 +109,6 @@ public enum VMLifecycleService {
             tpmEnabled: params.tpmEnabled,
             workloadClass: params.workloadClass,
             startOnBoot: params.startOnBoot,
-            guestAddressing: params.guestAddressing,
         )
         try validateUpdateVMInputs(params: normalized)
 
@@ -131,16 +130,13 @@ public enum VMLifecycleService {
             let hardwareChanged = detectHardwareChanges(
                 params: normalized, encoded: encodedFields, vm: vm,
             )
-            let addressingChanged = normalized.guestAddressing != nil
-                && normalized.guestAddressing != vm.decodedGuestAddressing
             let specTouched = hardwareChanged
                 || params.name != nil
                 || params.description != nil
-                || addressingChanged
 
             applyUpdates(params: normalized, encoded: encodedFields, to: &vm)
 
-            if isRunning, hardwareChanged || addressingChanged { vm.pendingChanges = true }
+            if isRunning, hardwareChanged { vm.pendingChanges = true }
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: specTouched)
 
@@ -149,8 +145,6 @@ public enum VMLifecycleService {
         }
         if params.gpuDevices != nil {
             try syncCodingAgentCloudInitForGPU(vm: vm)
-        } else if params.guestAddressing != nil || params.networkId != nil {
-            try syncGuestAddressingCloudInit(vm: vm)
         }
         return vm
     }
@@ -178,7 +172,7 @@ public enum VMLifecycleService {
             normalized.spec.gpu = gpuDevices.map { GPUPassthroughService.workload(from: $0) }
         }
         let spec = normalized
-        let (vm, gpuChanged, addressingChanged) = try await db.write { db -> (VM, Bool, Bool) in
+        let (vm, gpuChanged) = try await db.write { db -> (VM, Bool) in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -191,20 +185,13 @@ public enum VMLifecycleService {
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
-            let addressingChanged = before.guestAddressingJson != vm.guestAddressingJson
-                || before.networkId != vm.networkId
-            if isRunning, addressingChanged {
-                vm.pendingChanges = true
-            }
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
-            return (vm, before.gpuDevices != vm.gpuDevices, addressingChanged)
+            return (vm, before.gpuDevices != vm.gpuDevices)
         }
         if gpuChanged {
             try syncCodingAgentCloudInitForGPU(vm: vm)
-        } else if addressingChanged {
-            try syncGuestAddressingCloudInit(vm: vm)
         }
         return vm
     }
@@ -392,7 +379,6 @@ extension VMLifecycleService {
         let ciKeys = params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? []
         let ciUserData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
         let needsSeedISO = !ciKeys.isEmpty || !(ciUserData ?? "").isEmpty
-            || (params.guestAddressing?.isStatic == true)
         guard needsSeedISO else { return nil }
         let isoURL = try CloudInitService.generateISO(
             vmID: vmID, vmName: params.name,
@@ -402,7 +388,6 @@ extension VMLifecycleService {
                 vmID: vmID, userData: ciUserData, gpuDevices: params.gpuDevices,
             ),
             macAddress: macAddress,
-            addressing: params.guestAddressing,
         )
         return isoURL.path
     }
@@ -467,7 +452,6 @@ extension VMLifecycleService {
         )
         vm.setOverrides(params.overrides)
         vm.setHealth(params.health)
-        vm.setGuestAddressing(try? params.guestAddressing?.validated())
         if (try? WorkloadClass.parse(params.workloadClass)) == .agent {
             let grant = CodingAgentSession.usesHomeOllamaGrant(userData: params.cloudInit?.userData)
                 ? CodingAgentSession.grant
@@ -528,9 +512,7 @@ extension VMLifecycleService {
         let userData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
         let vmName = params.name
         let gpuDevices = params.gpuDevices
-        let addressing = params.guestAddressing
         let hasCloudInit = !sshKeys.isEmpty || !(userData ?? "").isEmpty
-            || (addressing?.isStatic == true)
 
         await backgroundTasks.submit(taskID, kind: .vmProvision) { @Sendable in
             do {
@@ -551,7 +533,6 @@ extension VMLifecycleService {
                                 vmID: vmID, userData: userData, gpuDevices: gpuDevices,
                             ),
                             macAddress: mac,
-                            addressing: addressing,
                         ).path
                     } else {
                         nil
@@ -722,17 +703,6 @@ extension VMLifecycleService {
         try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
         try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: vm.id, db: db)
         try AgentWorkloadPolicy.validate(spec: spec, network: appliedNetwork)
-        try GuestAddressing.require(
-            vm.decodedGuestAddressing,
-            networkMode: NetworkCapability.effectiveMode(of: appliedNetwork),
-            cloudInitApplies: GuestAddressing.cloudInitApplies(
-                cloudImageId: nil,
-                isoId: nil,
-                sshKeys: [],
-                userData: nil,
-                existingCloudInitPath: vm.cloudInitPath,
-            ),
-        )
     }
 
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
@@ -816,18 +786,6 @@ extension VMLifecycleService {
             sharedPathCount: (params.sharedPaths ?? vm.decodedSharedPaths).count,
             portForwardCount: (params.portForwards ?? vm.decodedPortForwards).count,
             networkMode: NetworkCapability.effectiveMode(of: network),
-        )
-        let addressing = params.guestAddressing ?? vm.decodedGuestAddressing
-        try GuestAddressing.require(
-            addressing,
-            networkMode: NetworkCapability.effectiveMode(of: network),
-            cloudInitApplies: GuestAddressing.cloudInitApplies(
-                cloudImageId: nil,
-                isoId: nil,
-                sshKeys: [],
-                userData: nil,
-                existingCloudInitPath: vm.cloudInitPath,
-            ),
         )
     }
 }

@@ -57,9 +57,6 @@ extension VMLifecycleService {
         if params.gpuDevices != nil { return true }
         if params.portForwards != nil, encoded.portForwardsJSON != vm.portForwards { return true }
         if params.workloadClass != nil, params.workloadClass != vm.workloadClass { return true }
-        if params.guestAddressing != nil, params.guestAddressing != vm.decodedGuestAddressing {
-            return true
-        }
         return false
     }
 
@@ -87,7 +84,6 @@ extension VMLifecycleService {
         if before.cloudInitPath != after.cloudInitPath { return true }
         if before.decodedOverrides != after.decodedOverrides { return true }
         if before.workloadClass != after.workloadClass { return true }
-        if before.guestAddressingJson != after.guestAddressingJson { return true }
         return false
     }
 
@@ -114,8 +110,5 @@ extension VMLifecycleService {
             vm.workloadClass = (try? WorkloadClass.parse(klass).rawValue) ?? vm.workloadClass
         }
         if let startOnBoot = params.startOnBoot { vm.startOnBoot = startOnBoot }
-        if let addressing = params.guestAddressing {
-            vm.setGuestAddressing(try? addressing.validated())
-        }
     }
 }

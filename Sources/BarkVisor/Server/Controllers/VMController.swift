@@ -28,7 +28,6 @@ struct VMResponse: Content {
     let uefi: Bool
     let tpmEnabled: Bool
     let macAddress: String?
-    let guestAddressing: GuestAddressing?
     let sharedPaths: [String]?
     let portForwards: [PortForwardRule]?
     let usbDevices: [USBPassthroughDevice]?
@@ -71,7 +70,6 @@ struct VMResponse: Content {
         self.uefi = vm.uefi
         self.tpmEnabled = vm.tpmEnabled
         self.macAddress = vm.macAddress
-        self.guestAddressing = vm.decodedGuestAddressing
         self.pendingChanges = vm.pendingChanges
         self.createdAt = vm.createdAt
         self.updatedAt = vm.updatedAt
@@ -109,7 +107,6 @@ struct CreateVMRequest: Content, Validatable {
     let isoId: String?
     let cloudImageId: String?
     let cloudInit: CloudInitConfig?
-    let guestAddressing: GuestAddressing? = nil
     let networkId: String?
     let existingDiskId: String?
     let sharedPaths: [String]?
@@ -151,7 +148,6 @@ struct CreateVMRequest: Content, Validatable {
 
 /// CloudInitConfig moved to BarkVisorCore
 extension CloudInitConfig: Content {}
-extension GuestAddressing: Content {}
 
 struct UpdateVMRequest: Content, Validatable {
     let name: String?
@@ -171,7 +167,6 @@ struct UpdateVMRequest: Content, Validatable {
     let spec: WorkloadSpec?
     var workloadClass: String?
     var startOnBoot: Bool?
-    let guestAddressing: GuestAddressing? = nil
 
     static func validations(_ validations: inout Validations) {
         validations.add(
@@ -355,7 +350,6 @@ struct VMController: RouteCollection {
                 displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
                 sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
                 workloadClass: body.workloadClass, startOnBoot: body.startOnBoot,
-                guestAddressing: body.guestAddressing,
             )
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,
@@ -601,7 +595,6 @@ struct VMController: RouteCollection {
             displayResolution: body.displayResolution,
             uefi: body.uefi,
             tpmEnabled: body.tpmEnabled,
-            guestAddressing: body.guestAddressing,
         )
         if var spec = body.spec {
             if spec.spec.workloadClass == nil {

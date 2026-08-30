@@ -672,27 +672,6 @@ final class AppModel {
         }
     }
 
-    /// Save guest addressing (DHCP or static IPv4) on a bridged cloud-init Workload.
-    @discardableResult
-    func setGuestAddressing(
-        _ workload: Workload,
-        addressing: GuestAddressingInfo,
-        on device: HomeDeviceHealthSnapshot,
-    ) async -> Bool {
-        let key = actionID(for: workload, explicit: device)
-        actionIDs.insert(key)
-        defer { actionIDs.remove(key) }
-        do {
-            try await requireClient().setGuestAddressing(workload.id, addressing: addressing, on: device)
-            await refreshDeviceScoped()
-            await refreshHomeUnion()
-            return true
-        } catch {
-            handle(error)
-            return false
-        }
-    }
-
     func resumeSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
         let target = device ?? selectedDevice
         await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
@@ -809,7 +788,6 @@ final class AppModel {
         openaiBaseURL: String? = nil,
         openaiAPIKey: String? = nil,
         network: NetworkRecord? = nil,
-        addressing: GuestAddressingDraft? = nil,
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
         actionIDs.insert(key)
@@ -823,7 +801,6 @@ final class AppModel {
                 openaiBaseURL: openaiBaseURL,
                 openaiAPIKey: openaiAPIKey,
                 network: network,
-                addressing: addressing,
             )
             let created = try await requireClient().createWorkload(body, on: device)
             await refreshDeviceScoped()
@@ -874,7 +851,6 @@ final class AppModel {
         sshKey: SSHKeyRecord?,
         preset: CreateVMWizard.SizePreset,
         network: NetworkRecord?,
-        addressing: GuestAddressingDraft,
         diskSource: CreateVMWizard.DiskSource,
         diskSizeGB: Int,
         existingDiskID: String,
@@ -929,7 +905,6 @@ final class AppModel {
                 openaiBaseURL: openaiBaseURL,
                 openaiAPIKey: openaiAPIKey,
                 network: network,
-                addressing: addressing,
                 sshPublicKey: sshKey?.publicKey,
                 sharedPaths: sharedPaths,
             )

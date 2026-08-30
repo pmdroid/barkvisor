@@ -281,15 +281,6 @@ struct APIClient {
         )
     }
 
-    func setGuestAddressing(_ id: String, addressing: GuestAddressingInfo, on device: HomeDeviceHealthSnapshot?) async throws {
-        let _: Workload = try await send(
-            method: "PATCH",
-            path: scoped("/vms/\(id)", on: device),
-            body: WorkloadGuestAddressingBody(guestAddressing: addressing),
-            as: Workload.self,
-        )
-    }
-
     func resumeSession(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
         try await post(scoped("/vms/\(id)/session/resume", on: device), body: EmptyJSON())
     }
@@ -431,6 +422,10 @@ struct APIClient {
         interface: String?,
         action: String,
         confirm: Bool,
+        addressing: String = "dhcp",
+        address: String? = nil,
+        gateway: String? = nil,
+        dns: [String]? = nil,
         on device: HomeDeviceHealthSnapshot? = nil,
     ) async throws -> HostBridgeApplyResponse {
         try await post(
@@ -438,7 +433,10 @@ struct APIClient {
             body: HostBridgeApplyBody(
                 interface: interface,
                 action: action,
-                addressing: "dhcp",
+                addressing: addressing,
+                address: address,
+                gateway: gateway,
+                dns: dns,
                 confirm: confirm,
             ),
         )

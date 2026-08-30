@@ -195,21 +195,17 @@ public struct WorkloadNetwork: Codable, Equatable, Sendable {
     public var networkId: String?
     public var mac: String?
     public var portForwards: [WorkloadPortForward]
-    /// Guest LAN addressing. Omitted = DHCP. Static is bridged + cloud-init only.
-    public var addressing: GuestAddressing?
 
     public init(
         mode: String? = nil,
         networkId: String? = nil,
         mac: String? = nil,
         portForwards: [WorkloadPortForward] = [],
-        addressing: GuestAddressing? = nil,
     ) {
         self.mode = mode
         self.networkId = networkId
         self.mac = mac
         self.portForwards = portForwards
-        self.addressing = addressing
     }
 }
 

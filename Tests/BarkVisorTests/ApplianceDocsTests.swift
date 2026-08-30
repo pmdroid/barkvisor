@@ -60,7 +60,8 @@ struct ApplianceDocsTests {
         #expect(text.contains("linux-bridge-apply.sh"))
         #expect(text.contains("brew install socket_vmnet"))
         #expect(text.contains("Do not `sudo brew install`"))
-        #expect(text.contains("Guest static IP"))
+        #expect(text.contains("DHCP or static"))
+        #expect(text.contains("Bridge setup"))
         #expect(!text.contains("cluster"))
         #expect(!text.contains("quorum"))
     }

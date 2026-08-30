@@ -54,7 +54,11 @@ struct SystemBridgeController: RouteCollection {
             return try Self.linuxApply(req: req, defaultAction: .apply)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .setup)
+            let response = try Self.macHostApply(req: req, defaultAction: .apply)
+            if response.applied == true {
+                await Self.syncMacBridgedNetwork(req: req, body: (try? req.content.decode(BridgeRequest.self)))
+            }
+            return response
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -68,7 +72,7 @@ struct SystemBridgeController: RouteCollection {
             )
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .start)
+            return try Self.macHostApply(req: req, defaultAction: .apply)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -82,7 +86,7 @@ struct SystemBridgeController: RouteCollection {
             )
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
+            return try Self.macHostApply(req: req, defaultAction: .revert)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -94,7 +98,7 @@ struct SystemBridgeController: RouteCollection {
             return try Self.linuxApply(req: req, defaultAction: .revert)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
+            return try Self.macHostApply(req: req, defaultAction: .revert)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -142,6 +146,54 @@ struct SystemBridgeController: RouteCollection {
             warnings: result.warnings,
             commands: result.commands,
         )
+    }
+
+    private static func macHostApply(
+        req: Vapor.Request,
+        defaultAction: LinuxHostBridgeApplyAction,
+    ) throws -> BridgeActionResponse {
+        try PlatformCapabilities.requireHostMutation()
+        #if os(macOS)
+            let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
+            let action = parseAction(body, default: defaultAction)
+            let addressing: LinuxHostBridgeAddressing =
+                body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
+            let nic = body.interface
+                ?? req.parameters.get("interface")
+            let request = LinuxHostBridgeApplyRequest(
+                action: action,
+                bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
+                nic: nic,
+                addressing: addressing,
+                address: body.address,
+                gateway: body.gateway,
+                dns: body.dns ?? [],
+                confirm: body.confirm == true,
+                deleteBridge: body.deleteBridge == true,
+            )
+            let result = try MacHostBridgeApplyLive.run(request: request)
+            if result.applied {
+                AuditService.log(
+                    action: action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                    resourceType: "host-bridge",
+                    resourceId: nic ?? "socket_vmnet",
+                    resourceName: nic ?? "socket_vmnet",
+                    req: req,
+                )
+            }
+            return BridgeActionResponse(
+                success: result.success,
+                message: result.message,
+                applied: result.applied,
+                needsConfirm: result.needsConfirm,
+                backend: result.backend,
+                changes: result.changes,
+                warnings: result.warnings,
+                commands: result.commands,
+            )
+        #else
+            throw BarkVisorError.forbidden("macOS host network apply runs on a macOS Device.")
+        #endif
     }
 
     private static func parseAction(
@@ -201,6 +253,25 @@ struct SystemBridgeController: RouteCollection {
             warnings: result.warnings,
             commands: result.commands,
         )
+    }
+
+    private static func syncMacBridgedNetwork(req: Vapor.Request, body: BridgeRequest?) async {
+        let iface = body?.interface ?? req.parameters.get("interface")
+        guard let name = iface, !name.isEmpty else { return }
+        await BridgeSyncService.syncOnce(db: req.db)
+        let before = try? await req.db.read { db in
+            try Network.filter(Column("bridge") == name).fetchOne(db)
+        }
+        if let network = try? await NetworkService.ensureBridgedNetwork(for: name, db: req.db),
+           before == nil {
+            AuditService.log(
+                action: "network.create",
+                resourceType: "network",
+                resourceId: network.id,
+                resourceName: network.name,
+                req: req,
+            )
+        }
     }
 
     private static func parseSocketAction(
