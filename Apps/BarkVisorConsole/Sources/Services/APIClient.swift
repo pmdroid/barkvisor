@@ -245,6 +245,15 @@ struct APIClient {
         )
     }
 
+    func setGuestAddressing(_ id: String, addressing: GuestAddressingInfo, on device: HomeDeviceHealthSnapshot?) async throws {
+        let _: Workload = try await send(
+            method: "PATCH",
+            path: scoped("/vms/\(id)", on: device),
+            body: WorkloadGuestAddressingBody(guestAddressing: addressing),
+            as: Workload.self,
+        )
+    }
+
     func resumeSession(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
         try await post(scoped("/vms/\(id)/session/resume", on: device), body: EmptyJSON())
     }

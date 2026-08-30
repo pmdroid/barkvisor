@@ -507,7 +507,9 @@ struct GuestListeningPort: Decodable, Hashable {
     ]
 }
 
-struct GuestAddressingInfo: Decodable, Hashable {
+/// Guest LAN addressing for a bridged Workload. Same JSON keys as the SPA (#385):
+/// DHCP is the default; static IPv4 is written as NoCloud network-config by the Device.
+struct GuestAddressingInfo: Codable, Hashable {
     var mode: String
     var ipv4: String?
     var prefixLength: Int?
@@ -1376,6 +1378,11 @@ struct WorkloadStopBody: Encodable {
 
 struct WorkloadStartOnBootBody: Encodable, Equatable {
     var startOnBoot: Bool
+}
+
+/// PATCH /vms/:id guest addressing edit. DHCP sends `{ "mode": "dhcp" }` to clear static.
+struct WorkloadGuestAddressingBody: Encodable, Equatable {
+    var guestAddressing: GuestAddressingInfo
 }
 
 struct ISOMediaBody: Encodable {
