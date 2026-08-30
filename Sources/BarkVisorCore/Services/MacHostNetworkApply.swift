@@ -219,7 +219,6 @@ import Foundation
             guard let marker = readMarker(device: device) else {
                 return false
             }
-            defer { removeMarker(device: device) }
             let lower = marker.infoText.lowercased()
             if lower.contains("dhcp configuration") {
                 let result = try run(networksetupPath, ["-setdhcp", marker.service])
@@ -240,13 +239,19 @@ import Foundation
                     )
                 }
             } else {
-                _ = try? run(networksetupPath, ["-setdhcp", marker.service])
+                let result = try run(networksetupPath, ["-setdhcp", marker.service])
+                guard result.succeeded else {
+                    throw BarkVisorError.preconditionFailed(
+                        "networksetup -setdhcp revert failed: \(result.stderrString)",
+                    )
+                }
             }
             if marker.dnsServers.isEmpty {
                 _ = try? run(networksetupPath, ["-setdnsservers", marker.service, "Empty"])
             } else {
                 _ = try? run(networksetupPath, ["-setdnsservers", marker.service] + marker.dnsServers)
             }
+            removeMarker(device: device)
             return true
         }
 

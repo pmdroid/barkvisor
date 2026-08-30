@@ -104,6 +104,29 @@ import Testing
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
         }
 
+        @Test func `failed revert keeps marker for retry`() throws {
+            let device = "en0-dns-revert-fail-test"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\n",
+                dnsServers: [],
+            ))
+
+            let run: (String, [String]) throws -> CommandResult = { _, args in
+                if args.first == "-setdhcp" {
+                    return CommandResult(exitCode: 1, stdout: Data(), stderr: Data("fail".utf8))
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+
+            #expect(throws: (any Error).self) {
+                try MacHostNetworkApply.revert(device: device, run: run)
+            }
+            #expect(MacHostNetworkApply.readMarker(device: device) != nil)
+        }
+
         @Test func `equivalent commands include dns for static`() {
             let lines = MacHostNetworkApply.equivalentCommands(
                 service: "Ethernet",
