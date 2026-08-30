@@ -1388,6 +1388,42 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/setup/browse/mkdir:
+    post:
+      tags: [evolving]
+      operationId: createSetupBrowseFolder
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Create a folder during first-run setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parent, name]
+              properties:
+                parent:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, path, isDirectory]
+                properties:
+                  name:
+                    type: string
+                  path:
+                    type: string
+                  isDirectory:
+                    type: boolean
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/library/settings:
     get:
       tags: [evolving]
