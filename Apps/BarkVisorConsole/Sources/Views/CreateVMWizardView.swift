@@ -289,7 +289,7 @@ struct CreateVMWizardView: View {
     }
 
     private var sizePresets: [CreateVMWizard.SizePreset] {
-        CreateVMWizard.clampedPresets(hostCPU: device?.resources?.cpuCount, hostMemoryMB: device?.resources?.memoryMB)
+        CreateVMWizard.clampedPresets(hostCPU: device?.resources?.cpuCount, hostMemoryMB: device?.resources?.memoryTotalMB)
     }
 
     private var selectedPreset: CreateVMWizard.SizePreset {
