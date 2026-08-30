@@ -127,6 +127,42 @@ struct APIClient {
         return SessionTokens(token: response.token, refreshToken: response.refreshToken)
     }
 
+    func beginPasskeyLogin() async throws -> PasskeyCeremonyBegin {
+        try await postPasskey("/api/auth/passkeys/login/begin", body: EmptyJSON())
+    }
+
+    func finishPasskeyLogin(sessionId: String, credential: [String: Any]) async throws -> SessionTokens {
+        let response: LoginResponse = try await postPasskey(
+            "/api/auth/passkeys/login/finish",
+            body: PasskeyLoginFinishBody(sessionId: sessionId, credential: JSONEncodable(value: credential)),
+        )
+        return SessionTokens(token: response.token, refreshToken: response.refreshToken)
+    }
+
+    func templates(on device: HomeDeviceHealthSnapshot?) async throws -> [VMTemplateRecord] {
+        try await get(scoped("/templates", on: device))
+    }
+
+    func sshKeys() async throws -> [SSHKeyRecord] {
+        try await get("/api/ssh-keys")
+    }
+
+    func deployTemplate(_ body: DeployTemplateBody, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
+        var request = try makeRequest(method: "POST", path: scoped("/templates/deploy", on: device), query: [])
+        request.httpBody = try Self.encoder.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+        let (data, response) = try await perform(request, allowRefresh: true)
+        if response.statusCode == 202 {
+            let accepted = try Self.decoder.decode(DeployTemplateResponse.self, from: data)
+            guard let vm = accepted.vm else { throw APIError.decoding("Missing Workload in deploy response") }
+            return vm
+        }
+        let deployed = try Self.decoder.decode(DeployTemplateResponse.self, from: data)
+        guard let vm = deployed.vm else { throw APIError.decoding("Missing Workload in deploy response") }
+        return vm
+    }
+
     func refreshSession(refreshToken: String) async throws -> SessionTokens {
         let response: LoginResponse = try await post(
             "/api/auth/refresh",
@@ -554,6 +590,21 @@ struct APIClient {
             || path == "/api/auth/refresh"
             || path == "/api/auth/logout"
             || path == "/api/auth/login-offers/redeem"
+            || path == "/api/auth/passkeys/login/begin"
+            || path == "/api/auth/passkeys/login/finish"
+    }
+
+    private func postPasskey<T: Decodable>(_ path: String, body: some Encodable, as type: T.Type = T.self) async throws -> T {
+        var request = try makeRequest(method: "POST", path: path, query: [])
+        request.httpBody = try Self.encoder.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(PasskeySupport.originHeader(for: baseURL), forHTTPHeaderField: "Origin")
+        let (data, response) = try await perform(request, allowRefresh: false)
+        do {
+            return try Self.decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(error.localizedDescription)
+        }
     }
 
     private func perform(_ request: URLRequest, allowRefresh: Bool) async throws -> (Data, HTTPURLResponse) {

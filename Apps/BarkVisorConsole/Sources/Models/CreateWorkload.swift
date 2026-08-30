@@ -150,12 +150,15 @@ enum CreateWorkload {
         var cpuCount: Int
         var memoryMB: Int
         var diskSizeGB: Int
+        var existingDiskId: String?
         var isoId: String?
         var cloudImageId: String?
         var networkId: String?
         var workloadClass: String?
         var cloudInit: CloudInitPayload?
         var guestAddressing: GuestAddressingInfo?
+        var uefi: Bool?
+        var tpmEnabled: Bool?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -164,22 +167,29 @@ enum CreateWorkload {
             try container.encode(vmType, forKey: .vmType)
             try container.encode(cpuCount, forKey: .cpuCount)
             try container.encode(memoryMB, forKey: .memoryMB)
-            try container.encode(diskSizeGB, forKey: .diskSizeGB)
+            if existingDiskId != nil {
+                try container.encodeIfPresent(existingDiskId, forKey: .existingDiskId)
+            } else {
+                try container.encode(diskSizeGB, forKey: .diskSizeGB)
+            }
             try container.encodeIfPresent(isoId, forKey: .isoId)
             try container.encodeIfPresent(cloudImageId, forKey: .cloudImageId)
             try container.encodeIfPresent(networkId, forKey: .networkId)
             try container.encodeIfPresent(workloadClass, forKey: .workloadClass)
             try container.encodeIfPresent(cloudInit, forKey: .cloudInit)
             try container.encodeIfPresent(guestAddressing, forKey: .guestAddressing)
+            try container.encodeIfPresent(uefi, forKey: .uefi)
+            try container.encodeIfPresent(tpmEnabled, forKey: .tpmEnabled)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, networkId, workloadClass,
-                 cloudInit, guestAddressing
+            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, existingDiskId, isoId, cloudImageId, networkId,
+                 workloadClass, cloudInit, guestAddressing, uefi, tpmEnabled
         }
     }
 
     struct CloudInitPayload: Equatable, Encodable {
+        var sshAuthorizedKeys: [String]?
         var userData: String?
     }
 
@@ -243,6 +253,72 @@ enum CreateWorkload {
             workloadClass: klass,
             cloudInit: cloudInit,
             guestAddressing: guestAddressing,
+        )
+    }
+
+    static func wizardBody(
+        name: String,
+        image: LibraryImage,
+        hostCPUCount: Int?,
+        preset: CreateVMWizard.SizePreset,
+        diskSource: CreateVMWizard.DiskSource,
+        diskSizeGB: Int,
+        existingDiskID: String,
+        workloadClass: String? = nil,
+        openaiBaseURL: String? = nil,
+        openaiAPIKey: String? = nil,
+        network: NetworkRecord? = nil,
+        addressing: GuestAddressingDraft? = nil,
+        sshPublicKey: String? = nil,
+    ) throws -> Body {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw DraftError.emptyName }
+        guard image.isReady else { throw DraftError.imageNotReady }
+        let family = osFamily(for: image)
+        let iso = isISO(image)
+        let guestAddressing = try addressing?.payload(
+            bridged: network?.mode.lowercased() == GuestAddressingDraft.networkModeBridged,
+            cloudInit: !iso,
+        )
+        let coding = CodingAgentImage.matches(name: image.name)
+        let klass: String?
+        if coding {
+            klass = workloadClass == "house" ? "house" : "agent"
+        } else {
+            klass = workloadClass == "agent" ? "agent" : nil
+        }
+        var cloudInit: CloudInitPayload?
+        if coding, !iso {
+            let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
+            let trimmedURL = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let byo = !trimmedURL.isEmpty && url != CodingAgentImage.homeOllamaGrantURL
+            let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
+            cloudInit = CloudInitPayload(
+                userData: CodingAgentImage.userData(openaiBaseURL: url, openaiAPIKey: apiKey),
+            )
+        } else if !iso, let sshPublicKey {
+            let key = sshPublicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                cloudInit = CloudInitPayload(sshAuthorizedKeys: [key], userData: nil)
+            }
+        }
+        let useExisting = diskSource == .existing && !existingDiskID.isEmpty
+        return Body(
+            name: trimmed,
+            osFamily: family,
+            vmType: guestType(osFamily: family, arch: image.arch),
+            cpuCount: min(preset.cpu, cpuCount(osFamily: family, hostCPUCount: hostCPUCount)),
+            memoryMB: preset.memoryMB,
+            diskSizeGB: useExisting ? diskSizeGB : diskSizeGB,
+            existingDiskId: useExisting ? existingDiskID : nil,
+            isoId: iso ? image.id : nil,
+            cloudImageId: iso ? nil : image.id,
+            networkId: network?.id,
+            workloadClass: klass,
+            cloudInit: cloudInit,
+            guestAddressing: guestAddressing,
+            uefi: family == "windows" ? true : nil,
+            tpmEnabled: family == "windows" ? true : nil,
         )
     }
 }

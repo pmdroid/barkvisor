@@ -63,6 +63,15 @@ struct LoginView: View {
 
     private enum Field { case user, password }
 
+    private var passkeyHint: String? {
+        guard let url = try? DeviceURL.normalize(model.serverURLText) else { return nil }
+        return PasskeySupport.passkeyBlock(for: url)?.message
+    }
+
+    private var passkeyBlocked: Bool {
+        passkeyHint != nil
+    }
+
     var body: some View {
         @Bindable var model = model
         NavigationStack {
@@ -91,6 +100,17 @@ struct LoginView: View {
                         Task { await model.signIn() }
                     }
                     .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
+                    #if os(iOS) || os(macOS)
+                        Button("Sign in with passkey") {
+                            Task { await model.signInWithPasskey() }
+                        }
+                        .disabled(model.busy || passkeyBlocked)
+                        if let passkeyHint {
+                            Text(passkeyHint)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    #endif
                     #if os(iOS)
                         NavigationLink("Scan QR") {
                             LoginQRScanner(

@@ -831,16 +831,6 @@ struct SystemCapabilities: Decodable, Equatable {
             platform: platform,
         )
     }
-
-    var inAppUpdateSupported: Bool {
-        detail(code: "inAppUpdate")?.supported == true
-    }
-
-    var inAppUpdateExplanation: String {
-        let trimmed = detail(code: "inAppUpdate")?.remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty { return trimmed }
-        return "In-app updates run on a root Ubuntu/Debian .deb or Apple Silicon .pkg Device."
-    }
 }
 
 /// Read-only doctor list on Device detail (#403). Rows are the capabilities

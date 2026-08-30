@@ -367,12 +367,21 @@ private struct CreateWorkloadEntryModifier: ViewModifier {
             }
             .sheet(isPresented: $showCreate) {
                 NavigationStack {
-                    CreateWorkloadSheet(
-                        allowsDevicePicker: allowsDevicePicker,
-                        initialImages: images,
-                    ) { row in
-                        created = row
-                    }
+                    #if os(iOS)
+                        CreateVMWizardView(
+                            allowsDevicePicker: allowsDevicePicker,
+                            initialImages: images,
+                        ) { row in
+                            created = row
+                        }
+                    #else
+                        CreateWorkloadSheet(
+                            allowsDevicePicker: allowsDevicePicker,
+                            initialImages: images,
+                        ) { row in
+                            created = row
+                        }
+                    #endif
                 }
             }
             .navigationDestination(item: $created) { row in
