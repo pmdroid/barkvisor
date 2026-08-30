@@ -128,21 +128,12 @@ struct WorkloadDetailTests {
         iso.macAddress = "52:54:00:12:34:56"
         iso.cloudInitPath = nil
         #expect(WorkloadGuestSummary.macLabel(workload: iso, guest: nil) == "52:54:00:12:34:56")
-        #expect(WorkloadGuestSummary.addressingSummary(workload: iso) == "DHCP (LAN)")
+        #expect(WorkloadGuestSummary.addressingSummary(networkMode: "bridged") == "DHCP (LAN)")
         #expect(
-            WorkloadGuestSummary.macGuidance(bridged: true, cloudInit: false)
-                .contains("did not configure the OS"),
-        )
-        iso.cloudInitPath = "/data/cidata.iso"
-        iso.guestAddressing = GuestAddressingInfo(
-            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
-            nameservers: nil,
-        )
-        #expect(WorkloadGuestSummary.addressingSummary(workload: iso).contains("192.168.1.40/24"))
-        #expect(
-            WorkloadGuestSummary.macGuidance(bridged: true, cloudInit: true)
+            WorkloadGuestSummary.macGuidance(bridged: true)
                 .contains("DHCP reservation"),
         )
+        #expect(WorkloadGuestSummary.addressingSummary(networkMode: nil) == "NAT")
     }
 
     @Test func `member console and display match this device when reachable`() {

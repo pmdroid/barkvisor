@@ -4,11 +4,11 @@
 
 ![Networks list with inspect pane](img/networks.png)
 
-Words: **Home**, **Device**, **Workload**. Host addressing on `br0` is this Device. Guest static IP is a Workload setting ([Create a Workload](create-workload.md)), not the host apply.
+Words: **Home**, **Device**, **Workload**. Host addressing on `br0` is this Device (configure in **Networks → Bridge setup**).
 
 ## Toolbar
 
-- **Bridge setup** — Linux Apply/Revert for `br0`; macOS Setup/Start/Stop for `socket_vmnet`. Copyable commands stay on the sheet.
+- **Bridge setup** — Apply/Revert host networking on Linux (`br0`) and macOS (`socket_vmnet` + Device LAN address). DHCP or static for this Device. Copyable commands stay on the sheet.
 - **Create Network** — opens the create modal
 
 ## The list
@@ -24,7 +24,7 @@ Selecting a network shows:
 - Attached Workloads
 - Interfaces table
 
-Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) plus **Setup / Start / Stop** on a Mac Device, then **Re-check**. NAT still works when `socket_vmnet` is down.
+Selecting a pending bridge shows the host commands for that Device plus the same **Device address** (DHCP or static) and **Apply / Revert** controls as **Bridge setup**. NAT still works when bridged host networking is not ready.
 
 ## Bridge setup
 
@@ -34,7 +34,7 @@ The root Device daemon can change the host. Copyable commands stay on the page s
 
 **Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
 
-Host address on `br0` is DHCP or static for this Device. That is not the guest address.
+Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Bridge setup**.
 
 Rollback is a **host timer** (`netplan try` / `systemd-run`). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves. Do not Confirm in the browser after the uplink dies.
 
@@ -57,7 +57,7 @@ Install the formula as your user:
 brew install socket_vmnet
 ```
 
-Do not `sudo brew install`. The root daemon starts and stops a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service). NAT Workloads work with the service down. The Mac LAN NIC is not enslaved.
+Do not `sudo brew install`. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address with `networksetup` (DHCP or static — same fields as Linux). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down. The Mac LAN NIC is not enslaved.
 
 ## Create Network
 

@@ -20,10 +20,6 @@ import type {
   Network,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
-import {
-  payloadGuestAddressing,
-  validateGuestAddressing,
-} from '../utils/guestAddressing'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
@@ -514,11 +510,6 @@ export function useCreateVMWizard(
 
   const selectedNetworkId = ref('')
   const networkBridged = ref(false)
-  const guestAddressMode = ref<'dhcp' | 'static'>('dhcp')
-  const guestIPv4 = ref('')
-  const guestPrefixLength = ref<number | null>(24)
-  const guestGateway = ref('')
-  const guestNameservers = ref('')
   const portForwards = ref<PortForwardRule[]>([])
 
   const isNAT = computed(() => !networkBridged.value)
@@ -900,7 +891,6 @@ export function useCreateVMWizard(
       : allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
         ?? allNetworks.value.find((n) => n.mode === 'nat')
     selectedNetworkId.value = net?.id ?? ''
-    if (!bridgedMode) guestAddressMode.value = 'dhcp'
   })
 
   function buildTemplateDeployRequest(): DeployTemplateRequest {
@@ -948,22 +938,6 @@ export function useCreateVMWizard(
     if (networkBridged.value && !bridged.value.available) {
       error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
       return
-    }
-    const addressing = payloadGuestAddressing({
-      bridged: networkBridged.value,
-      cloudInit: mode.value === 'cloud',
-      mode: guestAddressMode.value,
-      ipv4: guestIPv4.value,
-      prefixLength: guestPrefixLength.value,
-      gateway: guestGateway.value,
-      nameservers: guestNameservers.value,
-    })
-    if (addressing) {
-      const addrError = validateGuestAddressing(addressing)
-      if (addrError) {
-        error.value = addrError
-        return
-      }
     }
     if (!pickedDeviceStillLive()) {
       error.value = 'The selected Device is no longer available. Pick a Device again.'
@@ -1051,7 +1025,6 @@ export function useCreateVMWizard(
         ),
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
-        guestAddressing: addressing,
         portForwards: portForwards.value,
         sharedPaths: sharedPaths.value,
         usbAvailable: false,
@@ -1194,11 +1167,6 @@ export function useCreateVMWizard(
     setTemplateInput,
     refreshSSHKeys,
     networkBridged,
-    guestAddressMode,
-    guestIPv4,
-    guestPrefixLength,
-    guestGateway,
-    guestNameservers,
     isNAT,
     error,
     loading,

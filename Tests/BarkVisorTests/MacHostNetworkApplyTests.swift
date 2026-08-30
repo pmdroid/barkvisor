@@ -1,0 +1,176 @@
+import Foundation
+import Testing
+@testable import BarkVisorCore
+
+#if os(macOS)
+    struct MacHostNetworkApplyTests {
+        @Test func `parse static cidr and subnet mask`() throws {
+            let parsed = try MacHostNetworkApply.parseStaticAddress("192.168.1.10/24")
+            #expect(parsed.ip == "192.168.1.10")
+            #expect(parsed.mask == "255.255.255.0")
+            #expect(MacHostNetworkApply.subnetMask(prefixLength: 24) == "255.255.255.0")
+        }
+
+        @Test func `parse hardware ports from networksetup sample`() throws {
+            let sample = """
+            Hardware Port: Ethernet
+            Device: en0
+            Ethernet Address: aa:bb:cc:dd:ee:ff
+
+            Hardware Port: Wi-Fi
+            Device: en1
+            Ethernet Address: 11:22:33:44:55:66
+            """
+            let ports = try MacHostNetworkApply.listHardwarePorts { _, _ in
+                CommandResult(exitCode: 0, stdout: Data(sample.utf8), stderr: Data())
+            }
+            #expect(ports.count == 2)
+            #expect(ports[0].name == "Ethernet")
+            #expect(ports[0].device == "en0")
+            #expect(MacHostNetworkApply.isWiFiPort("Wi-Fi"))
+            #expect(!MacHostNetworkApply.isWiFiPort("Ethernet"))
+        }
+
+        @Test func `parse info value from getinfo text`() {
+            let text = """
+            Manual Configuration
+            IP address: 192.168.1.10
+            Subnet mask: 255.255.255.0
+            Router: 192.168.1.1
+            """
+            #expect(MacHostNetworkApply.parseInfoValue(text, key: "IP address") == "192.168.1.10")
+            #expect(MacHostNetworkApply.parseInfoValue(text, key: "Router") == "192.168.1.1")
+        }
+
+        @Test func `parse dns servers from networksetup output`() {
+            #expect(MacHostNetworkApply.parseDNSServers("1.1.1.1\n8.8.8.8") == ["1.1.1.1", "8.8.8.8"])
+            #expect(MacHostNetworkApply.parseDNSServers("There aren't any DNS Servers set on Wi-Fi.") == [])
+        }
+
+        @Test func `static apply runs setmanual then setdnsservers`() throws {
+            let device = "en0-dns-apply-test"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            var calls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                #expect(path == MacHostNetworkApply.networksetupPath)
+                calls.append(args)
+                if args.first == "-getinfo" {
+                    return CommandResult(exitCode: 0, stdout: Data("DHCP Configuration\n".utf8), stderr: Data())
+                }
+                if args.first == "-getdnsservers" {
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("There aren't any DNS Servers set on Ethernet.".utf8),
+                        stderr: Data(),
+                    )
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+
+            try MacHostNetworkApply.apply(
+                device: device,
+                service: "Ethernet",
+                addressing: .staticIP,
+                address: "192.168.1.10/24",
+                gateway: "192.168.1.1",
+                dns: ["1.1.1.1", "8.8.8.8"],
+                run: run,
+            )
+
+            #expect(calls.contains(["-setmanual", "Ethernet", "192.168.1.10", "255.255.255.0", "192.168.1.1"]))
+            #expect(calls.contains(["-setdnsservers", "Ethernet", "1.1.1.1", "8.8.8.8"]))
+        }
+
+        @Test func `revert restores saved dns servers`() throws {
+            let device = "en0-dns-revert-test"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\nIP address: 192.168.1.10\n",
+                dnsServers: ["9.9.9.9"],
+            ))
+
+            var calls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { _, args in
+                calls.append(args)
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+
+            let reverted = try MacHostNetworkApply.revert(device: device, run: run)
+            #expect(reverted)
+            #expect(calls.contains(["-setdhcp", "Ethernet"]))
+            #expect(calls.contains(["-setdnsservers", "Ethernet", "9.9.9.9"]))
+            #expect(MacHostNetworkApply.readMarker(device: device) == nil)
+        }
+
+        @Test func `equivalent commands include dns for static`() {
+            let lines = MacHostNetworkApply.equivalentCommands(
+                service: "Ethernet",
+                device: "en0",
+                addressing: .staticIP,
+                address: "192.168.1.10/24",
+                gateway: "192.168.1.1",
+                dns: ["1.1.1.1"],
+            )
+            #expect(lines.joined(separator: "\n").contains("-setdnsservers"))
+            #expect(lines.joined(separator: "\n").contains("1.1.1.1"))
+        }
+    }
+#endif
+
+struct MacHostBridgeApplyPlannerTests {
+    #if os(macOS)
+        @Test func `mac apply refuses wifi service`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Wi-Fi",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .apply, nic: "en0"),
+                probe: probe,
+            )
+            #expect(!result.success)
+            #expect(result.message.contains("Wi-Fi"))
+        }
+        @Test func `mac apply plan lists dns when requested`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(
+                    facts: facts,
+                    interface: "en0",
+                    brewFormulaInstalled: true,
+                    brewServiceLoaded: true,
+                ),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(
+                    action: .apply,
+                    nic: "en0",
+                    addressing: .staticIP,
+                    address: "192.168.1.10/24",
+                    gateway: "192.168.1.1",
+                    dns: ["1.1.1.1"],
+                ),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.changes.contains(where: { $0.contains("DNS") }))
+            #expect(result.commands.joined(separator: "\n").contains("-setdnsservers"))
+        }
+    #endif
+}

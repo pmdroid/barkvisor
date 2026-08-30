@@ -28,7 +28,6 @@ public struct CreateVMParams: Sendable {
     public let health: WorkloadHealthSpec?
     public let workloadClass: String?
     public let allowCatalogIdentityKeys: Bool
-    public let guestAddressing: GuestAddressing?
 
     public init(
         id: String? = nil,
@@ -55,7 +54,6 @@ public struct CreateVMParams: Sendable {
         health: WorkloadHealthSpec? = nil,
         workloadClass: String? = nil,
         allowCatalogIdentityKeys: Bool = false,
-        guestAddressing: GuestAddressing? = nil,
     ) {
         self.id = id
         self.name = name
@@ -81,7 +79,6 @@ public struct CreateVMParams: Sendable {
         self.health = health
         self.workloadClass = workloadClass
         self.allowCatalogIdentityKeys = allowCatalogIdentityKeys
-        self.guestAddressing = guestAddressing
     }
 }
 
@@ -102,7 +99,6 @@ public struct UpdateVMParams: Sendable {
     public let tpmEnabled: Bool?
     public let workloadClass: String?
     public let startOnBoot: Bool?
-    public let guestAddressing: GuestAddressing?
 
     public init(
         name: String? = nil,
@@ -121,7 +117,6 @@ public struct UpdateVMParams: Sendable {
         tpmEnabled: Bool? = nil,
         workloadClass: String? = nil,
         startOnBoot: Bool? = nil,
-        guestAddressing: GuestAddressing? = nil,
     ) {
         self.name = name
         self.cpuCount = cpuCount
@@ -139,7 +134,6 @@ public struct UpdateVMParams: Sendable {
         self.tpmEnabled = tpmEnabled
         self.workloadClass = workloadClass
         self.startOnBoot = startOnBoot
-        self.guestAddressing = guestAddressing
     }
 }
 

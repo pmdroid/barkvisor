@@ -58,7 +58,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Start and ACPI Stop from the list (and Console / Display from detail) match the Home web UI on This Device and on a reachable member. Force Stop stays on detail with a confirm. **Create on iOS** opens the same three-step magazine wizard as the web UI (Gallery → Configure → Disk): Home templates via `POST /templates/deploy`, Windows/custom/coding-agent via `POST /vms`, SSH keys for cloud-init, size presets, NAT/bridged network, guest static IP, new or existing disk. Mac keeps the compact sheet. Hardware extras stay in the web UI. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Start and ACPI Stop from the list (and Console / Display from detail) match the Home web UI on This Device and on a reachable member. Force Stop stays on detail with a confirm. **Create on iOS** opens the same three-step magazine wizard as the web UI (Gallery → Configure → Disk): Home templates via `POST /templates/deploy`, Windows/custom/coding-agent via `POST /vms`, SSH keys for cloud-init, size presets, NAT/bridged network, new or existing disk. Mac keeps the compact sheet. Hardware extras stay in the web UI. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
 
 ## Tests
 

@@ -175,6 +175,10 @@ struct NetworksView: View {
     #if os(macOS)
         @State private var applyBusy = false
         @State private var applyNote: String?
+        @State private var bridgeAddressing = "dhcp"
+        @State private var bridgeAddress = ""
+        @State private var bridgeGateway = ""
+        @State private var bridgeDNS = ""
     #endif
 
     var body: some View {
@@ -192,44 +196,35 @@ struct NetworksView: View {
                 }
             }
             #if os(macOS)
-                if model.capabilities?.linuxHostBridgeApplySupported == true {
-                    Section("Host bridge") {
-                        Text("Apply persists br0 on this Device. Equivalent commands stay in the web UI. Rollback is a host timer.")
+                if model.capabilities?.linuxHostBridgeApplySupported == true
+                    || model.capabilities?.macosSocketVmnetSupported == true
+                {
+                    Section("Bridge setup") {
+                        Text("Device address on the LAN — not a Workload guest address. Apply/Revert uses the root daemon.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        Picker("Device address", selection: $bridgeAddressing) {
+                            Text("DHCP (from router)").tag("dhcp")
+                            Text("Static IPv4").tag("static")
+                        }
+                        if bridgeAddressing == "static" {
+                            TextField("192.168.1.10/24", text: $bridgeAddress)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Gateway (192.168.1.1)", text: $bridgeGateway)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("DNS (1.1.1.1, 8.8.8.8)", text: $bridgeDNS)
+                                .textFieldStyle(.roundedBorder)
+                        }
                         if let applyNote {
                             Text(applyNote)
                                 .font(.footnote)
                         }
-                        Button("Apply br0") {
+                        Button("Apply") {
                             Task { await runBridge(action: "apply") }
                         }
                         .disabled(applyBusy)
-                        Button("Revert BarkVisor files") {
+                        Button("Revert") {
                             Task { await runBridge(action: "revert") }
-                        }
-                        .disabled(applyBusy)
-                    }
-                }
-                if model.capabilities?.macosSocketVmnetSupported == true {
-                    Section("socket_vmnet") {
-                        Text("The Device starts Homebrew socket_vmnet. NAT still works when the service is down.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        if let applyNote {
-                            Text(applyNote)
-                                .font(.footnote)
-                        }
-                        Button("Setup") {
-                            Task { await runBridge(action: "setup") }
-                        }
-                        .disabled(applyBusy)
-                        Button("Start") {
-                            Task { await runBridge(action: "start") }
-                        }
-                        .disabled(applyBusy)
-                        Button("Stop") {
-                            Task { await runBridge(action: "stop") }
                         }
                         .disabled(applyBusy)
                     }
@@ -243,12 +238,44 @@ struct NetworksView: View {
     #if os(macOS)
         private func runBridge(action: String) async {
             guard let client = model.client else { return }
+            if bridgeAddressing == "static" && action == "apply" {
+                let address = bridgeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                let gateway = bridgeGateway.trimmingCharacters(in: .whitespacesAndNewlines)
+                if address.isEmpty {
+                    applyNote = "Enter a static address (e.g. 192.168.1.10/24)."
+                    return
+                }
+                if gateway.isEmpty {
+                    applyNote = "Enter a gateway for static addressing."
+                    return
+                }
+            }
             applyBusy = true
             defer { applyBusy = false }
             do {
-                var result = try await client.applyHostBridge(interface: nil, action: action, confirm: false)
+                let dns = bridgeDNS
+                    .split { $0 == "," || $0.isWhitespace }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                var result = try await client.applyHostBridge(
+                    interface: nil,
+                    action: action,
+                    confirm: false,
+                    addressing: bridgeAddressing,
+                    address: bridgeAddressing == "static" ? bridgeAddress : nil,
+                    gateway: bridgeAddressing == "static" ? bridgeGateway : nil,
+                    dns: dns.isEmpty ? nil : dns,
+                )
                 if result.needsConfirm == true {
-                    result = try await client.applyHostBridge(interface: nil, action: action, confirm: true)
+                    result = try await client.applyHostBridge(
+                        interface: nil,
+                        action: action,
+                        confirm: true,
+                        addressing: bridgeAddressing,
+                        address: bridgeAddressing == "static" ? bridgeAddress : nil,
+                        gateway: bridgeAddressing == "static" ? bridgeGateway : nil,
+                        dns: dns.isEmpty ? nil : dns,
+                    )
                 }
                 applyNote = result.message
                 if let changes = result.changes, !changes.isEmpty {

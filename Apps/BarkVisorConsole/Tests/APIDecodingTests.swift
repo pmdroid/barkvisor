@@ -593,9 +593,12 @@ struct APIDecodingTests {
             encoding: .utf8,
         )
         #expect(source.contains("macosSocketVmnetSupported"))
-        #expect(source.contains("Button(\"Setup\")"))
-        #expect(source.contains("Button(\"Start\")"))
-        #expect(source.contains("Button(\"Stop\")"))
+        #expect(source.contains("Button(\"Apply\")"))
+        #expect(source.contains("Button(\"Revert\")"))
+        #expect(source.contains("Bridge setup"))
+        #expect(!source.contains("Button(\"Setup\")"))
+        #expect(!source.contains("Button(\"Start\")"))
+        #expect(!source.contains("Button(\"Stop\")"))
         #expect(!source.localizedCaseInsensitiveContains("cluster"))
         #expect(!source.localizedCaseInsensitiveContains("quorum"))
     }

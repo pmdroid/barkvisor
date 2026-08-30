@@ -114,13 +114,13 @@ enum WorkloadGuestSummary {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func addressingSummary(workload: Workload) -> String {
-        workload.guestAddressing?.summary ?? "DHCP (LAN)"
+    static func addressingSummary(networkMode: String?) -> String {
+        networkMode == "bridged" ? "DHCP (LAN)" : "NAT"
     }
 
-    static func macGuidance(bridged: Bool, cloudInit: Bool) -> String {
-        if bridged, cloudInit {
-            return "Paste this MAC into your router for a DHCP reservation. Or set a static IPv4 here — cloud-init writes it on next boot."
+    static func macGuidance(bridged: Bool) -> String {
+        if bridged {
+            return "Paste this MAC into your router for a DHCP reservation."
         }
         return "Set the address in the guest or on the router. BarkVisor did not configure the OS."
     }

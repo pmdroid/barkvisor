@@ -62,7 +62,6 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.spec.networks.first?.networkId == "net-1")
         #expect(spec.spec.networks.first?.mode == nil)
         #expect(spec.spec.networks.first?.mac == "52:54:00:12:34:56")
-        #expect(spec.spec.networks.first?.addressing == nil)
         #expect(spec.spec.networks.first?.portForwards.first?.proto == "tcp")
         #expect(spec.spec.cloudInit?.userDataRef == "/data/cidata.iso")
         #expect(spec.spec.usb.first?.vendorId == "0x1234")
@@ -95,7 +94,6 @@ struct WorkloadSpecProjectorTests {
         #expect(vm.uefi)
         #expect(!vm.tpmEnabled)
         #expect(vm.macAddress == "52:54:00:12:34:56")
-        #expect(vm.decodedGuestAddressing == nil)
         #expect(vm.decodedSharedPaths == ["/Users/test/share"])
         #expect(vm.decodedPortForwards.first?.guestPort == 80)
         #expect(vm.decodedUSBDevices.first?.productId == "0x5678")
@@ -104,19 +102,6 @@ struct WorkloadSpecProjectorTests {
         #expect(vm.pendingChanges)
         #expect(vm.autoCreated == false)
         #expect(vm.specGeneration == 3)
-    }
-
-    @Test func `guest addressing round trips on spec.networks`() throws {
-        var vm = makeVM()
-        let addressing = GuestAddressing(
-            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
-        )
-        vm.setGuestAddressing(addressing)
-        let spec = WorkloadSpecProjector.fromVM(vm)
-        #expect(spec.spec.networks.first?.addressing == addressing)
-        var other = makeVM()
-        try WorkloadSpecProjector.apply(spec, to: &other)
-        #expect(other.decodedGuestAddressing == addressing)
     }
 
     @Test func `status uses closed state enum`() {

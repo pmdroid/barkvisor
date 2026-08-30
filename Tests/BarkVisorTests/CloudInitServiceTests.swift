@@ -154,45 +154,4 @@ struct CloudInitServiceTests {
         #expect(userData.contains("hostname: ubuntu-server"))
         #expect(CloudInitService.storedNetworkConfig(vmID: vmID) == nil)
     }
-
-    @Test func `generateISO writes network-config and bumps instance-id for static`() throws {
-        let vmID = "vm-addr-static"
-        let addressing = GuestAddressing(
-            mode: "static",
-            ipv4: "10.0.0.40",
-            prefixLength: 24,
-            gateway: "10.0.0.1",
-            nameservers: ["1.1.1.1"],
-        )
-        do {
-            _ = try CloudInitService.generateISO(
-                vmID: vmID,
-                vmName: "desk",
-                sshKeys: [],
-                userData: nil,
-                macAddress: "52:54:00:00:00:01",
-                addressing: addressing,
-            )
-        } catch BarkVisorError.cloudInitFailed {}
-        let net = try #require(CloudInitService.storedNetworkConfig(vmID: vmID))
-        #expect(net.contains("10.0.0.40/24"))
-        #expect(net.contains("via: 10.0.0.1"))
-        #expect(net.contains("52:54:00:00:00:01"))
-        let meta = try #require(CloudInitService.storedMetaData(vmID: vmID))
-        #expect(meta.contains("instance-id: \(vmID)-net-"))
-        #expect(!meta.contains("instance-id: \(vmID)\n"))
-
-        do {
-            _ = try CloudInitService.generateISO(
-                vmID: vmID,
-                vmName: "desk",
-                sshKeys: [],
-                userData: nil,
-                addressing: .dhcp,
-            )
-        } catch BarkVisorError.cloudInitFailed {}
-        #expect(CloudInitService.storedNetworkConfig(vmID: vmID) == nil)
-        let dhcpMeta = try #require(CloudInitService.storedMetaData(vmID: vmID))
-        #expect(dhcpMeta.contains("instance-id: \(vmID)-net-dhcp"))
-    }
 }

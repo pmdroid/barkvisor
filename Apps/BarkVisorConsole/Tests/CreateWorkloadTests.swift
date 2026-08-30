@@ -344,104 +344,31 @@ struct CreateWorkloadTests {
         #expect(api.scoped("/vms", on: member) == "/api/home/devices/peer-1/v1/vms")
     }
 
-    @Test func `dhcp omits guestAddressing on bridged create`() throws {
+    @Test func `bridged create sends networkId only`() throws {
         let cloud = image(id: "cloud-1", name: "Ubuntu 24.04", imageType: "cloud-image", arch: "x86_64")
         let body = try CreateWorkload.body(
             name: "box",
             image: cloud,
             hostCPUCount: 4,
             network: bridgedNetwork(),
-            addressing: GuestAddressingDraft(),
         )
         let encoded = try json(body)
         #expect(encoded["networkId"] as? String == "net-br")
         #expect(encoded["guestAddressing"] == nil)
     }
 
-    @Test func `static encodes guestAddressing keys matching SPA`() throws {
-        let cloud = image(id: "cloud-1", name: "Debian", imageType: "cloud-image", arch: "x86_64")
-        let body = try CreateWorkload.body(
-            name: "box",
-            image: cloud,
-            hostCPUCount: 4,
-            network: bridgedNetwork(),
-            addressing: GuestAddressingDraft(
-                mode: GuestAddressingDraft.modeStatic,
-                ipv4: "192.168.1.40",
-                prefixLength: 24,
-                gateway: "192.168.1.1",
-                nameservers: "1.1.1.1, 8.8.8.8",
-            ),
-        )
-        let encoded = try json(body)
-        let addressing = encoded["guestAddressing"] as? [String: Any]
-        #expect(addressing?["mode"] as? String == "static")
-        #expect(addressing?["ipv4"] as? String == "192.168.1.40")
-        #expect((addressing?["prefixLength"] as? NSNumber)?.intValue == 24)
-        #expect(addressing?["gateway"] as? String == "192.168.1.1")
-        #expect(addressing?["nameservers"] as? [String] == ["1.1.1.1", "8.8.8.8"])
-    }
-
-    @Test func `nat refuses static addressing on create`() {
-        let cloud = image(id: "cloud-1", name: "Ubuntu", imageType: "cloud-image")
-        #expect(throws: CreateWorkload.DraftError.staticAddressingNotBridged) {
-            try CreateWorkload.body(
-                name: "box",
-                image: cloud,
-                hostCPUCount: 4,
-                addressing: GuestAddressingDraft(mode: GuestAddressingDraft.modeStatic, ipv4: "192.168.1.40"),
-            )
-        }
-    }
-
-    @Test func `installer iso refuses static on bridged network`() {
-        let iso = image(id: "iso-1", name: "Ubuntu Desktop", imageType: "iso")
-        #expect(throws: CreateWorkload.DraftError.staticAddressingNotCloudInit) {
-            try CreateWorkload.body(
-                name: "box",
-                image: iso,
-                hostCPUCount: 4,
-                network: bridgedNetwork(),
-                addressing: GuestAddressingDraft(mode: GuestAddressingDraft.modeStatic, ipv4: "192.168.1.40"),
-            )
-        }
-    }
-
-    @Test func `edit payload sends dhcp mode to clear static`() throws {
-        let payload = try GuestAddressingDraft(
-            mode: GuestAddressingDraft.modeStatic,
-            ipv4: "192.168.1.40",
-            prefixLength: 24,
-            gateway: "192.168.1.1",
-        ).editPayload()
-        #expect(payload.mode == GuestAddressingDraft.modeStatic)
-        #expect(payload.ipv4 == "192.168.1.40")
-
-        let dhcp = try GuestAddressingDraft().editPayload()
-        #expect(dhcp.mode == GuestAddressingDraft.modeDHCP)
-        #expect(dhcp.ipv4 == nil)
-    }
-
-    @Test func `coding agent cloudInit still encodes with bridged static`() throws {
+    @Test func `coding agent cloudInit still encodes on bridged network`() throws {
         let coding = image(id: "img-ca", name: "Coding Agent", imageType: "cloud-image", arch: "arm64")
         let body = try CreateWorkload.body(
             name: "coder",
             image: coding,
             hostCPUCount: 8,
             network: bridgedNetwork(),
-            addressing: GuestAddressingDraft(
-                mode: GuestAddressingDraft.modeStatic,
-                ipv4: "192.168.1.50",
-                prefixLength: 24,
-                gateway: "192.168.1.1",
-                nameservers: "1.1.1.1",
-            ),
         )
         #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL") == true)
-        #expect(body.guestAddressing?.ipv4 == "192.168.1.50")
         let encoded = try json(body)
         #expect((encoded["cloudInit"] as? [String: Any])?["userData"] != nil)
-        #expect((encoded["guestAddressing"] as? [String: Any])?["ipv4"] as? String == "192.168.1.50")
+        #expect(encoded["guestAddressing"] == nil)
     }
 
     private func bridgedNetwork(id: String = "net-br") -> NetworkRecord {

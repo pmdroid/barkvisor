@@ -17,23 +17,6 @@ struct ModelCodableTests {
         #expect(decoded.userData == "packages:\n  - vim")
     }
 
-    @Test func `guest addressing static is codable`() throws {
-        let addressing = GuestAddressing(
-            mode: "static",
-            ipv4: "192.168.1.40",
-            prefixLength: 24,
-            gateway: "192.168.1.1",
-            nameservers: ["1.1.1.1"],
-        )
-        let data = try JSONEncoder().encode(addressing)
-        let decoded = try JSONDecoder().decode(GuestAddressing.self, from: data)
-        #expect(decoded.mode == "static")
-        #expect(decoded.ipv4 == "192.168.1.40")
-        #expect(decoded.prefixLength == 24)
-        #expect(decoded.gateway == "192.168.1.1")
-        #expect(decoded.nameservers == ["1.1.1.1"])
-    }
-
     @Test func `cloud init config nil fields`() throws {
         let config = CloudInitConfig(sshAuthorizedKeys: nil, userData: nil)
         let data = try JSONEncoder().encode(config)

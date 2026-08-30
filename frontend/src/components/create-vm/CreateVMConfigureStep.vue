@@ -31,12 +31,6 @@ const props = defineProps<{
   cpuCap: number
   memCapGB: number
   networkBridged: boolean
-  cloudInitCapable: boolean
-  guestAddressMode: 'dhcp' | 'static'
-  guestIPv4: string
-  guestPrefixLength: number | null
-  guestGateway: string
-  guestNameservers: string
   uefi: boolean
   tpmEnabled: boolean
   tpmWhy: string
@@ -55,11 +49,6 @@ const emit = defineEmits<{
   'update:cpuCount': [value: number]
   'update:memoryMB': [value: number]
   'update:networkBridged': [value: boolean]
-  'update:guestAddressMode': [value: 'dhcp' | 'static']
-  'update:guestIPv4': [value: string]
-  'update:guestPrefixLength': [value: number | null]
-  'update:guestGateway': [value: string]
-  'update:guestNameservers': [value: string]
   'update:uefi': [value: boolean]
   'update:tpmEnabled': [value: boolean]
   'update:selectedSSHKeyId': [value: string]
@@ -268,39 +257,6 @@ function deviceLine(option: DevicePickOption): string {
             />
           </div>
         </div>
-        <div v-if="networkBridged && cloudInitCapable" class="mag-addr">
-          <label>Workload addressing</label>
-          <AppSelect
-            :model-value="guestAddressMode"
-            :options="[
-              { value: 'dhcp', label: 'DHCP (LAN)' },
-              { value: 'static', label: 'Static IPv4' },
-            ]"
-            @update:model-value="emit('update:guestAddressMode', $event === 'static' ? 'static' : 'dhcp')"
-          />
-          <p class="mag-hint">Default is DHCP from your router. The Workload MAC is shown after create for a reservation.</p>
-          <div v-if="guestAddressMode === 'static'" class="mag-advgrid" style="margin-top:8px">
-            <div>
-              <label>IPv4</label>
-              <input :value="guestIPv4" placeholder="192.168.1.40" @input="emit('update:guestIPv4', ($event.target as HTMLInputElement).value)" />
-            </div>
-            <div>
-              <label>Prefix</label>
-              <input type="number" min="1" max="32" :value="guestPrefixLength ?? ''" @input="emit('update:guestPrefixLength', ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value))" />
-            </div>
-            <div>
-              <label>Gateway</label>
-              <input :value="guestGateway" placeholder="192.168.1.1" @input="emit('update:guestGateway', ($event.target as HTMLInputElement).value)" />
-            </div>
-            <div>
-              <label>DNS</label>
-              <input :value="guestNameservers" placeholder="1.1.1.1, 8.8.8.8" @input="emit('update:guestNameservers', ($event.target as HTMLInputElement).value)" />
-            </div>
-          </div>
-        </div>
-        <p v-else-if="networkBridged && !cloudInitCapable" class="mag-hint">
-          After create, copy the Workload MAC and set the address in the guest or on the router. BarkVisor does not configure installer ISOs.
-        </p>
         <p class="mag-hint" :class="{ on: atResourceCap }">{{ capHintText }}</p>
         <div class="mag-fwrow">
           <div>

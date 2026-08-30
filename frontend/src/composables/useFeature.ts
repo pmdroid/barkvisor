@@ -1,7 +1,5 @@
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
-
 export { BRIDGE_MUTATION_ACTION_KEYS, MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
 
 /**
@@ -19,7 +17,7 @@ export { BRIDGE_MUTATION_ACTION_KEYS, MACOS_SOCKET_VMNET_ACTION_KEYS } from '../
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
  * bridge-install step instead of showing a dead wizard page.
  * Networks Bridge setup is `bridgeManagementMode` (linux-guide / macos-guide).
- * Linux apply/revert uses the root daemon. macOS Setup/Start/Stop starts socket_vmnet.
+ * Linux and macOS both use Apply/Revert (br0 vs socket_vmnet + networksetup under the hood).
  */
 export const FEATURE_CODES = [
   'bridgedNetworking',
@@ -77,16 +75,10 @@ export function bridgeManagementMode(caps: {
 
 /**
  * Action keys the Networks Bridge-setup UI may render.
- * Linux stays Apply/Revert. macOS Setup/Start/Stop. Remove stays gone.
+ * Apply/Revert on both platforms. Legacy setup/start/stop keys stay internal only.
  */
 export function bridgeGuideActionKeys(
-  mode: BridgeManagementMode,
+  _mode: BridgeManagementMode,
 ): readonly string[] {
-  switch (mode) {
-    case 'macos-guide':
-      return [...MACOS_SOCKET_VMNET_ACTION_KEYS]
-    case 'linux-guide':
-    case 'hidden':
-      return []
-  }
+  return []
 }

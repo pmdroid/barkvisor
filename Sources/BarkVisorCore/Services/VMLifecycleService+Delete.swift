@@ -204,16 +204,5 @@ extension VMLifecycleService {
             portForwardCount: params.portForwards?.count ?? 0,
             networkMode: NetworkCapability.effectiveMode(of: network),
         )
-        let keys = params.cloudInit?.sshAuthorizedKeys ?? []
-        try GuestAddressing.require(
-            params.guestAddressing,
-            networkMode: NetworkCapability.effectiveMode(of: network),
-            cloudInitApplies: GuestAddressing.cloudInitApplies(
-                cloudImageId: params.cloudImageId,
-                isoId: params.isoId,
-                sshKeys: keys,
-                userData: params.cloudInit?.userData,
-            ),
-        )
     }
 }

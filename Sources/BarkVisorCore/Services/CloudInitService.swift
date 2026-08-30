@@ -59,7 +59,6 @@ public enum CloudInitService {
         userData: String?,
         instanceID: String? = nil,
         macAddress: String? = nil,
-        addressing: GuestAddressing? = nil,
     ) throws -> URL {
         let dir = generatedISOURL(vmID: vmID).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -67,19 +66,14 @@ public enum CloudInitService {
         let hostname = hostnameFromVMName(vmName)
         let trimmedID = instanceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let baseID = trimmedID.isEmpty ? vmID : trimmedID
-        let resolvedID = GuestAddressing.composeInstanceID(base: baseID, addressing: addressing)
+        let resolvedID = baseID
         let metaData = "instance-id: \(resolvedID)\nlocal-hostname: \(hostname)\n"
         try metaData.write(
             to: dir.appendingPathComponent("meta-data"), atomically: true, encoding: .utf8,
         )
 
         let networkConfigURL = dir.appendingPathComponent("network-config")
-        let networkYAML = try addressing?.networkConfigYAML(macAddress: macAddress)
-        if let networkYAML {
-            try networkYAML.write(to: networkConfigURL, atomically: true, encoding: .utf8)
-        } else {
-            try? FileManager.default.removeItem(at: networkConfigURL)
-        }
+        try? FileManager.default.removeItem(at: networkConfigURL)
 
         // Validate SSH keys
         for key in sshKeys {
@@ -144,9 +138,6 @@ public enum CloudInitService {
             dir.appendingPathComponent("meta-data").path,
             dir.appendingPathComponent("user-data").path,
         ]
-        if networkYAML != nil {
-            isoFiles.append(networkConfigURL.path)
-        }
         let result = try PlatformProcess.run(
             executable: tool,
             arguments: [

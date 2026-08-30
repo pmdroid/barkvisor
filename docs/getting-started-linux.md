@@ -228,7 +228,7 @@ NAT works out of the box. Bridged mode uses a host `br0` plus QEMU `qemu-bridge-
 
 Prefer **Networks → Bridge setup → Apply** on the Device. Equivalent commands stay on that page. Rollback is a host timer (`netplan try`). Do not Confirm in the browser after the uplink dies. Wi-Fi is refused.
 
-Host address on `br0` is DHCP or static for this Device. Guest static IP is a Workload setting, not this apply.
+Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Bridge setup**.
 
 ```sh
 sudo linux-bridge-apply.sh --apply --nic <wired-uplink> --dhcp

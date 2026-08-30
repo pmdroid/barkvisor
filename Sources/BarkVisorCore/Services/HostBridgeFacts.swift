@@ -194,7 +194,7 @@ public enum HostBridgeFactsService {
                 label: "Create \(br)",
                 commands: [
                     "# Persist \(br) with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.",
-                    "# Host address on \(br) is this Device (DHCP or static). Guest static IP is separate.",
+                    "# Host address on \(br) is DHCP or static for this Device.",
                     "sudo linux-bridge-apply.sh --apply --nic <wired-uplink> --dhcp",
                     "# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.",
                 ].joined(separator: "\n"),

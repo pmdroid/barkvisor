@@ -22,7 +22,6 @@ struct CreateWorkloadSheet: View {
     @State private var byoOpenAIAPIKey = ""
     @State private var networks: [NetworkRecord] = []
     @State private var networkID = ""
-    @State private var addressing = GuestAddressingDraft()
 
     var body: some View {
         Form {
@@ -99,39 +98,6 @@ struct CreateWorkloadSheet: View {
                             Text(network.name).tag(network.id)
                         }
                     }
-                    if selectedNetwork != nil {
-                        if cloudInitCapable {
-                            Picker("Addressing", selection: $addressing.mode) {
-                                Text("DHCP (LAN)").tag(GuestAddressingDraft.modeDHCP)
-                                Text("Static IPv4").tag(GuestAddressingDraft.modeStatic)
-                            }
-                            if addressing.isStatic {
-                                TextField("IPv4", text: $addressing.ipv4, prompt: Text("192.168.1.40"))
-                                #if os(iOS)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .keyboardType(.numbersAndPunctuation)
-                                #endif
-                                Stepper(
-                                    "Prefix: \(addressing.prefixLength ?? GuestAddressingDraft.defaultPrefixLength)",
-                                    value: addressingPrefix,
-                                    in: 1 ... 32,
-                                )
-                                TextField("Gateway", text: $addressing.gateway, prompt: Text("192.168.1.1"))
-                                #if os(iOS)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .keyboardType(.numbersAndPunctuation)
-                                #endif
-                                TextField("DNS", text: $addressing.nameservers, prompt: Text("1.1.1.1, 8.8.8.8"))
-                                #if os(iOS)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .keyboardType(.numbersAndPunctuation)
-                                #endif
-                            }
-                        }
-                    }
                 } header: {
                     Text("Network")
                 } footer: {
@@ -171,9 +137,6 @@ struct CreateWorkloadSheet: View {
             .task(id: deviceID) { await loadImages() }
             .task(id: deviceID) { await loadNetworks() }
             .onChange(of: imageID) { _, _ in applyCodingAgentDefaults() }
-            .onChange(of: networkID) { _, _ in
-                if selectedNetwork == nil { addressing.mode = GuestAddressingDraft.modeDHCP }
-            }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
@@ -204,7 +167,7 @@ struct CreateWorkloadSheet: View {
     }
 
     private var bridgedNetworks: [NetworkRecord] {
-        networks.filter { $0.mode.lowercased() == GuestAddressingDraft.networkModeBridged }
+        networks.filter { $0.mode.lowercased() == "bridged" }
     }
 
     /// Nil means implicit NAT (networkId omitted), same as before this picker existed.
@@ -212,26 +175,11 @@ struct CreateWorkloadSheet: View {
         bridgedNetworks.first { $0.id == networkID }
     }
 
-    /// Cloud images run cloud-init; installer ISOs do not, so static stays off there.
-    private var cloudInitCapable: Bool {
-        selectedImage.map { !CreateWorkload.isISO($0) } ?? false
-    }
-
-    private var addressingPrefix: Binding<Int> {
-        Binding(
-            get: { addressing.prefixLength ?? GuestAddressingDraft.defaultPrefixLength },
-            set: { addressing.prefixLength = $0 },
-        )
-    }
-
     private var networkFooterCopy: String {
         if selectedNetwork == nil {
             return "NAT out with port forwards. \(CreateWorkload.webEditCopy)"
         }
-        if cloudInitCapable {
-            return "Default is DHCP from your router. The Workload MAC is shown after create for a reservation."
-        }
-        return "After create, copy the Workload MAC and set the address in the guest or on the router. BarkVisor does not configure installer ISOs."
+        return "Bridged Workloads use DHCP from your router. Copy the Workload MAC after create for a reservation."
     }
 
     private var footerCopy: String {
@@ -326,7 +274,6 @@ struct CreateWorkloadSheet: View {
             openaiBaseURL: openaiURL,
             openaiAPIKey: openaiKey,
             network: selectedNetwork,
-            addressing: addressing,
         ) else {
             localError = model.banner ?? "Could not create the Workload"
             return

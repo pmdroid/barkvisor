@@ -25,7 +25,6 @@ struct CreateVMWizardView: View {
     @State private var sshKeyID = ""
     @State private var presetID = "medium"
     @State private var networkID = ""
-    @State private var addressing = GuestAddressingDraft()
     @State private var diskSource: CreateVMWizard.DiskSource = .new
     @State private var existingDiskID = ""
     @State private var workloadClass = "house"
@@ -234,18 +233,6 @@ struct CreateVMWizardView: View {
                         Text(network.name).tag(network.id)
                     }
                 }
-                if selectedNetwork != nil, cloudInitCapable {
-                    Picker("Addressing", selection: $addressing.mode) {
-                        Text("DHCP (LAN)").tag(GuestAddressingDraft.modeDHCP)
-                        Text("Static IPv4").tag(GuestAddressingDraft.modeStatic)
-                    }
-                    if addressing.isStatic {
-                        TextField("IPv4", text: $addressing.ipv4)
-                        Stepper("Prefix: \(addressing.prefixLength ?? 24)", value: addressingPrefix, in: 1 ... 32)
-                        TextField("Gateway", text: $addressing.gateway)
-                        TextField("DNS", text: $addressing.nameservers)
-                    }
-                }
             }
         }
     }
@@ -357,7 +344,7 @@ struct CreateVMWizardView: View {
     }
 
     private var bridgedNetworks: [NetworkRecord] {
-        networks.filter { $0.mode.lowercased() == GuestAddressingDraft.networkModeBridged }
+        networks.filter { $0.mode.lowercased() == "bridged" }
     }
 
     private var selectedNetwork: NetworkRecord? {
@@ -375,13 +362,6 @@ struct CreateVMWizardView: View {
 
     private var unusedDisks: [DiskRecord] {
         CreateVMWizard.unusedDisks(disks)
-    }
-
-    private var addressingPrefix: Binding<Int> {
-        Binding(
-            get: { addressing.prefixLength ?? GuestAddressingDraft.defaultPrefixLength },
-            set: { addressing.prefixLength = $0 },
-        )
     }
 
     private var canAdvance: Bool {
@@ -512,7 +492,6 @@ struct CreateVMWizardView: View {
             sshKey: selectedSSHKey,
             preset: preset,
             network: selectedNetwork,
-            addressing: addressing,
             diskSource: diskSource,
             diskSizeGB: diskGB,
             existingDiskID: existingDiskID,
