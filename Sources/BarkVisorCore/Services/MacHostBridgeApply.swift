@@ -38,6 +38,36 @@ public struct MacHostNetworkSnapshot: Sendable, Equatable, Codable {
         self.gateway = gateway
         self.dns = dns
     }
+
+    public static func fromGetInfo(_ output: String, service: String, device: String? = nil)
+        -> MacHostNetworkSnapshot {
+        let lower = output.lowercased()
+        let addressing = if lower.contains("manual configuration") || lower.contains("ipv4: manual") {
+            MacHostBridgeAddressing.staticIP.rawValue
+        } else {
+            MacHostBridgeAddressing.dhcp.rawValue
+        }
+        return MacHostNetworkSnapshot(
+            service: service,
+            device: device,
+            addressing: addressing,
+            address: getInfoField(output, label: "IP address:"),
+            subnet: getInfoField(output, label: "Subnet mask:"),
+            gateway: getInfoField(output, label: "Router:"),
+        )
+    }
+
+    private static func getInfoField(_ output: String, label: String) -> String? {
+        for raw in output.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard line.lowercased().hasPrefix(label.lowercased()) else { continue }
+            let value = String(line.dropFirst(label.count)).trimmingCharacters(in: .whitespaces)
+            if value.isEmpty { return nil }
+            if value.lowercased() == "none" { return nil }
+            return value
+        }
+        return nil
+    }
 }
 
 public struct MacHostBridgeApplyProbe: Sendable, Equatable {

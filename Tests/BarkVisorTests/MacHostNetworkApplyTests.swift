@@ -90,6 +90,7 @@ struct MacHostNetworkApplyTests {
         service: String? = "USB 10/100/1000 LAN",
         wireless: Set<String> = [],
         marker: MacHostNetworkSnapshot? = nil,
+        dataDir: URL = URL(fileURLWithPath: "/tmp/barkvisor-host-network-test"),
     ) -> MacHostBridgeApplyProbe {
         let assembled = facts(service: service)
         return MacHostBridgeApplyProbe(
@@ -97,8 +98,21 @@ struct MacHostNetworkApplyTests {
             service: service,
             wirelessServices: wireless,
             marker: marker,
-            dataDir: FileManager.default.temporaryDirectory,
+            dataDir: dataDir,
         )
+    }
+
+    private final class ScriptedMacHostNetworkCommands: MacHostNetworkCommandRunning, @unchecked Sendable {
+        var calls: [[String]] = []
+        var getInfo = ""
+
+        func runNetworksetup(arguments: [String]) throws -> CommandResult {
+            calls.append(arguments)
+            if arguments.first == "-getinfo" {
+                return CommandResult(exitCode: 0, stdout: Data(getInfo.utf8), stderr: Data())
+            }
+            return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+        }
     }
 
     @Test func `evaluate refuses Wi-Fi and missing service name`() {
@@ -207,5 +221,167 @@ struct MacHostNetworkApplyTests {
         #expect(recorder.steps.contains { $0.contains("networksetup -setdhcp") })
         #expect(MacHostBridgeApply.markerDirName == "host-network")
         #expect(MacHostNetworkApply.backendName == "networksetup")
+    }
+
+    @Test func `fromGetInfo parses manual and DHCP Device profiles`() {
+        let manual = MacHostNetworkSnapshot.fromGetInfo(
+            """
+            Manual Configuration
+            IP address: 10.0.0.5
+            Subnet mask: 255.255.255.0
+            Router: 10.0.0.1
+            """,
+            service: "USB 10/100/1000 LAN",
+            device: "en8",
+        )
+        #expect(manual.addressing == MacHostBridgeAddressing.staticIP.rawValue)
+        #expect(manual.address == "10.0.0.5")
+        #expect(manual.subnet == "255.255.255.0")
+        #expect(manual.gateway == "10.0.0.1")
+
+        let dhcp = MacHostNetworkSnapshot.fromGetInfo(
+            """
+            DHCP Configuration
+            IP address: 192.168.1.20
+            Subnet mask: 255.255.255.0
+            Router: 192.168.1.1
+            """,
+            service: "USB 10/100/1000 LAN",
+        )
+        #expect(dhcp.addressing == MacHostBridgeAddressing.dhcp.rawValue)
+        #expect(dhcp.address == "192.168.1.20")
+        #expect(dhcp.gateway == "192.168.1.1")
+    }
+
+    @Test func `apply captures snapshot marker before networksetup`() throws {
+        let files = MemoryMacHostNetworkMarkerStore()
+        let runner = ScriptedMacHostNetworkCommands()
+        runner.getInfo = """
+        Manual Configuration
+        IP address: 10.0.0.5
+        Subnet mask: 255.255.255.0
+        Router: 10.0.0.1
+        """
+        let dataDir = URL(fileURLWithPath: "/tmp/barkvisor-host-network-capture")
+        let result = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(
+                action: .apply,
+                service: "USB 10/100/1000 LAN",
+                confirm: true,
+            ),
+            probe: probe(dataDir: dataDir),
+            mutator: MacHostNetworkFileMutator(files: files, commands: runner),
+        )
+        #expect(result.applied)
+        let url = MacHostBridgeApply.markerURL(service: "USB 10/100/1000 LAN", dataDir: dataDir)
+        let marker = try JSONDecoder().decode(
+            MacHostNetworkSnapshot.self,
+            from: files.readMarker(from: url) ?? Data(),
+        )
+        #expect(marker.addressing == "static")
+        #expect(marker.address == "10.0.0.5")
+        #expect(marker.gateway == "10.0.0.1")
+        #expect(runner.calls.first == ["-getinfo", "USB 10/100/1000 LAN"])
+        let applyAt = runner.calls.firstIndex(of: ["-setdhcp", "USB 10/100/1000 LAN"])
+        #expect(applyAt == 1)
+        #expect(!runner.calls.joined().contains("cluster"))
+    }
+
+    @Test func `apply does not overwrite an existing marker`() throws {
+        let files = MemoryMacHostNetworkMarkerStore()
+        let dataDir = URL(fileURLWithPath: "/tmp/barkvisor-host-network-keep")
+        let url = MacHostBridgeApply.markerURL(service: "USB 10/100/1000 LAN", dataDir: dataDir)
+        let existing = MacHostNetworkSnapshot(
+            service: "USB 10/100/1000 LAN",
+            addressing: "dhcp",
+            address: "192.168.1.9",
+        )
+        try files.writeMarker(JSONEncoder().encode(existing), to: url)
+        let runner = ScriptedMacHostNetworkCommands()
+        runner.getInfo = """
+        Manual Configuration
+        IP address: 10.0.0.5
+        Subnet mask: 255.255.255.0
+        Router: 10.0.0.1
+        """
+        _ = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(
+                action: .apply,
+                service: "USB 10/100/1000 LAN",
+                confirm: true,
+            ),
+            probe: probe(dataDir: dataDir),
+            mutator: MacHostNetworkFileMutator(files: files, commands: runner),
+        )
+        let kept = try JSONDecoder().decode(
+            MacHostNetworkSnapshot.self,
+            from: files.readMarker(from: url) ?? Data(),
+        )
+        #expect(kept.address == "192.168.1.9")
+        #expect(kept.addressing == "dhcp")
+        #expect(!runner.calls.contains { $0.first == "-getinfo" })
+    }
+
+    @Test func `revert restores manual profile from marker file`() throws {
+        let files = MemoryMacHostNetworkMarkerStore()
+        let dataDir = URL(fileURLWithPath: "/tmp/barkvisor-host-network-revert-static")
+        let url = MacHostBridgeApply.markerURL(service: "USB 10/100/1000 LAN", dataDir: dataDir)
+        try files.writeMarker(
+            JSONEncoder().encode(MacHostNetworkSnapshot(
+                service: "USB 10/100/1000 LAN",
+                addressing: "static",
+                address: "10.0.0.5",
+                subnet: "255.255.255.0",
+                gateway: "10.0.0.1",
+            )),
+            to: url,
+        )
+        let runner = ScriptedMacHostNetworkCommands()
+        let result = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(action: .revert, service: "USB 10/100/1000 LAN"),
+            probe: probe(dataDir: dataDir),
+            mutator: MacHostNetworkFileMutator(files: files, commands: runner),
+        )
+        #expect(result.applied)
+        #expect(runner.calls == [["-setmanual", "USB 10/100/1000 LAN", "10.0.0.5", "255.255.255.0", "10.0.0.1"]])
+        #expect(!files.markerExists(at: url))
+    }
+
+    @Test func `revert restores DHCP profile from marker file`() throws {
+        let files = MemoryMacHostNetworkMarkerStore()
+        let dataDir = URL(fileURLWithPath: "/tmp/barkvisor-host-network-revert-dhcp")
+        let url = MacHostBridgeApply.markerURL(service: "USB 10/100/1000 LAN", dataDir: dataDir)
+        try files.writeMarker(
+            JSONEncoder().encode(MacHostNetworkSnapshot(
+                service: "USB 10/100/1000 LAN",
+                addressing: "dhcp",
+            )),
+            to: url,
+        )
+        let runner = ScriptedMacHostNetworkCommands()
+        let result = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(action: .revert, service: "USB 10/100/1000 LAN"),
+            probe: probe(dataDir: dataDir),
+            mutator: MacHostNetworkFileMutator(files: files, commands: runner),
+        )
+        #expect(result.applied)
+        #expect(runner.calls == [["-setdhcp", "USB 10/100/1000 LAN"]])
+        #expect(!files.markerExists(at: url))
+    }
+
+    @Test func `revert without marker falls back to setdhcp`() throws {
+        let files = MemoryMacHostNetworkMarkerStore()
+        let runner = ScriptedMacHostNetworkCommands()
+        let result = try MacHostBridgeApplyLive.run(
+            request: MacHostBridgeApplyRequest(action: .revert, service: "USB 10/100/1000 LAN"),
+            probe: probe(dataDir: URL(fileURLWithPath: "/tmp/barkvisor-host-network-revert-missing")),
+            mutator: MacHostNetworkFileMutator(files: files, commands: runner),
+        )
+        #expect(result.applied)
+        #expect(runner.calls == [["-setdhcp", "USB 10/100/1000 LAN"]])
+        #expect(result.message.contains("Device"))
+        #expect(!result.message.contains("cluster"))
+        #expect(!result.message.contains("node"))
+        #expect(!result.message.contains("quorum"))
     }
 }
