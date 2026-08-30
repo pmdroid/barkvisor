@@ -98,8 +98,6 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var specGeneration: Int
     /// PAS-258: start after Device boot. Default off so House appliances stay stopped.
     public var startOnBoot: Bool
-    /// Guest LAN addressing (DHCP default, optional static on bridged cloud-init). #385
-    public var guestAddressingJson: String?
     public var createdAt: String
     public var updatedAt: String
 
@@ -134,7 +132,6 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         sessionJson: String? = nil,
         specGeneration: Int = 1,
         startOnBoot: Bool = false,
-        guestAddressingJson: String? = nil,
         createdAt: String,
         updatedAt: String,
     ) {
@@ -168,7 +165,6 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.sessionJson = sessionJson
         self.specGeneration = specGeneration
         self.startOnBoot = startOnBoot
-        self.guestAddressingJson = guestAddressingJson
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

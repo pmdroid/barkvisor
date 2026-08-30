@@ -580,6 +580,18 @@ struct WorkloadSpecProjectorTests {
         #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
     }
 
+    @Test func `guest addressing change on spec apply is a hardware change`() throws {
+        let before = makeVM()
+        var after = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(after)
+        spec.spec.networks[0].addressing = GuestAddressing(
+            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
+        )
+        try WorkloadSpecProjector.apply(spec, to: &after)
+        #expect(after.decodedGuestAddressing?.ipv4 == "192.168.1.40")
+        #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
+    }
+
     @Test func `fromVM projects implicit NAT when networkId is nil`() {
         var vm = makeVM()
         vm.networkId = nil

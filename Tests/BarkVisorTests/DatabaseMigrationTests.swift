@@ -59,10 +59,10 @@ struct DatabaseMigrationTests {
         #expect(fetched?.macAddress == "52:54:00:12:34:56")
         #expect(fetched?.workloadClass == "house")
         #expect(fetched?.startOnBoot == false)
-        #expect(fetched?.guestAddressingJson == nil)
+        #expect(fetched?.decodedGuestAddressing == nil)
         try queue.read { db in
             let columns = try db.columns(in: "vms").map(\.name)
-            #expect(columns.contains("guestAddressingJson"))
+            #expect(!columns.contains("guestAddressingJson"))
         }
     }
 
@@ -218,6 +218,146 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m018 drops guestAddressingJson and folds into specJson`() throws {
+        let queue = try DatabaseQueue()
+        try migrateThroughM017(queue)
+
+        let addressing = GuestAddressing(
+            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
+        )
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(id: "vm-addr", name: "legacy"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                networks: [WorkloadNetwork(networkId: nil)],
+            ),
+        )
+        let specJson = WorkloadSpecJSON.encode(spec)
+        let addressingJson = JSONColumnCoding.encode(addressing)
+
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO disks (id, name, path, sizeBytes, format, autoCreated, status, createdAt)
+                VALUES ('d-addr', 'boot', '/tmp/d.qcow2', 1, 'qcow2', 0, 'ready', '2025-01-01T00:00:00Z')
+                """,
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO vms (
+                    id, name, vmType, state, cpuCount, memoryMb, bootDiskId,
+                    uefi, tpmEnabled, autoCreated, pendingChanges,
+                    specJson, specGeneration, guestAddressingJson,
+                    createdAt, updatedAt
+                ) VALUES (
+                    'vm-addr', 'legacy', 'linux-arm64', 'stopped', 2, 1024, 'd-addr',
+                    1, 0, 0, 0,
+                    ?, 1, ?,
+                    '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'
+                )
+                """,
+                arguments: [specJson, addressingJson],
+            )
+        }
+
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("guestAddressingJson"))
+        }
+
+        try AppDatabase.makeMigrator().migrate(queue)
+
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(!columns.contains("guestAddressingJson"))
+            let vm = try VM.fetchOne(db, key: "vm-addr")
+            #expect(vm?.decodedGuestAddressing == addressing)
+            #expect(WorkloadSpecJSON.decode(vm?.specJson)?.spec.networks.first?.addressing == addressing)
+        }
+    }
+
+    @Test func `m018 keeps specJson addressing when the dropped column disagrees`() throws {
+        let queue = try DatabaseQueue()
+        try migrateThroughM017(queue)
+
+        let specAddressing = GuestAddressing(
+            mode: "static", ipv4: "10.0.0.8", prefixLength: 24, gateway: "10.0.0.1",
+        )
+        let columnAddressing = GuestAddressing(
+            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
+        )
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(id: "vm-keep", name: "keep"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                networks: [WorkloadNetwork(addressing: specAddressing)],
+            ),
+        )
+
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO disks (id, name, path, sizeBytes, format, autoCreated, status, createdAt)
+                VALUES ('d-keep', 'boot', '/tmp/d.qcow2', 1, 'qcow2', 0, 'ready', '2025-01-01T00:00:00Z')
+                """,
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO vms (
+                    id, name, vmType, state, cpuCount, memoryMb, bootDiskId,
+                    uefi, tpmEnabled, autoCreated, pendingChanges,
+                    specJson, specGeneration, guestAddressingJson,
+                    createdAt, updatedAt
+                ) VALUES (
+                    'vm-keep', 'keep', 'linux-arm64', 'stopped', 2, 1024, 'd-keep',
+                    1, 0, 0, 0,
+                    ?, 1, ?,
+                    '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'
+                )
+                """,
+                arguments: [WorkloadSpecJSON.encode(spec), JSONColumnCoding.encode(columnAddressing)],
+            )
+        }
+
+        try AppDatabase.makeMigrator().migrate(queue)
+
+        try queue.read { db in
+            let vm = try VM.fetchOne(db, key: "vm-keep")
+            #expect(vm?.decodedGuestAddressing == specAddressing)
+        }
+    }
+
+    @Test func `guest addressing round trips through specJson after m018`() throws {
+        let queue = try migratedQueue()
+        let disk = Disk(
+            id: "disk-addr", name: "boot", path: "/data/boot.qcow2",
+            sizeBytes: 21_474_836_480, format: "qcow2", vmId: nil,
+            autoCreated: false, status: "ready", createdAt: "2025-01-01T00:00:00Z",
+        )
+        try queue.write { db in try disk.insert(db) }
+        var vm = VM(
+            id: "vm-addr-rt", name: "addr", vmType: "linux-arm64", state: "stopped",
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-addr", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: "cd", displayResolution: "1280x800",
+            additionalDiskIds: nil, uefi: true, tpmEnabled: false,
+            macAddress: "52:54:00:12:34:56", sharedPaths: nil,
+            portForwards: nil, autoCreated: false, pendingChanges: false,
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        let addressing = GuestAddressing(
+            mode: "static", ipv4: "10.0.0.8", prefixLength: 24, gateway: "10.0.0.1",
+        )
+        vm.setGuestAddressing(addressing)
+        vm.syncSpecProjection(bumpGeneration: false)
+        try queue.write { db in try vm.insert(db) }
+        let fetched = try queue.read { db in try VM.fetchOne(db, key: "vm-addr-rt") }
+        #expect(fetched?.decodedGuestAddressing == addressing)
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(!columns.contains("guestAddressingJson"))
+        }
+    }
+
     @Test func `m008 adds listening port columns on guest_info`() throws {
         let queue = try migratedQueue()
         try queue.read { db in
@@ -361,6 +501,68 @@ struct DatabaseMigrationTests {
         let queue = try DatabaseQueue(configuration: config)
         try seedThroughM004WithOrphanAuditLog(queue)
         return queue
+    }
+
+    private func migrateThroughM017(_ db: some DatabaseWriter) throws {
+        var partial = DatabaseMigrator()
+        partial.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        partial.registerMigration(M002_WorkloadSpec.identifier) { db in
+            try M002_WorkloadSpec.migrate(db)
+        }
+        partial.registerMigration(M003_ArchitectureAwareTemplates.identifier) { db in
+            try M003_ArchitectureAwareTemplates.migrate(db)
+        }
+        partial.registerMigration(M004_WorkloadOverrides.identifier) { db in
+            try M004_WorkloadOverrides.migrate(db)
+        }
+        partial.registerMigration(M005_WorkloadHealth.identifier) { db in
+            try M005_WorkloadHealth.migrate(db)
+        }
+        partial.registerMigration(M006_ImageSha256.identifier) { db in
+            try M006_ImageSha256.migrate(db)
+        }
+        partial.registerMigration(M007_RepairOrphanAuditFKs.identifier) { db in
+            try M007_RepairOrphanAuditFKs.migrate(db)
+        }
+        partial.registerMigration(M008_GuestListeningPorts.identifier) { db in
+            try M008_GuestListeningPorts.migrate(db)
+        }
+        partial.registerMigration(M009_AuthSessions.identifier) { db in
+            try M009_AuthSessions.migrate(db)
+        }
+        partial.registerMigration(M010_WorkloadClass.identifier) { db in
+            try M010_WorkloadClass.migrate(db)
+        }
+        partial.registerMigration(M011_StartOnBoot.identifier) { db in
+            try M011_StartOnBoot.migrate(db)
+        }
+        partial.registerMigration(M011_OllamaAPIKeys.identifier) { db in
+            try M011_OllamaAPIKeys.migrate(db)
+        }
+        partial.registerMigration(M012_UserRoles.identifier) { db in
+            try M012_UserRoles.migrate(db)
+        }
+        partial.registerMigration(M013_CodingAgentSession.identifier) { db in
+            try M013_CodingAgentSession.migrate(db)
+        }
+        partial.registerMigration(M013_GPUPassthrough.identifier) { db in
+            try M013_GPUPassthrough.migrate(db)
+        }
+        partial.registerMigration(M014_OllamaPerHostSettings.identifier) { db in
+            try M014_OllamaPerHostSettings.migrate(db)
+        }
+        partial.registerMigration(M015_Passkeys.identifier) { db in
+            try M015_Passkeys.migrate(db)
+        }
+        partial.registerMigration(M016_PendingDeploys.identifier) { db in
+            try M016_PendingDeploys.migrate(db)
+        }
+        partial.registerMigration(M017_GuestAddressing.identifier) { db in
+            try M017_GuestAddressing.migrate(db)
+        }
+        try partial.migrate(db)
     }
 
     private func seedThroughM004WithOrphanAuditLog(_ db: some DatabaseWriter) throws {

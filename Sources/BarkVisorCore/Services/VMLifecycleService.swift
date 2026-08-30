@@ -191,7 +191,7 @@ public enum VMLifecycleService {
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
-            let addressingChanged = before.guestAddressingJson != vm.guestAddressingJson
+            let addressingChanged = before.decodedGuestAddressing != vm.decodedGuestAddressing
                 || before.networkId != vm.networkId
             if isRunning, addressingChanged {
                 vm.pendingChanges = true

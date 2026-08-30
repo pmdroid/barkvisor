@@ -125,6 +125,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M017_GuestAddressing.identifier) { db in
             try M017_GuestAddressing.migrate(db)
         }
+        migrator.registerMigration(M018_DropGuestAddressingJson.identifier) { db in
+            try M018_DropGuestAddressingJson.migrate(db)
+        }
     }
 }
 

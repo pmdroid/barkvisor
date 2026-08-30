@@ -46,6 +46,7 @@ struct VMJSONColumnTests {
             ),
         )
         #expect(vm.decodedGuestAddressing?.ipv4 == "10.0.0.8")
+        #expect(WorkloadSpecJSON.decode(vm.specJson)?.spec.networks.first?.addressing?.ipv4 == "10.0.0.8")
         vm.setGuestAddressing(nil)
         #expect(vm.decodedGuestAddressing == nil)
     }

@@ -59,7 +59,7 @@ extension VM {
     }
 
     public var decodedGuestAddressing: GuestAddressing? {
-        JSONColumnCoding.decode(GuestAddressing.self, from: guestAddressingJson)
+        WorkloadSpecJSON.decode(specJson)?.spec.networks.first?.addressing
     }
 
     // MARK: - Write (empty → nil column)
@@ -109,10 +109,12 @@ extension VM {
     }
 
     public mutating func setGuestAddressing(_ addressing: GuestAddressing?) {
-        if let addressing {
-            guestAddressingJson = JSONColumnCoding.encode(addressing)
+        var spec = WorkloadSpecJSON.decode(specJson) ?? WorkloadSpecProjector.fromVM(self)
+        if spec.spec.networks.isEmpty {
+            spec.spec.networks = [WorkloadNetwork(addressing: addressing)]
         } else {
-            guestAddressingJson = nil
+            spec.spec.networks[0].addressing = addressing
         }
+        specJson = WorkloadSpecJSON.encode(spec)
     }
 }

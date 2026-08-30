@@ -87,7 +87,7 @@ extension VMLifecycleService {
         if before.cloudInitPath != after.cloudInitPath { return true }
         if before.decodedOverrides != after.decodedOverrides { return true }
         if before.workloadClass != after.workloadClass { return true }
-        if before.guestAddressingJson != after.guestAddressingJson { return true }
+        if before.decodedGuestAddressing != after.decodedGuestAddressing { return true }
         return false
     }
 
