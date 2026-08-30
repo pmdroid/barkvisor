@@ -27,6 +27,7 @@ struct SettingsView: View {
 
             if model.client != nil {
                 APIKeysSection()
+                AuditLogSection()
                 RemoteAccessSection()
                 DiskDirectorySection()
                 DeviceUpdatesSection()

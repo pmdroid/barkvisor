@@ -173,12 +173,14 @@ enum APIKeyDisplay {
         return shortDate.string(from: date)
     }
 
-    static func forbiddenMessage(from error: Error) -> String? {
+    /// Single 403 path for admin-only lists (API keys, audit log). `fallback`
+    /// covers an empty reason; any non-403 error returns nil.
+    static func forbiddenMessage(from error: Error, fallback: String = forbiddenFallback) -> String? {
         guard let api = error as? APIError, case let .http(status, reason) = api, status == 403 else {
             return nil
         }
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? forbiddenFallback : trimmed
+        return trimmed.isEmpty ? fallback : trimmed
     }
 
     static func parseISO8601(_ raw: String) -> Date? {

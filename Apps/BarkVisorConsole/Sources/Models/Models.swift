@@ -779,6 +779,7 @@ struct SystemCapabilities: Decodable, Equatable {
     var supportsUSBPassthrough: Bool?
     var supportsGPUPassthrough: Bool?
     var supportsVFIO: Bool?
+    var supportsInAppUpdate: Bool?
     var details: [CapabilityDetail]?
 
     func detail(code: String) -> CapabilityDetail? {
@@ -808,6 +809,17 @@ struct SystemCapabilities: Decodable, Equatable {
     var gpuPassthroughSupported: Bool {
         if supportsGPUPassthrough == true { return true }
         return detail(code: "gpuPassthrough")?.supported == true
+    }
+
+    var inAppUpdateSupported: Bool {
+        if supportsInAppUpdate == true { return true }
+        return detail(code: "inAppUpdate")?.supported == true
+    }
+
+    var inAppUpdateExplanation: String {
+        let trimmed = detail(code: "inAppUpdate")?.remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty { return trimmed }
+        return "In-app updates run on a root Ubuntu/Debian .deb or Apple Silicon .pkg Device."
     }
 
     var gpuPassthroughExplanation: String {
