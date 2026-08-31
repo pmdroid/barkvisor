@@ -33,7 +33,7 @@ describe('appliance getting-started (#382)', () => {
     expect(text).toContain('User=root')
     expect(text).toContain('Settings → Updates')
     expect(text).toContain('default-deleted')
-    expect(text).toContain('host timer')
+    expect(text).toContain('auto-reverts')
     expect(text).not.toContain('### Fedora')
     expect(text).not.toContain('sudo dnf install')
     expect(text).not.toMatch(/\bcluster\b/)
@@ -43,7 +43,8 @@ describe('appliance getting-started (#382)', () => {
   test('Networks docs apply host bridge and keep equivalent commands', () => {
     const text = read('using-networks.md')
     expect(text).toContain('Apply')
-    expect(text).toContain('linux-bridge-apply.sh')
+    expect(text).toContain('/api/system/bridges')
+    expect(text).toContain('Keep changes')
     expect(text).toContain('Keep changes')
     expect(text).toContain('auto-reverts')
     expect(text).toContain('Wi-Fi is refused')

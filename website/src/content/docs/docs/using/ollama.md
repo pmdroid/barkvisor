@@ -21,7 +21,7 @@ For installing Ollama itself, pulling models, and how completions route through 
 
 ## Completions
 
-The inspect pane shows the Home completions URL (`/v1/chat/completions`). Inference keys live under [Settings → API Keys](/docs/using/settings/api-keys/).
+The inspect pane shows the Home completions URL (`/v1/chat/completions`). Inference keys live under Settings → API Keys.
 
 ## Export
 
