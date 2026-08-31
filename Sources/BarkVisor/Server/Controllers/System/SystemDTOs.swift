@@ -27,6 +27,13 @@ struct BridgeInfo: Content {
     let status: String // "active", "installed", "not_configured"
 }
 
+struct BridgeAddressRequest: Content {
+    var kind: String
+    var cidr: String?
+    var gateway: String?
+    var dns: [String]?
+}
+
 struct BridgeRequest: Content {
     var interface: String?
     var bridge: String?
@@ -35,6 +42,8 @@ struct BridgeRequest: Content {
     var address: String?
     var gateway: String?
     var dns: [String]?
+    /// Multi-address apply (#430). When present, takes precedence over `addressing` / `address`.
+    var addresses: [BridgeAddressRequest]?
     var confirm: Bool?
     var dryRun: Bool?
     var deleteBridge: Bool?

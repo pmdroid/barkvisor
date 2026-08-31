@@ -110,26 +110,11 @@ struct SystemBridgeController: RouteCollection {
     ) throws -> BridgeActionResponse {
         try PlatformCapabilities.requireHostMutation()
         let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
-        let action = parseAction(body, default: defaultAction)
-        let addressing: LinuxHostBridgeAddressing =
-            body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
-        let nic = body.interface
-            ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
-        let request = LinuxHostBridgeApplyRequest(
-            action: action,
-            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
-            nic: nic,
-            addressing: addressing,
-            address: body.address,
-            gateway: body.gateway,
-            dns: body.dns ?? [],
-            confirm: body.confirm == true,
-            deleteBridge: body.deleteBridge == true,
-        )
+        let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
         let result = try LinuxHostBridgeApplyLive.run(request: request)
         if result.applied {
             AuditService.log(
-                action: action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                action: request.action == .revert ? "host-bridge.revert" : "host-bridge.apply",
                 resourceType: "host-bridge",
                 resourceId: request.bridge,
                 resourceName: request.bridge,
@@ -155,29 +140,14 @@ struct SystemBridgeController: RouteCollection {
         try PlatformCapabilities.requireHostMutation()
         #if os(macOS)
             let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
-            let action = parseAction(body, default: defaultAction)
-            let addressing: LinuxHostBridgeAddressing =
-                body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
-            let nic = body.interface
-                ?? req.parameters.get("interface")
-            let request = LinuxHostBridgeApplyRequest(
-                action: action,
-                bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
-                nic: nic,
-                addressing: addressing,
-                address: body.address,
-                gateway: body.gateway,
-                dns: body.dns ?? [],
-                confirm: body.confirm == true,
-                deleteBridge: body.deleteBridge == true,
-            )
+            let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
             let result = try MacHostBridgeApplyLive.run(request: request)
             if result.applied {
                 AuditService.log(
-                    action: action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                    action: request.action == .revert ? "host-bridge.revert" : "host-bridge.apply",
                     resourceType: "host-bridge",
-                    resourceId: nic ?? "socket_vmnet",
-                    resourceName: nic ?? "socket_vmnet",
+                    resourceId: request.nic ?? "socket_vmnet",
+                    resourceName: request.nic ?? "socket_vmnet",
                     req: req,
                 )
             }
@@ -194,6 +164,39 @@ struct SystemBridgeController: RouteCollection {
         #else
             throw BarkVisorError.forbidden("macOS host network apply runs on a macOS Device.")
         #endif
+    }
+
+    private static func bridgeApplyRequest(
+        from body: BridgeRequest,
+        req: Vapor.Request,
+        defaultAction: LinuxHostBridgeApplyAction,
+    ) throws -> LinuxHostBridgeApplyRequest {
+        let action = parseAction(body, default: defaultAction)
+        let addressing: LinuxHostBridgeAddressing =
+            body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
+        let nic = body.interface
+            ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
+        let addresses = (body.addresses ?? []).compactMap { row -> HostInterfaceAddressApplyEntry? in
+            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else { return nil }
+            return HostInterfaceAddressApplyEntry(
+                kind: kind,
+                cidr: row.cidr,
+                gateway: row.gateway,
+                dns: row.dns,
+            )
+        }
+        return LinuxHostBridgeApplyRequest(
+            action: action,
+            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
+            nic: nic,
+            addressing: addressing,
+            address: body.address,
+            gateway: body.gateway,
+            dns: body.dns ?? [],
+            addresses: addresses,
+            confirm: body.confirm == true,
+            deleteBridge: body.deleteBridge == true,
+        )
     }
 
     private static func parseAction(

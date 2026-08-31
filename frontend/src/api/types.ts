@@ -538,6 +538,13 @@ export interface BridgeActionResponse {
   commands?: string[]
 }
 
+export interface HostBridgeAddressApplyEntry {
+  kind: 'dhcp' | 'static' | 'alias'
+  cidr?: string
+  gateway?: string
+  dns?: string[]
+}
+
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string
@@ -546,6 +553,8 @@ export interface HostBridgeApplyRequest {
   address?: string
   gateway?: string
   dns?: string[]
+  /** Multi-address apply (#430). Takes precedence over `addressing` / `address`. */
+  addresses?: HostBridgeAddressApplyEntry[]
   confirm?: boolean
   dryRun?: boolean
 }
