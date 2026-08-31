@@ -1,0 +1,143 @@
+import Foundation
+
+/// Post-apply confirmation window before host network changes are permanent.
+public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
+    public var target: String
+    public var commitDeadline: Date
+    public var rollbackSeconds: Int
+    /// Linux netplan try PID; omitted from API responses.
+    public var netplanPid: Int32?
+
+    public init(
+        target: String,
+        commitDeadline: Date,
+        rollbackSeconds: Int,
+        netplanPid: Int32? = nil,
+    ) {
+        self.target = target
+        self.commitDeadline = commitDeadline
+        self.rollbackSeconds = rollbackSeconds
+        self.netplanPid = netplanPid
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case target, commitDeadline, rollbackSeconds, netplanPid
+    }
+
+    public var expired: Bool {
+        Date() >= commitDeadline
+    }
+
+    /// API-facing slice (no internal fields).
+    public var publicInfo: HostNetworkPendingCommitInfo {
+        HostNetworkPendingCommitInfo(
+            target: target,
+            commitDeadline: commitDeadline,
+            rollbackSeconds: rollbackSeconds,
+        )
+    }
+}
+
+public struct HostNetworkPendingCommitInfo: Codable, Sendable, Equatable {
+    public var target: String
+    public var commitDeadline: Date
+    public var rollbackSeconds: Int
+
+    public init(target: String, commitDeadline: Date, rollbackSeconds: Int) {
+        self.target = target
+        self.commitDeadline = commitDeadline
+        self.rollbackSeconds = rollbackSeconds
+    }
+}
+
+public enum HostNetworkPendingCommitService {
+    public static let rollbackSeconds = LinuxHostBridgeApply.rollbackSeconds
+
+    public static func linuxPendingPath(bridge: String) -> String {
+        "/run/barkvisor/\(bridge)-pending.json"
+    }
+
+    public static func macPendingURL(device: String, dataDir: URL = Config.dataDir) -> URL {
+        dataDir
+            .appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(device)-pending.json")
+    }
+
+    public static func readLinux(bridge: String) -> HostNetworkPendingCommit? {
+        let path = linuxPendingPath(bridge: bridge)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        return try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
+    }
+
+    public static func writeLinux(_ pending: HostNetworkPendingCommit) throws {
+        let path = linuxPendingPath(bridge: pending.target)
+        try FileManager.default.createDirectory(
+            atPath: "/run/barkvisor",
+            withIntermediateDirectories: true,
+        )
+        let data = try JSONEncoder().encode(pending)
+        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
+    public static func clearLinux(bridge: String) {
+        try? FileManager.default.removeItem(atPath: linuxPendingPath(bridge: bridge))
+    }
+
+    #if os(macOS)
+        public static func readMac(device: String) -> HostNetworkPendingCommit? {
+            let url = macPendingURL(device: device)
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
+        }
+
+        public static func writeMac(_ pending: HostNetworkPendingCommit) throws {
+            let url = macPendingURL(device: pending.target)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            let data = try JSONEncoder().encode(pending)
+            try data.write(to: url, options: .atomic)
+        }
+
+        public static func clearMac(device: String) {
+            try? FileManager.default.removeItem(at: macPendingURL(device: device))
+        }
+    #endif
+
+    public static func activePending() -> HostNetworkPendingCommit? {
+        #if os(Linux)
+            if let pending = readLinux(bridge: HostBridgeFactsService.suggestedBridgeName),
+               !pending.expired {
+                return pending
+            }
+            if let pending = readLinux(bridge: HostBridgeFactsService.suggestedBridgeName),
+               pending.expired {
+                clearLinux(bridge: pending.target)
+            }
+            return nil
+        #elseif os(macOS)
+            let uplink = HostBridgeFactsService.probe().defaultRouteInterface ?? ""
+            guard !uplink.isEmpty else { return nil }
+            if let pending = readMac(device: uplink) {
+                if pending.expired {
+                    clearMac(device: uplink)
+                    return nil
+                }
+                return pending
+            }
+            return nil
+        #else
+            return nil
+        #endif
+    }
+
+    public static func makePending(target: String, netplanPid: Int32? = nil) -> HostNetworkPendingCommit {
+        HostNetworkPendingCommit(
+            target: target,
+            commitDeadline: Date().addingTimeInterval(TimeInterval(rollbackSeconds)),
+            rollbackSeconds: rollbackSeconds,
+            netplanPid: netplanPid,
+        )
+    }
+}

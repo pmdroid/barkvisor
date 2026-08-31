@@ -532,6 +532,9 @@ export interface BridgeActionResponse {
   message: string | null
   applied?: boolean
   needsConfirm?: boolean
+  pendingCommit?: boolean
+  commitDeadline?: string
+  rollbackSeconds?: number
   backend?: string
   changes?: string[]
   warnings?: string[]
@@ -548,7 +551,7 @@ export interface HostBridgeAddressApplyEntry {
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string
-  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'setup' | 'start' | 'stop'
+  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'commit' | 'setup' | 'start' | 'stop'
   addressing?: 'dhcp' | 'static'
   address?: string
   gateway?: string
@@ -1009,6 +1012,12 @@ export type HostBridgeRemediation = {
   commands: string
 }
 
+export type HostBridgePendingCommit = {
+  target: string
+  commitDeadline: string
+  rollbackSeconds: number
+}
+
 export type HostBridgeReadiness = {
   helperPath: string | null
   helperSetuid: boolean
@@ -1019,6 +1028,7 @@ export type HostBridgeReadiness = {
   onlyUplink: boolean
   ready: boolean
   remediations?: HostBridgeRemediation[]
+  pendingCommit?: HostBridgePendingCommit | null
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */

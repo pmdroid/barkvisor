@@ -76,10 +76,11 @@ struct LinuxHostBridgeApplyTests {
 
     @Test func `rollback helper keeps config only after commit stamp`() {
         #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0") == "/run/barkvisor/br0-commit")
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0")
+        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
         #expect(script.contains("/run/barkvisor/br0-commit"))
         #expect(script.contains("then exit 0"))
-        #expect(script.contains("nmcli connection down barkvisor-br0"))
+        #expect(script.contains("nmcli connection delete barkvisor-br0"))
+        #expect(script.contains("netplan apply"))
     }
 
     @Test func `static host address is Device not guest`() {
@@ -118,7 +119,7 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(!pending.success)
         #expect(pending.needsConfirm)
-        #expect(pending.warnings.contains { $0.contains("host timer") })
+        #expect(pending.warnings.contains { $0.contains("Keep changes") })
         #expect(!pending.applied)
 
         let confirmed = LinuxHostBridgeApply.evaluate(
@@ -217,6 +218,16 @@ struct LinuxHostBridgeApplyTests {
         #expect(LinuxHostBridgeApply.tcpTableHasPort(contents: table, port: 22, established: false))
         #expect(LinuxHostBridgeApply.tcpTableHasPort(contents: table, port: 22, established: true))
         #expect(!LinuxHostBridgeApply.tcpTableHasPort(contents: table, port: 80, established: false))
+    }
+
+    @Test func `commit requires pending apply`() {
+        let missing = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .commit),
+            probe: probe(owned: true),
+        )
+        #expect(!missing.success)
+        #expect(missing.refused)
+        #expect(missing.message.contains("No pending"))
     }
 
     @Test func `live mutator records without touching the host`() throws {

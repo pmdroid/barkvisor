@@ -35,11 +35,29 @@ public enum LinuxHostBridgeApplyLive {
                 throw BarkVisorError.forbidden("Linux host-bridge apply runs on a Linux Device.")
             }
         #endif
-        try writer.apply(request: request, probe: resolved, plan: plan)
-        plan.applied = true
-        plan.message = request.action == .revert
-            ? "Reverted BarkVisor \(request.bridge) files. \(request.bridge) was not deleted."
-            : "Applied \(request.bridge) via \(plan.backend)."
+        switch request.action {
+        case .apply:
+            try writer.apply(request: request, probe: resolved, plan: plan)
+            plan.applied = true
+            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
+            plan.pendingCommit = true
+            plan.commitDeadline = pending.commitDeadline
+            plan.rollbackSeconds = pending.rollbackSeconds
+            plan.message =
+                "Applied \(request.bridge) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+        case .commit:
+            try writer.commit(request: request, probe: resolved)
+            plan.applied = true
+            plan.pendingCommit = false
+            plan.message = "Kept host network changes for \(request.bridge)."
+        case .revert:
+            try writer.apply(request: request, probe: resolved, plan: plan)
+            plan.applied = true
+            plan.pendingCommit = false
+            plan.message = "Reverted BarkVisor \(request.bridge) files. \(request.bridge) was not deleted."
+        case .check, .dryRun:
+            break
+        }
         return plan
     }
 }
@@ -49,6 +67,11 @@ public protocol LinuxHostBridgeMutating: Sendable {
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
         plan: LinuxHostBridgeApplyResult,
+    ) throws
+
+    func commit(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
     ) throws
 }
 
@@ -67,6 +90,15 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         steps.append("backend=\(probe.backend.rawValue)")
         steps.append(contentsOf: plan.changes)
     }
+
+    public func commit(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) throws {
+        steps.append("action=commit")
+        steps.append("backend=\(probe.backend.rawValue)")
+        steps.append("bridge=\(request.bridge)")
+    }
 }
 
 #if os(Linux)
@@ -81,6 +113,31 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 return
             }
             try persist(request: request, probe: probe)
+        }
+
+        func commit(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+        ) throws {
+            guard let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge) else {
+                throw BarkVisorError.badRequest("No pending host network apply for \(request.bridge).")
+            }
+            if pending.expired {
+                throw BarkVisorError.badRequest(
+                    "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
+                )
+            }
+            stopRollbackTimer(bridge: request.bridge)
+            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
+            if probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 {
+                _ = kill(pid_t(pid), SIGUSR1)
+                let deadline = Date().addingTimeInterval(30)
+                while Date() < deadline {
+                    if kill(pid_t(pid), 0) != 0 { break }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+            }
+            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
         private func persist(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
@@ -123,10 +180,23 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             // Marker before setuid so Revert can clean up if chmod hits EROFS.
             try writeOwnerMarker(bridge: request.bridge, createdBridge: probe.facts.bridges.isEmpty)
             try setuidHelpers(probe.helperPaths)
-            try commitApply(bridge: request.bridge, netplan: pendingNetplan)
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: request.bridge,
+                netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
+            )
+            try HostNetworkPendingCommitService.writeLinux(pending)
+            if probe.backend == .netplan {
+                try startRollbackTimer(bridge: request.bridge)
+            }
         }
 
         private func revert(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
+            if let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge),
+               let pid = pending.netplanPid, pid > 0 {
+                _ = kill(pid_t(pid), SIGTERM)
+            }
+            stopRollbackTimer(bridge: request.bridge)
+            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
             switch probe.backend {
             case .netplan:
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath)
@@ -345,14 +415,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         }
 
         /// Host timer. Do not wait for the SPA after the uplink moves.
-        /// Apply must write the commit stamp or this unit always reverts.
+        /// Apply must write the commit stamp or this unit reverts.
         private func startRollbackTimer(bridge: String) throws {
             let unit = "barkvisor-\(bridge)-rollback"
-            _ = try? PlatformProcess.run(
-                path: "/usr/bin/systemctl",
-                arguments: ["stop", "\(unit).timer"],
-                timeout: 10,
-            )
+            stopRollbackTimer(bridge: bridge)
             let stamp = LinuxHostBridgeApply.commitStampPath(bridge: bridge)
             try FileManager.default.createDirectory(
                 atPath: "/run/barkvisor",
@@ -360,7 +426,13 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
             try? FileManager.default.removeItem(atPath: stamp)
             let helper = "/run/barkvisor/\(bridge)-rollback.sh"
-            try writeAtomically(helper, LinuxHostBridgeApply.rollbackHelperScript(bridge: bridge))
+            try writeAtomically(
+                helper,
+                LinuxHostBridgeApply.rollbackHelperScript(
+                    bridge: bridge,
+                    dataDir: Config.dataDir.path,
+                ),
+            )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
             _ = try? PlatformProcess.run(
                 path: "/usr/bin/systemd-run",
@@ -370,6 +442,20 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     helper,
                 ],
                 timeout: 15,
+            )
+        }
+
+        private func stopRollbackTimer(bridge: String) {
+            let unit = "barkvisor-\(bridge)-rollback"
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).timer"],
+                timeout: 10,
+            )
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).service"],
+                timeout: 10,
             )
         }
 

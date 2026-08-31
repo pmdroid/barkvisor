@@ -15,6 +15,7 @@ public enum LinuxNetworkBackend: String, Sendable, Codable, Equatable {
 public enum LinuxHostBridgeApplyAction: String, Sendable, Codable, Equatable {
     case apply
     case check
+    case commit
     case dryRun = "dry-run"
     case revert
 }
@@ -110,6 +111,9 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
     public var success: Bool
     public var applied: Bool
     public var needsConfirm: Bool
+    public var pendingCommit: Bool
+    public var commitDeadline: Date?
+    public var rollbackSeconds: Int?
     public var backend: String
     public var changes: [String]
     public var warnings: [String]
@@ -121,6 +125,9 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         success: Bool,
         applied: Bool = false,
         needsConfirm: Bool = false,
+        pendingCommit: Bool = false,
+        commitDeadline: Date? = nil,
+        rollbackSeconds: Int? = nil,
         backend: String,
         changes: [String] = [],
         warnings: [String] = [],
@@ -131,6 +138,9 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         self.success = success
         self.applied = applied
         self.needsConfirm = needsConfirm
+        self.pendingCommit = pendingCommit
+        self.commitDeadline = commitDeadline
+        self.rollbackSeconds = rollbackSeconds
         self.backend = backend
         self.changes = changes
         self.warnings = warnings
@@ -165,13 +175,19 @@ public enum LinuxHostBridgeApply {
     }
 
     /// Host-timer helper. Exits 0 when apply wrote the commit stamp.
-    public static func rollbackHelperScript(bridge: String) -> String {
+    public static func rollbackHelperScript(bridge: String, dataDir: String) -> String {
         let stamp = commitStampPath(bridge: bridge)
+        let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
+        let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
-        /usr/bin/nmcli connection down barkvisor-\(bridge) >/dev/null 2>&1 || true
+        rm -f \(LinuxHostBridgeApply.netplanPath) || true
+        /usr/sbin/netplan apply >/dev/null 2>&1 || true
+        /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
+        rm -f \(networkdNetdevPath) \(networkdNetworkPath) || true
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
+        rm -f \(marker) \(pending) || true
         """
     }
 
@@ -184,6 +200,8 @@ public enum LinuxHostBridgeApply {
             return check(request: request, probe: probe)
         case .revert:
             return revertPlan(request: request, probe: probe)
+        case .commit:
+            return commitPlan(request: request, probe: probe)
         case .apply, .dryRun:
             return applyPlan(request: request, probe: probe)
         }
@@ -360,13 +378,13 @@ public enum LinuxHostBridgeApply {
         var warnings = probe.sessionWarnings
         if probe.facts.onlyUplink {
             warnings.append(
-                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Rollback is a host timer, not a browser Confirm.",
+                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Keep changes in the SPA within \(rollbackSeconds)s or they auto-revert.",
             )
         }
         let sessionHit = probe.sessionRiskNics.contains(nic)
         if sessionHit {
             warnings.append(
-                "'\(nic)' carries SSH or the SPA session. Pass --confirm. Rollback is a host timer (netplan try), never a SPA Confirm after the uplink dies.",
+                "'\(nic)' carries SSH or the SPA session. Pass --confirm. After Apply, click Keep changes within \(rollbackSeconds)s or the host auto-reverts.",
             )
         }
 
@@ -530,7 +548,7 @@ public enum LinuxHostBridgeApply {
         switch probe.backend {
         case .netplan:
             changes.append(LinuxHostBridgeChange(
-                description: "Write \(netplanPath) and `netplan try` (\(rollbackSeconds)s host timer)",
+                description: "Write \(netplanPath) and `netplan try` (\(rollbackSeconds)s keep window)",
                 command: "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
@@ -608,6 +626,33 @@ public enum LinuxHostBridgeApply {
             return nic
         }
         return probe.facts.defaultRouteInterface ?? ""
+    }
+
+    private static func commitPlan(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> LinuxHostBridgeApplyResult {
+        guard let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge) else {
+            return refuse(
+                backend: probe.backend,
+                message: "No pending host network apply for \(request.bridge).",
+            )
+        }
+        if pending.expired {
+            return refuse(
+                backend: probe.backend,
+                message: "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
+            )
+        }
+        return LinuxHostBridgeApplyResult(
+            success: true,
+            applied: false,
+            backend: probe.backend.rawValue,
+            changes: ["Commit pending \(request.bridge) host network changes"],
+            warnings: [],
+            commands: ["# write commit stamp + SIGUSR1 netplan try"],
+            message: "Ready to keep host network changes for \(request.bridge).",
+        )
     }
 
     private static func refuse(backend: LinuxNetworkBackend, message: String) -> LinuxHostBridgeApplyResult {

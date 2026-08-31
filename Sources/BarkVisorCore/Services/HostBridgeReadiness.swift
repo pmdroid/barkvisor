@@ -22,6 +22,8 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
     public var onlyUplink: Bool
     public var ready: Bool
     public var remediations: [HostBridgeRemediation]?
+    /// Post-apply keep window; null when no pending host network commit.
+    public var pendingCommit: HostNetworkPendingCommitInfo?
 
     public init(
         helperPath: String?,
@@ -33,6 +35,7 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
         onlyUplink: Bool,
         ready: Bool,
         remediations: [HostBridgeRemediation]? = nil,
+        pendingCommit: HostNetworkPendingCommitInfo? = nil,
     ) {
         self.helperPath = helperPath
         self.helperSetuid = helperSetuid
@@ -43,6 +46,7 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
         self.onlyUplink = onlyUplink
         self.ready = ready
         self.remediations = remediations
+        self.pendingCommit = pendingCommit
     }
 }
 

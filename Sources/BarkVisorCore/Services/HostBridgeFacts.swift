@@ -105,6 +105,7 @@ public struct HostBridgeFacts: Sendable, Equatable {
             onlyUplink: onlyUplink,
             ready: ready,
             remediations: remediations,
+            pendingCommit: HostNetworkPendingCommitService.activePending()?.publicInfo,
         )
     }
 }
