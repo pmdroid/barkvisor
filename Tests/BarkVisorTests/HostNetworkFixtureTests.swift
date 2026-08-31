@@ -160,7 +160,7 @@ struct HostNetworkFixtureTests {
         #expect(body.interface == "eth0")
         #expect(body.addresses?.count == 2)
 
-        let request = Self.bridgeApplyRequest(from: body, defaultAction: .check)
+        let request = try Self.bridgeApplyRequest(from: body, defaultAction: .check)
         #expect(request.action == LinuxHostBridgeApplyAction.check)
         #expect(request.nic == "eth0")
         #expect(request.addresses.count == 2)
@@ -260,11 +260,31 @@ struct HostNetworkFixtureTests {
         #expect(addresses[1]["source"] as? String == "alias")
     }
 
+    /// Mirrors `SystemBridgeController.parseAddressApplyEntries` for contract tests (no HTTP server).
+    private static func parseAddressApplyEntries(
+        _ rows: [BridgeAddressRequest]?,
+    ) throws -> [HostInterfaceAddressApplyEntry] {
+        guard let rows, !rows.isEmpty else { return [] }
+        return try rows.map { row in
+            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else {
+                throw BarkVisorError.badRequest(
+                    "addresses[].kind must be dhcp, static, or alias (got \"\(row.kind)\")",
+                )
+            }
+            return HostInterfaceAddressApplyEntry(
+                kind: kind,
+                cidr: row.cidr,
+                gateway: row.gateway,
+                dns: row.dns,
+            )
+        }
+    }
+
     /// Mirrors `SystemBridgeController.bridgeApplyRequest` for contract tests (no HTTP server).
     private static func bridgeApplyRequest(
         from body: BridgeRequest,
         defaultAction: LinuxHostBridgeApplyAction,
-    ) -> LinuxHostBridgeApplyRequest {
+    ) throws -> LinuxHostBridgeApplyRequest {
         let action: LinuxHostBridgeApplyAction = if body.dryRun == true {
             .dryRun
         } else if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
@@ -274,15 +294,7 @@ struct HostNetworkFixtureTests {
         }
         let addressing: LinuxHostBridgeAddressing =
             body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
-        let addresses = (body.addresses ?? []).compactMap { row -> HostInterfaceAddressApplyEntry? in
-            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else { return nil }
-            return HostInterfaceAddressApplyEntry(
-                kind: kind,
-                cidr: row.cidr,
-                gateway: row.gateway,
-                dns: row.dns,
-            )
-        }
+        let addresses = try parseAddressApplyEntries(body.addresses)
         return LinuxHostBridgeApplyRequest(
             action: action,
             bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,

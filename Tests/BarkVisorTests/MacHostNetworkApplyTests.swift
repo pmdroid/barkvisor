@@ -104,6 +104,30 @@ import Testing
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
         }
 
+        @Test func `revert removes applied ifconfig aliases before networksetup`() throws {
+            let device = "en0-alias-revert-test"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\n",
+                dnsServers: [],
+                appliedAliasCIDRs: ["10.0.0.2/24"],
+            ))
+
+            var calls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                calls.append([path] + args)
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+
+            let reverted = try MacHostNetworkApply.revert(device: device, run: run)
+            #expect(reverted)
+            #expect(calls.contains { $0 == ["/sbin/ifconfig", device, "-alias", "10.0.0.2"] })
+            #expect(calls.contains { $0 == [MacHostNetworkApply.networksetupPath, "-setdhcp", "Ethernet"] })
+            #expect(MacHostNetworkApply.readMarker(device: device) == nil)
+        }
+
         @Test func `failed revert keeps marker for retry`() throws {
             let device = "en0-dns-revert-fail-test"
             defer { MacHostNetworkApply.removeMarker(device: device) }

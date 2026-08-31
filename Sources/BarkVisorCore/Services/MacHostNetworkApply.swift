@@ -23,12 +23,34 @@ import Foundation
             public var service: String
             public var infoText: String
             public var dnsServers: [String]
+            /// `ifconfig alias` CIDRs applied after the snapshot was taken (removed on revert).
+            public var appliedAliasCIDRs: [String]
 
-            public init(device: String, service: String, infoText: String, dnsServers: [String]) {
+            public init(
+                device: String,
+                service: String,
+                infoText: String,
+                dnsServers: [String],
+                appliedAliasCIDRs: [String] = [],
+            ) {
                 self.device = device
                 self.service = service
                 self.infoText = infoText
                 self.dnsServers = dnsServers
+                self.appliedAliasCIDRs = appliedAliasCIDRs
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case device, service, infoText, dnsServers, appliedAliasCIDRs
+            }
+
+            public init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                device = try container.decode(String.self, forKey: .device)
+                service = try container.decode(String.self, forKey: .service)
+                infoText = try container.decode(String.self, forKey: .infoText)
+                dnsServers = try container.decodeIfPresent([String].self, forKey: .dnsServers) ?? []
+                appliedAliasCIDRs = try container.decodeIfPresent([String].self, forKey: .appliedAliasCIDRs) ?? []
             }
         }
 
@@ -244,6 +266,10 @@ import Foundation
                     )
                 }
             }
+            if !aliasTargets.isEmpty, var marker = readMarker(device: device) {
+                marker.appliedAliasCIDRs = aliasTargets
+                try writeMarker(marker)
+            }
         }
 
         public static func revert(
@@ -254,6 +280,15 @@ import Foundation
         ) throws -> Bool {
             guard let marker = readMarker(device: device) else {
                 return false
+            }
+            for cidr in marker.appliedAliasCIDRs {
+                let parsed = try parseStaticAddress(cidr)
+                let aliasResult = try run("/sbin/ifconfig", [device, "-alias", parsed.ip])
+                guard aliasResult.succeeded else {
+                    throw BarkVisorError.preconditionFailed(
+                        "ifconfig -alias failed for \(cidr): \(aliasResult.stderrString)",
+                    )
+                }
             }
             let lower = marker.infoText.lowercased()
             if lower.contains("dhcp configuration") {
