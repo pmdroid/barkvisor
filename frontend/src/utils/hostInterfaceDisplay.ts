@@ -88,3 +88,72 @@ export function interfaceRouteColumn(
   if (readiness?.defaultRouteInterface === iface.name) return 'default'
   return '—'
 }
+
+/** Apply/Revert stays on the interface that owns bridge config (uplink on Mac, uplink or br0 on Linux). */
+export function interfaceOwnsBridgeApply(
+  role: HostInterfaceRole,
+  iface: HostInterface,
+  readiness: HostBridgeReadiness | null | undefined,
+  mode: string,
+): boolean {
+  if (role === 'external' || role === 'loopback' || role === 'tailscale') return false
+  if (mode === 'macos-guide') return role === 'uplink'
+  if (role === 'bridge') return true
+  if (role === 'uplink') {
+    const enslaved = readiness?.bridges.some((bridge) => bridge.enslaved.includes(iface.name))
+    if (enslaved) return false
+    return true
+  }
+  return false
+}
+
+export function interfaceBridgeFieldsReadOnly(role: HostInterfaceRole): boolean {
+  return role === 'external' || role === 'loopback' || role === 'tailscale'
+}
+
+/** Read-only bridge role copy for the interface drawer (#431). */
+export function interfaceBridgeRoleDetail(
+  role: HostInterfaceRole,
+  iface: HostInterface,
+  readiness?: HostBridgeReadiness | null,
+  mode?: string,
+): string {
+  switch (role) {
+    case 'uplink': {
+      if (mode === 'macos-guide') return 'Uplink · socket_vmnet'
+      const parent = readiness?.bridges.find((bridge) => bridge.enslaved.includes(iface.name))
+      if (parent) return `Uplink · enslaved to ${parent.name}`
+      return 'Uplink · use as bridge uplink'
+    }
+    case 'bridge': {
+      const master = readiness?.bridges.find((bridge) => bridge.name === iface.name)
+      if (master?.enslaved.length) return `Bridge · master (${master.enslaved.join(', ')})`
+      return 'Bridge · master'
+    }
+    case 'tailscale':
+      return 'Tailscale · external (read-only)'
+    case 'loopback':
+      return 'Loopback · read-only'
+    default:
+      return 'External · read-only'
+  }
+}
+
+/** Pending-bridge rows deep-link to uplink or br0 on the Host interfaces tab. */
+export function bridgeSetupInterfaceKey(
+  hostId: string,
+  readiness: HostBridgeReadiness | null | undefined,
+  mode: string,
+): string | null {
+  if (!readiness) return null
+  if (mode === 'macos-guide') {
+    const uplink = readiness.defaultRouteInterface
+    return uplink ? `${hostId}:${uplink}` : null
+  }
+  const suggested = readiness.suggestedBridge || 'br0'
+  const existing = readiness.bridges.find((bridge) => bridge.name === suggested)
+    ?? readiness.bridges[0]
+  if (existing) return `${hostId}:${existing.name}`
+  const uplink = readiness.defaultRouteInterface
+  return uplink ? `${hostId}:${uplink}` : null
+}
