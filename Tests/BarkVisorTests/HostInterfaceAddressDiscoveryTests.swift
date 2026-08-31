@@ -152,6 +152,29 @@ struct HostInterfaceAddressDiscoveryTests {
         #expect(parsed?.addresses.map(\.cidr) == ["192.168.1.10/24", "10.0.0.2/24"])
     }
 
+    @Test func `parse netplan unknown interface is not managed`() {
+        let yaml = """
+        # managed-by: barkvisor
+        network:
+          version: 2
+          bridges:
+            br0:
+              dhcp4: true
+        """
+        #expect(LinuxHostInterfaceAddressRead.parseNetplan(yaml, interface: "docker0") == nil)
+        let br0 = LinuxHostInterfaceAddressRead.parseNetplan(yaml, interface: "br0")
+        #expect(br0?.managedByBarkvisor == true)
+    }
+
+    @Test func `nmcli parse leaves managedByBarkvisor false`() {
+        let text = """
+        IP4.ADDRESS[1]:192.168.30.50/24
+        IP4.GATEWAY:192.168.30.1
+        IP4.METHOD:auto
+        """
+        #expect(LinuxHostInterfaceAddressRead.parseNmcliDeviceShow(text).managedByBarkvisor == false)
+    }
+
     @Test func `parse nmcli device show fixture`() {
         let text = """
         IP4.ADDRESS[1]:192.168.30.50/24

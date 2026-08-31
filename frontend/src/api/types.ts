@@ -499,11 +499,23 @@ export interface RepositoryImage {
   sha256?: string | null
 }
 
+export interface HostInterfaceAddress {
+  cidr: string
+  source: 'dhcp' | 'static' | 'alias'
+  primary: boolean
+}
+
 export interface HostInterface {
   name: string
   displayName: string
   ipAddress: string
   bridgeStatus?: 'active' | 'installed' | 'not_configured' | null
+  /** Live addresses from host OS discovery (#434). */
+  addresses?: HostInterfaceAddress[]
+  dhcpEnabled?: boolean
+  gateway?: string | null
+  dns?: string[]
+  managedByBarkvisor?: boolean
 }
 
 export interface BridgeInfo {
