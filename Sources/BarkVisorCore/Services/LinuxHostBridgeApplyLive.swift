@@ -88,6 +88,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             guard !nic.isEmpty else {
                 throw BarkVisorError.badRequest("No wired uplink for \(request.bridge).")
             }
+            guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
+                throw BarkVisorError.badRequest("Invalid host address plan.")
+            }
             var pendingNetplan: Process?
             switch probe.backend {
             case .netplan:
@@ -96,18 +99,15 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     LinuxHostBridgeApply.netplanYAML(
                         bridge: request.bridge,
                         nic: nic,
-                        addressing: request.addressing,
-                        address: request.address,
-                        gateway: request.gateway,
-                        dns: request.dns,
+                        plan: plan,
                     ),
                 )
                 pendingNetplan = try beginNetplanTry()
             case .networkManager:
-                try applyNetworkManager(request: request, nic: nic)
+                try applyNetworkManager(request: request, nic: nic, plan: plan)
                 try startRollbackTimer(bridge: request.bridge)
             case .systemdNetworkd:
-                try writeNetworkd(request: request, nic: nic)
+                try writeNetworkd(request: request, nic: nic, plan: plan)
                 try startRollbackTimer(bridge: request.bridge)
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
@@ -196,7 +196,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             try data.write(to: url, options: .atomic)
         }
 
-        private func writeNetworkd(request: LinuxHostBridgeApplyRequest, nic: String) throws {
+        private func writeNetworkd(
+            request: LinuxHostBridgeApplyRequest,
+            nic: String,
+            plan: HostInterfaceAddressApplyPlan,
+        ) throws {
             let netdev = """
             # managed-by: barkvisor
             [NetDev]
@@ -210,19 +214,17 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
 
             [Network]
             """
-            switch request.addressing {
-            case .dhcp:
+            if plan.dhcpEnabled {
                 network += "\nDHCP=yes\n"
-            case .staticIP:
-                if let address = request.address {
-                    network += "\nAddress=\(address)\n"
-                }
-                if let gateway = request.gateway {
-                    network += "Gateway=\(gateway)\n"
-                }
-                for dns in request.dns {
-                    network += "DNS=\(dns)\n"
-                }
+            }
+            for cidr in plan.staticCIDRs {
+                network += "Address=\(cidr)\n"
+            }
+            if let gateway = plan.gateway, !plan.dhcpEnabled {
+                network += "Gateway=\(gateway)\n"
+            }
+            for dns in plan.dns {
+                network += "DNS=\(dns)\n"
             }
             network += "\n[Bridge]\n"
             _ = nic
@@ -242,7 +244,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
         }
 
-        private func applyNetworkManager(request: LinuxHostBridgeApplyRequest, nic: String) throws {
+        private func applyNetworkManager(
+            request: LinuxHostBridgeApplyRequest,
+            nic: String,
+            plan: HostInterfaceAddressApplyPlan,
+        ) throws {
             let name = "barkvisor-\(request.bridge)"
             _ = try? PlatformProcess.run(
                 path: "/usr/bin/nmcli",
@@ -253,20 +259,19 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 "connection", "add", "type", "bridge", "ifname", request.bridge,
                 "con-name", name,
             ]
-            switch request.addressing {
-            case .dhcp:
+            if plan.dhcpEnabled {
                 add += ["ipv4.method", "auto"]
-            case .staticIP:
+            } else {
                 add += ["ipv4.method", "manual"]
-                if let address = request.address {
-                    add += ["ipv4.addresses", address]
-                }
-                if let gateway = request.gateway {
-                    add += ["ipv4.gateway", gateway]
-                }
-                if !request.dns.isEmpty {
-                    add += ["ipv4.dns", request.dns.joined(separator: ",")]
-                }
+            }
+            if !plan.staticCIDRs.isEmpty {
+                add += ["ipv4.addresses", plan.staticCIDRs.joined(separator: ",")]
+            }
+            if let gateway = plan.gateway, !plan.dhcpEnabled {
+                add += ["ipv4.gateway", gateway]
+            }
+            if !plan.dns.isEmpty {
+                add += ["ipv4.dns", plan.dns.joined(separator: ",")]
             }
             let added = try PlatformProcess.run(path: "/usr/bin/nmcli", arguments: add, timeout: 30)
             if !added.succeeded {

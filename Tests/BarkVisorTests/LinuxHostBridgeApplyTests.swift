@@ -104,7 +104,7 @@ struct LinuxHostBridgeApplyTests {
             probe: probe(),
         )
         #expect(ok.success)
-        #expect(ok.changes.contains { $0.contains("static") })
+        #expect(ok.changes.contains { $0.contains("Device") })
         #expect(ok.changes.contains { $0.contains("not the guest") })
     }
 
@@ -281,7 +281,42 @@ struct LinuxHostBridgeApplyTests {
         #expect(staticDry.stdout.contains("addresses: [192.168.1.10/24]"))
         #expect(staticDry.stdout.contains("via: 192.168.1.1"))
         #expect(staticDry.stdout.contains("addresses: [1.1.1.1]"))
-        #expect(staticDry.stdout.contains("Device address 192.168.1.10/24"))
+        #expect(staticDry.stdout.contains("Device static address 192.168.1.10/24"))
+    }
+
+    @Test func `netplan multi address dhcp plus alias script dry-run`() throws {
+        let script = Self.scriptURL()
+        let dry = try Self.runScript(
+            script,
+            args: [
+                "--dry-run", "--nic", "eth0", "--dhcp",
+                "--address", "192.168.1.10/24", "--address", "10.0.0.2/24",
+                "--confirm",
+            ],
+            env: [
+                "BARKVISOR_BRIDGE_BACKEND": "netplan",
+                "BARKVISOR_BRIDGE_SESSION_RISK": "0",
+            ],
+        )
+        #expect(dry.exitCode == 0)
+        #expect(dry.stdout.contains("dhcp4: true"))
+        #expect(dry.stdout.contains("192.168.1.10/24"))
+        #expect(dry.stdout.contains("10.0.0.2/24"))
+    }
+
+    @Test func `check includes address diffs when addresses provided`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .check,
+                nic: "eth0",
+                addresses: [
+                    HostInterfaceAddressApplyEntry(kind: .dhcp),
+                    HostInterfaceAddressApplyEntry(kind: .alias, cidr: "10.0.0.2/24"),
+                ],
+            ),
+            probe: probe(ready: true),
+        )
+        #expect(result.changes.contains { $0.contains("10.0.0.2/24") })
     }
 
     @Test func `wireless sysfs helper`() {
