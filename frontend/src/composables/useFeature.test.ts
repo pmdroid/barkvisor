@@ -178,4 +178,16 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('formatInterfaceAddressSummary')
     expect(src).toContain('recheckSelectedInterface')
   })
+
+  test('NetworkView VM tab distinguishes Workload network from Device address (#432)', () => {
+    const src = readFileSync(join(here, '../views/NetworkView.vue'), 'utf8')
+    expect(src).toContain('Workload networks are logical')
+    expect(src).toContain('Device addresses')
+    expect(src).toContain('Workload network')
+    expect(src).toContain('Host bridge interface')
+    expect(src).toContain('deleteNetwork(selectedRow)')
+    expect(src).toContain("activeTab === 'vm'")
+    expect(src).not.toContain('HOST_BRIDGE_SUGGESTED')
+    expect(src).not.toContain('bridge-custom')
+  })
 })
