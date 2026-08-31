@@ -3,6 +3,7 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
 import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeApplyRequest, HostBridgeReadiness, HostInterface } from '../api/types'
+import HostInterfaceAddressList from '../components/HostInterfaceAddressList.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -41,6 +42,20 @@ import {
   macosSocketVmnetStatusSummary,
   readinessAppliesTo,
 } from '../utils/linuxBridgeSetup'
+import {
+  addressesFromInterface,
+  buildHostBridgeApplyBody,
+  type EditableHostAddress,
+  validateAddressList,
+} from '../utils/hostInterfaceAddresses'
+import {
+  formatInterfaceAddressSummary,
+  inferInterfaceRole,
+  interfaceBridgeColumn,
+  interfaceRouteColumn,
+  interfaceRoleBadgeClass,
+  interfaceRoleLabel,
+} from '../utils/hostInterfaceDisplay'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, vmHealth } from '../utils/workloadHealth'
 import { scopeRows } from '../utils/deviceScope'
@@ -53,7 +68,6 @@ const homeNets = useDeviceNetworksStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const networkStore = useNetworkStore()
 const bridged = useFeature('bridgedNetworking')
-const managedBridge = useFeature('managedBridgeDaemon')
 const { networks } = storeToRefs(networkStore)
 
 const localInterfaces = ref<HostInterface[]>([])
@@ -69,8 +83,11 @@ const newDns = ref('')
 const loading = ref(false)
 const error = ref('')
 
-const showBridges = ref(false)
-const bridgeHostId = ref('')
+const activeTab = ref<'interfaces' | 'vm'>('interfaces')
+const selectedInterfaceKey = ref('')
+const interfaceEditRows = ref<EditableHostAddress[]>([])
+const interfaceGateway = ref('')
+const interfaceDNS = ref('')
 
 const deleteTarget = ref<{ id: string; name: string; hostId: string } | null>(null)
 const deleting = ref(false)
@@ -140,28 +157,69 @@ const formDeviceOptions = computed(() =>
   })),
 )
 
-const contextHostId = computed(() => (showBridges.value ? bridgeHostId.value : formHostId.value))
+type InterfaceTableRow = {
+  key: string
+  hostId: string
+  deviceLabel: string
+  iface: HostInterface
+}
+
+const interfaceHostId = computed(() => {
+  if (selectedInterfaceRow.value) return selectedInterfaceRow.value.hostId
+  if (!deviceScope.isAll) return deviceScope.selectedHostId
+  return devicesStore.selfDevice?.hostId
+    || devicesStore.devices.find((device) => canCallDeviceAPI(device))?.hostId
+    || ''
+})
+
+const interfaceTableRows = computed<InterfaceTableRow[]>(() => {
+  const rows: InterfaceTableRow[] = []
+  const devices = useHomeUnion.value
+    ? scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+    : devicesStore.selfDevice
+      ? [devicesStore.selfDevice]
+      : []
+  for (const device of devices) {
+    if (!canCallDeviceAPI(device)) continue
+    const ifaces = useHomeUnion.value
+      ? homeNets.interfacesFor(device.hostId)
+      : localInterfaces.value
+    for (const iface of ifaces) {
+      if (iface.name === 'lo' || iface.name === 'lo0') continue
+      rows.push({
+        key: `${device.hostId}:${iface.name}`,
+        hostId: device.hostId,
+        deviceLabel: deviceDisplayLabel(device),
+        iface,
+      })
+    }
+  }
+  return rows
+})
+
+const selectedInterfaceRow = computed(() =>
+  interfaceTableRows.value.find((row) => row.key === selectedInterfaceKey.value) ?? null,
+)
+
+const showInterfaceDeviceColumn = computed(() =>
+  useHomeUnion.value && deviceScope.isAll,
+)
 
 const hostInterfaces = computed(() => {
-  if (useHomeUnion.value && contextHostId.value) return homeNets.interfacesFor(contextHostId.value)
+  if (useHomeUnion.value && interfaceHostId.value) return homeNets.interfacesFor(interfaceHostId.value)
   return localInterfaces.value
 })
 
 const bridges = computed(() => {
-  if (useHomeUnion.value && contextHostId.value) return homeNets.bridgesFor(contextHostId.value)
+  if (useHomeUnion.value && interfaceHostId.value) return homeNets.bridgesFor(interfaceHostId.value)
   return localBridges.value
 })
 
 const bridgeDevice = computed(() => {
-  if (bridgeHostId.value) return devicesStore.deviceByHostId(bridgeHostId.value)
+  const row = selectedInterfaceRow.value
+  if (row) return devicesStore.deviceByHostId(row.hostId)
+  if (interfaceHostId.value) return devicesStore.deviceByHostId(interfaceHostId.value)
   return devicesStore.selfDevice
-})
-
-const bridgeCaps = computed(() => {
-  if (useHomeUnion.value && bridgeHostId.value) {
-    return deviceCapsFor(bridgeHostId.value)
-  }
-  return caps.currentHost
 })
 
 function deviceBridgeGuideMode(device: HomeDeviceHealthSnapshot) {
@@ -183,19 +241,46 @@ const selectedBridgeMode = computed(() => {
   })
 })
 
-const canShowBridgeSetup = computed(() => {
-  if (!useHomeUnion.value) {
-    return bridgeManagementMode({
-      platform: caps.currentHost.platform,
-      supportsHostBridgeManagement: caps.currentHost.supportsHostBridgeManagement,
-      supportsManagedBridgeDaemon: caps.currentHost.supportsManagedBridgeDaemon,
-    }) !== 'hidden'
-  }
-  return devicesStore.devices.some((device) => {
-    if (!canCallDeviceAPI(device)) return false
-    return deviceBridgeGuideMode(device) !== 'hidden'
+const selectedInterfaceMode = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return 'hidden' as const
+  const device = devicesStore.deviceByHostId(row.hostId)
+  if (device) return deviceBridgeGuideMode(device)
+  return 'hidden' as const
+})
+
+const selectedInterfaceReadiness = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return null
+  return readinessByHost.value[row.hostId] ?? null
+})
+
+const interfaceAddressValidation = computed(() =>
+  validateAddressList(interfaceEditRows.value, {
+    onlyUplink: selectedInterfaceReadiness.value?.onlyUplink,
+  }),
+)
+
+const canApplySelectedInterface = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  const deviceCaps = deviceCapsFor(row.hostId)
+  return hostBridgeCanApply({
+    platform: deviceCaps.platform,
+    supportsHostMutation: deviceCaps.supportsHostMutation,
+    supportsHostBridgeManagement: deviceCaps.supportsHostBridgeManagement,
+    supportsManagedBridgeDaemon: deviceCaps.supportsManagedBridgeDaemon,
   })
 })
+
+const interfaceBridgeGuideGroups = computed(() => {
+  const ready = selectedInterfaceReadiness.value
+  if (!ready) return []
+  return selectedInterfaceMode.value === 'macos-guide'
+    ? macosSocketVmnetSetupGroups(ready)
+    : linuxBridgeSetupGroups(ready)
+})
+
 const linuxReadiness = ref<HostBridgeReadiness | null>(null)
 const linuxReadinessHostId = ref<string | null>(null)
 const linuxReadinessMode = ref<string | null>(null)
@@ -212,13 +297,6 @@ const bridgeHostAddressing = ref<'dhcp' | 'static'>('dhcp')
 const bridgeHostAddress = ref('')
 const bridgeHostGateway = ref('')
 const bridgeHostDNS = ref('')
-
-const canApplyHostBridge = computed(() => hostBridgeCanApply({
-  platform: bridgeCaps.value.platform,
-  supportsHostMutation: bridgeCaps.value.supportsHostMutation,
-  supportsHostBridgeManagement: bridgeCaps.value.supportsHostBridgeManagement,
-  supportsManagedBridgeDaemon: bridgeCaps.value.supportsManagedBridgeDaemon,
-}))
 
 const macInterface = computed(() => {
   const fromFacts = appliedReadiness.value?.defaultRouteInterface
@@ -238,27 +316,6 @@ const appliedReadiness = computed(() => {
     return null
   }
   return linuxReadiness.value
-})
-const linuxSetupGroups = computed(() =>
-  appliedReadiness.value ? linuxBridgeSetupGroups(appliedReadiness.value) : [],
-)
-const macosSetupGroups = computed(() => macosSocketVmnetSetupGroups(appliedReadiness.value))
-const macosStatusSummary = computed(() => macosSocketVmnetStatusSummary(appliedReadiness.value))
-
-const bridgeGuideSummary = computed(() => {
-  if (selectedBridgeMode.value === 'macos-guide') return macosStatusSummary.value
-  return appliedReadiness.value ? linuxBridgeStatusSummary(appliedReadiness.value) : ''
-})
-
-const bridgeGuideGroups = computed(() =>
-  selectedBridgeMode.value === 'macos-guide' ? macosSetupGroups.value : linuxSetupGroups.value,
-)
-
-const bridgeAddressTarget = computed(() => {
-  if (selectedBridgeMode.value === 'macos-guide') {
-    return appliedReadiness.value?.defaultRouteInterface || macInterface.value || 'en0'
-  }
-  return appliedReadiness.value?.suggestedBridge || HOST_BRIDGE_SUGGESTED
 })
 
 const pendingBridgeAddressTarget = computed(() => {
@@ -302,15 +359,6 @@ function hostBridgeRevertPath(nic: string, device?: HomeDeviceHealthSnapshot | n
   }
   return `${base}/br0`
 }
-
-const bridgeDeviceOptions = computed(() =>
-  scopeRows(devicesStore.devices, deviceScope.selectedHostId)
-    .filter((device) => canCallDeviceAPI(device))
-    .map((device) => ({
-      value: device.hostId,
-      label: deviceDisplayLabel(device),
-    })),
-)
 
 function rowKey(row: HomeNetworkRow): string {
   return `${row.hostId}:${row.network.id}`
@@ -379,6 +427,128 @@ watch([homeRows, pendingBridges], ([rows, pending]) => {
     selectedKey.value = keys[0] ?? ''
   }
 }, { immediate: true })
+
+watch(interfaceTableRows, (rows) => {
+  if (!rows.length) {
+    selectedInterfaceKey.value = ''
+    return
+  }
+  if (!rows.some((row) => row.key === selectedInterfaceKey.value)) {
+    selectedInterfaceKey.value = rows[0]?.key ?? ''
+  }
+}, { immediate: true })
+
+watch(selectedInterfaceRow, (row) => {
+  if (!row) {
+    interfaceEditRows.value = []
+    interfaceGateway.value = ''
+    interfaceDNS.value = ''
+    return
+  }
+  interfaceEditRows.value = addressesFromInterface(row.iface)
+  interfaceGateway.value = row.iface.gateway ?? ''
+  interfaceDNS.value = (row.iface.dns ?? []).join(', ')
+  if (!readinessByHost.value[row.hostId]) {
+    void fetchHostReadiness(devicesStore.deviceByHostId(row.hostId))
+  }
+})
+
+function interfaceReadinessFor(row: InterfaceTableRow) {
+  return readinessByHost.value[row.hostId] ?? null
+}
+
+function interfaceModeFor(row: InterfaceTableRow) {
+  const device = devicesStore.deviceByHostId(row.hostId)
+  return device ? deviceBridgeGuideMode(device) : 'hidden'
+}
+
+function interfaceBridgeInfo(row: InterfaceTableRow) {
+  return getBridgeStatus(row.iface.name, row.hostId)
+}
+
+async function recheckSelectedInterface() {
+  const row = selectedInterfaceRow.value
+  if (!row) return
+  linuxReadinessLoading.value = true
+  try {
+    await fetchHostReadiness(devicesStore.deviceByHostId(row.hostId))
+    await refreshInterfaceContext(row.hostId)
+  } finally {
+    linuxReadinessLoading.value = false
+  }
+}
+
+async function refreshInterfaceContext(hostId: string) {
+  const device = devicesStore.deviceByHostId(hostId)
+  if (device && useHomeUnion.value) {
+    await homeNets.fetchContext(device)
+    return
+  }
+  await fetchLocalInterfaces()
+  if (bridged.available) await fetchLocalBridges()
+}
+
+async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = false) {
+  const row = selectedInterfaceRow.value
+  if (!row) return
+  const device = devicesStore.deviceByHostId(row.hostId)
+  if (homeUnionDeviceBlocked(device)) {
+    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+    return
+  }
+  if (action === 'apply' && !interfaceAddressValidation.value.ok) {
+    toast.error(interfaceAddressValidation.value.errors[0] || 'Fix address list before applying.')
+    return
+  }
+  linuxApplyResult.value = null
+  linuxApplyLoading.value = true
+  try {
+    const nic = row.iface.name
+    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const data = action === 'revert'
+      ? await api.delete<BridgeActionResponse>(
+        hostBridgeRevertPath(nic, device ?? undefined),
+        { data: { confirm, action: 'revert', interface: nic } },
+      ).then((r) => r.data)
+      : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
+        nic,
+        confirm,
+        rows: interfaceEditRows.value,
+        gateway: interfaceGateway.value,
+        dns: interfaceDNS.value,
+      })).then((r) => r.data)
+    linuxApplyResult.value = data
+    if (data.needsConfirm && !confirm) {
+      linuxApplyConfirm.value = action
+      return
+    }
+    if (data.success) {
+      toast.success(data.message || (action === 'revert' ? 'Reverted host network.' : 'Applied host network.'))
+      await fetchHostReadiness(device)
+      await refreshInterfaceContext(row.hostId)
+      const refreshed = interfaceTableRows.value.find((item) => item.key === row.key)
+      if (refreshed) {
+        interfaceEditRows.value = addressesFromInterface(refreshed.iface)
+        interfaceGateway.value = refreshed.iface.gateway ?? ''
+        interfaceDNS.value = (refreshed.iface.dns ?? []).join(', ')
+      }
+    } else if (data.message) {
+      toast.error(data.message)
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    linuxApplyLoading.value = false
+  }
+}
+
+function applySelectedInterface() {
+  void runInterfaceHostBridge('apply')
+}
+
+function revertSelectedInterface() {
+  void runInterfaceHostBridge('revert')
+}
 
 watch(selectedPending, (item) => {
   if (!item) return
@@ -533,6 +703,14 @@ async function fetchLocalBridges() {
   } catch { /* keep last-known */ }
 }
 
+async function probeInterfaceReadiness() {
+  const devices = scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+  await Promise.all(devices.map(async (device) => {
+    if (!canCallDeviceAPI(device)) return
+    await fetchHostReadiness(device)
+  }))
+}
+
 async function refreshHomeNetworks() {
   await devicesStore.fetchHealth().catch(() => {})
   if (!useHomeUnion.value) {
@@ -540,6 +718,7 @@ async function refreshHomeNetworks() {
     if (bridged.available) tasks.push(fetchLocalBridges())
     await Promise.all(tasks)
     await probePendingReadiness()
+    await probeInterfaceReadiness()
     return
   }
   await Promise.all([
@@ -547,6 +726,7 @@ async function refreshHomeNetworks() {
     homeWorkloads.fetchHomeAll(devicesStore.devices),
   ])
   await probePendingReadiness()
+  await probeInterfaceReadiness()
 }
 
 async function loadFormContext() {
@@ -565,23 +745,6 @@ function discardReadinessForScope(hostId: string, mode: string): void {
   linuxReadiness.value = null
   linuxReadinessHostId.value = hostId
   linuxReadinessMode.value = mode
-}
-
-async function loadBridgeContext() {
-  const device = bridgeDevice.value
-  const hostId = device?.hostId ?? ''
-  const mode = selectedBridgeMode.value
-  const showGuide = mode !== 'hidden'
-  discardReadinessForScope(hostId, mode)
-  if (showGuide) linuxReadinessLoading.value = true
-  if (device && useHomeUnion.value) {
-    await homeNets.fetchContext(device)
-    if (showGuide) await fetchLinuxReadiness()
-    return
-  }
-  await fetchLocalInterfaces()
-  if (bridged.available || mode === 'macos-guide') await fetchLocalBridges()
-  if (showGuide) await fetchLinuxReadiness()
 }
 
 async function fetchHostReadiness(
@@ -658,31 +821,8 @@ function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolea
   return useHomeUnion.value && (!device || !canCallDeviceAPI(device))
 }
 
-let bridgePoll: number | undefined
-
 onMounted(() => {
   void caps.fetchCapabilities().then(() => refreshHomeNetworks())
-})
-
-watch(showBridges, (open) => {
-  if (open) {
-    if (!bridgeHostId.value) {
-      const guided = devicesStore.devices.find((device) => {
-        if (!canCallDeviceAPI(device)) return false
-        return deviceBridgeGuideMode(device) !== 'hidden'
-      })
-      bridgeHostId.value = guided?.hostId || defaultFormHostId()
-    }
-    void loadBridgeContext()
-    bridgePoll = window.setInterval(() => { void loadBridgeContext() }, 7000)
-  } else if (bridgePoll) {
-    clearInterval(bridgePoll)
-    bridgePoll = undefined
-  }
-})
-
-watch([bridgeHostId, selectedBridgeMode], () => {
-  if (showBridges.value) void loadBridgeContext()
 })
 
 watch(formHostId, async (id, prev) => {
@@ -696,17 +836,6 @@ watch(formHostId, async (id, prev) => {
     newBridge.value = ''
   }
 })
-
-onUnmounted(() => {
-  if (bridgePoll) clearInterval(bridgePoll)
-})
-
-async function postLinuxBridge(body: HostBridgeApplyRequest): Promise<BridgeActionResponse> {
-  const device = bridgeDevice.value
-  const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
-  const { data } = await api.post<BridgeActionResponse>(path, body)
-  return data
-}
 
 async function runHostBridge(action: 'apply' | 'revert', confirm = false, pendingDevice?: HomeDeviceHealthSnapshot | null) {
   linuxApplyResult.value = null
@@ -748,10 +877,6 @@ async function runHostBridge(action: 'apply' | 'revert', confirm = false, pendin
   }
 }
 
-async function runLinuxBridge(action: 'apply' | 'revert', confirm = false) {
-  await runHostBridge(action, confirm)
-}
-
 function applyHostBridge(pendingDevice?: HomeDeviceHealthSnapshot | null) {
   if (bridgeHostAddressing.value === 'static') {
     if (!bridgeHostAddress.value.trim()) {
@@ -766,18 +891,14 @@ function applyHostBridge(pendingDevice?: HomeDeviceHealthSnapshot | null) {
   void runHostBridge('apply', false, pendingDevice)
 }
 
-function applyLinuxBridge() {
-  applyHostBridge()
-}
-
-function revertLinuxBridge() {
-  void runHostBridge('revert')
-}
-
 async function confirmLinuxBridge() {
   const action = linuxApplyConfirm.value
   linuxApplyConfirm.value = null
   if (!action) return
+  if (selectedInterfaceRow.value && activeTab.value === 'interfaces') {
+    await runInterfaceHostBridge(action, true)
+    return
+  }
   await runHostBridge(action, true)
 }
 
@@ -882,21 +1003,156 @@ async function doDeleteNetwork() {
 <template>
   <div class="ops-page">
   <div class="ops-toolbar">
-    <h1>Networks</h1>
-    <span class="ops-sub">Connectivity across {{ HOME_LABEL }}</span>
-    <div class="ops-actions">
-      <span :title="canShowBridgeSetup ? undefined : (managedBridge.explanation || undefined)">
-        <AppButton
-          icon="settings"
-          :disabled="!canShowBridgeSetup"
-          @click="showBridges = true"
-        >Bridge setup</AppButton>
-      </span>
+    <div class="ops-toolbar-main">
+      <h1>Networks</h1>
+      <span class="ops-sub">Connectivity across {{ HOME_LABEL }}</span>
+      <div class="networks-seg" role="tablist" aria-label="Networks view">
+        <button
+          type="button"
+          role="tab"
+          class="networks-seg-btn"
+          :class="{ on: activeTab === 'interfaces' }"
+          :aria-selected="activeTab === 'interfaces'"
+          @click="activeTab = 'interfaces'"
+        >Host interfaces</button>
+        <button
+          type="button"
+          role="tab"
+          class="networks-seg-btn"
+          :class="{ on: activeTab === 'vm' }"
+          :aria-selected="activeTab === 'vm'"
+          @click="activeTab = 'vm'"
+        >VM networks</button>
+      </div>
+    </div>
+    <div v-if="activeTab === 'vm'" class="ops-actions">
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
-  <div class="ops-body" :class="{ split: homeRows.length > 0 || pendingBridges.length > 0 }">
 
+  <div
+    class="ops-body"
+    :class="{ split: activeTab === 'vm' && (homeRows.length > 0 || pendingBridges.length > 0) }"
+  >
+
+  <template v-if="activeTab === 'interfaces'">
+    <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+      {{ loadErrors[0] }}
+    </p>
+
+    <EmptyState
+      v-if="!pageLoading && interfaceTableRows.length === 0"
+      icon="globe"
+      title="No host interfaces on this Device"
+      subtitle="Host interfaces are physical or virtual NICs on the Device (en0, eth0, br0). VM network records — NAT, bridged, isolated — are on the VM networks tab."
+    />
+
+    <template v-else-if="interfaceTableRows.length > 0">
+      <DataTable
+        :columns="[
+          ...(showInterfaceDeviceColumn ? [{ key: 'device', label: DEVICE_LABEL }] : []),
+          { key: 'interface', label: 'Interface' },
+          { key: 'role', label: 'Role' },
+          { key: 'addresses', label: 'Addresses (live)' },
+          { key: 'bridge', label: 'Bridge' },
+          { key: 'route', label: 'Route' },
+        ]"
+      >
+        <tr
+          v-for="row in interfaceTableRows"
+          :key="row.key"
+          class="iface-row"
+          :class="{ selected: selectedInterfaceKey === row.key }"
+          @click="selectedInterfaceKey = row.key"
+        >
+          <td v-if="showInterfaceDeviceColumn">{{ row.deviceLabel }}</td>
+          <td><strong class="mono">{{ row.iface.name }}</strong></td>
+          <td>
+            <span
+              class="badge"
+              :class="interfaceRoleBadgeClass(inferInterfaceRole(row.iface, interfaceReadinessFor(row)))"
+            >{{ interfaceRoleLabel(inferInterfaceRole(row.iface, interfaceReadinessFor(row))) }}</span>
+          </td>
+          <td class="mono">{{ formatInterfaceAddressSummary(row.iface) }}</td>
+          <td class="mono">{{ interfaceBridgeColumn(row.iface, interfaceReadinessFor(row), interfaceBridgeInfo(row), interfaceModeFor(row)) }}</td>
+          <td>{{ interfaceRouteColumn(row.iface, interfaceReadinessFor(row)) }}</td>
+        </tr>
+      </DataTable>
+
+      <section v-if="selectedInterfaceRow" class="iface-drawer sheet">
+        <div class="sheet-head">
+          <span>Edit {{ selectedInterfaceRow.iface.name }}</span>
+          <span class="n">read from host · {{ (selectedInterfaceRow.iface.addresses?.length ?? 0) + (selectedInterfaceRow.iface.dhcpEnabled ? 1 : 0) }} addresses</span>
+        </div>
+        <div class="iface-drawer-body">
+          <HostInterfaceAddressList
+            v-model="interfaceEditRows"
+            :iface="selectedInterfaceRow.iface"
+            :only-uplink="selectedInterfaceReadiness?.onlyUplink"
+            :disabled="linuxApplyLoading"
+          />
+
+          <div class="iface-fields-grid">
+            <div class="form-group">
+              <label>Gateway</label>
+              <input v-model="interfaceGateway" placeholder="192.168.1.1" spellcheck="false" :disabled="linuxApplyLoading" />
+            </div>
+            <div class="form-group">
+              <label>DNS</label>
+              <input v-model="interfaceDNS" placeholder="1.1.1.1, 8.8.8.8" spellcheck="false" :disabled="linuxApplyLoading" />
+            </div>
+            <div class="form-group">
+              <label>Bridge role</label>
+              <input
+                :value="interfaceRoleLabel(inferInterfaceRole(selectedInterfaceRow.iface, selectedInterfaceReadiness))"
+                readonly
+                style="opacity:0.75"
+              />
+            </div>
+          </div>
+
+          <GuestCommandAccordion
+            v-if="interfaceBridgeGuideGroups.length"
+            :groups="interfaceBridgeGuideGroups"
+            :initial-open="interfaceBridgeGuideGroups[0]?.id ?? null"
+          />
+
+          <div v-if="linuxApplyResult && activeTab === 'interfaces'" style="margin-top:12px;font-size:13px">
+            <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
+            <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
+              <li v-for="change in linuxApplyResult.changes" :key="change">{{ change }}</li>
+            </ul>
+          </div>
+
+          <div class="iface-drawer-actions">
+            <AppButton
+              variant="primary"
+              size="sm"
+              :disabled="!canApplySelectedInterface || linuxApplyLoading || !interfaceAddressValidation.ok"
+              :loading="linuxApplyLoading"
+              @click="applySelectedInterface"
+            >Apply</AppButton>
+            <AppButton
+              size="sm"
+              :disabled="!canApplySelectedInterface || linuxApplyLoading"
+              @click="revertSelectedInterface"
+            >Revert</AppButton>
+            <AppButton
+              size="sm"
+              :disabled="linuxReadinessLoading"
+              @click="recheckSelectedInterface"
+            >Re-check</AppButton>
+          </div>
+
+          <p class="iface-drawer-hint">
+            Host interfaces are NICs on this Device. VM network records (NAT / bridged / isolated) are on the VM networks tab.
+          </p>
+        </div>
+      </section>
+    </template>
+  </template>
+
+  <template v-else-if="activeTab === 'vm'">
   <template v-if="homeRows.length > 0 || pendingBridges.length > 0">
   <section class="list-col">
     <div class="ops-sec-head"><h3>Networks</h3><span class="n">{{ homeRows.length + pendingBridges.length }}</span></div>
@@ -1102,95 +1358,12 @@ async function doDeleteNetwork() {
   <EmptyState
     v-if="!pageLoading"
     icon="globe"
-    title="No networks configured. VMs use NAT networking by default."
+    title="No VM network records"
+    subtitle="Workloads use the default NAT network until you create a VM network here. Host NICs and addresses are on the Host interfaces tab."
   />
   </template>
+  </template>
   </div>
-
-  <!-- Bridge setup: Apply/Revert host network (Linux br0 or macOS socket_vmnet + networksetup) -->
-  <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
-    <div v-if="bridgeDeviceOptions.length > 0" class="form-group">
-      <label>{{ DEVICE_LABEL }}</label>
-      <AppSelect v-model="bridgeHostId" :options="bridgeDeviceOptions" />
-    </div>
-    <div v-if="selectedBridgeMode !== 'hidden'" class="linux-bridge-guide">
-      <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
-      <template v-else-if="appliedReadiness || selectedBridgeMode === 'macos-guide'">
-        <p style="font-size:13px;margin:0 0 12px">{{ bridgeGuideSummary }}</p>
-        <ul v-if="appliedReadiness?.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
-          <li v-for="br in (appliedReadiness?.bridges ?? [])" :key="br.name">
-            <span class="mono">{{ br.name }}</span>
-            <span v-if="br.enslaved.length" style="color:var(--text-secondary)">
-              — {{ br.enslaved.join(', ') }}
-            </span>
-          </li>
-        </ul>
-        <div class="form-group" style="margin:12px 0">
-          <label>Device address on {{ bridgeAddressTarget }}</label>
-          <AppSelect
-            v-model="bridgeHostAddressing"
-            :options="[
-              { value: 'dhcp', label: 'DHCP (from router)' },
-              { value: 'static', label: 'Static IPv4' },
-            ]"
-          />
-          <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-            This is the address of this Device on the LAN — not a Workload guest address.
-          </p>
-          <div v-if="bridgeHostAddressing === 'static'" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-            <input v-model="bridgeHostAddress" placeholder="192.168.1.10/24" spellcheck="false" />
-            <input v-model="bridgeHostGateway" placeholder="Gateway (192.168.1.1)" spellcheck="false" />
-            <input v-model="bridgeHostDNS" placeholder="DNS (1.1.1.1, 8.8.8.8)" spellcheck="false" />
-          </div>
-        </div>
-        <GuestCommandAccordion
-          v-if="bridgeGuideGroups.length"
-          :groups="bridgeGuideGroups"
-          :initial-open="bridgeGuideGroups[0]?.id ?? null"
-        />
-        <p v-if="appliedReadiness?.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
-          Do not change the only uplink unless you can reach this Device another way.
-        </p>
-        <div v-if="linuxApplyResult" style="margin-top:12px;font-size:13px">
-          <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
-          <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
-            <li v-for="change in linuxApplyResult.changes" :key="change">{{ change }}</li>
-          </ul>
-          <p
-            v-for="warn in (linuxApplyResult.warnings ?? [])"
-            :key="warn"
-            style="color:var(--amber);margin:8px 0 0"
-          >{{ warn }}</p>
-        </div>
-      </template>
-      <p v-else style="color:var(--text-secondary);font-size:13px">
-        Could not read host-bridge status on this Device.
-      </p>
-    </div>
-    <UnsupportedHint
-      v-else
-      :text="bridgeCaps.details?.find((d) => d.code === 'managedBridgeDaemon' && !d.supported)?.remediation || managedBridge.explanation"
-    />
-    <template #actions>
-      <AppButton
-        v-if="selectedBridgeMode !== 'hidden' && canApplyHostBridge"
-        :disabled="linuxApplyLoading || linuxReadinessLoading"
-        :loading="linuxApplyLoading"
-        @click="applyLinuxBridge"
-      >Apply</AppButton>
-      <AppButton
-        v-if="selectedBridgeMode !== 'hidden' && canApplyHostBridge"
-        :disabled="linuxApplyLoading || linuxReadinessLoading"
-        @click="revertLinuxBridge"
-      >Revert</AppButton>
-      <AppButton
-        v-if="selectedBridgeMode !== 'hidden'"
-        :disabled="linuxReadinessLoading"
-        @click="fetchLinuxReadiness"
-      >Re-check</AppButton>
-      <AppButton @click="showBridges = false">Close</AppButton>
-    </template>
-  </AppModal>
 
   <!-- Create/Edit Network Modal -->
   <AppModal
@@ -1262,7 +1435,7 @@ async function doDeleteNetwork() {
           autocomplete="off"
         />
         <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-          Use an existing host bridge (e.g. br0). Apply it from Bridge setup before starting VMs.
+          Use an existing host bridge (e.g. br0). Configure it on the Host interfaces tab before starting VMs.
           Bridges without an IP still appear when detected; you can also type the name.
         </p>
         <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
@@ -1276,7 +1449,7 @@ async function doDeleteNetwork() {
       <input v-model="newDns" placeholder="8.8.8.8 (optional)" />
     </div>
     <p v-if="newMode === 'bridged'" style="color:var(--text-dim);font-size:12px;margin:0">
-      Bridged Workloads get a LAN address from your router (DHCP). Set this Device&apos;s bridge address in Bridge setup.
+      Bridged Workloads get a LAN address from your router (DHCP). Set this Device&apos;s bridge address on the Host interfaces tab.
     </p>
     <FormError v-if="error" :message="error" />
     <template #actions>
