@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import type { HostInterface } from '../api/types'
 import {
+  bridgeSetupInterfaceKey,
   formatInterfaceAddressSummary,
   inferInterfaceRole,
   interfaceBridgeColumn,
+  interfaceBridgeRoleDetail,
+  interfaceOwnsBridgeApply,
   interfaceRouteColumn,
   interfaceRoleLabel,
 } from './hostInterfaceDisplay'
@@ -58,5 +61,69 @@ describe('hostInterfaceDisplay', () => {
       { defaultRouteInterface: 'en0', bridges: [], onlyUplink: false, ready: false, helperPath: null, helperSetuid: false, suggestedBridge: 'br0', aclAllowsSuggested: null },
     )).toBe('default')
     expect(interfaceRoleLabel('uplink')).toBe('Uplink')
+  })
+
+  test('bridge role detail describes uplink, bridge master, and external', () => {
+    const ready = {
+      defaultRouteInterface: 'eth0',
+      bridges: [{ name: 'br0', enslaved: ['eth0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+    }
+    expect(interfaceBridgeRoleDetail('uplink', iface({ name: 'eth0' }), ready, 'linux-guide'))
+      .toBe('Uplink · enslaved to br0')
+    expect(interfaceBridgeRoleDetail('uplink', iface({ name: 'eth0' }), { ...ready, bridges: [] }, 'linux-guide'))
+      .toBe('Uplink · use as bridge uplink')
+    expect(interfaceBridgeRoleDetail('bridge', iface({ name: 'br0' }), ready, 'linux-guide'))
+      .toBe('Bridge · master (eth0)')
+    expect(interfaceBridgeRoleDetail('external', iface({ name: 'docker0' }), ready, 'linux-guide'))
+      .toBe('External · read-only')
+    expect(interfaceBridgeRoleDetail('uplink', iface({ name: 'en0' }), ready, 'macos-guide'))
+      .toBe('Uplink · socket_vmnet')
+  })
+
+  test('interfaceOwnsBridgeApply gates Apply to uplink/br0 only', () => {
+    const pending = {
+      defaultRouteInterface: 'eth0',
+      bridges: [],
+      onlyUplink: false,
+      ready: false,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    const ready = {
+      ...pending,
+      bridges: [{ name: 'br0', enslaved: ['eth0'] }],
+      ready: true,
+      aclAllowsSuggested: true,
+    }
+    expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'eth0' }), pending, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'eth0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsBridgeApply('external', iface({ name: 'docker0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
+    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+  })
+
+  test('bridgeSetupInterfaceKey prefers br0 on Linux and uplink on Mac', () => {
+    const ready = {
+      defaultRouteInterface: 'eth0',
+      bridges: [{ name: 'br0', enslaved: [] }],
+      onlyUplink: false,
+      ready: false,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    expect(bridgeSetupInterfaceKey('host-1', ready, 'linux-guide')).toBe('host-1:br0')
+    expect(bridgeSetupInterfaceKey('host-1', ready, 'macos-guide')).toBe('host-1:eth0')
+    expect(bridgeSetupInterfaceKey('host-1', { ...ready, bridges: [] }, 'linux-guide')).toBe('host-1:eth0')
   })
 })

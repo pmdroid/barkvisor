@@ -576,6 +576,24 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   margin: 0;
   line-height: 1.45;
 }
+.iface-advanced {
+  margin-top: 4px;
+}
+.iface-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  list-style: none;
+}
+.iface-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.iface-advanced[open] > summary {
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
 .ops-actions {
   margin-left: auto;
   display: flex;
