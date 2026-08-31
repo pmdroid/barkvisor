@@ -56,6 +56,9 @@ struct BridgeActionResponse: Content {
     var message: String?
     var applied: Bool?
     var needsConfirm: Bool?
+    var pendingCommit: Bool?
+    var commitDeadline: String?
+    var rollbackSeconds: Int?
     var backend: String?
     var changes: [String]?
     var warnings: [String]?

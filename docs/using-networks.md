@@ -98,7 +98,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 Select the **uplink** row (or `br0` when present) in **Host interfaces**. **Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
 
-Rollback is a **host timer** (`netplan try` / `systemd-run`). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves. Do not Confirm in the browser after the uplink dies.
+After Apply, the host keeps changes **pending** for 120 seconds. Click **Keep changes** in the SPA or run `--commit` on the host; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 

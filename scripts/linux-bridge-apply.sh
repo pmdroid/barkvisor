@@ -8,9 +8,10 @@
 #   ./scripts/linux-bridge-apply.sh --dry-run --nic eth0
 #   ./scripts/linux-bridge-apply.sh --check
 #   sudo ./scripts/linux-bridge-apply.sh --revert
+#   sudo ./scripts/linux-bridge-apply.sh --commit
 #
 # Host address flags are for the Device on br0, not the guest (that is cloud-init).
-# Rollback is a host timer (netplan try). Never Confirm in the browser after the uplink dies.
+# After --apply, run --commit within ROLLBACK_SEC or the host auto-reverts.
 # Never default-deletes a shared br0.
 set -euo pipefail
 
@@ -18,6 +19,8 @@ ACL_MARKER="# barkvisor:allow-br0"
 ACL_PATH="${BARKVISOR_BRIDGE_ACL:-/etc/qemu/bridge.conf}"
 BRIDGE="${BARKVISOR_BRIDGE:-br0}"
 NETPLAN_PATH="/etc/netplan/90-barkvisor-br0.yaml"
+PENDING_PATH="/run/barkvisor/${BRIDGE}-pending.json"
+COMMIT_STAMP="/run/barkvisor/${BRIDGE}-commit"
 ROLLBACK_SEC=120
 ACTION=""
 NIC=""
@@ -37,6 +40,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) ACTION=apply ;;
     --check) ACTION=check ;;
+    --commit) ACTION=commit ;;
     --dry-run) ACTION=dry-run ;;
     --revert) ACTION=revert ;;
     --nic) NIC="${2:-}"; shift ;;
@@ -219,8 +223,34 @@ if [[ "$ACTION" == "revert" ]]; then
     ' "$ACL_PATH" >"$tmp"
     mv "$tmp" "$ACL_PATH"
   fi
-  rm -f "$MARKER"
+  rm -f "$MARKER" "$PENDING_PATH" "$COMMIT_STAMP"
   echo "ok: reverted BarkVisor files; ${BRIDGE} was not deleted"
+  exit 0
+fi
+
+if [[ "$ACTION" == "commit" ]]; then
+  if [[ ! -f "$PENDING_PATH" ]]; then
+    echo "error: no pending host network apply for ${BRIDGE}" >&2
+    exit 11
+  fi
+  echo "CHANGE commit pending ${BRIDGE} host network changes"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    echo "ok: commit planned"
+    exit 0
+  fi
+  mkdir -p /run/barkvisor
+  : >"$COMMIT_STAMP"
+  np_pid=""
+  if command -v python3 >/dev/null 2>&1; then
+    np_pid="$(python3 -c "import json; print(json.load(open('${PENDING_PATH}')).get('netplanPid') or '')" 2>/dev/null || true)"
+  fi
+  if [[ -n "$np_pid" ]]; then
+    kill -USR1 "$np_pid" 2>/dev/null || true
+  fi
+  rm -f "$PENDING_PATH"
+  systemctl stop "barkvisor-${BRIDGE}-rollback.timer" 2>/dev/null || true
+  systemctl stop "barkvisor-${BRIDGE}-rollback.service" 2>/dev/null || true
+  echo "ok: kept host network changes for ${BRIDGE}"
   exit 0
 fi
 
@@ -262,7 +292,7 @@ fi
 
 if [[ "$SESSION_RISK" == "1" && "$CONFIRM" -ne 1 && "$ACTION" != "check" ]]; then
   echo "WARN ${NIC} may carry SSH or the SPA session. Pass --confirm."
-  echo "WARN rollback is a host timer (netplan try), never a SPA Confirm after the uplink dies."
+  echo "WARN after --apply, run --commit within ${ROLLBACK_SEC}s or the host auto-reverts."
   print_changes "$BACKEND" "$NIC"
   echo "needsConfirm=true"
   exit 9
@@ -284,12 +314,29 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 DATA_DIR="${BARKVISOR_DATA_DIR:-/var/lib/barkvisor}"
-mkdir -p "$DATA_DIR" "$(dirname "$ACL_PATH")"
+mkdir -p "$DATA_DIR" "$(dirname "$ACL_PATH")" /run/barkvisor
+rollback_helper="/run/barkvisor/${BRIDGE}-rollback.sh"
+cat >"$rollback_helper" <<EOF
+#!/bin/sh
+if [ -f $COMMIT_STAMP ]; then exit 0; fi
+rm -f $NETPLAN_PATH || true
+/usr/sbin/netplan apply >/dev/null 2>&1 || true
+/usr/bin/nmcli connection delete barkvisor-${BRIDGE} >/dev/null 2>&1 || true
+rm -f /etc/systemd/network/90-barkvisor-${BRIDGE}.netdev /etc/systemd/network/90-barkvisor-${BRIDGE}.network || true
+/usr/bin/networkctl reload >/dev/null 2>&1 || true
+rm -f ${DATA_DIR}/host-bridge-${BRIDGE}.json $PENDING_PATH || true
+EOF
+chmod 0755 "$rollback_helper" || true
+
 case "$BACKEND" in
   netplan)
     emit_netplan >"$NETPLAN_PATH"
     if command -v netplan >/dev/null 2>&1; then
-      netplan try --timeout "$ROLLBACK_SEC"
+      netplan try --timeout "$ROLLBACK_SEC" &
+      np_pid=$!
+      deadline="$(date -u -d "@$(($(date +%s) + ROLLBACK_SEC))" +%Y-%m-%dT%H:%M:%SZ)"
+      printf '{"target":"%s","commitDeadline":"%s","rollbackSeconds":%s,"netplanPid":%s}\n' \
+        "$BRIDGE" "$deadline" "$ROLLBACK_SEC" "$np_pid" >"$PENDING_PATH"
     fi
     ;;
   network-manager)
@@ -315,8 +362,6 @@ case "$BACKEND" in
       nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
         ipv4.method auto || true
     fi
-    systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
-      /bin/true >/dev/null 2>&1 || true
     ;;
   systemd-networkd)
     cat >"/etc/systemd/network/90-barkvisor-${BRIDGE}.netdev" <<EOF
@@ -351,10 +396,18 @@ EOF
         done
       fi
     } >"/etc/systemd/network/90-barkvisor-${BRIDGE}.network"
-    systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
-      /bin/true >/dev/null 2>&1 || true
     ;;
 esac
+
+if [[ "$BACKEND" != "netplan" ]]; then
+  deadline="$(date -u -d "@$(($(date +%s) + ROLLBACK_SEC))" +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"target":"%s","commitDeadline":"%s","rollbackSeconds":%s}\n' \
+    "$BRIDGE" "$deadline" "$ROLLBACK_SEC" >"$PENDING_PATH"
+fi
+
+systemctl stop "barkvisor-${BRIDGE}-rollback.timer" 2>/dev/null || true
+systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
+  "$rollback_helper" >/dev/null 2>&1 || true
 
 {
   echo "$ACL_MARKER"
@@ -372,5 +425,5 @@ do
 done
 
 printf '{"bridge":"%s","createdBridge":true}\n' "$BRIDGE" >"${DATA_DIR}/host-bridge-${BRIDGE}.json"
-echo "ok: applied ${BRIDGE} via ${BACKEND} on ${NIC}"
+echo "ok: applied ${BRIDGE} via ${BACKEND} on ${NIC} (pending commit; run --commit within ${ROLLBACK_SEC}s)"
 exit 0

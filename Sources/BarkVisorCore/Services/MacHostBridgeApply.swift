@@ -49,6 +49,8 @@ import Foundation
                 return check(request: request, probe: probe)
             case .dryRun:
                 return applyPlan(request: request, probe: probe, dryRun: true)
+            case .commit:
+                return commitPlan(request: request, probe: probe)
             case .apply:
                 return applyPlan(request: request, probe: probe, dryRun: false)
             }
@@ -119,7 +121,7 @@ import Foundation
                 )
             }
             warnings.append(
-                "Revert restores the saved networksetup profile. Confirm in the UI before Apply if this NIC carries your session.",
+                "After Apply, click Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or Revert to undo.",
             )
 
             let socketPlan = SocketVmnetApply.evaluate(
@@ -182,6 +184,33 @@ import Foundation
                 message: dryRun
                     ? "Dry run: bridged host apply plan."
                     : "Apply bridged host networking (socket_vmnet + Device address).",
+            )
+        }
+
+        private static func commitPlan(
+            request: LinuxHostBridgeApplyRequest,
+            probe: MacHostBridgeApplyProbe,
+        ) -> LinuxHostBridgeApplyResult {
+            let device = probe.device
+            guard !device.isEmpty else {
+                return refuse("No interface to commit.")
+            }
+            guard let pending = HostNetworkPendingCommitService.readMac(device: device) else {
+                return refuse("No pending host network apply for \(device).")
+            }
+            if pending.expired {
+                return refuse(
+                    "Pending apply expired. Run Revert to restore the saved network profile.",
+                )
+            }
+            return LinuxHostBridgeApplyResult(
+                success: true,
+                applied: false,
+                backend: "networksetup",
+                changes: ["Keep host network changes for \(device)"],
+                warnings: [],
+                commands: [],
+                message: "Ready to keep host network changes for \(device).",
             )
         }
 
@@ -273,9 +302,29 @@ import Foundation
                         return plan
                     }(),
                 )
+                let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
+                try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
-                plan.message = "Applied bridged host networking on \(service) (\(resolved.device))."
+                plan.pendingCommit = true
+                plan.commitDeadline = pending.commitDeadline
+                plan.rollbackSeconds = pending.rollbackSeconds
+                plan.message =
+                    "Applied bridged host networking on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+            case .commit:
+                guard let pending = HostNetworkPendingCommitService.readMac(device: resolved.device) else {
+                    throw BarkVisorError.badRequest("No pending host network apply for \(resolved.device).")
+                }
+                if pending.expired {
+                    throw BarkVisorError.badRequest(
+                        "Pending apply expired. Run Revert to restore the saved network profile.",
+                    )
+                }
+                HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                plan.applied = true
+                plan.pendingCommit = false
+                plan.message = "Kept host network changes for \(resolved.device)."
             case .revert:
+                HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
                     plan.changes.insert("Restored saved networksetup profile.", at: 0)
                 } else if let service = resolved.serviceName {
@@ -290,6 +339,7 @@ import Foundation
                     probe: resolved.socketProbe,
                 )
                 plan.applied = true
+                plan.pendingCommit = false
                 plan.message = "Reverted BarkVisor host network changes."
             case .check, .dryRun:
                 break

@@ -306,6 +306,161 @@ const linuxApplyLoading = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
 const linuxApplyConfirm = ref<'apply' | 'revert' | null>(null)
 
+type PendingCommitState = {
+  hostId: string
+  nic: string
+  target: string
+  commitDeadline: string
+  rollbackSeconds: number
+}
+
+const pendingCommit = ref<PendingCommitState | null>(null)
+const pendingCommitSecondsLeft = ref(0)
+let pendingCommitTimer: ReturnType<typeof setInterval> | null = null
+let pendingCommitAutoRevert = false
+
+function stopPendingCommitTimer() {
+  if (pendingCommitTimer) {
+    clearInterval(pendingCommitTimer)
+    pendingCommitTimer = null
+  }
+}
+
+function updatePendingCommitCountdown() {
+  if (!pendingCommit.value) {
+    pendingCommitSecondsLeft.value = 0
+    return
+  }
+  const deadline = Date.parse(pendingCommit.value.commitDeadline)
+  const left = Math.ceil((deadline - Date.now()) / 1000)
+  pendingCommitSecondsLeft.value = Math.max(0, left)
+  if (left <= 0 && !pendingCommitAutoRevert) {
+    pendingCommitAutoRevert = true
+    void autoRevertPendingCommit()
+  }
+}
+
+function startPendingCommitTimer() {
+  stopPendingCommitTimer()
+  updatePendingCommitCountdown()
+  pendingCommitTimer = setInterval(updatePendingCommitCountdown, 1000)
+}
+
+function clearPendingCommitState() {
+  stopPendingCommitTimer()
+  pendingCommit.value = null
+  pendingCommitSecondsLeft.value = 0
+  pendingCommitAutoRevert = false
+}
+
+function setPendingCommitFromResponse(hostId: string, nic: string, data: BridgeActionResponse) {
+  if (!data.pendingCommit || !data.commitDeadline) {
+    return
+  }
+  const ready = readinessByHost.value[hostId]
+  pendingCommitAutoRevert = false
+  pendingCommit.value = {
+    hostId,
+    nic,
+    target: ready?.pendingCommit?.target ?? ready?.suggestedBridge ?? nic,
+    commitDeadline: data.commitDeadline,
+    rollbackSeconds: data.rollbackSeconds ?? 120,
+  }
+  startPendingCommitTimer()
+}
+
+function syncPendingCommitFromReadiness(hostId: string, ready: HostBridgeReadiness, nic: string) {
+  const row = ready.pendingCommit
+  if (!row) {
+    if (pendingCommit.value?.hostId === hostId) clearPendingCommitState()
+    return
+  }
+  if (Date.parse(row.commitDeadline) <= Date.now()) {
+    if (pendingCommit.value?.hostId === hostId && !pendingCommitAutoRevert) {
+      pendingCommitAutoRevert = true
+      void autoRevertPendingCommit()
+    }
+    return
+  }
+  pendingCommitAutoRevert = false
+  pendingCommit.value = {
+    hostId,
+    nic,
+    target: row.target,
+    commitDeadline: row.commitDeadline,
+    rollbackSeconds: row.rollbackSeconds,
+  }
+  startPendingCommitTimer()
+}
+
+const showPendingCommitBanner = computed(() => {
+  const row = selectedInterfaceRow.value
+  const pending = pendingCommit.value
+  if (!row || !pending || pending.hostId !== row.hostId) return false
+  const ready = selectedInterfaceReadiness.value
+  if (selectedInterfaceMode.value === 'macos-guide') {
+    return pending.target === row.iface.name
+  }
+  return pending.target === (ready?.suggestedBridge ?? 'br0')
+})
+
+async function keepPendingCommit() {
+  const pending = pendingCommit.value
+  const row = selectedInterfaceRow.value
+  if (!pending || !row) return
+  const device = devicesStore.deviceByHostId(pending.hostId)
+  linuxApplyLoading.value = true
+  try {
+    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const { data } = await api.post<BridgeActionResponse>(path, {
+      action: 'commit',
+      interface: pending.nic,
+      bridge: selectedInterfaceReadiness.value?.suggestedBridge ?? 'br0',
+      confirm: true,
+    })
+    linuxApplyResult.value = data
+    if (data.success) {
+      clearPendingCommitState()
+      toast.success(data.message || 'Kept host network changes.')
+      await fetchHostReadiness(device)
+      await refreshInterfaceContext(row.hostId)
+    } else if (data.message) {
+      toast.error(data.message)
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    linuxApplyLoading.value = false
+  }
+}
+
+async function autoRevertPendingCommit() {
+  const pending = pendingCommit.value
+  if (!pending) return
+  const row = selectedInterfaceRow.value
+  const device = devicesStore.deviceByHostId(pending.hostId)
+  linuxApplyLoading.value = true
+  try {
+    const path = hostBridgeRevertPath(pending.nic, device ?? undefined)
+    const { data } = await api.delete<BridgeActionResponse>(path, {
+      data: { confirm: true, action: 'revert', interface: pending.nic },
+    })
+    clearPendingCommitState()
+    if (data.success) {
+      toast.info(data.message || 'Host network changes auto-reverted.')
+      if (row) {
+        await fetchHostReadiness(device)
+        await refreshInterfaceContext(row.hostId)
+      }
+    }
+  } catch {
+    toast.error('Auto-revert failed. Use Revert manually if connectivity is broken.')
+  } finally {
+    linuxApplyLoading.value = false
+    pendingCommitAutoRevert = false
+  }
+}
+
 function hostBridgeRevertPath(nic: string, device?: HomeDeviceHealthSnapshot | null) {
   const base = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
   const mode = device ? deviceBridgeGuideMode(device) : 'hidden'
@@ -451,6 +606,11 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
     if (data.needsConfirm && !confirm) {
       linuxApplyConfirm.value = action
       return
+    }
+    if (data.pendingCommit && data.commitDeadline && action === 'apply') {
+      setPendingCommitFromResponse(row.hostId, nic, data)
+    } else if (action === 'revert' || action === 'apply') {
+      if (pendingCommit.value?.hostId === row.hostId) clearPendingCommitState()
     }
     if (data.success) {
       toast.success(data.message || (action === 'revert' ? 'Reverted host network.' : 'Applied host network.'))
@@ -698,6 +858,11 @@ async function fetchHostReadiness(
     const key = device?.hostId || devicesStore.selfDevice?.hostId || ''
     if (key) {
       readinessByHost.value = { ...readinessByHost.value, [key]: data }
+      const nic = data.pendingCommit?.target
+        ?? data.defaultRouteInterface
+        ?? selectedInterfaceRow.value?.iface.name
+        ?? ''
+      if (nic) syncPendingCommitFromReadiness(key, data, nic)
     }
     return data
   } catch {
@@ -729,6 +894,10 @@ function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolea
 
 onMounted(() => {
   void caps.fetchCapabilities().then(() => refreshHomeNetworks())
+})
+
+onUnmounted(() => {
+  stopPendingCommitTimer()
 })
 
 watch(formHostId, async (id, prev) => {
@@ -971,6 +1140,24 @@ async function doDeleteNetwork() {
               :initial-open="null"
             />
           </details>
+
+          <div
+            v-if="showPendingCommitBanner"
+            class="iface-pending-commit"
+            role="status"
+            style="margin-top:12px;padding:12px 14px;border-radius:8px;border:1px solid var(--amber, #f59e0b);background:color-mix(in srgb, var(--amber, #f59e0b) 12%, transparent)"
+          >
+            <p style="margin:0 0 8px">
+              Network changes are live but not permanent.
+              <strong>{{ pendingCommitSecondsLeft }}s</strong> left — click Keep changes or they auto-revert.
+            </p>
+            <AppButton
+              variant="primary"
+              size="sm"
+              :loading="linuxApplyLoading"
+              @click="keepPendingCommit"
+            >Keep changes</AppButton>
+          </div>
 
           <div v-if="linuxApplyResult && activeTab === 'interfaces'" style="margin-top:12px;font-size:13px">
             <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
@@ -1225,7 +1412,7 @@ async function doDeleteNetwork() {
   <ConfirmDialog
     v-if="linuxApplyConfirm"
     title="Confirm host bridge change"
-    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. Rollback is a host timer, not a browser Confirm after the uplink dies.'"
+    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. After Apply you have 120 seconds to click Keep changes or the host auto-reverts.'"
     confirm-label="Apply anyway"
     :danger="true"
     :loading="linuxApplyLoading"
