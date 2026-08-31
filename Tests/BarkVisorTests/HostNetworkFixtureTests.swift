@@ -150,6 +150,56 @@ struct HostNetworkFixtureTests {
         }
     #endif
 
+    // MARK: - API JSON contracts
+
+    @Test func `bridge check request fixture decodes and evaluates to planned diffs`() throws {
+        let body = try JSONDecoder().decode(
+            BridgeRequest.self,
+            from: Self.loadJSON("api/bridge-check-multi-address.request.json"),
+        )
+        #expect(body.action == "check")
+        #expect(body.interface == "eth0")
+        #expect(body.addresses?.count == 2)
+
+        let request = try Self.bridgeApplyRequest(from: body, defaultAction: .check)
+        #expect(request.action == LinuxHostBridgeApplyAction.check)
+        #expect(request.nic == "eth0")
+        #expect(request.addresses.count == 2)
+        #expect(request.gateway == "192.168.1.1")
+        #expect(request.dns == ["1.1.1.1"])
+
+        let probe = LinuxHostBridgeApplyProbe(
+            facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                helperPath: HostBridgeFactsService.qemuBridgeHelperCandidates[0],
+                helperSetuid: true,
+                aclAllowsSuggested: true,
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["eth0"])],
+                defaultRouteInterface: "eth0",
+            )),
+            backend: .netplan,
+            existingInterfaces: ["eth0", "br0"],
+        )
+        let result = LinuxHostBridgeApply.evaluate(request: request, probe: probe)
+        let response = BridgeActionResponse(
+            success: result.success,
+            message: result.message,
+            applied: result.applied,
+            needsConfirm: result.needsConfirm,
+            backend: result.backend,
+            changes: result.changes,
+            warnings: result.warnings,
+            commands: result.commands,
+        )
+
+        let encoded = try JSONEncoder().encode(response)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["success"] as? Bool == true)
+        let changes = try #require(json["changes"] as? [String])
+        #expect(changes.contains { $0.contains("DHCP") })
+        #expect(changes.contains { $0.contains("10.0.0.2/24") })
+    }
+
+>>>>>>> deb4fd6d (Fix macOS alias revert and validate bridge address kinds (#430).)
     @Test func `interfaces snapshot fixture matches HostInterface JSON contract`() throws {
         struct ExpectedAddress: Decodable {
             let cidr: String
@@ -210,5 +260,53 @@ struct HostNetworkFixtureTests {
         #expect(addresses[0]["source"] as? String == "dhcp")
         #expect(addresses[0]["primary"] as? Bool == true)
         #expect(addresses[1]["source"] as? String == "alias")
+    }
+
+    private static func parseAddressApplyEntries(
+        _ rows: [BridgeAddressRequest]?,
+    ) throws -> [HostInterfaceAddressApplyEntry] {
+        guard let rows, !rows.isEmpty else { return [] }
+        return try rows.map { row in
+            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else {
+                throw BarkVisorError.badRequest(
+                    "addresses[].kind must be dhcp, static, or alias (got \"\(row.kind)\")",
+                )
+            }
+            return HostInterfaceAddressApplyEntry(
+                kind: kind,
+                cidr: row.cidr,
+                gateway: row.gateway,
+                dns: row.dns,
+            )
+        }
+    }
+
+    /// Mirrors `SystemBridgeController.bridgeApplyRequest` for contract tests (no HTTP server).
+    private static func bridgeApplyRequest(
+        from body: BridgeRequest,
+        defaultAction: LinuxHostBridgeApplyAction,
+    ) throws -> LinuxHostBridgeApplyRequest {
+        let action: LinuxHostBridgeApplyAction = if body.dryRun == true {
+            .dryRun
+        } else if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            LinuxHostBridgeApplyAction(rawValue: raw) ?? defaultAction
+        } else {
+            defaultAction
+        }
+        let addressing: LinuxHostBridgeAddressing =
+            body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
+        let addresses = try parseAddressApplyEntries(body.addresses)
+        return LinuxHostBridgeApplyRequest(
+            action: action,
+            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
+            nic: body.interface,
+            addressing: addressing,
+            address: body.address,
+            gateway: body.gateway,
+            dns: body.dns ?? [],
+            addresses: addresses,
+            confirm: body.confirm == true,
+            deleteBridge: body.deleteBridge == true,
+        )
     }
 }

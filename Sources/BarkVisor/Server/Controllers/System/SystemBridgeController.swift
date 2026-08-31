@@ -176,15 +176,7 @@ struct SystemBridgeController: RouteCollection {
             body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
         let nic = body.interface
             ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
-        let addresses = (body.addresses ?? []).compactMap { row -> HostInterfaceAddressApplyEntry? in
-            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else { return nil }
-            return HostInterfaceAddressApplyEntry(
-                kind: kind,
-                cidr: row.cidr,
-                gateway: row.gateway,
-                dns: row.dns,
-            )
-        }
+        let addresses = try parseAddressApplyEntries(body.addresses)
         return LinuxHostBridgeApplyRequest(
             action: action,
             bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
@@ -197,6 +189,25 @@ struct SystemBridgeController: RouteCollection {
             confirm: body.confirm == true,
             deleteBridge: body.deleteBridge == true,
         )
+    }
+
+    private static func parseAddressApplyEntries(
+        _ rows: [BridgeAddressRequest]?,
+    ) throws -> [HostInterfaceAddressApplyEntry] {
+        guard let rows, !rows.isEmpty else { return [] }
+        return try rows.map { row in
+            guard let kind = HostInterfaceAddressApplyKind(rawValue: row.kind) else {
+                throw BarkVisorError.badRequest(
+                    "addresses[].kind must be dhcp, static, or alias (got \"\(row.kind)\")",
+                )
+            }
+            return HostInterfaceAddressApplyEntry(
+                kind: kind,
+                cidr: row.cidr,
+                gateway: row.gateway,
+                dns: row.dns,
+            )
+        }
     }
 
     private static func parseAction(
