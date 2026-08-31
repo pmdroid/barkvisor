@@ -46,7 +46,7 @@ import Foundation
             case .revert:
                 return revertPlan(request: request, probe: probe)
             case .check:
-                return check(probe: probe)
+                return check(request: request, probe: probe)
             case .dryRun:
                 return applyPlan(request: request, probe: probe, dryRun: true)
             case .apply:
@@ -55,18 +55,35 @@ import Foundation
         }
 
         private static func check(probe: MacHostBridgeApplyProbe) -> LinuxHostBridgeApplyResult {
-            LinuxHostBridgeApplyResult(
+            var changes = [
+                probe.facts.ready
+                    ? "Bridged networking is ready on this Device."
+                    : "Bridged networking is not ready yet.",
+            ]
+            return LinuxHostBridgeApplyResult(
                 success: probe.facts.ready,
                 applied: false,
                 needsConfirm: false,
                 backend: "networksetup",
-                changes: [],
+                changes: changes,
                 warnings: [],
                 commands: [],
                 message: probe.facts.ready
                     ? "Bridged networking is ready on this Device."
                     : "Bridged networking is not ready yet.",
             )
+        }
+
+        private static func check(
+            request: LinuxHostBridgeApplyRequest,
+            probe: MacHostBridgeApplyProbe,
+        ) -> LinuxHostBridgeApplyResult {
+            var result = check(probe: probe)
+            if case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) {
+                let label = probe.serviceName.map { "\($0) (\(probe.device))" } ?? probe.device
+                result.changes += HostInterfaceAddressApply.plannedDiffs(plan: plan, interfaceLabel: label)
+            }
+            return result
         }
 
         private static func applyPlan(
@@ -87,13 +104,12 @@ import Foundation
             if MacHostNetworkApply.isWiFiPort(service) {
                 return refuse("Refuse Wi-Fi '\(service)'. Bridge a wired NIC.")
             }
-            if request.addressing == .staticIP {
-                if request.address?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-                    return refuse("Static host address needs address (e.g. 192.168.1.10/24).")
+            let planResult = HostInterfaceAddressApply.resolve(from: request)
+            guard case let .success(plan) = planResult else {
+                if case let .failure(error) = planResult {
+                    return refuse(error.message)
                 }
-                if request.gateway?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-                    return refuse("Static host address needs gateway.")
-                }
+                return refuse("Invalid address plan.")
             }
 
             var warnings: [String] = []
@@ -117,24 +133,16 @@ import Foundation
             var changes = socketPlan.changes.map {
                 LinuxHostBridgeChange(description: $0, command: "")
             }
-            let addrLabel = request.addressing == .staticIP ? "static" : "DHCP"
-            changes.append(LinuxHostBridgeChange(
-                description: "Set Device IPv4 (\(addrLabel)) on \(service) (\(device))",
-                command: "networksetup -set\(request.addressing == .staticIP ? "manual" : "dhcp") \(service)",
-            ))
-            if !request.dns.isEmpty {
-                changes.append(LinuxHostBridgeChange(
-                    description: "Set DNS on \(service)",
-                    command: "networksetup -setdnsservers \(service) \(request.dns.joined(separator: " "))",
-                ))
+            changes += HostInterfaceAddressApply.plannedDiffs(
+                plan: plan,
+                interfaceLabel: "\(service) (\(device))",
+            ).map {
+                LinuxHostBridgeChange(description: $0, command: "")
             }
             let commands = MacHostNetworkApply.equivalentCommands(
                 service: service,
                 device: device,
-                addressing: request.addressing,
-                address: request.address,
-                gateway: request.gateway,
-                dns: request.dns,
+                plan: plan,
             ) + socketPlan.commands
 
             if !request.confirm, probe.facts.onlyUplink {
@@ -258,10 +266,12 @@ import Foundation
                 try MacHostNetworkApply.apply(
                     device: resolved.device,
                     service: service,
-                    addressing: request.addressing,
-                    address: request.address,
-                    gateway: request.gateway,
-                    dns: request.dns,
+                    plan: {
+                        guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
+                            throw BarkVisorError.badRequest("Invalid host address plan.")
+                        }
+                        return plan
+                    }(),
                 )
                 plan.applied = true
                 plan.message = "Applied bridged host networking on \(service) (\(resolved.device))."
