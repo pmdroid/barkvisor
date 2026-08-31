@@ -124,38 +124,6 @@ struct SocketVmnetApplyTests {
         #expect(!recorder.steps.joined().contains("brew install"))
     }
 
-    @Test func `script --check reports socket and service and never brew install`() throws {
-        let script = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("scripts/macos-socket-vmnet.sh")
-        let body = try String(contentsOf: script, encoding: .utf8)
-        #expect(body.contains("--check"))
-        #expect(body.contains("socket="))
-        #expect(body.contains("service="))
-        #expect(body.contains("never install the formula as root"))
-        #expect(!body.contains("sudo brew install socket_vmnet"))
-        #expect(!body.contains("HelperXPCClient"))
-        #expect(!body.contains("br0"))
-
-        let process = Process()
-        process.executableURL = script
-        process.arguments = ["--check", "--interface", "en0"]
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        try process.run()
-        process.waitUntilExit()
-        let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        #expect(process.terminationStatus == 0)
-        #expect(stdout.contains("socket="))
-        #expect(stdout.contains("service=dev.barkvisor.socket-vmnet.en0"))
-        #expect(stdout.contains("service=homebrew.mxcl.socket_vmnet"))
-        #expect(stdout.contains("backend="))
-    }
-
     @Test func `uninstall keeps leftover helper plists and adds socket-vmnet cleanup`() throws {
         let script = try String(
             contentsOf: URL(fileURLWithPath: #filePath)

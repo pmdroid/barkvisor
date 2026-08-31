@@ -106,8 +106,6 @@ public struct SocketVmnetApplyResult: Sendable, Equatable, Codable {
 }
 
 public enum SocketVmnetApply {
-    public static let scriptName = "macos-socket-vmnet.sh"
-
     public static func evaluate(
         request: SocketVmnetApplyRequest,
         probe: SocketVmnetApplyProbe,
@@ -226,7 +224,7 @@ public enum SocketVmnetApply {
         switch backend {
         case .ownedLaunchd:
             changes.append("Write \(probe.ownedPlistPath) and launchctl bootstrap")
-            commands.append("sudo \(scriptName) --\(request.action.rawValue) --interface \(probe.interface)")
+            commands.append("sudo launchctl bootstrap system \(probe.ownedPlistPath)")
         case .homebrewService:
             changes.append("Start already-installed Homebrew socket_vmnet (formula already present)")
             if probe.brewPlistPath != nil {
@@ -253,11 +251,15 @@ public enum SocketVmnetApply {
     private static func stopPlan(probe: SocketVmnetApplyProbe) -> SocketVmnetApplyResult {
         let backend = runningBackend(probe: probe)
         var changes: [String] = []
+        var commands: [String] = []
         if probe.ownedPlistExists || probe.ownedServiceLoaded {
-            changes.append("launchctl bootout \(SocketVmnetLaunchd.label(interface: probe.interface))")
+            let label = SocketVmnetLaunchd.label(interface: probe.interface)
+            changes.append("launchctl bootout \(label)")
+            commands.append("sudo launchctl bootout system/\(label)")
         }
         if probe.brewServiceLoaded || probe.brewPlistPath != nil {
             changes.append("launchctl bootout \(SocketVmnetLaunchd.homebrewServiceLabel)")
+            commands.append("sudo launchctl bootout system/\(SocketVmnetLaunchd.homebrewServiceLabel)")
         }
         if changes.isEmpty {
             changes.append("No socket_vmnet service loaded")
@@ -266,7 +268,9 @@ public enum SocketVmnetApply {
             success: true,
             backend: backend.rawValue,
             changes: changes,
-            commands: ["sudo \(scriptName) --stop --interface \(probe.interface)"],
+            commands: commands.isEmpty
+                ? ["POST /api/system/bridges (interface: \(probe.interface), action: revert, confirm: true)"]
+                : commands,
             message: "Stop socket_vmnet (\(backend.rawValue))",
         )
     }
@@ -297,6 +301,6 @@ public enum SocketVmnetApply {
     }
 
     private static func checkCommand() -> String {
-        "./scripts/\(scriptName) --check"
+        "GET /api/system/host-bridge-readiness"
     }
 }
