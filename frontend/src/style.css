@@ -1673,6 +1673,14 @@ tr.pending td:first-child { box-shadow: none; }
 .detail-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .detail-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .detail-head .spacer { flex: 1; }
+.detail-head-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+.vm-tab-intro {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+  max-width: 52rem;
+}
 .detail-meta { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {

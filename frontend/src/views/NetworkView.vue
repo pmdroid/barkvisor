@@ -30,7 +30,6 @@ import {
   deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
-import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
   hostBridgeCanApply,
   hostBridgeSetupPending,
@@ -1003,9 +1002,13 @@ async function doDeleteNetwork() {
   </template>
 
   <template v-else-if="activeTab === 'vm'">
+  <p class="vm-tab-intro">
+    Workload networks are logical NAT, bridged, or isolated definitions Workloads attach to.
+    Device addresses (NICs, DHCP, gateways) are on the Host interfaces tab.
+  </p>
   <template v-if="homeRows.length > 0 || pendingBridges.length > 0">
   <section class="list-col">
-    <div class="ops-sec-head"><h3>Networks</h3><span class="n">{{ homeRows.length + pendingBridges.length }}</span></div>
+    <div class="ops-sec-head"><h3>Workload networks</h3><span class="n">{{ homeRows.length + pendingBridges.length }}</span></div>
     <div class="list-scroll">
       <button
         v-for="row in homeRows"
@@ -1050,7 +1053,14 @@ async function doDeleteNetwork() {
     <div class="detail-head">
       <div>
         <h2>{{ selectedRow.network.name }}</h2>
-        <div class="detail-meta">{{ deviceLine(selectedRow) }} · <span class="ops-ok-text">{{ selectedRow.reachable ? 'Active' : 'Unreachable' }}</span></div>
+        <div class="detail-meta">
+          Workload network · {{ deviceLine(selectedRow) }} ·
+          <span class="ops-ok-text">{{ selectedRow.reachable ? 'Active' : 'Unreachable' }}</span>
+        </div>
+      </div>
+      <div class="detail-head-actions">
+        <AppButton v-if="canMutate(selectedRow)" size="sm" @click="openEdit(selectedRow)">Edit</AppButton>
+        <AppButton v-if="canMutate(selectedRow)" size="sm" variant="danger" @click="deleteNetwork(selectedRow)">Delete</AppButton>
       </div>
       <div class="chips">
         <span class="chip">Mode <b>{{ modeLabel(selectedRow.network.mode) }}</b></span>
@@ -1061,10 +1071,7 @@ async function doDeleteNetwork() {
     </div>
 
     <div class="sheet">
-      <div class="sheet-head">
-        Configuration
-        <AppButton v-if="canMutate(selectedRow)" size="sm" @click="openEdit(selectedRow)">Edit</AppButton>
-      </div>
+      <div class="sheet-head">Configuration</div>
       <div class="fact">
         <span class="k">Mode</span>
         <span class="v">{{ modeCopy(selectedRow) }}</span>
@@ -1131,9 +1138,9 @@ async function doDeleteNetwork() {
   <!-- Create/Edit Network Modal -->
   <AppModal
     v-if="showCreate"
-    :title="(editingId ? 'Edit' : 'Create') + ' Network'"
-    subtitle="NAT is outbound only. Bridge gives each Workload a LAN address."
-    rail-title="Network"
+    :title="(editingId ? 'Edit' : 'Create') + ' Workload network'"
+    subtitle="Workload networks are logical — NAT, bridged, or isolated. Device addresses (NICs) are on Host interfaces."
+    rail-title="Workload network"
     @close="showCreate = false"
   >
     <template #rail>
@@ -1179,40 +1186,28 @@ async function doDeleteNetwork() {
       <UnsupportedHint v-else-if="!formBridgedAvailable" :text="formBridgedExplanation" />
     </div>
     <div v-if="formBridgedAvailable && newMode === 'bridged'" class="form-group">
-      <label>Bridge Interface</label>
+      <label>Host bridge interface</label>
       <AppSelect v-model="newBridge">
-        <option value="" disabled>Select interface...</option>
+        <option value="" disabled>Select from Host interfaces…</option>
         <option v-for="iface in hostInterfaces" :key="iface.name" :value="iface.name"
           :disabled="usedBridgeInterfaces.has(iface.name)">
           {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}{{ usedBridgeInterfaces.has(iface.name) ? ` — used by "${usedBridgeInterfaces.get(iface.name)}"` : iface.bridgeStatus === 'active' ? ' — active' : iface.bridgeStatus === 'installed' ? ' — installed' : '' }}
         </option>
       </AppSelect>
-      <!-- Linux host bridges: allow typing a name not in the dropdown (e.g. no-IP br*). -->
-      <template v-if="formCaps.supportsHostBridgeManagement">
-        <input
-          v-model="newBridge"
-          class="bridge-custom"
-          style="margin-top:8px;width:100%"
-          :placeholder="`Or type bridge name (e.g. ${HOST_BRIDGE_SUGGESTED})`"
-          spellcheck="false"
-          autocomplete="off"
-        />
-        <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-          Use an existing host bridge (e.g. br0). Configure it on the Host interfaces tab before starting VMs.
-          Bridges without an IP still appear when detected; you can also type the name.
-        </p>
-        <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
-          Interface "{{ newBridge }}" is not on this Device. Create it first — save and VM start will
-          fail closed with a structured error instead of a QEMU log.
-        </p>
-      </template>
+      <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        Same list as the Host interfaces tab. Configure the bridge and Device address there before starting bridged Workloads.
+      </p>
+      <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
+        Interface "{{ newBridge }}" is not on this Device. Set it up on Host interfaces first — save and VM start will
+        fail closed with a structured error instead of a QEMU log.
+      </p>
     </div>
     <div v-if="newMode === 'nat' || newMode === 'isolated'" class="form-group">
       <label>DNS Server</label>
       <input v-model="newDns" placeholder="8.8.8.8 (optional)" />
     </div>
     <p v-if="newMode === 'bridged'" style="color:var(--text-dim);font-size:12px;margin:0">
-      Bridged Workloads get a LAN address from your router (DHCP). Set this Device&apos;s bridge address on the Host interfaces tab.
+      Bridged Workloads get a LAN address from your router (DHCP). Host bridge Device addressing is on the Host interfaces tab.
     </p>
     <FormError v-if="error" :message="error" />
     <template #actions>
