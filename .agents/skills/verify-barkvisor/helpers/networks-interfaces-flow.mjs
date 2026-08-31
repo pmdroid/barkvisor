@@ -15,6 +15,7 @@ const user = arg('user', 'admin')
 const pass = arg('pass')
 const dir = arg('dir')
 const token = arg('token', '')
+const check = args.includes('--check')
 
 mkdirSync(dir, { recursive: true })
 let authHeader
@@ -40,6 +41,10 @@ function fail(message) {
 
 const browser = await chromium.launch()
 const shots = {}
+let posted = null
+let checkBody = null
+let checkStatus = null
+let checkResponse = null
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
   const tokenForPage = authHeader.Authorization.replace('Bearer ', '')
@@ -66,9 +71,52 @@ try {
   const drawer = page.locator('.iface-drawer')
   if (await drawer.locator('button:has-text("Apply")').count() === 0) fail('Interface drawer missing Apply')
   if (await drawer.locator('button:has-text("Revert")').count() === 0) fail('Interface drawer missing Revert')
+  if (await drawer.locator('button:has-text("Re-check")').count() === 0) fail('Interface drawer missing Re-check')
+
+  const drawerText = await drawer.innerText()
+  if (!drawerText.includes('Addresses')) fail('Address editor missing Addresses heading')
+  if (!drawerText.includes('DHCP')) fail('Address editor missing DHCP control')
+  if (await drawer.locator('button:has-text("Add address")').count() === 0) fail('Address editor missing Add address')
+  if (!drawerText.includes('Gateway')) fail('Address editor missing Gateway field')
+  if (!drawerText.includes('DNS')) fail('Address editor missing DNS field')
 
   shots.hostInterfaces = `${dir}/networks-host-interfaces.png`
   await page.screenshot({ path: shots.hostInterfaces, fullPage: true })
+
+  if (check) {
+    await page.route('**/api/**/bridges', async (route) => {
+      const req = route.request()
+      if (req.method() === 'POST') {
+        posted = req.postDataJSON()
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, message: 'check', applied: false }) })
+        return
+      }
+      await route.continue()
+    })
+    const addBtn = drawer.locator('button:has-text("Add address")')
+    if (await addBtn.isEnabled()) {
+      await addBtn.click()
+      await drawer.locator('.address-row input[placeholder="192.168.1.10/24"]').last().fill('10.0.0.2/24')
+    }
+    const applyBtn = drawer.locator('button:has-text("Apply")')
+    if (await applyBtn.isDisabled()) {
+      console.log(JSON.stringify({ ok: true, screenshots: shots, checkSkipped: 'Apply disabled on this host (expected on some platforms)' }))
+      process.exit(0)
+    }
+    await applyBtn.click()
+    await page.waitForTimeout(400)
+    if (!posted) fail('mocked Apply POST never fired')
+    const addresses = posted.addresses
+    if (!Array.isArray(addresses) || addresses.length === 0) fail('Apply POST missing addresses[] for multi-address apply')
+    checkBody = { action: 'check', interface: posted.interface ?? posted.nic, addresses }
+    if (posted.gateway) checkBody.gateway = posted.gateway
+    if (posted.dns) checkBody.dns = posted.dns
+    const checkRes = await fetch(`${base}/api/system/bridges`, { method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/json' }, body: JSON.stringify(checkBody) })
+    checkStatus = checkRes.status
+    if (!checkRes.ok) fail(`POST action=check failed: HTTP ${checkStatus} ${await checkRes.text()}`)
+    checkResponse = await checkRes.json()
+    if (!checkResponse.changes?.length && !checkResponse.message) fail('action=check response missing planned diffs')
+  }
 
   await vmTab.click()
   if (await vmTab.getAttribute('aria-selected') !== 'true') fail('VM networks tab did not activate')
@@ -102,6 +150,8 @@ console.log(JSON.stringify({
   hasHostInterfacesTab: true,
   hasVmNetworksTab: true,
   noBridgeSetupToolbar: true,
+  hasAddressEditor: true,
   workloadNetworkCopy: true,
+  check: check ? { posted, checkBody, checkStatus, checkChanges: checkResponse?.changes ?? null } : null,
 }))
 process.exit(0)

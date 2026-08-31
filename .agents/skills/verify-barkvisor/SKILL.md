@@ -67,16 +67,16 @@ Stable handles (prefer these, never coordinates):
 | Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Images, Disks, Networks, Logs, Settings |
 | Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|disks\|apikeys\|sshkeys\|passkeys\|audit` |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
-| Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Bridge setup**, **Live Tail**, **Diagnostics** |
+| Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
 | Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
 | Create VM | button **Create VM** → `.mag-frame` gallery (`.mag-card` / `.mag-custom`) → Configure → Disk → **Create** |
 
-Networks Bridge setup (Device address DHCP/static, Apply/Revert on Mac and Linux):
+Networks Host interfaces (multi-address Device address):
 
 ```sh
-bun .agents/skills/verify-barkvisor/helpers/bridge-setup-flow.mjs \
+bun .agents/skills/verify-barkvisor/helpers/networks-interfaces-flow.mjs \
   --base "$URL" --user admin --pass dev-instance-pass \
-  --dir ".agents/skills/verify-barkvisor/evidence/run-bridge-setup"
+  --dir ".agents/skills/verify-barkvisor/evidence/run-networks-interfaces"
 # optional: --check  (mock Apply POST + action=check, no host mutation)
 ```
 

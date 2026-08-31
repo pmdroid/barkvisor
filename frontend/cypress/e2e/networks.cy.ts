@@ -197,6 +197,18 @@ describe('Network Management', () => {
     cy.get('.iface-drawer').should('exist')
     cy.get('.iface-drawer').contains('button', 'Apply').should('exist')
     cy.get('.iface-drawer').contains('button', 'Revert').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Re-check').should('exist')
     cy.get('.iface-drawer').contains('VM network records').should('exist')
+  })
+
+  it('Host interfaces drawer shows multi-address editor', () => {
+    cy.get('.iface-drawer').within(() => {
+      cy.contains('Addresses').should('be.visible')
+      cy.contains('DHCP (primary)').should('exist')
+      cy.contains('Gateway').should('exist')
+      cy.contains('DNS').should('exist')
+      cy.contains('Bridge role').should('exist')
+      cy.contains('button', 'Add address').should('exist')
+    })
   })
 })
