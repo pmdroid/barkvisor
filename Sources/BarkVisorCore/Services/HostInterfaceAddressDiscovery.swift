@@ -476,30 +476,20 @@ extension String {
                 try PlatformProcess.run(path: path, arguments: args, timeout: 15)
             },
         ) -> HostInterfaceAddressing {
-            let managedMarker = LinuxHostBridgeApply.ownerMarkerURL(
-                bridge: HostBridgeFactsService.suggestedBridgeName,
-            )
-            let managedFile = FileManager.default.fileExists(atPath: managedMarker.path)
-
             if let netplan = readFile(LinuxHostBridgeApply.netplanPath),
                LinuxHostInterfaceAddressRead.isBarkvisorManaged(netplan),
                let parsed = LinuxHostInterfaceAddressRead.parseNetplan(netplan, interface: interface) {
-                var config = parsed
-                config.managedByBarkvisor = managedFile || config.managedByBarkvisor
-                return mergeLiveAddresses(config: config, liveIPv4: liveIPv4)
+                return mergeLiveAddresses(config: parsed, liveIPv4: liveIPv4)
             }
 
             if let nmText = try? run("/usr/bin/nmcli", ["-t", "device", "show", interface]),
                nmText.succeeded,
                !nmText.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                var config = LinuxHostInterfaceAddressRead.parseNmcliDeviceShow(nmText.stdoutString)
-                config.managedByBarkvisor = managedFile
+                let config = LinuxHostInterfaceAddressRead.parseNmcliDeviceShow(nmText.stdoutString)
                 return mergeLiveAddresses(config: config, liveIPv4: liveIPv4)
             }
 
-            var fallback = fallbackFromLive(liveIPv4: liveIPv4)
-            fallback.managedByBarkvisor = managedFile
-            return fallback
+            return fallbackFromLive(liveIPv4: liveIPv4)
         }
     }
 
