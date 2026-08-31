@@ -1,42 +1,104 @@
 ---
 title: "Networks"
-description: "NAT, bridged, and isolated networks plus host bridge setup."
+description: "Host interfaces, VM networks, and multi-address Device addressing."
 ---
-**Networks** owns virtual networking for the Home: NAT, bridged, and isolated networks, plus host bridge setup. Networks live here, not in Settings.
+**Networks** owns connectivity for the Home: host NIC addressing on this Device, plus VM network records (NAT, bridged, isolated). Networks live here, not in Settings.
 
-![Networks list with inspect pane](/docs-img/networks.png)
+![Networks — Host interfaces tab](/docs-img/networks.png)
 
-Words: **Home**, **Device**, **Workload**. Host addressing on the LAN is this Device (configure in **Networks → Bridge setup**).
+Words: **Home**, **Device**, **Workload**. Host addressing is this Device — configure it on **Networks → Host interfaces**. Workload networks are logical records on the **VM networks** tab.
 
-## Toolbar
+## Tabs
 
-- **Bridge setup** — Apply/Revert host networking on Linux (`br0`) and macOS (`socket_vmnet` + Device LAN address). DHCP or static for this Device. Copyable commands stay on the sheet.
-- **Create Network** — opens the create modal
+**Networks** opens with two tabs:
 
-## The list
+| Tab | Purpose |
+|-----|---------|
+| **Host interfaces** (default) | Live NICs on this Device — addresses, bridge role, Apply/Revert |
+| **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-Networks render on the left. A Device that can do bridged networking but is not host-ready yet shows as amber **Bridge · Pending**. A Device that already has `br0` / `socket_vmnet` ready does not. Create a Bridged network from **Create Network**.
+There is no standalone bridge-setup toolbar or modal. Bridge configuration and Device address live on the owning interface row.
 
-## Inspect pane
+## Host interfaces tab
 
-Selecting a network shows:
+The table lists each NIC on the Device:
 
-- Mode chip (NAT / bridged / isolated)
-- NAT subnet
-- Attached Workloads
-- Interfaces table
+| Column | Meaning |
+|--------|---------|
+| Interface | OS name (`en0`, `eth0`, `br0`, …) |
+| Role | uplink, bridge, external, … |
+| Addresses (live) | DHCP + static aliases read from the host |
+| Bridge | bridge membership / readiness |
+| Route | default route when relevant |
 
-Selecting a pending bridge shows the host commands for that Device plus the same **Device address** (DHCP or static) and **Apply / Revert** controls as **Bridge setup**. NAT still works when bridged host networking is not ready.
+Select a row to open the **edit drawer** below the table.
 
-## Bridge setup
+### Address list
 
-The root Device daemon can change the host. Copyable commands stay on the page so you can audit what Apply will do.
+The drawer shows DHCP primary and static aliases together:
 
-### Linux (`br0`)
+- **DHCP (primary)** — toggle for the main address from your router
+- **static** — primary static CIDR when DHCP is off
+- **alias** — extra CIDR on the same NIC (multi-homed or service IPs)
+- **on host** chip — BarkVisor wrote this config and can revert it
 
-**Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
+**Gateway** and **DNS** apply to the interface as a whole (not per alias). **Bridge role** is read-only here — uplink vs `br0` vs external.
 
-Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Bridge setup**.
+Actions:
+
+- **Apply** — persist the address plan on the host
+- **Revert** — remove BarkVisor-tagged config for this interface
+- **Re-check** — refresh live addresses from the OS
+
+Copyable CLI steps stay under **Advanced CLI** on the same drawer.
+
+### Multi-address examples
+
+**DHCP primary + static alias** (common for a service IP alongside router DHCP):
+
+```json
+{
+  "interface": "eth0",
+  "addresses": [
+    { "kind": "dhcp" },
+    { "kind": "alias", "cidr": "10.0.0.2/24" }
+  ]
+}
+```
+
+**Static-only** (no DHCP):
+
+```json
+{
+  "interface": "br0",
+  "addresses": [
+    { "kind": "static", "cidr": "192.168.1.10/24" }
+  ],
+  "gateway": "192.168.1.1",
+  "dns": ["1.1.1.1"]
+}
+```
+
+Use **Apply** in the drawer, or `POST /api/system/bridges` with `"action": "check"` to preview planned diffs without changing the host.
+
+### Mac vs Linux — gateway and DNS
+
+Both platforms use the same drawer. Apply paths differ:
+
+| | Linux | macOS |
+|---|--------|--------|
+| DHCP + aliases | netplan / NetworkManager / systemd-networkd on the NIC or `br0` | `networksetup -setdhcp` on the hardware port; aliases via `ifconfig <dev> alias …` |
+| Static + gateway | Written into netplan/NM with `via:` / routes | `networksetup -setmanual` with gateway on the service |
+| DNS | netplan `nameservers` / NM | `networksetup -setdnsservers` on the hardware port |
+| Bridge | Enslave wired uplink into `br0`, qemu-bridge-helper ACL | `socket_vmnet` LaunchDaemon; LAN NIC is not enslaved |
+
+On **Linux**, gateway and DNS in the drawer apply to the whole interface plan (including DHCP primary). Static-only uplinks require a gateway before Apply.
+
+On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases use `ifconfig` and do not get separate gateway/DNS fields. Install socket_vmnet as your user: `brew install socket_vmnet`. Do not `sudo brew install`.
+
+### Linux bridge (`br0`)
+
+Select the **uplink** row (or `br0` when present) in **Host interfaces**. **Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
 
 Rollback is a **host timer** (`netplan try` / `systemd-run`). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves. Do not Confirm in the browser after the uplink dies.
 
@@ -51,25 +113,30 @@ sudo linux-bridge-apply.sh --revert
 
 `--dry-run` and `--check` print the plan without changing the host.
 
-### macOS (`socket_vmnet`)
+### macOS bridge (`socket_vmnet`)
 
-Install the formula as your user:
+Select the LAN interface row in **Host interfaces**. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address. **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
 
-```sh
-brew install socket_vmnet
-```
+## VM networks tab
 
-Do not `sudo brew install`. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address with `networksetup` (DHCP or static — same fields as Linux). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down. The Mac LAN NIC is not enslaved.
+Switch to **VM networks** for logical network records Workloads attach to.
 
-## Create Network
+- **Create Network** — opens the create modal (NAT, bridged, or isolated)
+- List + inspect pane — mode, subnet, attached Workloads, interfaces
+
+A Device that can do bridged networking but is not host-ready yet may still show as amber **Bridge · Pending** in the list. Selecting it deep-links to the owning interface on **Host interfaces**. NAT still works when bridged host networking is not ready.
+
+### Create Workload network
 
 The modal takes:
 
 | Field | Meaning |
 |-------|---------|
 | Mode | **NAT**, **bridged**, or **isolated** |
-| Bridge Interface | Host interface to bridge onto (bridged mode) |
-| DNS Server | DNS handed to guests |
+| Host bridge interface | NIC from **Host interfaces** (bridged mode) — configure the bridge there first |
+| DNS Server | DNS handed to guests (NAT / isolated) |
+
+Device addresses (NICs, DHCP, gateways) are on **Host interfaces**. Workload networks are logical — NAT, bridged, or isolated.
 
 Attach networks to a Workload in its [Create VM](/docs/guides/create-workload/) wizard step or from [Workload details](/docs/using/vm-details/).
 

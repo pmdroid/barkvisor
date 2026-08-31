@@ -120,7 +120,7 @@ const map = {
   'using-networks.md': {
     out: 'using/networks.md',
     title: 'Networks',
-    description: 'NAT, bridged, and isolated networks plus host bridge setup.',
+    description: 'Host interfaces, VM networks, and multi-address Device addressing.',
   },
   'settings-repositories.md': {
     out: 'using/settings/repositories.md',
