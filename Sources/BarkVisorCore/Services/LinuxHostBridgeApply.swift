@@ -164,8 +164,7 @@ public struct LinuxHostBridgeChange: Sendable, Equatable {
 public enum LinuxHostBridgeApply {
     public static let aclMarker = "# barkvisor:allow-br0"
     public static let ownedMarkerName = "host-bridge"
-    public static let rollbackSeconds = 120
-    public static let scriptName = "linux-bridge-apply.sh"
+    public static let rollbackSeconds = 30
     public static let netplanPath = "/etc/netplan/90-barkvisor-br0.yaml"
     public static let networkdNetdevPath = "/etc/systemd/network/90-barkvisor-br0.netdev"
     public static let networkdNetworkPath = "/etc/systemd/network/90-barkvisor-br0.network"
@@ -529,7 +528,7 @@ public enum LinuxHostBridgeApply {
             commands: equivalentCommands(request: request, probe: probe),
             message: ready
                 ? "\(request.bridge) is ready for Bridged networks."
-                : "\(request.bridge) is not ready. Apply from Networks or \(scriptName).",
+                : "\(request.bridge) is not ready. Apply from Networks → Host interfaces.",
         )
     }
 
@@ -543,7 +542,7 @@ public enum LinuxHostBridgeApply {
         let addrParts = addressCLIFlags(plan: plan)
         changes.append(LinuxHostBridgeChange(
             description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device addresses on \(request.bridge), not the guest)",
-            command: "sudo \(scriptName) --apply --nic \(nic) \(addrParts) --confirm",
+            command: "POST /api/system/bridges (interface: \(nic), action: apply, confirm: true)",
         ))
         switch probe.backend {
         case .netplan:

@@ -100,22 +100,43 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 Select the **uplink** row (or `br0` when present) in **Host interfaces**. **Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
 
-Rollback is a **host timer** (`netplan try` / `systemd-run`). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves. Do not Confirm in the browser after the uplink dies.
+After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** in the SPA or POST `action: commit`; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
-Equivalent:
+Use **Apply** in the drawer, or the API:
 
 ```sh
-sudo linux-bridge-apply.sh --apply --nic <wired-uplink> --dhcp
-sudo linux-bridge-apply.sh --revert
+curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+  -H 'Content-Type: application/json' \
+  -d '{"interface":"<wired-uplink>","action":"apply","confirm":true,"addressing":"dhcp"}'
+curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+  -H 'Content-Type: application/json' \
+  -d '{"interface":"<wired-uplink>","action":"commit","confirm":true}'
+curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
+  -H 'Content-Type: application/json' \
+  -d '{"confirm":true,"action":"revert","interface":"<wired-uplink>"}'
 ```
 
-`--dry-run` and `--check` print the plan without changing the host.
+`action: check` and `dryRun: true` preview the plan without changing the host.
 
 ### macOS bridge (`socket_vmnet`)
 
-Select the LAN interface row in **Host interfaces**. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address. **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
+Select the LAN interface row in **Host interfaces**. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
+
+After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
+
+```sh
+curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+  -H 'Content-Type: application/json' \
+  -d '{"interface":"en0","action":"apply","confirm":true,"addressing":"dhcp"}'
+curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+  -H 'Content-Type: application/json' \
+  -d '{"interface":"en0","action":"commit","confirm":true}'
+curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/en0 \
+  -H 'Content-Type: application/json' \
+  -d '{"confirm":true,"action":"revert","interface":"en0"}'
+```
 
 ## VM networks tab
 

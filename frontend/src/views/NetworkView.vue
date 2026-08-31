@@ -364,7 +364,7 @@ function setPendingCommitFromResponse(hostId: string, nic: string, data: BridgeA
     nic,
     target: ready?.pendingCommit?.target ?? ready?.suggestedBridge ?? nic,
     commitDeadline: data.commitDeadline,
-    rollbackSeconds: data.rollbackSeconds ?? 120,
+    rollbackSeconds: data.rollbackSeconds ?? 30,
   }
   startPendingCommitTimer()
 }
@@ -1412,7 +1412,7 @@ async function doDeleteNetwork() {
   <ConfirmDialog
     v-if="linuxApplyConfirm"
     title="Confirm host bridge change"
-    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. After Apply you have 120 seconds to click Keep changes or the host auto-reverts.'"
+    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. After Apply you have 30 seconds to click Keep changes or the host auto-reverts.'"
     confirm-label="Apply anyway"
     :danger="true"
     :loading="linuxApplyLoading"
