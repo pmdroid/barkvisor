@@ -1,0 +1,4 @@
+Manual Configuration
+IP address: 192.168.1.10
+Subnet mask: 255.255.255.0
+Router: 192.168.1.1

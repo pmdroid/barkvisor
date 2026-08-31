@@ -1,0 +1,10 @@
+{
+  "action": "check",
+  "interface": "eth0",
+  "addresses": [
+    { "kind": "dhcp" },
+    { "kind": "alias", "cidr": "10.0.0.2/24" }
+  ],
+  "gateway": "192.168.1.1",
+  "dns": ["1.1.1.1"]
+}

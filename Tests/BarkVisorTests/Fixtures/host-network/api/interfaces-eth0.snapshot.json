@@ -1,0 +1,13 @@
+{
+  "name": "eth0",
+  "displayName": "eth0",
+  "ipAddress": "192.168.30.50",
+  "dhcpEnabled": true,
+  "gateway": "192.168.30.1",
+  "dns": ["1.1.1.1"],
+  "managedByBarkvisor": false,
+  "addresses": [
+    { "cidr": "192.168.30.50/32", "source": "dhcp", "primary": true },
+    { "cidr": "10.0.0.2/32", "source": "alias", "primary": false }
+  ]
+}
