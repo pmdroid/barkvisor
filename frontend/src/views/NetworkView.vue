@@ -210,6 +210,12 @@ const hostInterfaces = computed(() => {
   return localInterfaces.value
 })
 
+/** Host interfaces for the Create/Edit Workload network modal (uses form device, not drawer selection). */
+const formHostInterfaces = computed(() => {
+  if (useHomeUnion.value && formHostId.value) return homeNets.interfacesFor(formHostId.value)
+  return localInterfaces.value
+})
+
 const bridges = computed(() => {
   if (useHomeUnion.value && interfaceHostId.value) return homeNets.bridgesFor(interfaceHostId.value)
   return localBridges.value
@@ -620,7 +626,7 @@ const selectedModeRow = computed(() => formNetworkModes.value.find((m) => m.mode
 
 const typedBridgeMissing = computed(() => {
   if (newMode.value !== 'bridged' || !newBridge.value) return false
-  return !hostInterfaces.value.some((i) => i.name === newBridge.value)
+  return !formHostInterfaces.value.some((i) => i.name === newBridge.value)
 })
 
 const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !formBridgedAvailable.value)
@@ -732,7 +738,7 @@ watch(formHostId, async (id, prev) => {
     newMode.value = 'nat'
     newBridge.value = ''
   }
-  if (newBridge.value && !hostInterfaces.value.some((iface) => iface.name === newBridge.value)) {
+  if (newBridge.value && !formHostInterfaces.value.some((iface) => iface.name === newBridge.value)) {
     newBridge.value = ''
   }
 })
@@ -1189,7 +1195,7 @@ async function doDeleteNetwork() {
       <label>Host bridge interface</label>
       <AppSelect v-model="newBridge">
         <option value="" disabled>Select from Host interfaces…</option>
-        <option v-for="iface in hostInterfaces" :key="iface.name" :value="iface.name"
+        <option v-for="iface in formHostInterfaces" :key="iface.name" :value="iface.name"
           :disabled="usedBridgeInterfaces.has(iface.name)">
           {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}{{ usedBridgeInterfaces.has(iface.name) ? ` — used by "${usedBridgeInterfaces.get(iface.name)}"` : iface.bridgeStatus === 'active' ? ' — active' : iface.bridgeStatus === 'installed' ? ' — installed' : '' }}
         </option>

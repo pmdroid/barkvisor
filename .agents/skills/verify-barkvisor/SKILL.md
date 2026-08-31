@@ -122,6 +122,6 @@ Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 
 | `shot.mjs` | `helpers/shot.mjs --base URL [--token T \| --user U --pass P] --route R --out F.png [--raw] [--wait-ms N] [--scrub /from/to]…` | login (or token inject) + navigate + full-page screenshot, with DOM redaction |
 | `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL --user U --pass P --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
 | `create-vm-flow.mjs` | `helpers/create-vm-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR` | magazine Create VM flows + template deploy |
-| `bridge-setup-flow.mjs` | `helpers/bridge-setup-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR [--check]` | Networks → Bridge setup: Device address DHCP/static + Apply/Revert |
+| `networks-interfaces-flow.mjs` | `helpers/networks-interfaces-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR [--check]` | Host interfaces tab: drawer, multi-address editor, optional mocked Apply + real check |
 | `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR [--join-payload URI]` | drive the first-run wizard step by step; asserts `setup/status complete` |
 | `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |
