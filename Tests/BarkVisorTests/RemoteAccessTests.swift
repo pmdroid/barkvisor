@@ -145,6 +145,61 @@ struct RemoteAccessTests {
             }
         }
         #expect(try pool.read { try RemoteAccessSettings.load(from: $0).deviceUrl == nil })
+        let custom = try pool.write { db in
+            try RemoteAccessSettings.save(
+                deviceUrl: "https://studio.home:443",
+                updateDeviceUrl: true,
+                db: db,
+            )
+        }
+        #expect(custom.deviceUrl == "studio.home")
+        #expect(try pool.read { try RemoteAccessSettings.load(from: $0).deviceUrl == "studio.home" })
+        let body = Data(#"{"deviceUrl":"https://nas.lan"}"#.utf8)
+        let decoded = try JSONDecoder().decode(RemoteAccessPutBody.self, from: body)
+        #expect(decoded.deviceUrl == "https://nas.lan")
+        let parsed = try RemoteAccessSettings.parseAdvertiseHost(decoded.deviceUrl)
+        let put = try pool.write { db in
+            try RemoteAccessSettings.save(
+                deviceUrl: parsed,
+                updateDeviceUrl: true,
+                db: db,
+            )
+        }
+        #expect(put.deviceUrl == "nas.lan")
+        #expect(try pool.read { try RemoteAccessSettings.load(from: $0).deviceUrl == "nas.lan" })
+    }
+
+    @Test func `magicdns Device URL is https without a port`() throws {
+        #expect(RemoteAccessSettings.isMagicDNSHost("box.tailnet.ts.net"))
+        #expect(RemoteAccessSettings.isMagicDNSHost("box.tailscale.net"))
+        #expect(!RemoteAccessSettings.isMagicDNSHost("192.168.0.4"))
+        #expect(
+            RemoteAccessSettings.formatDeviceURL("box.tailnet.ts.net")
+                == "https://box.tailnet.ts.net",
+        )
+        #expect(
+            RemoteAccessSettings.formatDeviceURL("https://box.tailnet.ts.net:443")
+                == "https://box.tailnet.ts.net",
+        )
+        #expect(RemoteAccessSettings.formatDeviceURL("192.168.0.4") == "http://192.168.0.4:7777")
+        #expect(!RemoteAccessSettings.formatDeviceURL("box.tailnet.ts.net").contains(":443"))
+        #expect(!RemoteAccessSettings.formatDeviceURL("box.tailnet.ts.net").contains(":7777"))
+        let up = TailnetInfo(available: true, ip: "100.64.1.2", dnsName: "box.tailnet.ts.net")
+        #expect(RemoteAccessSettings.magicDNSHost(tailnet: up) == "box.tailnet.ts.net")
+        let down = TailnetInfo(available: false, ip: nil, dnsName: "stale.tailnet.ts.net")
+        #expect(RemoteAccessSettings.magicDNSHost(tailnet: down) == nil)
+        let feature = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("features/device-url.feature"),
+            encoding: .utf8,
+        )
+        #expect(feature.contains("https://box.tailnet.ts.net"))
+        #expect(feature.contains("studio.home"))
+        #expect(feature.contains("no port"))
+        #expect(feature.contains("saved Device URL is still"))
     }
 
     @Test func `advertised hosts prefer Device URL then tailnet then LAN`() {
@@ -207,4 +262,8 @@ struct RemoteAccessTests {
         let decoded = try JSONDecoder().decode(HostInventory.self, from: data)
         #expect(decoded.networking.tailnet == inv.networking.tailnet)
     }
+}
+
+private struct RemoteAccessPutBody: Decodable {
+    var deviceUrl: String?
 }

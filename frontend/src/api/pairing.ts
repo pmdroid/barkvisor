@@ -1,5 +1,6 @@
 import axios from 'axios'
 import api from './client'
+import { advertiseHostName } from '../utils/inferenceApiHowTo'
 
 /** Join during first-run setup has no JWT; redeem/join stay the existing APIs. */
 const pairingApi = axios.create({ baseURL: '/api/pairing' })
@@ -30,23 +31,29 @@ export const CUSTOM_ADVERTISED_HOST = '__custom__'
 /** Host to stamp on a pairing or sign-in offer from the Settings picker. */
 export function advertisedHostForOffer(selectedHost: string, customHost: string): string | undefined {
   if (selectedHost === CUSTOM_ADVERTISED_HOST) {
-    const host = customHost.trim()
+    const host = advertiseHostName(customHost)
     return host.length > 0 ? host : undefined
   }
-  const host = selectedHost.trim()
+  const host = advertiseHostName(selectedHost)
   return host.length > 0 ? host : undefined
 }
 
-/** Settings advertise-URL picker: listed host, or Other / DNS name. */
 export function syncAdvertiseHostPicker(
   deviceUrl: string | null | undefined,
   advertisedHosts: string[],
 ): { selectedHost: string; customHost: string } {
-  const host = deviceUrl?.trim() ?? ''
+  const host = advertiseHostName(deviceUrl)
   if (host && advertisedHosts.includes(host)) {
     return { selectedHost: host, customHost: '' }
   }
-  return { selectedHost: CUSTOM_ADVERTISED_HOST, customHost: host }
+  if (host) {
+    return { selectedHost: CUSTOM_ADVERTISED_HOST, customHost: host }
+  }
+  const fallback = advertisedHosts[0] ?? ''
+  if (fallback) {
+    return { selectedHost: fallback, customHost: '' }
+  }
+  return { selectedHost: CUSTOM_ADVERTISED_HOST, customHost: '' }
 }
 
 /** Host baked into a pairing URI (`host=`). */

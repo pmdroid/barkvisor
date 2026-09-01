@@ -80,7 +80,7 @@ See [Installation (Linux)](/docs/linux#api-only-device-no-spa).
 
 ## Device URL
 
-On **Settings → Home**, pick **Device URL**: hostname, LAN IP, Tailscale IP, or MagicDNS (or **Other / DNS name…**). That host is stamped on a new pairing or sign-in QR as `host=` when you do not pick another address, and Models inference how-to uses it for `OPENAI_BASE_URL`. You can paste `https://box.ts.net`; only the host is stored. LAN inference stays `http://<host>:7777`.
+On **Settings → Home**, pick **Device URL**: hostname, LAN IP, Tailscale IP, or MagicDNS (or **Other / DNS name…**). With Tailscale up, the default is MagicDNS as `https://<magicdns>` with no port. That host is stamped on a new pairing or sign-in QR as `host=` when you do not pick another address, and Models inference how-to uses it for `OPENAI_BASE_URL`. You can paste `https://box.ts.net`; only the host is stored. LAN inference stays `http://<host>:7777`.
 
 BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/download) on the Device (and on the phone or laptop you use away from home) if you want MagicDNS or a tailnet IP in the picker. When `tailscale ip -4` works, the Device still advertises that address and MagicDNS name in inventory and in the pairing/sign-in host picker.
 

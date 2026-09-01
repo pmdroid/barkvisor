@@ -28,13 +28,14 @@ struct RemoteAccessController: RouteCollection {
     func updateSettings(req: Vapor.Request) async throws -> RemoteAccessStatus {
         _ = try req.requireUser
         let body = try req.content.decode(RemoteAccessUpdateRequest.self)
-        if body.deviceUrl != nil {
-            _ = try RemoteAccessSettings.parseAdvertiseHost(body.deviceUrl)
+        guard let raw = body.deviceUrl else {
+            return try await getStatus(req: req)
         }
+        _ = try RemoteAccessSettings.parseAdvertiseHost(raw)
         try await req.db.write { db in
             _ = try RemoteAccessSettings.save(
-                deviceUrl: body.deviceUrl,
-                updateDeviceUrl: body.deviceUrl != nil,
+                deviceUrl: raw,
+                updateDeviceUrl: true,
                 db: db,
             )
         }

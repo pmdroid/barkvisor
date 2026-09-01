@@ -45,7 +45,7 @@ import {
 } from '../utils/homeDeviceApi'
 import { reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
-import { formatListenHost } from '../utils/inferenceApiHowTo'
+import { formatDeviceURL } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
@@ -85,9 +85,10 @@ const homeSaving = computed(() => remoteAccessSaving.value)
 const homeSaveDisabled = computed(() => remoteAccessLoading.value || !remoteAccess.value)
 const advertisedHostChips = computed(() => remoteAccess.value?.advertisedHosts ?? [])
 const deviceUrlDisplay = computed(() => {
-  const host = remoteAccess.value?.deviceUrl?.trim()
-  if (!host) return ''
-  return `http://${formatListenHost(host)}:7777`
+  const saved = formatDeviceURL(remoteAccess.value?.deviceUrl)
+  if (saved) return saved
+  if (!remoteAccess.value?.tailscale?.available) return ''
+  return formatDeviceURL(remoteAccess.value.tailscale.dnsName)
 })
 
 const pairingOffer = ref<PairingIssue | null>(null)

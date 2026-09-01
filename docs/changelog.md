@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Settings Home Device URL save persists a custom host (picker or Other / DNS) across reload. With Tailscale up, the default shown URL is `https://<magicdns>` with no port. LAN stays `http://<host>:7777`.
 - GPU passthrough setup: Intel/AMD IOMMU, vfio-pci, and IOMMU group checks on a Linux Device. Host GPU blanking and **In use by host** are information, not Attach blockers. Guide: [GPU passthrough](getting-started-gpu-passthrough.md).
 - Appliance getting-started is Ubuntu / Debian `.deb` and macOS Apple Silicon `.pkg`. Bootstrap is inspect-then-run (`get-barkvisor.sh`). Updates are **Settings → Updates**, not `brew upgrade barkvisor`. Networks **Bridge setup** Applies Linux `br0` and starts macOS `socket_vmnet`; equivalent commands stay on the page. Uninstall reverts tagged files and never default-deletes shared `br0`. Homebrew is runtime `qemu` / `swtpm` / `socket_vmnet` only.
 - Device daemon runs as root on Linux (`User=root`) and macOS (LaunchDaemon without `UserName`). QEMU drops to `barkvisor`/`qemu` with kvm/disk on Linux. macOS HVF/USB stay the daemon uid until a drop is proven. Networks **Bridge setup** uses Apply/Revert on Linux (`br0`) and macOS (`socket_vmnet` + `networksetup`). `--check` reports socket plus service. No XPC helper. NAT still works when bridged host networking is down.

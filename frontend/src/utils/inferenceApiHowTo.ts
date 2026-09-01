@@ -86,6 +86,18 @@ export function tailnetListenHost(tailscale?: TailnetListenInfo | null): string 
   return stripListenHost(tailscale.dnsName ?? '') || stripListenHost(tailscale.ip ?? '')
 }
 
+export function isMagicDNSHost(host: string): boolean {
+  const h = stripListenHost(host).toLowerCase()
+  return h.endsWith('.ts.net') || h.endsWith('.tailscale.net')
+}
+
+export function formatDeviceURL(raw?: string | null): string {
+  const host = advertiseHostName(raw)
+  if (!host) return ''
+  if (isMagicDNSHost(host)) return `https://${host}`
+  return `http://${formatListenHost(host)}:${HOME_LISTEN_PORT}`
+}
+
 /** saved advertise host > tailnet > (member / origin). */
 export function preferredListenHost(input: InferenceHowToInput): string {
   const advertised = advertiseHostName(input.advertiseHost)

@@ -36,12 +36,35 @@ enum PairingAdvertisedHost {
         case rejectedHost
     }
 
+    static func hostFromDeviceURL(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        if trimmed.contains("://"), let url = URL(string: trimmed), let host = url.host, !host.isEmpty {
+            return host
+        }
+        if trimmed.contains("/") { return trimmed }
+        if trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") {
+            let inner = String(trimmed[trimmed.index(after: trimmed.startIndex) ..< close])
+            let rest = trimmed[trimmed.index(after: close)...]
+            if rest.isEmpty || rest.hasPrefix(":") {
+                return inner
+            }
+        }
+        if let colon = trimmed.lastIndex(of: ":"), trimmed.firstIndex(of: ":") == colon {
+            let after = trimmed[trimmed.index(after: colon)...]
+            if !after.isEmpty, after.allSatisfy(\.isNumber) {
+                return String(trimmed[..<colon])
+            }
+        }
+        return trimmed
+    }
+
     static func hostForOffer(selectedHost: String, customHost: String) -> String? {
         if selectedHost == customSentinel {
-            let host = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            let host = hostFromDeviceURL(customHost)
             return host.isEmpty ? nil : host
         }
-        let host = selectedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = hostFromDeviceURL(selectedHost)
         return host.isEmpty ? nil : host
     }
 
@@ -71,16 +94,22 @@ enum PairingAdvertisedHost {
 
     /// Advertise URL picker: listed host, or Other / DNS name.
     static func syncAdvertisePicker(deviceUrl: String?, listedHosts: [String]) -> Picker {
-        let host = deviceUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = hostFromDeviceURL(deviceUrl ?? "")
         if !host.isEmpty, listedHosts.contains(host) {
             return Picker(selectedHost: host, customHost: "")
         }
-        return Picker(selectedHost: customSentinel, customHost: host)
+        if !host.isEmpty {
+            return Picker(selectedHost: customSentinel, customHost: host)
+        }
+        if let fallback = listedHosts.first, !fallback.isEmpty {
+            return Picker(selectedHost: fallback, customHost: "")
+        }
+        return Picker(selectedHost: customSentinel, customHost: "")
     }
 
     static func applyListedHost(_ selectedHost: String, currentIssued: String?) -> Apply {
         if selectedHost == customSentinel { return .skip }
-        let host = selectedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = hostFromDeviceURL(selectedHost)
         if host.isEmpty { return .skip }
         if host == currentIssued { return .skip }
         guard LoginURI.isAllowedHost(host) else { return .rejectedHost }
@@ -88,7 +117,7 @@ enum PairingAdvertisedHost {
     }
 
     static func applyCustomHost(_ raw: String, currentIssued: String?) -> Apply {
-        let host = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = hostFromDeviceURL(raw)
         if host.isEmpty { return .needCustomHost }
         if host == currentIssued { return .skip }
         guard LoginURI.isAllowedHost(host) else { return .rejectedHost }

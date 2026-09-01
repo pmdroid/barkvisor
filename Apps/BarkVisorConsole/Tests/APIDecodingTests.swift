@@ -217,6 +217,14 @@ struct APIDecodingTests {
         #expect(url.scheme == "https")
         #expect(url.host == "192.168.1.20")
         #expect(url.port == 7_777)
+        let magic = try DeviceURL.normalize("https://box.tailnet.ts.net")
+        #expect(magic.scheme == "https")
+        #expect(magic.host == "box.tailnet.ts.net")
+        #expect(magic.port == nil)
+        #expect(magic.absoluteString == "https://box.tailnet.ts.net")
+        #expect(DeviceURL.formatHomeDeviceURL("box.tailnet.ts.net") == "https://box.tailnet.ts.net")
+        #expect(DeviceURL.formatHomeDeviceURL("192.168.0.4") == "http://192.168.0.4:7777")
+        #expect(DeviceURL.isMagicDNSHost("box.tailnet.ts.net"))
         #expect(try DeviceURL.normalize("http://home.local:7777/").absoluteString == "http://home.local:7777")
         #expect(
             try DeviceURL.normalize("http://192.168.30.1:7777/login").absoluteString

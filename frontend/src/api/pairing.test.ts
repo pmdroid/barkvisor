@@ -130,11 +130,20 @@ describe('PAS-51 pairing client', () => {
       customHost: 'home.ts.net',
     })
     expect(syncAdvertiseHostPicker(null, hosts)).toEqual({
-      selectedHost: CUSTOM_ADVERTISED_HOST,
+      selectedHost: 'studio.local',
       customHost: '',
+    })
+    expect(syncAdvertiseHostPicker('', ['box.tailnet.ts.net', '192.168.0.8'])).toEqual({
+      selectedHost: 'box.tailnet.ts.net',
+      customHost: '',
+    })
+    expect(syncAdvertiseHostPicker('https://home.ts.net', hosts)).toEqual({
+      selectedHost: CUSTOM_ADVERTISED_HOST,
+      customHost: 'home.ts.net',
     })
     expect(advertisedHostForOffer('100.64.0.8', '')).toBe('100.64.0.8')
     expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '  nas.home  ')).toBe('nas.home')
+    expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, 'https://nas.home')).toBe('nas.home')
     expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '')).toBeUndefined()
 
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
@@ -145,6 +154,8 @@ describe('PAS-51 pairing client', () => {
     expect(settings).not.toContain('advertiseDraft')
     expect(settings).toContain("api.put<RemoteAccessStatus>('/home/settings/remote-access'")
     expect(settings).toContain('deviceUrl')
+    expect(settings).toContain('formatDeviceURL')
+    expect(settings).not.toContain('http://${formatListenHost(host)}:7777')
     expect(settings).not.toContain('requireTailnet')
     expect(settings).not.toContain('advertiseUrl')
   })
