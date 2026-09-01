@@ -33,3 +33,10 @@ Feature: USB attach without a serial
     And a different device now sits at that address
     When QEMU args are built
     Then they fail because the stored device is not connected
+
+  Scenario: unplugged serial-less persist does not block spec updates
+    Given a stored bus:003.002 device with no serial
+    And no live host at that address
+    When the Workload spec is updated
+    Then persist keeps deviceId bus:003.002
+    And QEMU start still fails because the device is not connected

@@ -392,19 +392,16 @@ struct USBPassthroughTests {
         }
     }
 
-    @Test func `legacy stored bus identity is rejected when the live bus is gone`() {
+    @Test func `stored bus identity persists when the live bus is gone`() throws {
         let stored = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
         )
-        let gone = #expect(throws: BarkVisorError.self) {
-            _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [])
-        }
-        if case let .notFound(message) = gone {
-            #expect(message?.contains("bus:003.002") == true)
-        } else {
-            Issue.record("expected notFound, got \(String(describing: gone))")
-        }
+        let normalized = try USBPassthroughService.normalizeOne(stored, hostDevices: [])
+        #expect(normalized.deviceId == "bus:003.002")
+        #expect(normalized.vendorId == "0x1234")
+        #expect(normalized.productId == "0x5678")
+        #expect(normalized.serialNumber == nil)
     }
 
     @Test func `qemu args fail closed for stale bus address without host`() {
@@ -872,26 +869,23 @@ final class USBClaimWriteTests {
         #expect(error?.errorDescription?.contains("htpc") == true)
     }
 
-    @Test func `updateVM rejects legacy bus identity`() async throws {
-        let legacy = USBPassthroughDevice(
+    @Test func `updateVMSpec keeps stored bus identity when the live bus is gone`() async throws {
+        let storedUSB = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
         )
-        try await insertVM(id: "vm-legacy-bus", name: "legacy-bus", usb: [legacy])
-        let error = await #expect(throws: BarkVisorError.self) {
-            _ = try await VMLifecycleService.updateVM(
-                id: "vm-legacy-bus",
-                params: UpdateVMParams(usbDevices: [legacy], description: "migrated"),
-                db: self.dbPool,
-            )
-        }
-        #expect(error?.code == "conflict" || error?.code == "not_found")
-        #expect(
-            error?.errorDescription?.contains("no serial") == true
-                || error?.errorDescription?.contains("not connected") == true,
+        try await insertVM(id: "vm-usb-offline", name: "usb-offline", usb: [storedUSB])
+        let existing = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-usb-offline") }
+        let vm = try #require(existing)
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.guestType = hostLinux
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-usb-offline", spec: spec, db: dbPool, hostDevices: [],
         )
-        let still = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-legacy-bus") }
-        #expect(still?.decodedUSBDevices.first?.deviceId == "bus:003.002")
+        #expect(updated.decodedUSBDevices.first?.deviceId == "bus:003.002")
+        #expect(updated.decodedUSBDevices.first?.serialNumber == nil)
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-usb-offline") }
+        #expect(stored?.decodedUSBDevices.first?.deviceId == "bus:003.002")
     }
 
     @Test func `detachUSB fails loudly when listed bus id is not attached`() async throws {

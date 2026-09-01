@@ -264,6 +264,20 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
+            let occupied: Bool = {
+                guard let parsed = USBDeviceIdentity.parse(deviceId),
+                      let bus = parsed.bus, let address = parsed.address else { return true }
+                return hostDevices.contains { $0.bus == bus && $0.address == address }
+            }()
+            if !occupied {
+                return USBPassthroughDevice(
+                    vendorId: device.vendorId,
+                    productId: device.productId,
+                    label: device.label,
+                    serialNumber: device.serialNumber,
+                    deviceId: deviceId,
+                )
+            }
             let host = try resolveAttachable(
                 deviceId: deviceId,
                 hostDevices: hostDevices,
