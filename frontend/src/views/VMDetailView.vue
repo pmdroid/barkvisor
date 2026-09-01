@@ -489,13 +489,19 @@ const bridgeNotReady = computed(() => {
   if (!managedBridge.available) return false
   if (!bridged.available) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
-  const info = bridges.value.find(b => b.interface === currentNetwork.value!.bridge)
-  return !info || info.status !== 'active'
+  const name = currentNetwork.value.bridge
+  const info = bridges.value.find(b => b.interface === name)
+    ?? bridges.value.find(b => (b.socketPath || '').includes(`socket_vmnet.bridged.${name}`))
+  if (info) return info.status !== 'active'
+  return !bridges.value.some(b => b.status === 'active')
 })
 
 const bridgeStatus = computed(() => {
   if (!currentNetwork.value?.bridge) return null
-  return bridges.value.find(b => b.interface === currentNetwork.value!.bridge)?.status || 'not_configured'
+  const name = currentNetwork.value.bridge
+  const info = bridges.value.find(b => b.interface === name)
+    ?? bridges.value.find(b => (b.socketPath || '').includes(`socket_vmnet.bridged.${name}`))
+  return info?.status || 'not_configured'
 })
 
 async function setupBridgeFromDetail() {

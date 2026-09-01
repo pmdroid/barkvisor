@@ -116,13 +116,23 @@ public enum NetworkCapability {
     /// interface exists (`HostInfoService.interfaceExists`), and (Linux) that
     /// qemu-bridge-helper ACL permits the name. Missing/unreadable ACL is deny
     /// (PAS-278; matches UI `aclAllowsSuggested != true`).
-    public static func requireBridgedInterface(_ name: String) throws {
+    public static func requireBridgedInterface(
+        _ name: String,
+        dataDir: URL = Config.dataDir,
+    ) throws {
         try PlatformCapabilities.requireBridgedNetworking()
         try validateBridgeName(name)
-        guard HostInfoService.interfaceExists(name) else {
-            throw BarkVisorError.interfaceMissing(name)
-        }
-        #if os(Linux)
+        #if os(macOS)
+            if LinuxHostBridgeApply.readOwnerMarker(bridge: name, dataDir: dataDir) != nil {
+                return
+            }
+            guard HostInfoService.interfaceExists(name) else {
+                throw BarkVisorError.interfaceMissing(name)
+            }
+        #else
+            guard HostInfoService.interfaceExists(name) else {
+                throw BarkVisorError.interfaceMissing(name)
+            }
             guard LinuxHostNetwork.bridgeACLPermits(name) else {
                 throw BarkVisorError.bridgeHelperDenied(name)
             }

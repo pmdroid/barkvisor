@@ -263,18 +263,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         }
 
         private func writeOwnerMarker(bridge: String, uplink: String, createdBridge: Bool) throws {
-            let url = LinuxHostBridgeApply.ownerMarkerURL(bridge: bridge)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
+            try LinuxHostBridgeApply.writeOwnerMarker(
+                bridge: bridge,
+                uplink: uplink,
+                createdBridge: createdBridge,
             )
-            let payload: [String: Any] = [
-                "bridge": bridge,
-                "uplink": uplink,
-                "createdBridge": createdBridge,
-            ]
-            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-            try data.write(to: url, options: .atomic)
         }
 
         private func writeNetworkd(

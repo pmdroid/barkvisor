@@ -762,11 +762,13 @@ public enum QEMUBuilder {
         bridgeInterface: String?,
         dbSocketPath: String? = nil,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        uplinkForBridge: (String) -> String = { SocketVmnetDiscovery.resolveUplink(forBridge: $0) },
     ) throws -> String {
         if let dbPath = dbSocketPath, fileExists(dbPath), !isSharedSocketVmnetPath(dbPath) {
             return dbPath
         }
-        let iface = bridgeInterface ?? "en0"
+        let requested = bridgeInterface ?? "en0"
+        let iface = uplinkForBridge(requested)
         guard let socketPath = socketVmnetSocketCandidates(bridgeInterface: iface).first(where: fileExists)
         else {
             throw BarkVisorError.processSpawnFailed(

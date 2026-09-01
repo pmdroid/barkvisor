@@ -360,7 +360,7 @@ struct LinuxHostBridgeApplyTests {
         }
     }
 
-    @Test func `next-free skips sysfs and markers`() {
+    @Test func `next-free skips sysfs and markers`() throws {
         #expect(LinuxHostBridgeApply.nextFreeBridge(existingInterfaces: [], markerBridges: []) == "br0")
         #expect(LinuxHostBridgeApply.nextFreeBridge(
             existingInterfaces: ["br0", "eth0"],
@@ -380,6 +380,14 @@ struct LinuxHostBridgeApplyTests {
             existingInterfaces: LinuxHostBridgeApply.listedMarkerBridges(dataDir: dir),
             markerBridges: LinuxHostBridgeApply.listedMarkerBridges(dataDir: dir),
         ) == "br1")
+        try LinuxHostBridgeApply.writeOwnerMarker(
+            bridge: "br1", uplink: "en0", createdBridge: true, dataDir: dir,
+        )
+        let marker = LinuxHostBridgeApply.readOwnerMarker(bridge: "br1", dataDir: dir)
+        #expect(marker?.bridge == "br1")
+        #expect(marker?.uplink == "en0")
+        #expect(marker?.createdBridge == true)
+        #expect(LinuxHostBridgeApply.listOwnerMarkers(dataDir: dir).contains(where: { $0.bridge == "br1" }))
     }
 
     @Test func `one pending commit per Device`() {
