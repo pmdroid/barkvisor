@@ -1,15 +1,19 @@
 import { describe, expect, test } from 'vitest'
 import type { HostInterface } from '../api/types'
 import {
+  addressApplyTargets,
   bridgeSetupInterfaceKey,
   formatInterfaceAddressSummary,
   hostBridgeActionPath,
   inferInterfaceRole,
+  interfaceAddressColumn,
   interfaceBridgeColumn,
   interfaceBridgeRoleDetail,
+  interfaceOwnsAddressApply,
   interfaceOwnsBridgeApply,
   interfaceRouteColumn,
   interfaceRoleLabel,
+  overlayBridgeAddresses,
   pendingCommitMatchesInterface,
 } from './hostInterfaceDisplay'
 
@@ -111,6 +115,71 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceOwnsBridgeApply('external', iface({ name: 'docker0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+  })
+
+  test('interfaceOwnsAddressApply is the Bridge row on Linux and Mac', () => {
+    const ready = {
+      defaultRouteInterface: 'eth0',
+      bridges: [{ name: 'br0', enslaved: ['eth0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+    }
+    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('external', iface({ name: 'docker0' }), ready, 'linux-guide')).toBe(false)
+  })
+
+  test('addressApplyTargets uses enslaved member and Mac uplink map', () => {
+    const linux = {
+      defaultRouteInterface: 'eth0',
+      bridges: [{ name: 'br0', enslaved: ['eth0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+    }
+    expect(addressApplyTargets(iface({ name: 'br0' }), linux, 'linux-guide'))
+      .toEqual({ nic: 'eth0', bridge: 'br0' })
+    const macMapped = {
+      ...linux,
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+    }
+    expect(addressApplyTargets(iface({ name: 'br0' }), macMapped, 'macos-guide'))
+      .toEqual({ nic: 'en0', bridge: 'br0' })
+    expect(addressApplyTargets(iface({ name: 'br0' }), { ...linux, bridges: [{ name: 'br0', enslaved: [] }] }, 'linux-guide'))
+      .toEqual({ nic: 'br0', bridge: 'br0' })
+  })
+
+  test('address column shows IPs on brN and hides them on the enslaved NIC', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+    }
+    const en0 = iface({
+      name: 'en0',
+      ipAddress: '192.168.1.10',
+      dhcpEnabled: true,
+      addresses: [{ cidr: '192.168.1.10/24', source: 'dhcp', primary: true }],
+    })
+    const br0 = iface({ name: 'br0', ipAddress: '', displayName: 'br0' })
+    expect(interfaceAddressColumn(en0, [en0, br0], ready)).toBe('—')
+    expect(interfaceAddressColumn(br0, [en0, br0], ready)).toBe('DHCP 192.168.1.10')
+    expect(overlayBridgeAddresses(br0, [en0, br0], ready).ipAddress).toBe('192.168.1.10')
   })
 
   test('bridgeSetupInterfaceKey prefers br0 on Linux and uplink on Mac', () => {

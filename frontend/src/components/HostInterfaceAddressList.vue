@@ -11,6 +11,7 @@ const props = defineProps<{
   iface?: HostInterface | null
   onlyUplink?: boolean
   disabled?: boolean
+  l2Only?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +21,7 @@ const emit = defineEmits<{
 const validation = computed(() => validateAddressList(props.modelValue, { onlyUplink: props.onlyUplink }))
 const staticRows = computed(() => props.modelValue.filter((r) => r.kind !== 'dhcp'))
 const dhcpEnabled = computed(() => props.modelValue.some((r) => r.kind === 'dhcp'))
+const locked = computed(() => props.disabled || props.l2Only)
 
 function rowIndex(id: string): number {
   return props.modelValue.findIndex((r) => r.id === id)
@@ -62,7 +64,7 @@ function toggleDHCP(enabled: boolean) {
       <input
         type="checkbox"
         :checked="dhcpEnabled"
-        :disabled="disabled"
+        :disabled="locked"
         @change="toggleDHCP(($event.target as HTMLInputElement).checked)"
       >
       <span>DHCP (primary)</span>
@@ -71,7 +73,7 @@ function toggleDHCP(enabled: boolean) {
     <div v-for="row in staticRows" :key="row.id" class="address-row">
       <select
         :value="row.kind"
-        :disabled="disabled"
+        :disabled="locked"
         @change="updateRow(row.id, { kind: ($event.target as HTMLSelectElement).value as 'static' | 'alias' })"
       >
         <option value="static">static</option>
@@ -80,17 +82,18 @@ function toggleDHCP(enabled: boolean) {
       <input
         :value="row.cidr"
         placeholder="192.168.1.10/24"
-        :disabled="disabled"
+        :disabled="locked"
         @input="updateRow(row.id, { cidr: ($event.target as HTMLInputElement).value })"
       >
-      <button type="button" class="ghost" :disabled="disabled" @click="removeRow(row.id)">
+      <button type="button" class="ghost" :disabled="locked" @click="removeRow(row.id)">
         Remove
       </button>
     </div>
 
-    <button type="button" class="ghost add-btn" :disabled="disabled" @click="addStatic">
+    <button type="button" class="ghost add-btn" :disabled="locked" @click="addStatic">
       + Add address
     </button>
+    <p v-if="l2Only" class="l2-hint">L2 only · addresses live on the Bridge</p>
 
     <ul v-if="validation.errors.length" class="errors">
       <li v-for="err in validation.errors" :key="err">{{ err }}</li>
@@ -129,4 +132,9 @@ function toggleDHCP(enabled: boolean) {
 .errors { color: #dc2626; margin: 0; padding-left: 1rem; }
 .warnings { color: #b45309; margin: 0; padding-left: 1rem; }
 .add-btn { align-self: flex-start; }
+.l2-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
 </style>

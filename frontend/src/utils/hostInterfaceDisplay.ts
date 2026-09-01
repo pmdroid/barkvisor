@@ -107,6 +107,55 @@ export function interfaceOwnsBridgeApply(
   return false
 }
 
+export function interfaceOwnsAddressApply(
+  role: HostInterfaceRole,
+  _iface: HostInterface,
+  _readiness: HostBridgeReadiness | null | undefined,
+  _mode: string,
+): boolean {
+  return role === 'bridge'
+}
+
+export function addressApplyTargets(
+  iface: HostInterface,
+  readiness: HostBridgeReadiness | null | undefined,
+  _mode: string,
+): { nic: string; bridge: string } {
+  const mapped = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
+  if (mapped) return { nic: mapped, bridge: iface.name }
+  return { nic: iface.name, bridge: iface.name }
+}
+
+export function overlayBridgeAddresses(
+  iface: HostInterface,
+  peers: HostInterface[],
+  readiness?: HostBridgeReadiness | null,
+): HostInterface {
+  if (inferInterfaceRole(iface, readiness) !== 'bridge') return iface
+  if (iface.dhcpEnabled || iface.ipAddress || (iface.addresses?.length ?? 0) > 0) return iface
+  const uplinkName = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
+  if (!uplinkName) return iface
+  const uplink = peers.find((peer) => peer.name === uplinkName)
+  if (!uplink) return iface
+  return {
+    ...iface,
+    ipAddress: uplink.ipAddress,
+    addresses: uplink.addresses,
+    dhcpEnabled: uplink.dhcpEnabled,
+    gateway: uplink.gateway,
+    dns: uplink.dns,
+  }
+}
+
+export function interfaceAddressColumn(
+  iface: HostInterface,
+  peers: HostInterface[],
+  readiness?: HostBridgeReadiness | null,
+): string {
+  if (readiness?.bridges.some((bridge) => bridge.enslaved.includes(iface.name))) return '—'
+  return formatInterfaceAddressSummary(overlayBridgeAddresses(iface, peers, readiness))
+}
+
 export function interfaceBridgeFieldsReadOnly(role: HostInterfaceRole): boolean {
   return role === 'external' || role === 'loopback' || role === 'tailscale'
 }

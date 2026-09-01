@@ -156,6 +156,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('applySelectedInterface')
     expect(src).toContain('revertSelectedInterface')
     expect(src).toContain('interfaceOwnsBridgeApply')
+    expect(src).toContain('interfaceOwnsAddressApply')
+    expect(src).toContain('addressApplyTargets')
     expect(src).toContain('interfaceBridgeRoleDetail')
     expect(src).toContain('openBridgeSetupForPending')
     expect(src).toContain('bridgeSetupInterfaceKey')
@@ -175,7 +177,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).not.toContain('recheckPending')
     expect(src).not.toContain('Device address on')
     expect(src).toContain('hostBridgeSetupPending')
-    expect(src).toContain('formatInterfaceAddressSummary')
+    expect(src).toContain('interfaceAddressColumn')
     expect(src).toContain('recheckSelectedInterface')
   })
 
