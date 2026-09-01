@@ -205,6 +205,51 @@ struct ControllerLogicTests {
         }
     }
 
+    @Test func `directory browser maps unreadable folder to typed permission error`() throws {
+        guard getuid() != 0 else { return }
+        let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
+        let locked = (base as NSString).appendingPathComponent("locked")
+        try FileManager.default.createDirectory(atPath: locked, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked)
+            try? FileManager.default.removeItem(atPath: base)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked)
+        do {
+            _ = try DirectoryBrowser.list(path: locked, extraRoots: [base])
+            Issue.record("Expected a permission error for an unreadable folder")
+        } catch let error as BarkVisorError {
+            #expect(error.code == "permission_denied")
+            #expect(error.httpStatus == 403)
+            let reason = error.sanitizedDescription
+            #expect(!reason.isEmpty)
+            #expect(!reason.contains(locked))
+        }
+    }
+
+    @Test func `directory browser permission error detection`() {
+        let posix = NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
+        #expect(DirectoryBrowser.isPermissionError(posix))
+        let cocoa = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.fileReadNoPermission.rawValue,
+        )
+        #expect(DirectoryBrowser.isPermissionError(cocoa))
+        let wrapped = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.fileReadUnknown.rawValue,
+            userInfo: [
+                NSUnderlyingErrorKey: NSError(
+                    domain: NSPOSIXErrorDomain,
+                    code: Int(POSIXErrorCode.EPERM.rawValue),
+                ),
+            ],
+        )
+        #expect(DirectoryBrowser.isPermissionError(wrapped))
+        let other = NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileNoSuchFile.rawValue)
+        #expect(!DirectoryBrowser.isPermissionError(other))
+    }
+
     @Test func `directory browser createFolder`() throws {
         let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true)

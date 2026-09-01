@@ -37,6 +37,7 @@ struct VirtUIErrorTests {
             .unauthorized("unauthorized"),
             .unauthorized(),
             .forbidden("forbidden"),
+            .permissionDenied("permission denied"),
             .conflict("conflict"),
             .portInUse("port in use"),
             .preconditionFailed("precondition"),
@@ -65,6 +66,7 @@ struct VirtUIErrorTests {
             (.notFound(), "not_found"),
             (.unauthorized(), "unauthorized"),
             (.forbidden(""), "forbidden"),
+            (.permissionDenied(""), "permission_denied"),
             (.conflict(""), "conflict"),
             (.portInUse(""), "port_in_use"),
             (.timeout(""), "timeout"),
@@ -87,6 +89,8 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.updateFailed("checksum").code == "update_failed")
         #expect(BarkVisorError.unauthorized().httpStatus == 401)
         #expect(BarkVisorError.forbidden("").httpStatus == 403)
+        #expect(BarkVisorError.permissionDenied("").httpStatus == 403)
+        #expect(BarkVisorError.permissionDenied("").code == "permission_denied")
         #expect(BarkVisorError.notFound().httpStatus == 404)
         #expect(BarkVisorError.repositoryNotFound("").httpStatus == 404)
         #expect(BarkVisorError.conflict("").httpStatus == 409)

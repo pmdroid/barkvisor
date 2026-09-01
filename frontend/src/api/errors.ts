@@ -23,6 +23,16 @@ export function apiErrorMessage(error: unknown, fallback = 'Request failed'): st
   return fallback
 }
 
+export function apiErrorCode(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const code = error.response?.data?.code
+    if (typeof code === 'string' && code.length > 0) {
+      return code
+    }
+  }
+  return null
+}
+
 /** Confirmed HTTP 404 / not-found. Network and 5xx must not evict last-known data. */
 export function isNotFoundError(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404

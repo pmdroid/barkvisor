@@ -75,7 +75,17 @@ public enum DirectoryBrowser {
             throw BarkVisorError.badRequest("Path is not a directory")
         }
 
-        let contents = try FileManager.default.contentsOfDirectory(atPath: resolvedPath)
+        let contents: [String]
+        do {
+            contents = try FileManager.default.contentsOfDirectory(atPath: resolvedPath)
+        } catch {
+            if isPermissionError(error) {
+                throw BarkVisorError.permissionDenied(permissionDeniedMessage())
+            }
+            throw BarkVisorError.badRequest(
+                "Could not read this folder: \((error as NSError).localizedDescription)",
+            )
+        }
         var entries: [Entry] = []
 
         if let parent = parentPath(of: resolvedPath, extraRoots: extraRoots, home: home) {
@@ -134,6 +144,34 @@ public enum DirectoryBrowser {
         }
         try FileManager.default.createDirectory(atPath: newPath, withIntermediateDirectories: false)
         return Entry(name: name, path: newPath)
+    }
+
+    public static func isPermissionError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain,
+           nsError.code == CocoaError.fileReadNoPermission.rawValue
+           || nsError.code == CocoaError.fileWriteNoPermission.rawValue {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain,
+           nsError.code == Int(POSIXErrorCode.EACCES.rawValue)
+           || nsError.code == Int(POSIXErrorCode.EPERM.rawValue) {
+            return true
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return isPermissionError(underlying)
+        }
+        return false
+    }
+
+    public static func permissionDeniedMessage() -> String {
+        #if os(macOS)
+            return "macOS denied access to this folder. Grant BarkVisor Full Disk Access in "
+                + "System Settings > Privacy & Security > Full Disk Access, then try again."
+        #else
+            return "Permission denied reading this folder. Adjust its permissions so the "
+                + "BarkVisor daemon user can read it."
+        #endif
     }
 
     public static func parentPath(

@@ -190,6 +190,17 @@ struct APIDecodingTests {
         #expect(body.reason == "setup_required")
         #expect(body.status == 503)
 
+        let deniedJSON = """
+        {"error":true,"code":"permission_denied","reason":"Grant Full Disk Access","status":403}
+        """.data(using: .utf8)!
+        let denied = try decoder.decode(APIErrorBody.self, from: deniedJSON)
+        #expect(APIError.from(status: 403, code: denied.code, reason: denied.reason)
+            == .permissionDenied("Grant Full Disk Access"))
+        #expect(APIError.from(status: 403, code: "forbidden", reason: "No")
+            == .http(status: 403, reason: "No"))
+        #expect(APIError.from(status: 500, code: "permission_denied", reason: "x")
+            == .http(status: 500, reason: "x"))
+
         let setup = try decoder.decode(SetupStatus.self, from: Data(#"{"complete":false,"joined":true}"#.utf8))
         #expect(setup.complete == false)
         #expect(setup.joined == true)
