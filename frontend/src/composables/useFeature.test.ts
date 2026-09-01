@@ -182,6 +182,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('hostBridgeSetupPending')
     expect(src).toContain('formatInterfaceAddressSummary')
     expect(src).toContain('recheckSelectedInterface')
+    expect(src).toContain("selectedInterfaceRole.value === 'bridge' ? (row.iface.name || targetBridge) : undefined")
+    expect(src).not.toContain("selectedInterfaceRole.value === 'bridge' ? nic : undefined")
   })
 
   test('NetworkView VM tab distinguishes Workload network from Device address (#432)', () => {

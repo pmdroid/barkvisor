@@ -795,7 +795,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         }).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
-        bridge: selectedInterfaceRole.value === 'bridge' ? nic : undefined,
+        bridge: selectedInterfaceRole.value === 'bridge' ? (row.iface.name || targetBridge) : undefined,
         confirm,
         rows: payload.rows,
         gateway: payload.gateway,

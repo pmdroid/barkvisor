@@ -5,6 +5,15 @@ Feature: Mac synthetic brN maps to socket_vmnet uplink
     When Mac apply commits for bridge br0 on uplink en0
     Then host-bridge-br0.json has uplink en0 and createdBridge
 
+  Scenario: Apply on synthetic brN uses the Bridge name
+    When SPA Apply targets synthetic br0 whose uplink is en0
+    Then the apply body sends bridge br0 and interface en0
+    And the marker is host-bridge-br0.json not host-bridge-en0.json
+
+  Scenario: uplink Apply omits bridge
+    When SPA Apply targets uplink en0 and omits bridge
+    Then resolveNames linuxHost false does not invent br0
+
   Scenario: interfaces and readiness show synthetic brN
     Given a marker br0 → en0
     Then readiness.bridges lists br0 enslaved to en0

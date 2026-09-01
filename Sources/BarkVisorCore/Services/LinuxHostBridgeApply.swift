@@ -258,11 +258,11 @@ public enum LinuxHostBridgeApply {
         linuxHost: Bool,
     ) -> (bridge: String, nic: String?) {
         if linuxHost {
-            let bridge = bodyBridge ?? pathInterface ?? HostBridgeFactsService.suggestedBridgeName
+            let bridge = bodyBridge ?? pathInterface ?? ""
             return (bridge, bodyInterface)
         }
         let nic = bodyInterface ?? pathInterface
-        let bridge = bodyBridge ?? HostBridgeFactsService.suggestedBridgeName
+        let bridge = bodyBridge ?? ""
         return (bridge, nic)
     }
 
