@@ -165,23 +165,19 @@ describe('VM Detail (existing VMs)', () => {
   it('ISOs section shows attach button', () => {
     withFirstVM((vm) => {
       cy.visit(`/vms/${vm.id}`)
-      cy.get('body').then(($b) => {
-        if ($b.find('h2:contains("ISOs")').length) {
-          cy.contains('button', 'Attach ISO').should('exist')
-        }
-      })
+      cy.contains('.detail-label', 'ISOs').should('exist')
+      cy.contains('button', 'Attach ISO').should('exist')
     })
   })
 
-  it('Attach ISO opens a modal with available ISOs', () => {
+  it('Attach ISO lists ready ISOs from this Device Library', () => {
     withFirstVM((vm) => {
       cy.visit(`/vms/${vm.id}`)
-      cy.get('body').then(($b) => {
-        if (!$b.find('button:contains("Attach ISO")').length) return
+      cy.contains('.detail-label', 'ISOs').parent().within(() => {
         cy.contains('button', 'Attach ISO').click()
-        cy.get('.modal-overlay').should('be.visible')
-        cy.get('.modal').contains('button', 'Cancel').click()
-        cy.get('.modal-overlay').should('not.exist')
+        cy.contains(/Select ISO\.\.\.|No ready ISOs in this Device Library/).should('exist')
+        cy.contains('button', 'Cancel').click()
+        cy.contains('button', 'Attach ISO').should('exist')
       })
     })
   })

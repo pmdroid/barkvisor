@@ -317,6 +317,36 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(del).toHaveBeenCalledTimes(1)
   })
 
+  test('member ISO attach/detach use the Home proxy, never This Device', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const attached = vm({
+      id: 'vm-2',
+      name: 'nas',
+      state: 'stopped',
+      isoId: 'iso-fedora',
+      isoIds: ['iso-fedora'],
+    })
+    const detached = vm({ id: 'vm-2', name: 'nas', state: 'stopped', isoId: null, isoIds: null })
+    const post = mock((url: string, body?: unknown) => {
+      if (url === '/home/devices/peer-1/v1/vms/vm-2/attach-iso') {
+        expect(body).toEqual({ isoId: 'iso-fedora' })
+        return Promise.resolve({ data: attached })
+      }
+      if (url === '/home/devices/peer-1/v1/vms/vm-2/detach-iso') {
+        expect(body).toEqual({ isoId: 'iso-fedora' })
+        return Promise.resolve({ data: detached })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.post = post as typeof api.post
+    const store = useDeviceWorkloadsStore()
+    await store.attachISO(peer, 'vm-2', 'iso-fedora')
+    expect(store.vmFor('peer-1', 'vm-2')?.isoIds).toEqual(['iso-fedora'])
+    await store.detachISO(peer, 'vm-2', 'iso-fedora')
+    expect(store.vmFor('peer-1', 'vm-2')?.isoIds).toBeNull()
+    expect(post).toHaveBeenCalledTimes(2)
+  })
+
   test('an unreachable refresh does not leave loading stuck after a stale list arrives', async () => {
     const peer = snapshot({ hostId: 'peer-1', role: 'member' })
     let resolveOlder!: (value: { data: VM[] }) => void

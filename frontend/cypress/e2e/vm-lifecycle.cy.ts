@@ -334,12 +334,8 @@ describe('VM Lifecycle', () => {
         if (!vm) { cy.log('SKIP: test VM not found'); return }
 
         cy.visit(`/vms/${vm.id}`)
-        // ISOs section should exist
-        cy.get('body').then(($b) => {
-          if ($b.find('h2:contains("ISOs")').length) {
-            cy.contains('button', 'Attach ISO').should('exist')
-          }
-        })
+        cy.contains('.detail-label', 'ISOs').should('exist')
+        cy.contains('button', 'Attach ISO').should('exist')
       })
     })
   })

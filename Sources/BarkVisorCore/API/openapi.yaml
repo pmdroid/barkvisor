@@ -576,6 +576,12 @@ paths:
       x-barkvisor-stability: stable
       parameters:
         - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachISORequest"
       responses:
         "200":
           content:
@@ -3804,6 +3810,13 @@ components:
         claimedByVMName:
           type: string
           nullable: true
+
+    AttachISORequest:
+      type: object
+      required: [isoId]
+      properties:
+        isoId:
+          type: string
 
     AttachUSBRequest:
       type: object

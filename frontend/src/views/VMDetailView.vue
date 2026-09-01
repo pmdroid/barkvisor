@@ -58,6 +58,7 @@ import {
   memberNetworkCaption,
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
+import { attachableISOImages, attachedISOIds } from '../utils/workloadISO'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import {
   claimedNatTcpHostPorts,
@@ -521,17 +522,27 @@ async function fetchImages() {
     } catch { /* keep last-known */ }
     return
   }
-  const { data } = await api.get('/images')
-  allImages.value = data
+  try {
+    const { data } = await api.get<Image[]>('/images')
+    allImages.value = Array.isArray(data) ? data : []
+  } catch {
+    return
+  }
 }
 
+const isoCanChange = computed(() => !isMemberDetail.value || memberReachable.value)
+
 const isoImages = computed(() => {
-  const ids = vm.value?.isoIds ?? (vm.value?.isoId ? [vm.value.isoId] : [])
+  const ids = attachedISOIds(vm.value)
   return ids.map(id => detailImages.value.find(i => i.id === id) || { id, name: id.slice(0, 8) + '...', arch: 'arm64' } as any)
 })
 
 const availableIsos = computed(() =>
-  detailImages.value.filter(i => i.imageType === 'iso' && i.status === 'ready' && !isoImages.value.some(iso => iso.id === i.id))
+  attachableISOImages(detailImages.value, attachedISOIds(vm.value)),
+)
+
+const availableIsoOptions = computed(() =>
+  availableIsos.value.map((img) => ({ value: img.id, label: img.name })),
 )
 
 const showIsoAttach = ref(false)
@@ -539,10 +550,31 @@ const attachIsoId = ref('')
 
 async function doAttachISO() {
   if (!attachIsoId.value) return
-  await action('attach ISO', () => store.attachISO(vmId.value, attachIsoId.value))
+  const isoId = attachIsoId.value
+  await action('attach ISO', async () => {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.attachISO(device, vmId.value, isoId)
+    } else {
+      await store.attachISO(vmId.value, isoId)
+    }
+  })
   showIsoAttach.value = false
   attachIsoId.value = ''
   fetchImages()
+}
+
+async function doDetachISO(isoId: string) {
+  await action('detach ISO', async () => {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.detachISO(device, vmId.value, isoId)
+    } else {
+      await store.detachISO(vmId.value, isoId)
+    }
+  })
 }
 
 function guestInfoDevice() {
@@ -1613,19 +1645,24 @@ const healthBanner = computed(() => {
                     </a>
                     <span v-if="!isMemberDetail" class="badge badge-gray">{{ iso.arch }}</span>
                   </span>
-                  <AppButton v-if="!isMemberDetail" size="sm" :disabled="!!actionLoading"
-                    @click="action('detach ISO', () => store.detachISO(vmId, iso.id))">Detach</AppButton>
+                  <AppButton v-if="isoCanChange" size="sm" :disabled="!!actionLoading"
+                    @click="doDetachISO(iso.id)">Detach</AppButton>
                 </div>
                 <div v-if="isoImages.length === 0" class="dim-text">No ISOs attached</div>
-                <div v-if="!isMemberDetail && showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
-                  <AppSelect v-model="attachIsoId" size="sm" style="flex:1">
-                    <option value="" disabled>Select ISO...</option>
-                    <option v-for="img in availableIsos" :key="img.id" :value="img.id">{{ img.name }}</option>
-                  </AppSelect>
+                <div v-if="isoCanChange && showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
+                  <span v-if="availableIsos.length === 0" class="dim-text">No ready ISOs in this Device Library</span>
+                  <AppSelect
+                    v-else
+                    v-model="attachIsoId"
+                    size="sm"
+                    style="flex:1"
+                    placeholder="Select ISO..."
+                    :options="availableIsoOptions"
+                  />
                   <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
                   <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
                 </div>
-                <AppButton v-else-if="!isMemberDetail" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
+                <AppButton v-else-if="isoCanChange" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
               </span>
             </div>
             <div class="detail-row">
