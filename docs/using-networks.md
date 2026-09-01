@@ -4,7 +4,7 @@
 
 ![Networks — Host interfaces tab](img/networks.png)
 
-Words: **Home**, **Device**, **Workload**. Host addressing is this Device — configure it on **Networks → Host interfaces**. Workload networks are logical records on the **VM networks** tab.
+Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this Device. Configure it on **Networks → Host interfaces**. Workload networks are logical records on the **VM networks** tab.
 
 ## Tabs
 
@@ -15,7 +15,7 @@ Words: **Home**, **Device**, **Workload**. Host addressing is this Device — co
 | **Host interfaces** (default) | Live NICs on this Device — addresses, bridge role, Apply/Revert |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-There is no standalone bridge-setup toolbar or modal. Bridge configuration and Device address live on the owning interface row.
+**Create → Bridge** on Host interfaces is the only path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
 
 ## Host interfaces tab
 
@@ -28,6 +28,17 @@ The table lists each NIC on the Device:
 | Addresses (live) | DHCP + static aliases read from the host |
 | Bridge | bridge membership / readiness |
 | Route | default route when relevant |
+
+Toolbar **Create → Bridge** opens the create modal:
+
+| Field | Meaning |
+|-------|---------|
+| Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
+| Port | One unused NIC. Linux refuses Wi-Fi. Mac `en0` (Wi-Fi) is allowed. |
+| Addressing | DHCP + static aliases, gateway, DNS on the new Bridge |
+| Create VM network | Default on. Adds a bridged Workload network with `network.bridge = brN` |
+
+**Apply** uses the same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
 
 Select a row to open the **edit drawer** below the table.
 
@@ -94,33 +105,34 @@ On **Linux**, gateway and DNS in the drawer apply to the whole interface plan (i
 
 On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases use `ifconfig` and do not get separate gateway/DNS fields. Install socket_vmnet as your user: `brew install socket_vmnet`. Do not `sudo brew install`.
 
-### Linux bridge (`br0`)
+### Linux Bridge (`brN`)
 
-Select the **uplink** row (or `br0` when present) in **Host interfaces**. **Apply** persists `br0` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow br0` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared `br0` is never default-deleted.
+**Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared kernel bridges are never default-deleted.
 
 After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** in the SPA or run `--commit` on the host; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
-Use **Apply** in the drawer, or the API:
+Use **Create → Bridge**, or the API (include `bridge` and `nic`):
 
 ```sh
+curl -sS http://127.0.0.1:7777/api/system/bridges/next
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","action":"apply","confirm":true,"addressing":"dhcp"}'
+  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","action":"commit","confirm":true}'
+  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"commit","confirm":true}'
 curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
   -H 'Content-Type: application/json' \
-  -d '{"confirm":true,"action":"revert","interface":"<wired-uplink>"}'
+  -d '{"confirm":true,"action":"revert","interface":"<wired-uplink>","bridge":"br0"}'
 ```
 
 `action: check` and `dryRun: true` preview the plan without changing the host.
 
 ### macOS bridge (`socket_vmnet`)
 
-Select the LAN interface row in **Host interfaces**. **Apply** starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
+**Create → Bridge** on Host interfaces sends `bridge` plus `nic` (Mac `en0` is allowed). **Apply** on the LAN row starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
 
 After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
 
@@ -129,10 +141,10 @@ API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
 ```sh
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","action":"apply","confirm":true,"addressing":"dhcp"}'
+  -d '{"interface":"en0","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","action":"commit","confirm":true}'
+  -d '{"interface":"en0","bridge":"br0","action":"commit","confirm":true}'
 curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/en0 \
   -H 'Content-Type: application/json' \
   -d '{"confirm":true,"action":"revert","interface":"en0"}'
