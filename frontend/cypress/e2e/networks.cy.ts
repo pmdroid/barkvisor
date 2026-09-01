@@ -324,6 +324,7 @@ describe('Network Management', () => {
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {
+    cy.contains('.iface-row', /uplink/i).click()
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
       cy.contains('DHCP').should('exist')
@@ -331,7 +332,27 @@ describe('Network Management', () => {
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('button', 'Add address').should('exist')
+      cy.contains('button', 'Apply').should('exist')
+      cy.contains('button', 'Revert').should('exist')
+      cy.contains('button', 'Re-check').should('exist')
     })
+  })
+
+  it('loads next-free bridge and readiness over HTTP', () => {
+    cy.intercept('GET', '**/system/bridges/next').as('nextLive')
+    cy.intercept('GET', '**/system/host-bridge-readiness').as('readyLive')
+    cy.visit('/networks')
+    cy.wait('@readyLive').then((hit) => {
+      expect(hit.response?.statusCode).to.eq(200)
+      expect(hit.response?.body?.suggestedBridge).to.be.a('string')
+    })
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextLive').then((hit) => {
+      expect(hit.response?.statusCode).to.eq(200)
+      expect(hit.response?.body?.bridge).to.match(/^br/)
+    })
+    cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
   it('NIC drawer edits addresses; Bridge drawer has no address fields', () => {

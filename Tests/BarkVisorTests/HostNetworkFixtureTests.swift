@@ -201,6 +201,50 @@ struct HostNetworkFixtureTests {
         #expect(changes.contains { $0.contains("10.0.0.2/24") })
     }
 
+    @Test func `GET bridges next JSON contract`() throws {
+        struct NextBridge: Decodable {
+            let bridge: String
+        }
+        let body = try JSONDecoder().decode(NextBridge.self, from: Self.loadJSON("api/bridges-next.json"))
+        #expect(body.bridge == "br0")
+        #expect(body.bridge.hasPrefix("br"))
+    }
+
+    @Test func `GET host-bridge-readiness JSON contract`() throws {
+        let ready = try JSONDecoder().decode(
+            HostBridgeReadiness.self,
+            from: Self.loadJSON("api/host-bridge-readiness.json"),
+        )
+        #expect(ready.suggestedBridge == "br0")
+        #expect(ready.defaultRouteInterface == "en0")
+        #expect(ready.ready)
+        #expect(ready.bridges.count == 1)
+        #expect(ready.bridges[0].name == "en0")
+        #expect(ready.bridges[0].createdBridge == false)
+        #expect(ready.pendingCommit == nil)
+        let encoded = try JSONEncoder().encode(ready)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in ["suggestedBridge", "defaultRouteInterface", "bridges", "ready", "onlyUplink", "helperSetuid"] {
+            #expect(json[key] != nil, "readiness JSON missing \(key)")
+        }
+    }
+
+    @Test func `empty body uses start apply and stop revert defaults`() throws {
+        let body = try JSONDecoder().decode(BridgeRequest.self, from: Data(#"{ "bridge": "br0", "interface": "en0" }"#.utf8))
+        let start = try Self.bridgeApplyRequest(from: body, defaultAction: .apply)
+        #expect(start.action == .apply)
+        #expect(start.bridge == "br0")
+        #expect(start.nic == "en0")
+        let stop = try Self.bridgeApplyRequest(from: body, defaultAction: .revert)
+        #expect(stop.action == .revert)
+        let del = try JSONDecoder().decode(
+            BridgeRequest.self,
+            from: Data(#"{ "action": "delete", "bridge": "br0", "interface": "en0" }"#.utf8),
+        )
+        let deleted = try Self.bridgeApplyRequest(from: del, defaultAction: .revert)
+        #expect(deleted.action == .delete)
+    }
+
     @Test func `bridge apply without name does not imply br0`() throws {
         let body = try JSONDecoder().decode(
             BridgeRequest.self,

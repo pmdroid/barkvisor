@@ -88,6 +88,15 @@ try {
   await nicRow.click()
   await page.waitForSelector('.iface-drawer', { timeout: 15000 })
   const drawer = page.locator('.iface-drawer')
+  const namedUplink = page.locator('.iface-row', { hasText: 'en0' })
+    .or(page.locator('.iface-row', { hasText: 'eth0' }))
+    .or(page.locator('.iface-row', { hasText: 'enp' }))
+    .first()
+  await namedUplink.waitFor({ state: 'visible', timeout: 15000 })
+  await namedUplink.click()
+  await page.waitForTimeout(400)
+  const head = await drawer.locator('.sheet-head').innerText()
+  if (!/en0|eth0|enp/i.test(head)) fail(`drawer did not select uplink (head=${head})`)
   if (await drawer.locator('button:has-text("Apply")').count() === 0) fail('Interface drawer missing Apply')
   if (await drawer.locator('button:has-text("Revert")').count() > 0) fail('Interface drawer should not show Revert')
   if (await drawer.locator('button:has-text("Re-check")').count() > 0) fail('Interface drawer should not show Re-check')
@@ -147,7 +156,6 @@ try {
       await drawer.locator('.address-row input[placeholder="192.168.1.20/24"]').last().fill('10.99.0.2/24')
     }
 
-    const applyBtn = drawer.locator('button:has-text("Apply")')
     const nic = await drawer.locator('.sheet-head span').first().innerText().then((t) => {
       const m = t.match(/Edit\s+(\S+)/)
       return m?.[1] ?? ''

@@ -1,0 +1,17 @@
+{
+  "suggestedBridge": "br0",
+  "defaultRouteInterface": "en0",
+  "bridges": [
+    {
+      "name": "en0",
+      "enslaved": [],
+      "createdBridge": false
+    }
+  ],
+  "onlyUplink": false,
+  "remediations": [],
+  "ready": true,
+  "helperSetuid": false,
+  "helperPath": null,
+  "aclAllowsSuggested": null
+}
