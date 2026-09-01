@@ -321,6 +321,102 @@ struct HostNetworkFixtureTests {
         #expect(addresses[1]["source"] as? String == "alias")
     }
 
+    @Test func `bridges next fixture decodes and encodes bridge br0`() throws {
+        struct NextBridgeResponse: Codable {
+            var bridge: String
+        }
+        let decoded = try JSONDecoder().decode(
+            NextBridgeResponse.self,
+            from: Self.loadJSON("api/bridges-next.response.json"),
+        )
+        #expect(decoded.bridge == "br0")
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["bridge"] as? String == "br0")
+        #expect(json.keys.contains("bridge"))
+    }
+
+    @Test func `host-bridge-readiness fixture matches HostBridgeReadiness JSON contract`() throws {
+        let decoded = try JSONDecoder().decode(
+            HostBridgeReadiness.self,
+            from: Self.loadJSON("api/host-bridge-readiness.response.json"),
+        )
+        #expect(decoded.suggestedBridge == "br0")
+        #expect(decoded.defaultRouteInterface == "eth0")
+        #expect(decoded.bridges.map(\.name) == ["br0"])
+        #expect(decoded.ready)
+        #expect(decoded.helperSetuid)
+        #expect(decoded.onlyUplink == false)
+        #expect(decoded.remediations?.isEmpty == true)
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in [
+            "suggestedBridge",
+            "defaultRouteInterface",
+            "bridges",
+            "ready",
+            "remediations",
+            "helperSetuid",
+            "onlyUplink",
+        ] {
+            #expect(json[key] != nil, "HostBridgeReadiness JSON missing \(key)")
+        }
+        #expect(json["suggestedBridge"] as? String == "br0")
+        #expect(json["ready"] as? Bool == true)
+    }
+
+    @Test func `omitted action uses defaultAction for delete start and stop`() throws {
+        let empty = BridgeRequest()
+        #expect(empty.action == nil)
+        var body = empty
+        body.bridge = "br0"
+        let revertDelete = try Self.bridgeApplyRequest(from: body, defaultAction: .revert)
+        #expect(revertDelete.action == .revert)
+        let applyStart = try Self.bridgeApplyRequest(from: body, defaultAction: .apply)
+        #expect(applyStart.action == .apply)
+        let revertStop = try Self.bridgeApplyRequest(from: body, defaultAction: .revert)
+        #expect(revertStop.action == .revert)
+        var checkBody = BridgeRequest()
+        checkBody.bridge = "br0"
+        checkBody.action = "check"
+        let check = try Self.bridgeApplyRequest(from: checkBody, defaultAction: .apply)
+        #expect(check.action == .check)
+        var startBody = BridgeRequest()
+        startBody.bridge = "br0"
+        startBody.action = "start"
+        let startFallback = try Self.bridgeApplyRequest(from: startBody, defaultAction: .apply)
+        #expect(startFallback.action == .apply)
+        var stopBody = BridgeRequest()
+        stopBody.bridge = "br0"
+        stopBody.action = "stop"
+        let stopFallback = try Self.bridgeApplyRequest(from: stopBody, defaultAction: .revert)
+        #expect(stopFallback.action == .revert)
+
+        let probe = LinuxHostBridgeApplyProbe(
+            facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                helperPath: HostBridgeFactsService.qemuBridgeHelperCandidates[0],
+                helperSetuid: true,
+                aclAllowsSuggested: true,
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["eth0"])],
+                defaultRouteInterface: "eth0",
+            )),
+            backend: .netplan,
+            existingInterfaces: ["eth0", "br0"],
+        )
+        _ = LinuxHostBridgeApply.evaluate(request: applyStart, probe: probe)
+        _ = LinuxHostBridgeApply.evaluate(request: revertStop, probe: probe)
+    }
+
+    @Test func `system bridge controller source rejects linux start and stop`() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/BarkVisor/Server/Controllers/System/SystemBridgeController.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        #expect(source.contains("Linux host bridges use apply and revert, not start or stop."))
+    }
+
     private static func parseAddressApplyEntries(
         _ rows: [BridgeAddressRequest]?,
     ) throws -> [HostInterfaceAddressApplyEntry] {

@@ -87,6 +87,17 @@ try {
   if (await nicRow.count() === 0) fail('No NIC row to edit')
   await nicRow.click()
   await page.waitForSelector('.iface-drawer', { timeout: 15000 })
+  const rows = page.locator('.iface-row')
+  const rowCount = await rows.count()
+  const preferred = []
+  const rest = []
+  for (let i = 0; i < rowCount; i++) {
+    const text = await rows.nth(i).innerText()
+    if (/loopback|tailscale/i.test(text)) continue
+    if (/uplink|bridge/i.test(text)) preferred.push(i)
+    else rest.push(i)
+  }
+  const order = preferred.concat(rest)
   const drawer = page.locator('.iface-drawer')
   const namedUplink = page.locator('.iface-row', { hasText: 'en0' })
     .or(page.locator('.iface-row', { hasText: 'eth0' }))

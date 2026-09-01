@@ -1,0 +1,17 @@
+{
+  "helperPath": "/usr/lib/qemu/qemu-bridge-helper",
+  "helperSetuid": true,
+  "suggestedBridge": "br0",
+  "aclAllowsSuggested": true,
+  "bridges": [
+    {
+      "name": "br0",
+      "enslaved": ["eth0"]
+    }
+  ],
+  "defaultRouteInterface": "eth0",
+  "onlyUplink": false,
+  "ready": true,
+  "remediations": [],
+  "pendingCommit": null
+}
