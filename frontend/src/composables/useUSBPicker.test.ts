@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { computed, ref } from 'vue'
 import api from '../api/client'
 import type { HostUSBDevice } from '../api/types'
-import { usbCanPersist, usbDeviceKey, usbNoSerialCopy, useUSBPicker } from './useUSBPicker'
+import {
+  usbCanPersist,
+  usbDeviceKey,
+  usbHasPortPath,
+  usbNoSerialCopy,
+  usbPersistHint,
+  usbSessionOnlyCopy,
+  useUSBPicker,
+} from './useUSBPicker'
 
 const originalGet = api.get
 
@@ -33,11 +41,17 @@ describe('useUSBPicker (PAS-240)', () => {
     expect(usbDeviceKey({ vendorId: '046d', productId: 'c52b' })).toBe('046d:c52b')
   })
 
-  test('usbCanPersist requires a serial and skips claimed or excluded rows', () => {
+  test('usbCanPersist uses serial or bus/port and skips claimed or excluded rows', () => {
     expect(usbCanPersist({
       serialNumber: 'ZX9',
       idUnstable: false,
     })).toBe(true)
+    expect(usbCanPersist({
+      serialNumber: null,
+      idUnstable: true,
+      id: 'bus:001.002',
+    })).toBe(true)
+    expect(usbHasPortPath({ id: 'bus:001.002' })).toBe(true)
     expect(usbCanPersist({
       serialNumber: null,
       idUnstable: true,
@@ -50,7 +64,10 @@ describe('useUSBPicker (PAS-240)', () => {
       serialNumber: 'ZX9',
       attachable: false,
     })).toBe(false)
-    expect(usbNoSerialCopy).toBe('No serial, cannot persist.')
+    expect(usbNoSerialCopy).toBe('No serial. Persist by port path; replug may change it.')
+    expect(usbPersistHint({ serialNumber: null, id: 'bus:001.002' })).toBe(usbNoSerialCopy)
+    expect(usbPersistHint({ serialNumber: null })).toBe(usbSessionOnlyCopy)
+    expect(usbPersistHint({ serialNumber: 'ZX9' })).toBeNull()
   })
 
   test('toggle adds and removes an attachable Device USB; claimed rows stay out', () => {
@@ -88,10 +105,31 @@ describe('useUSBPicker (PAS-240)', () => {
       productId: '5678',
       name: 'Stick',
       idUnstable: true,
+      bus: 1,
+      address: 2,
+    })
+    const sessionOnly = hostUSB({
+      id: '0x1234:0x5678',
+      vendorId: '1234',
+      productId: '5678',
+      name: 'Ephemeral',
+      idUnstable: true,
     })
 
     picker.toggleUSBDevice(claimed)
     picker.toggleUSBDevice(blocked)
+    picker.toggleUSBDevice(sessionOnly)
+    expect(picker.selectedUSBDevices.value).toEqual([])
+
+    picker.toggleUSBDevice(noSerial)
+    expect(picker.isUSBSelected(noSerial)).toBe(true)
+    expect(picker.selectedUSBDevices.value).toEqual([{
+      vendorId: '1234',
+      productId: '5678',
+      label: 'Stick',
+      serialNumber: null,
+      deviceId: 'bus:001.002',
+    }])
     picker.toggleUSBDevice(noSerial)
     expect(picker.selectedUSBDevices.value).toEqual([])
 

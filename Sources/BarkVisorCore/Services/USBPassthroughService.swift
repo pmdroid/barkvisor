@@ -75,13 +75,6 @@ public enum USBPassthroughService {
         return false
     }
 
-    public static func busAddressIdentityError(_ id: String) -> BarkVisorError {
-        .conflict(
-            "USB device id \(id) is a bus address, which is not stable across replug. "
-                + "Re-attach using a serial number.",
-        )
-    }
-
     public static func missingSerialIdentityError(_ id: String) -> BarkVisorError {
         .conflict("USB device \(id) has no serial; cannot persist.")
     }
@@ -89,13 +82,21 @@ public enum USBPassthroughService {
     public static func resolve(
         deviceId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String = "",
+        productId: String = "",
     ) throws -> HostUSBDevice {
         let trimmed = deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parsed = USBDeviceIdentity.parse(trimmed) else {
             throw BarkVisorError.badRequest("Invalid USB device id")
         }
         if USBDeviceIdentity.isBusAddressId(trimmed) {
-            return try resolveLiveBus(parsed, rawId: trimmed, hostDevices: hostDevices)
+            return try resolveLiveBus(
+                parsed,
+                rawId: trimmed,
+                hostDevices: hostDevices,
+                vendorId: vendorId,
+                productId: productId,
+            )
         }
         if parsed.serial == nil {
             throw missingSerialIdentityError(trimmed)
@@ -115,8 +116,15 @@ public enum USBPassthroughService {
     public static func resolveAttachable(
         deviceId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String = "",
+        productId: String = "",
     ) throws -> HostUSBDevice {
-        let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
+        let host = try resolve(
+            deviceId: deviceId,
+            hostDevices: hostDevices,
+            vendorId: vendorId,
+            productId: productId,
+        )
         guard host.attachable else {
             throw BarkVisorError.badRequest(
                 host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
@@ -129,6 +137,8 @@ public enum USBPassthroughService {
         _ parsed: USBDeviceIdentity.Ref,
         rawId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String,
+        productId: String,
     ) throws -> HostUSBDevice {
         guard let bus = parsed.bus, let address = parsed.address else {
             throw BarkVisorError.badRequest("Invalid USB device id")
@@ -142,8 +152,10 @@ public enum USBPassthroughService {
         guard let host = live.first else {
             throw BarkVisorError.notFound("USB device \(rawId) is not connected")
         }
-        guard USBDeviceIdentity.normalizedSerial(host.serialNumber) != nil else {
-            throw missingSerialIdentityError(rawId)
+        let vid = USBDeviceIdentity.normalizeHexId(vendorId)
+        let pid = USBDeviceIdentity.normalizeHexId(productId)
+        if (!vid.isEmpty && vid != host.vendorId) || (!pid.isEmpty && pid != host.productId) {
+            throw BarkVisorError.notFound("USB device \(rawId) is not connected")
         }
         return host
     }
@@ -252,7 +264,26 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            let host = try resolveAttachable(deviceId: deviceId, hostDevices: hostDevices)
+            let occupied: Bool = {
+                guard let parsed = USBDeviceIdentity.parse(deviceId),
+                      let bus = parsed.bus, let address = parsed.address else { return true }
+                return hostDevices.contains { $0.bus == bus && $0.address == address }
+            }()
+            if !occupied {
+                return USBPassthroughDevice(
+                    vendorId: device.vendorId,
+                    productId: device.productId,
+                    label: device.label,
+                    serialNumber: device.serialNumber,
+                    deviceId: deviceId,
+                )
+            }
+            let host = try resolveAttachable(
+                deviceId: deviceId,
+                hostDevices: hostDevices,
+                vendorId: device.vendorId,
+                productId: device.productId,
+            )
             return USBPassthroughDevice(
                 vendorId: host.vendorId,
                 productId: host.productId,

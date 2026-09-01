@@ -4,7 +4,7 @@ import CapabilityGate from '../ui/CapabilityGate.vue'
 import UnsupportedHint from '../ui/UnsupportedHint.vue'
 import type { Network, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../../api/types'
 import { useFeature } from '../../composables/useFeature'
-import { usbCanPersist, usbNoSerialCopy } from '../../composables/useUSBPicker'
+import { usbCanPersist, usbPersistHint } from '../../composables/useUSBPicker'
 
 const usb = useFeature('usbPassthrough')
 const bridged = useFeature('bridgedNetworking')
@@ -199,7 +199,7 @@ const emit = defineEmits<{
                   <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
                   <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
                   <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
-                  <div v-else-if="!usbCanPersist(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbNoSerialCopy }}</div>
+                  <div v-else-if="usbPersistHint(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbPersistHint(dev) }}</div>
                 </td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:10px">{{ dev.id || `${dev.vendorId}:${dev.productId}` }}</span></td>
               </tr>

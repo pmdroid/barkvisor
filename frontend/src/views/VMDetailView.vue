@@ -47,7 +47,7 @@ import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
-import { usbCanPersist, usbNoSerialCopy } from '../composables/useUSBPicker'
+import { usbCanPersist, usbPersistHint } from '../composables/useUSBPicker'
 import { formatBytes, formatMemoryMB, formatPortForwards, formatShortDate } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
@@ -1871,13 +1871,13 @@ const healthBanner = computed(() => {
                   <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
                   <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
                   <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
-                  <div v-else-if="!usbCanPersist(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbNoSerialCopy }}</div>
+                  <div v-else-if="usbPersistHint(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbPersistHint(dev) }}</div>
                 </td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
                 <td style="text-align:right">
                   <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use by {{ dev.claimedByVMName }}</span>
                   <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>
-                  <span v-else-if="!usbCanPersist(dev)" style="font-size:12px;color:var(--text-dim)">{{ usbNoSerialCopy }}</span>
+                  <span v-else-if="!usbCanPersist(dev)" style="font-size:12px;color:var(--text-dim)">{{ usbPersistHint(dev) }}</span>
                   <span v-else-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to attach</span>
                   <AppButton v-else variant="primary" size="sm" :disabled="usbLoading" @click="usbAttach(dev)">Attach</AppButton>
                 </td>

@@ -3,7 +3,8 @@ import api from '../api/client'
 import type { HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { devicePath, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
-export const usbNoSerialCopy = 'No serial, cannot persist.'
+export const usbNoSerialCopy = 'No serial. Persist by port path; replug may change it.'
+export const usbSessionOnlyCopy = 'Session only — no serial or port path.'
 
 export function usbDeviceKey(dev: {
   deviceId?: string | null
@@ -17,15 +18,42 @@ export function usbDeviceKey(dev: {
     || (dev.serialNumber ? `${dev.vendorId}:${dev.productId}:${dev.serialNumber}` : `${dev.vendorId}:${dev.productId}`)
 }
 
+export function usbHasPortPath(dev: {
+  id?: string | null
+  deviceId?: string | null
+  bus?: number | null
+  address?: number | null
+}) {
+  const id = dev.id || dev.deviceId
+  if (typeof id === 'string' && id.startsWith('bus:')) return true
+  return dev.bus != null && dev.address != null
+}
+
 export function usbCanPersist(dev: {
   serialNumber?: string | null
   idUnstable?: boolean
   attachable?: boolean
   claimedByVMId?: string | null
+  id?: string | null
+  deviceId?: string | null
+  bus?: number | null
+  address?: number | null
 }) {
   if (dev.attachable === false || dev.claimedByVMId) return false
-  if (dev.idUnstable && !dev.serialNumber) return false
-  return Boolean(dev.serialNumber)
+  if (dev.serialNumber) return true
+  return usbHasPortPath(dev)
+}
+
+export function usbPersistHint(dev: {
+  serialNumber?: string | null
+  id?: string | null
+  deviceId?: string | null
+  bus?: number | null
+  address?: number | null
+}) {
+  if (dev.serialNumber) return null
+  if (usbHasPortPath(dev)) return usbNoSerialCopy
+  return usbSessionOnlyCopy
 }
 
 export function useUSBPicker(opts: {
@@ -93,6 +121,9 @@ export function useUSBPicker(opts: {
     clearUSBSelection,
     usbDeviceKey,
     usbCanPersist,
+    usbHasPortPath,
+    usbPersistHint,
     usbNoSerialCopy,
+    usbSessionOnlyCopy,
   }
 }

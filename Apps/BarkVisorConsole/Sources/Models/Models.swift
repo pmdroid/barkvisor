@@ -880,7 +880,8 @@ enum GPUPassthroughCopy {
 }
 
 enum USBPassthroughCopy {
-    static let noSerial = "No serial, cannot persist."
+    static let portPath = "No serial. Persist by port path; replug may change it."
+    static let sessionOnly = "Session only — no serial or port path."
 }
 
 struct USBPassthroughDevice: Decodable, Hashable, Identifiable {
@@ -915,10 +916,20 @@ struct HostUSBDevice: Decodable, Hashable, Identifiable {
     var claimedByVMId: String?
     var claimedByVMName: String?
 
+    var hasSerial: Bool {
+        serialNumber?.isEmpty == false
+    }
+
+    var hasPortPath: Bool {
+        if id.hasPrefix("bus:") { return true }
+        if let bus, let address { return bus >= 0 && address >= 0 }
+        return false
+    }
+
     var canAttach: Bool {
         attachable != false
             && claimedByVMId == nil
-            && serialNumber?.isEmpty == false
+            && (hasSerial || hasPortPath)
     }
 
     var occupancyCopy: String? {
@@ -928,8 +939,8 @@ struct HostUSBDevice: Decodable, Hashable, Identifiable {
         if attachable == false {
             return excludedReason
         }
-        if idUnstable == true || serialNumber == nil || serialNumber?.isEmpty == true {
-            return USBPassthroughCopy.noSerial
+        if !hasSerial {
+            return hasPortPath ? USBPassthroughCopy.portPath : USBPassthroughCopy.sessionOnly
         }
         return nil
     }
