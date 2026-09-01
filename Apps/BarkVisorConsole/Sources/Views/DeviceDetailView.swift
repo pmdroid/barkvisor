@@ -78,11 +78,6 @@ struct DeviceDetailView: View {
                             .foregroundStyle(.secondary)
                         Link("IOMMU setup", destination: GPUPassthroughCopy.docsURL)
                     }
-                    if hostGPUs.count == 1 {
-                        Text(GPUPassthroughCopy.singleDisplayWarning)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.red)
-                    }
                     ForEach(hostGPUs) { gpu in
                         LabeledContent(gpu.name, value: "\(gpu.pciAddress) · IOMMU \(gpu.iommuGroup)")
                         LabeledContent(

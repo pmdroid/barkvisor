@@ -85,7 +85,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GPU_PASSTHROUGH_DOCS_HREF, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
+import { GPU_PASSTHROUGH_DOCS_HREF, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
 import { isAgentWorkload } from '../utils/workloadClass'
 import {
@@ -286,7 +286,6 @@ const gpuCaps = computed(() => (
 const gpuReady = computed(() => gpuPassthroughSupported(gpuCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(gpuCaps.value))
 const pciReady = computed(() => pciPassthroughSupported(gpuCaps.value))
-const singleGPUDisplay = computed(() => hostGPUDevices.value.length === 1)
 const hostGPUGroups = computed(() => groupGpusByVendor(hostGPUDevices.value))
 const attachedDisplayGPUs = computed(() => (vm.value?.gpuDevices || []).filter((dev) => isDisplayPassthrough(dev.pciClass)))
 const attachedGPUGroups = computed(() => groupGpusByVendor(attachedDisplayGPUs.value))
@@ -1827,7 +1826,6 @@ const healthBanner = computed(() => {
             <span>None<span class="note">{{ gpuExplanation }} <a :href="GPU_PASSTHROUGH_DOCS_HREF" target="_blank" rel="noreferrer">IOMMU setup</a></span></span>
           </div>
           <template v-else>
-            <p v-if="singleGPUDisplay" role="alert" class="item none" style="color:var(--red);font-weight:700">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
             <div v-if="!attachedDisplayGPUs.length" class="item none">
               <span>None<span class="note">Pass through a PCI GPU.</span></span>
             </div>
@@ -1937,11 +1935,6 @@ const healthBanner = computed(() => {
     <div v-if="gpuReady && showAttachGPU" class="modal-overlay" @click.self="showAttachGPU = false">
       <div class="modal">
         <h2>Attach GPU</h2>
-        <p
-          v-if="singleGPUDisplay"
-          role="alert"
-          style="font-size:13px;font-weight:700;color:var(--red);margin:0 0 12px"
-        >{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
         <EmptyState v-if="hostGPUDevices.length === 0" :title="isMemberDetail ? 'No GPUs in an IOMMU group on that Device.' : 'No GPUs in an IOMMU group on this Device.'" />
         <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
           <template v-for="group in hostGPUGroups" :key="group.key">
@@ -1957,7 +1950,7 @@ const healthBanner = computed(() => {
                 <div style="font-weight:500">{{ dev.name }}</div>
                 <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
                 <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
-                <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
+                <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--text-dim)">{{ gpuHostOccupancyLabel(true) }}</div>
                 <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
               </td>
               <td>
@@ -1995,7 +1988,7 @@ const healthBanner = computed(() => {
               <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }} {{ dev.vendorId }}:{{ dev.deviceId }}</div>
               <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
               <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
-              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
+              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--text-dim)">{{ gpuHostOccupancyLabel(true) }}</div>
             </td>
             <td><span class="badge badge-gray">{{ pciClassLabel(dev.pciClass || '') }}</span></td>
             <td>

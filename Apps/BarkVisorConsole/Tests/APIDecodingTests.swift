@@ -652,7 +652,6 @@ struct APIDecodingTests {
                 pciAddress: gpu.pciAddress, groupAddresses: gpu.groupAddresses,
             ) == "0000:01:00.1",
         )
-        #expect(GPUPassthroughCopy.singleDisplayWarning.contains("one GPU"))
         #expect(GPUPassthroughCopy.groupMatesLabel(pciAddress: "0000:01:00.0", groupAddresses: nil) == "none")
 
         let busyJSON = """
@@ -669,7 +668,8 @@ struct APIDecodingTests {
         """.data(using: .utf8)!
         let busy = try decoder.decode(HostGPUDevice.self, from: busyJSON)
         #expect(busy.canAttach)
-        #expect(busy.occupancyCopy == "In use by host")
+        #expect(busy.occupancyCopy == "Host GPU driver")
+        #expect(busy.occupancyCopy != "In use by host")
     }
 
     @Test func `host usb device attach persists serial or bus port`() throws {

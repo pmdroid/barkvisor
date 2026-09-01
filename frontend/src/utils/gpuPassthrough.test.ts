@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   GPU_PASSTHROUGH_DOCS_HREF,
-  GPU_SINGLE_DISPLAY_WARNING,
   gpuDetachAllowed,
   gpuGroupMateAddresses,
   gpuGroupMatesLabel,
@@ -110,7 +109,7 @@ describe('gpuPassthrough copy (PAS-275)', () => {
   })
 
   test('host occupancy is the driver not Ollama', () => {
-    expect(gpuHostOccupancyLabel(true)).toBe('In use by host')
+    expect(gpuHostOccupancyLabel(true)).toBe('Host GPU driver')
     expect(gpuHostOccupancyLabel(false)).toBeNull()
     expect(gpuHostOccupancyLabel(undefined)).toBeNull()
   })
@@ -133,9 +132,17 @@ describe('gpuPassthrough copy (PAS-275)', () => {
     expect(gpuGroupMatesLabel('0000:01:00.0', undefined)).toBe('none')
   })
 
-  test('single-GPU display warning is loud copy', () => {
-    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('one GPU')
-    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('host display')
+  test('single-GPU warning and In use by host are gone', () => {
+    const copy = readFileSync(join(here, 'gpuPassthrough.ts'), 'utf8')
+    const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    for (const source of [copy, view]) {
+      expect(source).not.toContain('This machine lists one GPU')
+      expect(source).not.toContain('blank the host display')
+      expect(source).not.toContain('In use by host')
+      expect(source).not.toContain('GPU_SINGLE_DISPLAY_WARNING')
+      expect(source).not.toContain('singleGPUDisplay')
+    }
+    expect(gpuHostOccupancyLabel(true)).not.toBe('In use by host')
   })
 
   test('IOMMU setup docs href is the published guide', () => {
