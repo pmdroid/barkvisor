@@ -199,7 +199,6 @@ struct HostNetworkFixtureTests {
         #expect(changes.contains { $0.contains("10.0.0.2/24") })
     }
 
->>>>>>> deb4fd6d (Fix macOS alias revert and validate bridge address kinds (#430).)
     @Test func `interfaces snapshot fixture matches HostInterface JSON contract`() throws {
         struct ExpectedAddress: Decodable {
             let cidr: String
@@ -281,7 +280,6 @@ struct HostNetworkFixtureTests {
         }
     }
 
-    /// Mirrors `SystemBridgeController.bridgeApplyRequest` for contract tests (no HTTP server).
     private static func bridgeApplyRequest(
         from body: BridgeRequest,
         defaultAction: LinuxHostBridgeApplyAction,
