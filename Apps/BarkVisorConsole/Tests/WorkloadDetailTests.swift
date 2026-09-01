@@ -358,6 +358,26 @@ struct WorkloadDetailTests {
         #expect(acting.hasSuffix("/up/busy"))
     }
 
+    @Test func `detail has no Recent events sheet or events fetch`() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/WorkloadDetailView.swift"),
+            encoding: .utf8,
+        )
+        let client = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/APIClient.swift"),
+            encoding: .utf8,
+        )
+        #expect(!source.contains("Recent events"))
+        #expect(!source.contains("/events"))
+        #expect(!client.contains("/events"))
+    }
+
     @Test func `workload decodes isoIds and falls back to isoId`() throws {
         let many = """
         {

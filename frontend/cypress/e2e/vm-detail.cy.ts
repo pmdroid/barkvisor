@@ -97,6 +97,13 @@ describe('VM Detail (existing VMs)', () => {
     })
   })
 
+  it('does not show Recent events', () => {
+    withFirstVM((vm) => {
+      cy.visit(`/vms/${vm.id}`)
+      cy.contains('Recent events').should('not.exist')
+    })
+  })
+
   // ==================== Disks Section ====================
 
   it('shows boot disk in Disks section', () => {

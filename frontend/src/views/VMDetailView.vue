@@ -18,7 +18,6 @@ import { DEVICE_LABEL } from '../utils/terminology'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
-  AuditEntry,
   CurrentHostCapabilities,
   Disk,
   DiskUsage,
@@ -1081,7 +1080,6 @@ async function action(name: string, fn: () => Promise<void>) {
   actionLoading.value = name
   try {
     await fn()
-    if (['start', 'restart', 'detach ISO', 'attach ISO'].includes(name)) fetchVMEvents()
   } catch (e: any) {
     const reason = apiErrorMessage(e)
     const code = e.response?.data?.code
@@ -1115,7 +1113,6 @@ async function confirmStop() {
     guestInfo.value = null
     guestInfoLoaded.value = false
     await fetchGuestInfo()
-    fetchVMEvents()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -1310,62 +1307,6 @@ const healthBanner = computed(() => {
     sub: v.state === 'running' ? 'The Workload is still running.' : 'Start the Workload to retry.',
   }
 })
-
-const vmEvents = ref<AuditEntry[]>([])
-async function fetchVMEvents() {
-  if (isMemberDetail.value) return
-  try {
-    const { data } = await api.get<AuditEntry[]>(`/api/vms/${vmId.value}/events`)
-    vmEvents.value = data
-  } catch {}
-}
-function eventLabel(a: string): string {
-  if (a === 'vm.started' || a === 'vm.start') return 'Started'
-  if (a === 'vm.stopped' || a === 'vm.stop') return 'Stopped'
-  if (a === 'vm.restarted' || a === 'vm.restart') return 'Restarted'
-  if (a === 'vm.crashed') return 'Crashed'
-  return a.replace(/^vm\./, '')
-}
-const recentEvents = computed(() => {
-  const v = vm.value
-  if (!v) return []
-  if (vmEvents.value.length > 0) {
-    return vmEvents.value.map((e) => {
-      const bad = e.action === 'vm.crashed'
-      const warn = false
-      let detail: string | null = null
-      try { detail = e.detail ? (JSON.parse(e.detail).reason as string) ?? null : null } catch {}
-      const what = detail ? `${eventLabel(e.action)} — ${detail}` : eventLabel(e.action)
-      return { when: formatShortDate(e.timestamp), what, bad, warn }
-    })
-  }
-  const items: { when: string; what: string; bad: boolean; warn: boolean }[] = []
-  if (healthBanner.value) {
-    items.push({
-      when: formatShortDate(v.updatedAt),
-      what: healthBanner.value.title,
-      bad: true,
-      warn: false,
-    })
-  }
-  if (v.pendingChanges) {
-    items.push({
-      when: formatShortDate(v.updatedAt),
-      what: 'Configuration changed — restart pending',
-      bad: false,
-      warn: true,
-    })
-  }
-  items.push({
-    when: formatShortDate(v.createdAt),
-    what: `Workload created${toolbarSub.value.includes('·') ? ` on ${toolbarSub.value.split('·').slice(1).join('·').trim()}` : ''}`,
-    bad: false,
-    warn: false,
-  })
-  return items
-})
-watch(vmId, () => { vmEvents.value = []; fetchVMEvents() })
-onMounted(fetchVMEvents)
 
 </script>
 
@@ -1880,17 +1821,6 @@ onMounted(fetchVMEvents)
             </div>
           </template>
         </div>
-
-        <div class="sheet">
-          <div class="sheet-head"><h3>Recent events</h3></div>
-          <div v-for="(ev, i) in recentEvents" :key="i" class="ev">
-            <span class="when">{{ ev.when }}</span>
-            <span class="what" :class="{ bad: ev.bad }">
-              <span class="ops-dot" :class="ev.bad ? 'bad' : ev.warn ? 'warn' : 'off'"></span>
-              {{ ev.what }}
-            </span>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -2315,18 +2245,6 @@ onMounted(fetchVMEvents)
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.ev {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.ev:last-child { border-bottom: none; }
-.ev .when { width: 150px; flex-shrink: 0; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.ev .what { display: flex; align-items: center; gap: 8px; }
-.ev .what.bad { color: var(--red); font-weight: 600; }
 .ops-banner-sub strong {
   color: var(--red);
 }

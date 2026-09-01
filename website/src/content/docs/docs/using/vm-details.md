@@ -22,7 +22,7 @@ Which tabs appear depends on state: **Metrics** only shows while running, and me
 
 ### Overview
 
-Read-only facts grouped into sheets: **Session**, **Hardware**, **Network**, **Guest**, **Disks**, **Shared folders**, **USB**, **GPU passthrough**, **PCI devices** (Linux hosts only), and **Recent events**.
+Read-only facts grouped into sheets: **Session**, **Hardware**, **Network**, **Guest**, **Disks**, **Shared folders**, **USB**, **GPU passthrough**, and **PCI devices** (Linux hosts only).
 
 ### Console / Terminal
 
