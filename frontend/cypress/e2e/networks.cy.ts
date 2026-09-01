@@ -278,7 +278,7 @@ describe('Network Management', () => {
   it('Host interfaces drawer shows multi-address editor', () => {
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
-      cy.contains('DHCP (primary)').should('exist')
+      cy.contains('Use DHCP for primary address').should('exist')
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('Bridge role').should('exist')
@@ -314,7 +314,7 @@ describe('Network Management', () => {
     cy.wait('@ifaces')
     cy.contains('.iface-row', 'br0').click()
     cy.get('.iface-drawer').within(() => {
-      cy.contains('DHCP (primary)').should('exist')
+      cy.contains('Use DHCP for primary address').should('exist')
       cy.get('input[type="checkbox"]').first().should('not.be.disabled')
       cy.contains('L2 only').should('not.exist')
     })
