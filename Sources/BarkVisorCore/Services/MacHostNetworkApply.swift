@@ -246,7 +246,7 @@ import Foundation
                 }
             }
             let aliasTargets = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
-            let plannedAliasIPs = Set(try aliasTargets.map { try parseStaticAddress($0).ip })
+            let plannedAliasIPs = try Set(aliasTargets.map { try parseStaticAddress($0).ip })
             let primaryIP: String?
             if plan.dhcpEnabled {
                 let info = try run(networksetupPath, ["-getinfo", service])
