@@ -552,6 +552,10 @@ export interface HostBridgeAddressApplyEntry {
   dns?: string[]
 }
 
+export interface NextBridgeResponse {
+  bridge: string
+}
+
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string

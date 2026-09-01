@@ -258,6 +258,10 @@ export function deviceBridgesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/bridges')
 }
 
+export function deviceBridgesNextPath(device: DeviceApiTarget): string {
+  return `${deviceBridgesPath(device)}/next`
+}
+
 /** Mint the WS ticket on the owning Device (This Device or member via Home). */
 export function deviceWsTicketPath(device: DeviceApiTarget): string {
   return devicePath(device, '/auth/ws-ticket')

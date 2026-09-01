@@ -141,6 +141,18 @@ describe('hostInterfaceAddresses', () => {
     expect(next[1]?.cidr).toBe('')
   })
 
+  test('buildHostBridgeApplyBody sends bridge with nic', () => {
+    const body = buildHostBridgeApplyBody({
+      nic: 'eth1',
+      bridge: 'br1',
+      confirm: true,
+      rows: [{ id: 'd', kind: 'dhcp', cidr: '' }],
+    })
+    expect(body.interface).toBe('eth1')
+    expect(body.bridge).toBe('br1')
+    expect(body.action).toBe('apply')
+  })
+
   test('check action body includes addresses', () => {
     const body = buildHostBridgeApplyBody({
       nic: 'eth0',

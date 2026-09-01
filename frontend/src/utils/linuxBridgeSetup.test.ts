@@ -133,6 +133,7 @@ describe('linuxBridgeApply', () => {
     const cmds = linuxBridgeApplyCommands(base())
     expect(cmds.join('\n')).toContain('/api/system/bridges')
     expect(cmds.join('\n')).toContain('Keep changes')
+    expect(cmds.join('\n')).toContain('"bridge"')
     expect(cmds.join('\n')).not.toContain('guest static')
   })
 
