@@ -29,6 +29,8 @@ import {
   deviceVmActionPath,
   deviceVmSessionPath,
   deviceVmConsolePath,
+  deviceVmAttachIsoPath,
+  deviceVmDetachIsoPath,
   deviceVmPath,
   deviceVmSpecPath,
   deviceVmVncPath,
@@ -151,6 +153,14 @@ describe('homeDeviceApi (PAS-202)', () => {
       '/home/devices/peer%2F1/v1/vms/vm-9/restart',
     )
     expect(devicePath(member, '/vms/vm-9')).not.toContain('targetHostId')
+    expect(deviceVmAttachIsoPath(self, 'vm-9')).toBe('/vms/vm-9/attach-iso')
+    expect(deviceVmDetachIsoPath(self, 'vm-9')).toBe('/vms/vm-9/detach-iso')
+    expect(deviceVmAttachIsoPath(member, 'vm-9')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/attach-iso',
+    )
+    expect(deviceVmDetachIsoPath(member, 'vm-9')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/detach-iso',
+    )
   })
 })
 

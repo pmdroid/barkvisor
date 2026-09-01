@@ -11,6 +11,8 @@ import {
   deviceVmSpecPath,
   deviceVmGpuDevicePath,
   deviceVmGpuPath,
+  deviceVmAttachIsoPath,
+  deviceVmDetachIsoPath,
   deviceVmUsbDevicePath,
   deviceVmUsbPath,
   deviceVmsBasePath,
@@ -107,6 +109,29 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
 
   async function fetchSpec(device: HomeDeviceHealthSnapshot, vmId: string): Promise<WorkloadSpec> {
     const { data } = await api.get<WorkloadSpec>(deviceVmSpecPath(device, vmId))
+    return data
+  }
+
+  async function attachISO(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    isoId: string,
+  ): Promise<VM> {
+    const { data } = await api.post<VM>(deviceVmAttachIsoPath(device, vmId), { isoId })
+    await replaceOne(device, data)
+    return data
+  }
+
+  async function detachISO(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    isoId?: string,
+  ): Promise<VM> {
+    const { data } = await api.post<VM>(
+      deviceVmDetachIsoPath(device, vmId),
+      isoId ? { isoId } : {},
+    )
+    await replaceOne(device, data)
     return data
   }
 
@@ -233,6 +258,8 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     refreshOne,
     update,
     fetchSpec,
+    attachISO,
+    detachISO,
     attachUSB,
     detachUSB,
     attachGPU,

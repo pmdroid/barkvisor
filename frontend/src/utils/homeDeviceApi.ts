@@ -168,6 +168,14 @@ export function deviceVmUsbPath(device: DeviceApiTarget, vmId: string): string {
   return `${deviceVmPath(device, vmId)}/usb`
 }
 
+export function deviceVmAttachIsoPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/attach-iso`
+}
+
+export function deviceVmDetachIsoPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/detach-iso`
+}
+
 export function deviceVmUsbDevicePath(
   device: DeviceApiTarget,
   vmId: string,

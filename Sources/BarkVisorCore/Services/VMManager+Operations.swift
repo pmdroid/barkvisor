@@ -42,9 +42,14 @@ extension VMManager {
         let isRunning = runningVMs[vmID] != nil
 
         try await dbPool.write { db in
-            // Validate the ISO exists
-            guard try VMImage.fetchOne(db, key: isoId) != nil else {
+            guard let image = try VMImage.fetchOne(db, key: isoId) else {
                 throw BarkVisorError.notFound("ISO image not found")
+            }
+            guard image.imageType == "iso" else {
+                throw BarkVisorError.badRequest("Image is not an ISO")
+            }
+            guard image.status == "ready" else {
+                throw BarkVisorError.badRequest("ISO is not ready")
             }
             guard let vm = try VM.fetchOne(db, key: vmID) else {
                 throw BarkVisorError.notFound("VM not found")

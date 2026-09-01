@@ -93,13 +93,15 @@ export const useVMStore = defineStore('vms', () => {
   }
 
   async function detachISO(id: string, isoId?: string) {
-    await api.post(`/vms/${id}/detach-iso`, isoId ? { isoId } : {})
-    await fetchOne(id)
+    const { data } = await api.post(`/vms/${id}/detach-iso`, isoId ? { isoId } : {})
+    applyLocal(data)
+    return data
   }
 
   async function attachISO(id: string, isoId: string) {
-    await api.post(`/vms/${id}/attach-iso`, { isoId })
-    await fetchOne(id)
+    const { data } = await api.post(`/vms/${id}/attach-iso`, { isoId })
+    applyLocal(data)
+    return data
   }
 
   async function attachUSB(id: string, deviceId: string) {
