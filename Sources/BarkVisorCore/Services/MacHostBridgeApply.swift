@@ -131,7 +131,7 @@ import Foundation
                 "After Apply, click Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or Revert to undo.",
             )
 
-            let changes = HostInterfaceAddressApply.plannedDiffs(
+            var changes = HostInterfaceAddressApply.plannedDiffs(
                 plan: plan,
                 interfaceLabel: "\(service) (\(device))",
             ).map {
