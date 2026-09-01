@@ -59,6 +59,7 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                 HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
+                    createdBridge: LinuxHostBridgeApply.readOwnerMarker(bridge: name)?.createdBridge == true,
                 )
             }
             return HostBridgeFactInputs(
@@ -152,12 +153,22 @@ public enum HostBridgeFactsService {
     ) -> [HostBridgeSnapshot] {
         let fromMarkers = markers.compactMap { marker -> HostBridgeSnapshot? in
             guard let uplink = marker.uplink, !uplink.isEmpty else { return nil }
-            return HostBridgeSnapshot(name: marker.bridge, enslaved: [uplink])
+            return HostBridgeSnapshot(
+                name: marker.bridge,
+                enslaved: [uplink],
+                createdBridge: marker.createdBridge,
+            )
         }
         if !fromMarkers.isEmpty {
             return fromMarkers
         }
-        return sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) }
+        return sockets.map {
+            HostBridgeSnapshot(
+                name: $0.interface,
+                enslaved: [],
+                createdBridge: LinuxHostBridgeApply.createdBridgeForUplink($0.interface),
+            )
+        }
     }
 
     public static func assemble(from inputs: HostBridgeFactInputs) -> HostBridgeFacts {

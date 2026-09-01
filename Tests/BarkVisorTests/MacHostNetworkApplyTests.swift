@@ -246,5 +246,81 @@ struct MacHostBridgeApplyPlannerTests {
                 $0.contains("host-bridge-br0.json") && $0.contains("en0")
             }))
         }
+
+        @Test func `mac delete stops socket_vmnet when createdBridge`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                createdBridge: true,
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0", confirm: true),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.changes.contains { $0.contains("socket_vmnet") })
+            #expect(result.message.contains("Keep"))
+        }
+
+        @Test func `mac revert foreign never stops socket_vmnet`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                createdBridge: false,
+            )
+            let revert = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .revert, nic: "en0", confirm: true),
+                probe: probe,
+            )
+            #expect(revert.success)
+            #expect(!revert.changes.contains { $0.lowercased().contains("stop") })
+            #expect(revert.commands.contains { $0.contains("never ip link del") })
+            let denied = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0", confirm: true),
+                probe: probe,
+            )
+            #expect(!denied.success)
+            #expect(denied.message.contains("foreign"))
+        }
+
+        @Test func `mac delete refuses attached Workloads`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                createdBridge: true,
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(
+                    action: .delete,
+                    nic: "en0",
+                    confirm: true,
+                    attachedWorkloadCount: 1,
+                ),
+                probe: probe,
+            )
+            #expect(result.conflict)
+            #expect(result.message.contains("Workload"))
+        }
     #endif
 }

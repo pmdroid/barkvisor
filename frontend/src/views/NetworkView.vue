@@ -69,6 +69,8 @@ import {
   overlayBridgeAddresses,
   pendingCommitMatchesInterface,
   hostBridgeActionPath,
+  interfaceAssociatedBridge,
+  interfaceShowsDelete,
 } from '../utils/hostInterfaceDisplay'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, vmHealth } from '../utils/workloadHealth'
@@ -393,7 +395,7 @@ const formBridgePickerInterfaces = computed(() =>
 
 const linuxApplyLoading = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
-const linuxApplyConfirm = ref<'apply' | 'revert' | null>(null)
+const linuxApplyConfirm = ref<'apply' | 'revert' | 'delete' | null>(null)
 const linuxApplySource = ref<'drawer' | 'create-bridge'>('drawer')
 
 const createMenuOpen = ref(false)
@@ -680,7 +682,7 @@ async function refreshInterfaceContext(hostId: string) {
   if (bridged.available) await fetchLocalBridges()
 }
 
-async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = false) {
+async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', confirm = false) {
   const row = selectedInterfaceRow.value
   if (!row) return
   const device = devicesStore.deviceByHostId(row.hostId)
@@ -690,6 +692,10 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
   }
   if (action === 'apply' && !interfaceAddressValidation.value.ok) {
     toast.error(interfaceAddressValidation.value.errors[0] || 'Fix address list before applying.')
+    return
+  }
+  if (action === 'delete' && selectedInterfaceDeleteBlocked.value) {
+    toast.error('Cannot delete this Bridge: Workloads still reference it.')
     return
   }
   linuxApplySource.value = 'drawer'
@@ -707,24 +713,33 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
           bridge: role === 'bridge' ? row.iface.name : undefined,
         }
     const nic = targets.nic
-    const revertBridge = pendingCommit.value?.target ?? targets.bridge ?? ready?.suggestedBridge
     const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const targetBridge = pendingCommit.value?.target
+      ?? interfaceAssociatedBridge(row.iface, selectedInterfaceReadiness.value)?.name
+      ?? selectedInterfaceReadiness.value?.suggestedBridge
     const data = action === 'revert'
       ? await api.delete<BridgeActionResponse>(
         hostBridgeRevertPath(
           nic,
           device ?? undefined,
-          revertBridge,
+          targetBridge,
         ),
         {
           data: {
             confirm,
             action: 'revert',
             interface: nic,
-            bridge: revertBridge,
+            bridge: targetBridge,
           },
         },
       ).then((r) => r.data)
+      : action === 'delete'
+        ? await api.post<BridgeActionResponse>(path, {
+          confirm,
+          action: 'delete',
+          interface: nic,
+          bridge: targetBridge,
+        }).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
         bridge: targets.bridge,
@@ -738,13 +753,13 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
       linuxApplyConfirm.value = action
       return
     }
-    if (data.pendingCommit && data.commitDeadline && action === 'apply') {
+    if (data.pendingCommit && data.commitDeadline && (action === 'apply' || action === 'delete')) {
       setPendingCommitFromResponse(row.hostId, nic, data)
-    } else if (action === 'revert' || action === 'apply') {
+    } else if (action === 'revert' || action === 'apply' || action === 'delete') {
       if (pendingCommit.value?.hostId === row.hostId) clearPendingCommitState()
     }
     if (data.success) {
-      toast.success(data.message || (action === 'revert' ? 'Reverted host network.' : 'Applied host network.'))
+      toast.success(data.message || (action === 'revert' ? 'Reverted host network.' : action === 'delete' ? 'Deleted host Bridge.' : 'Applied host network.'))
       await fetchHostReadiness(device)
       await refreshInterfaceContext(row.hostId)
       const refreshed = interfaceTableRows.value.find((item) => item.key === row.key)
@@ -775,6 +790,31 @@ function applySelectedInterface() {
 function revertSelectedInterface() {
   void runInterfaceHostBridge('revert')
 }
+
+function deleteSelectedInterface() {
+  void runInterfaceHostBridge('delete')
+}
+
+const selectedInterfaceShowsDelete = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  return interfaceShowsDelete(row.iface, selectedInterfaceReadiness.value)
+})
+
+const selectedInterfaceDeleteBlocked = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  const associated = interfaceAssociatedBridge(row.iface, selectedInterfaceReadiness.value)
+  const bridge = associated?.name
+    ?? pendingCommit.value?.target
+    ?? selectedInterfaceReadiness.value?.suggestedBridge
+  if (!bridge) return false
+  return homeRows.value.some((item) => (
+    item.hostId === row.hostId
+    && item.network.bridge === bridge
+    && attachedWorkloads(item).length > 0
+  ))
+})
 
 async function openBridgeSetupForPending(item: PendingBridge) {
   activeTab.value = 'interfaces'
@@ -1451,10 +1491,22 @@ async function doDeleteNetwork() {
               @click="applySelectedInterface"
             >Apply</AppButton>
             <AppButton
+              v-if="!selectedInterfaceShowsDelete"
               size="sm"
               :disabled="!canApplySelectedInterface || linuxApplyLoading"
               @click="revertSelectedInterface"
             >Revert</AppButton>
+            <AppButton
+              v-if="selectedInterfaceShowsDelete"
+              size="sm"
+              variant="danger"
+              :disabled="!canApplySelectedInterface || linuxApplyLoading || selectedInterfaceDeleteBlocked"
+              @click="deleteSelectedInterface"
+            >Delete</AppButton>
+            <p
+              v-if="selectedInterfaceShowsDelete && selectedInterfaceDeleteBlocked"
+              class="iface-drawer-hint"
+            >Cannot delete this Bridge while Workloads still reference it.</p>
             <AppButton
               size="sm"
               :disabled="linuxReadinessLoading"
@@ -1765,7 +1817,7 @@ async function doDeleteNetwork() {
     v-if="linuxApplyConfirm"
     title="Confirm host bridge change"
     :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. After Apply you have 30 seconds to click Keep changes or the host auto-reverts.'"
-    confirm-label="Apply anyway"
+    :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete anyway' : linuxApplyConfirm === 'revert' ? 'Revert anyway' : 'Apply anyway'"
     :danger="true"
     :loading="linuxApplyLoading"
     @confirm="confirmLinuxBridge"

@@ -57,10 +57,10 @@ struct SystemBridgeController: RouteCollection {
     @Sendable
     func installBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
         if PlatformCapabilities.supportsHostBridgeManagement {
-            return try Self.linuxApply(req: req, defaultAction: .apply)
+            return try await Self.linuxApply(req: req, defaultAction: .apply)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            let response = try Self.macHostApply(req: req, defaultAction: .apply)
+            let response = try await Self.macHostApply(req: req, defaultAction: .apply)
             if response.applied == true {
                 await Self.syncMacBridgedNetwork(req: req, body: (try? req.content.decode(BridgeRequest.self)))
             }
@@ -78,7 +78,7 @@ struct SystemBridgeController: RouteCollection {
             )
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try Self.macHostApply(req: req, defaultAction: .apply)
+            return try await Self.macHostApply(req: req, defaultAction: .apply)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -92,7 +92,7 @@ struct SystemBridgeController: RouteCollection {
             )
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try Self.macHostApply(req: req, defaultAction: .revert)
+            return try await Self.macHostApply(req: req, defaultAction: .revert)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -101,10 +101,10 @@ struct SystemBridgeController: RouteCollection {
     @Sendable
     func removeBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
         if PlatformCapabilities.supportsHostBridgeManagement {
-            return try Self.linuxApply(req: req, defaultAction: .revert)
+            return try await Self.linuxApply(req: req, defaultAction: .revert)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return try Self.macHostApply(req: req, defaultAction: .revert)
+            return try await Self.macHostApply(req: req, defaultAction: .revert)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -113,10 +113,16 @@ struct SystemBridgeController: RouteCollection {
     private static func linuxApply(
         req: Vapor.Request,
         defaultAction: LinuxHostBridgeApplyAction,
-    ) throws -> BridgeActionResponse {
+    ) async throws -> BridgeActionResponse {
         try PlatformCapabilities.requireHostMutation()
         let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
-        let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
+        var request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
+        if request.action == .delete {
+            request.attachedWorkloadCount = try await NetworkService.attachedWorkloadCount(
+                bridge: request.bridge,
+                db: req.db,
+            )
+        }
         let result = try LinuxHostBridgeApplyLive.run(request: request)
         if result.conflict {
             throw BarkVisorError.conflict(result.message)
@@ -124,6 +130,7 @@ struct SystemBridgeController: RouteCollection {
         if result.applied {
             let auditAction = switch request.action {
             case .revert: "host-bridge.revert"
+            case .delete: "host-bridge.delete"
             case .commit: "host-bridge.commit"
             default: "host-bridge.apply"
             }
@@ -163,15 +170,22 @@ struct SystemBridgeController: RouteCollection {
     private static func macHostApply(
         req: Vapor.Request,
         defaultAction: LinuxHostBridgeApplyAction,
-    ) throws -> BridgeActionResponse {
+    ) async throws -> BridgeActionResponse {
         try PlatformCapabilities.requireHostMutation()
         #if os(macOS)
             let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
-            let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
+            var request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
+            if request.action == .delete {
+                request.attachedWorkloadCount = try await NetworkService.attachedWorkloadCount(
+                    bridge: request.bridge,
+                    db: req.db,
+                )
+            }
             let result = try MacHostBridgeApplyLive.run(request: request)
             if result.applied {
                 let auditAction = switch request.action {
                 case .revert: "host-bridge.revert"
+                case .delete: "host-bridge.delete"
                 case .commit: "host-bridge.commit"
                 default: "host-bridge.apply"
                 }

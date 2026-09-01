@@ -186,4 +186,13 @@ public enum NetworkService {
         _ = try await db.write { db in try Network.deleteOne(db, key: id) }
         return network
     }
+
+    public static func attachedWorkloadCount(bridge: String, db: DatabasePool) async throws -> Int {
+        try await db.read { db in
+            let nets = try Network.filter(Column("bridge") == bridge).fetchAll(db)
+            let ids = nets.map(\.id)
+            if ids.isEmpty { return 0 }
+            return try VM.filter(ids.contains(Column("networkId"))).fetchCount(db)
+        }
+    }
 }

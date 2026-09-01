@@ -53,7 +53,7 @@ struct HostBridgeReadinessTests {
             ],
             sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
         )
-        #expect(snaps == [HostBridgeSnapshot(name: "br0", enslaved: ["en0"])])
+        #expect(snaps == [HostBridgeSnapshot(name: "br0", enslaved: ["en0"], createdBridge: true)])
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
             bridges: snaps,
             defaultRouteInterface: "en0",
