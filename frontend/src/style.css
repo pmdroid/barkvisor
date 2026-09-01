@@ -2070,18 +2070,6 @@ tr.pending td:first-child { box-shadow: none; }
   color: var(--text);
   user-select: all;
 }
-.role { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.role-tag {
-  font-size: 10.5px;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: var(--radius);
-  background: rgba(251,191,36,0.12);
-  border: 1px solid rgba(251,191,36,0.35);
-  color: var(--amber);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
 .pair-line { font-size: 13px; color: var(--text-secondary); }
 .pair-line a { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 600; }
 .pair-line a:hover { text-decoration: underline; }

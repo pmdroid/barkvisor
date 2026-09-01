@@ -11,7 +11,6 @@ The **Home** tab is identity and reachability for this Device. It is not where p
 - **Device name** — how this Device appears across the Home
 - **Device URL** — the saved host, shown as `http://<host>:7777` when one is set
 - **Advertised hosts** — addresses other Devices use to reach this one
-- **Role** — what your account can do on this Home
 - **Add a {Device}** — shortcut into [Pairing](/docs/using/settings/pairing/)
 
 ## Device URL

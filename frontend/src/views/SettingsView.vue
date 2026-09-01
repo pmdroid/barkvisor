@@ -13,7 +13,6 @@ import type {
   SSHKey,
 } from '../api/types'
 import { useToastStore } from '../stores/toast'
-import { useAuthStore } from '../stores/auth'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { usePasskeyStore } from '../stores/passkeys'
 import { isPasskeyAvailable, passkeyBlock } from '../utils/webauthn'
@@ -72,7 +71,6 @@ import EmptyState from '../components/ui/EmptyState.vue'
 
 const route = useRoute()
 const toast = useToastStore()
-const auth = useAuthStore()
 const sshKeyStore = useSSHKeyStore()
 const passkeyStore = usePasskeyStore()
 const passkeysAvailable = isPasskeyAvailable()
@@ -91,10 +89,6 @@ const deviceUrlDisplay = computed(() => {
   if (!host) return ''
   return `http://${formatListenHost(host)}:7777`
 })
-const roleTag = computed(() => (auth.isAdmin ? 'admin' : 'member'))
-const roleNote = computed(() =>
-  auth.isAdmin ? 'Full control on this Home' : 'Standard access on this Home',
-)
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
@@ -889,13 +883,6 @@ onUnmounted(() => {
             <span v-for="host in advertisedHostChips" :key="host" class="host">{{ host }}</span>
           </span>
           <span v-else style="color:var(--text-dim)">—</span>
-        </span>
-      </div>
-      <div class="fact">
-        <span class="k">Role<span>What you can do on this Home</span></span>
-        <span class="v role">
-          <span class="role-tag">{{ roleTag }}</span>
-          <span style="font-size:12px;color:var(--text-dim)">{{ roleNote }}</span>
         </span>
       </div>
       <div class="fact" style="border-bottom:0">
