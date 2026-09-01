@@ -220,6 +220,14 @@ struct SystemBridgeController: RouteCollection {
             pathInterface: req.parameters.get("interface"),
             linuxHost: PlatformCapabilities.supportsHostBridgeManagement,
         )
+        if PlatformCapabilities.supportsHostBridgeManagement {
+            let bridge = names.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+            if bridge.isEmpty {
+                throw BarkVisorError.badRequest(
+                    "Bridge name required. Create a Bridge; uplink Apply does not imply br0.",
+                )
+            }
+        }
         let addresses = try parseAddressApplyEntries(body.addresses)
         return LinuxHostBridgeApplyRequest(
             action: action,

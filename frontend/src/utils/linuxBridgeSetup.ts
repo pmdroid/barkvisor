@@ -157,7 +157,7 @@ export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
   const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
   const nic = ready.defaultRouteInterface || '<wired-uplink>'
   return [
-    `Networks → Host interfaces → select ${nic} → Apply.`,
+    `Networks → Host interfaces → Create → Bridge.`,
     `# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.`,
     `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
     `  -H 'Content-Type: application/json' \\`,

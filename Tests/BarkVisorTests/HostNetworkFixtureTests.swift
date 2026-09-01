@@ -159,11 +159,13 @@ struct HostNetworkFixtureTests {
         )
         #expect(body.action == "check")
         #expect(body.interface == "eth0")
+        #expect(body.bridge == "br0")
         #expect(body.addresses?.count == 2)
 
         let request = try Self.bridgeApplyRequest(from: body, defaultAction: .check)
         #expect(request.action == LinuxHostBridgeApplyAction.check)
         #expect(request.nic == "eth0")
+        #expect(request.bridge == "br0")
         #expect(request.addresses.count == 2)
         #expect(request.gateway == "192.168.1.1")
         #expect(request.dns == ["1.1.1.1"])
@@ -197,6 +199,24 @@ struct HostNetworkFixtureTests {
         let changes = try #require(json["changes"] as? [String])
         #expect(changes.contains { $0.contains("DHCP") })
         #expect(changes.contains { $0.contains("10.0.0.2/24") })
+    }
+
+    @Test func `bridge apply without name does not imply br0`() throws {
+        let body = try JSONDecoder().decode(
+            BridgeRequest.self,
+            from: Data(#"{ "action": "apply", "interface": "eth0", "confirm": true }"#.utf8),
+        )
+        do {
+            _ = try Self.bridgeApplyRequest(from: body, defaultAction: .apply)
+            Issue.record("expected missing bridge name to fail")
+        } catch let error as BarkVisorError {
+            guard case let .badRequest(message) = error else {
+                Issue.record("expected badRequest, got \(error)")
+                return
+            }
+            #expect(message.contains("Bridge name required"))
+            #expect(message.contains("br0"))
+        }
     }
 
     @Test func `interfaces snapshot fixture matches HostInterface JSON contract`() throws {
@@ -297,10 +317,21 @@ struct HostNetworkFixtureTests {
         let addressing: LinuxHostBridgeAddressing =
             body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
         let addresses = try parseAddressApplyEntries(body.addresses)
+        let names = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: body.bridge,
+            bodyInterface: body.interface,
+            pathInterface: nil,
+            linuxHost: true,
+        )
+        if names.bridge.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw BarkVisorError.badRequest(
+                "Bridge name required. Create a Bridge; uplink Apply does not imply br0.",
+            )
+        }
         return LinuxHostBridgeApplyRequest(
             action: action,
-            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
-            nic: body.interface,
+            bridge: names.bridge,
+            nic: names.nic,
             addressing: addressing,
             address: body.address,
             gateway: body.gateway,
