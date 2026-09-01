@@ -85,6 +85,17 @@ struct SystemHostController: RouteCollection {
                 displayName: $0.displayName,
                 ipAddress: $0.ipAddress,
                 bridgeStatus: $0.bridgeStatus,
+                addresses: $0.addresses.map {
+                    HostInterfaceAddressDTO(
+                        cidr: $0.cidr,
+                        source: $0.source.rawValue,
+                        primary: $0.primary,
+                    )
+                },
+                dhcpEnabled: $0.dhcpEnabled,
+                gateway: $0.gateway,
+                dns: $0.dns,
+                managedByBarkvisor: $0.managedByBarkvisor,
             )
         }
     }

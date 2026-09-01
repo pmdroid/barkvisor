@@ -17,12 +17,33 @@ public struct HostInterfaceSnapshot: Sendable {
     public let ipAddress: String
     /// Bridge daemon status for this interface, or nil when not configured / unknown.
     public let bridgeStatus: String?
+    /// Live IPv4 addresses on this interface (#434).
+    public let addresses: [HostInterfaceAddressEntry]
+    public let dhcpEnabled: Bool
+    public let gateway: String?
+    public let dns: [String]
+    public let managedByBarkvisor: Bool
 
-    public init(name: String, displayName: String, ipAddress: String, bridgeStatus: String?) {
+    public init(
+        name: String,
+        displayName: String,
+        ipAddress: String,
+        bridgeStatus: String?,
+        addresses: [HostInterfaceAddressEntry] = [],
+        dhcpEnabled: Bool = false,
+        gateway: String? = nil,
+        dns: [String] = [],
+        managedByBarkvisor: Bool = false,
+    ) {
         self.name = name
         self.displayName = displayName
         self.ipAddress = ipAddress
         self.bridgeStatus = bridgeStatus
+        self.addresses = addresses
+        self.dhcpEnabled = dhcpEnabled
+        self.gateway = gateway
+        self.dns = dns
+        self.managedByBarkvisor = managedByBarkvisor
     }
 }
 
@@ -220,15 +241,23 @@ public enum HostInfoService {
     ///   (macOS: BridgeRecord; Linux: HostBridgeFacts)
     public static func listInterfaceSnapshots(
         bridgeStatusByInterface: [String: String] = [:],
+        addressingByInterface: [String: HostInterfaceAddressing]? = nil,
     ) -> [HostInterfaceSnapshot] {
         var byName: [String: HostInterfaceSnapshot] = [:]
+        let addressing = addressingByInterface ?? HostInterfaceAddressDiscovery.discoverByInterface()
 
         for iface in listInterfaces() {
+            let config = addressing[iface.name] ?? HostInterfaceAddressing()
             byName[iface.name] = HostInterfaceSnapshot(
                 name: iface.name,
                 displayName: displayName(for: iface.name),
-                ipAddress: iface.ipAddress,
+                ipAddress: primaryIPv4(from: config) ?? iface.ipAddress,
                 bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[iface.name]),
+                addresses: config.addresses,
+                dhcpEnabled: config.dhcpEnabled,
+                gateway: config.gateway,
+                dns: config.dns,
+                managedByBarkvisor: config.managedByBarkvisor,
             )
         }
 
@@ -236,15 +265,28 @@ public enum HostInfoService {
             // Merge bridge-class devices that have no AF_INET address (down / L2-only).
             for name in HostBridgeFactsService.probe().bridges.map(\.name) {
                 if byName[name] != nil { continue }
+                let config = addressing[name] ?? HostInterfaceAddressing()
                 byName[name] = HostInterfaceSnapshot(
                     name: name,
                     displayName: displayName(for: name),
-                    ipAddress: "",
+                    ipAddress: primaryIPv4(from: config) ?? "",
                     bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
+                    addresses: config.addresses,
+                    dhcpEnabled: config.dhcpEnabled,
+                    gateway: config.gateway,
+                    dns: config.dns,
+                    managedByBarkvisor: config.managedByBarkvisor,
                 )
             }
         #endif
 
         return byName.values.sorted { $0.name < $1.name }
+    }
+
+    /// First primary IPv4 CIDR, or first address, for legacy `ipAddress` field.
+    static func primaryIPv4(from config: HostInterfaceAddressing) -> String? {
+        let primary = config.addresses.first(where: \.primary) ?? config.addresses.first
+        guard let cidr = primary?.cidr else { return nil }
+        return HostInterfaceAddressDiscovery.ipFromCIDR(cidr)
     }
 }

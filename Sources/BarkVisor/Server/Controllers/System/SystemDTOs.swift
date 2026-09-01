@@ -6,6 +6,17 @@ struct HostInterface: Content {
     let displayName: String
     let ipAddress: String
     let bridgeStatus: String? // "active", "installed", or "not_configured"
+    let addresses: [HostInterfaceAddressDTO]
+    let dhcpEnabled: Bool
+    let gateway: String?
+    let dns: [String]
+    let managedByBarkvisor: Bool
+}
+
+struct HostInterfaceAddressDTO: Content {
+    let cidr: String
+    let source: String
+    let primary: Bool
 }
 
 struct BridgeInfo: Content {
