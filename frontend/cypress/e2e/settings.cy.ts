@@ -11,11 +11,12 @@ describe('Settings', () => {
     cy.get('.tabs button').eq(1).should('contain', 'Pairing')
     cy.get('.tabs button').eq(2).should('contain', 'Library')
     cy.get('.tabs button').eq(3).should('contain', 'Repositories')
-    cy.get('.tabs button').eq(4).should('contain', 'Disks')
-    cy.get('.tabs button').eq(5).should('contain', 'API Keys')
-    cy.get('.tabs button').eq(6).should('contain', 'SSH Keys')
-    cy.get('.tabs button').eq(7).should('contain', 'Passkeys')
-    cy.get('.tabs button').eq(8).should('contain', 'Audit Log')
+    cy.get('.tabs button').eq(4).should('contain', 'API Keys')
+    cy.get('.tabs button').eq(5).should('contain', 'SSH Keys')
+    cy.get('.tabs button').eq(6).should('contain', 'Passkeys')
+    cy.get('.tabs button').eq(7).should('contain', 'Audit Log')
+    cy.get('.tabs button').eq(8).should('contain', 'Updates')
+    cy.contains('.tabs button', 'Disks').should('not.exist')
   })
 
   it('Library tab has Catalog Download', () => {
@@ -26,14 +27,10 @@ describe('Settings', () => {
     cy.contains('Catalog Download').should('not.exist')
   })
 
-  it('Disks tab opens a folder picker with places to choose', () => {
-    cy.contains('.tabs button', 'Disks').click()
-    cy.contains('Default VM disk directory').should('be.visible')
-    cy.contains('button', 'Browse').click()
-    cy.contains('h2', 'Select Folder').should('be.visible')
-    cy.get('.folder-item').should('have.length.gte', 1)
-    cy.get('.folder-empty').should('not.exist')
-    cy.contains('button', 'Cancel').click()
+  it('legacy Disks tab query redirects to Devices', () => {
+    cy.visit('/settings?tab=disks')
+    cy.url().should('include', '/devices')
+    cy.contains('h1', 'Devices').should('be.visible')
   })
 
   // ==================== API Keys ====================
@@ -393,5 +390,22 @@ describe('Settings', () => {
         cy.contains('button', 'Clear').click()
       })
     })
+  })
+})
+
+describe('Device disk directory', () => {
+  beforeEach(() => {
+    cy.login()
+    cy.visit('/devices')
+  })
+
+  it('opens a folder picker with places to choose', () => {
+    cy.get('.ops-dev').first().click()
+    cy.contains('Default VM disk directory').should('be.visible')
+    cy.contains('button', 'Browse').click()
+    cy.contains('h2', 'Select Folder').should('be.visible')
+    cy.get('.folder-item').should('have.length.gte', 1)
+    cy.get('.folder-empty').should('not.exist')
+    cy.contains('button', 'Cancel').click()
   })
 })

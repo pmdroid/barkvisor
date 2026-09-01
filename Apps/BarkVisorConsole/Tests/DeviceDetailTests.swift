@@ -120,6 +120,29 @@ struct DeviceDetailTests {
         #expect(!source.contains("Guest Ollama"))
         #expect(!source.contains("127.0.0.1:11434"))
         #expect(!source.contains("guestOllamaPath"))
+        #expect(source.contains("DiskDirectorySection"))
+        #expect(source.contains("Default VM disk directory"))
+        #expect(source.contains("saveDiskSettings"))
+        #expect(source.contains("FolderPickerView(device: device)"))
+        #expect(source.contains("guard !directory.isEmpty else { return }"))
+        #expect(source.contains("guard device.hostId == host else { return }"))
+        #expect(source.contains(".id(device.hostId)"))
+        #expect(source.contains(#"task(id: "\(device.hostId)-\(device.isReachable)")"#))
+        #expect(source.contains("model.clearDiskSettings(for: device)"))
+        #expect(source.contains("model.diskSettings(for: device)?.isDefault != false"))
+        #expect(source.contains("if !draft.isEmpty, draft != (model.diskSettings(for: device)?.diskDirectory ?? \"\") { return }"))
+        #expect(source.contains("saveDiskSettings(\"\", on: device)"))
+        let modelSource = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/AppModel.swift"),
+            encoding: .utf8,
+        )
+        #expect(modelSource.contains("diskSettingsHostId"))
+        #expect(modelSource.contains("func clearDiskSettings(for device: HomeDeviceHealthSnapshot)"))
+        #expect(modelSource.contains("func diskSettings(for device: HomeDeviceHealthSnapshot)"))
+        #expect(modelSource.contains("diskSettings = nil\n        diskSettingsHostId = host"))
+        #expect(modelSource.contains("guard diskSettingsHostId == host else { return }"))
+        #expect(modelSource.contains("guard diskSettingsHostId == nil || diskSettingsHostId == host else { return true }"))
     }
 
     @Test func `history path uses local api or home proxy`() throws {
@@ -137,6 +160,8 @@ struct DeviceDetailTests {
         #expect(client.scoped("/system/about", on: studio) == "/api/system/about")
         #expect(client.scoped("/system/about", on: living) == "/api/home/devices/peer/v1/system/about")
         #expect(client.scoped("/system/capabilities", on: living) == "/api/home/devices/peer/v1/system/capabilities")
+        #expect(client.scoped("/system/disk/settings", on: studio) == "/api/system/disk/settings")
+        #expect(client.scoped("/system/disk/settings", on: living) == "/api/home/devices/peer/v1/system/disk/settings")
         let slashMember = snapshot(hostId: "peer/1", role: "member", title: "Slash")
         #expect(client.scoped("/system/about", on: slashMember) == "/api/home/devices/peer%2F1/v1/system/about")
         #expect(

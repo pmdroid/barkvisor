@@ -1,6 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { REPOSITORIES_SETTINGS_HREF } from '../utils/settingsTabs'
+import {
+  isLegacyDisksSettingsTab,
+  REPOSITORIES_SETTINGS_HREF,
+  settingsQueryTab,
+} from '../utils/settingsTabs'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -106,6 +110,10 @@ router.beforeEach(async (to) => {
   }
   if (auth.role === 'inference' && to.name !== 'models') {
     return { name: 'models' }
+  }
+
+  if (to.name === 'settings' && isLegacyDisksSettingsTab(settingsQueryTab({ tab: to.query.tab }))) {
+    return { name: 'devices' }
   }
 })
 

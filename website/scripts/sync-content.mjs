@@ -163,11 +163,6 @@ const map = {
     title: 'Settings: Library',
     description: 'Library path, capacity, and reset.',
   },
-  'settings-disks.md': {
-    out: 'using/settings/disks.md',
-    title: 'Settings: Disks',
-    description: 'Default VM disk directory for new disks on this Device.',
-  },
   'settings-api-keys.md': {
     out: 'using/settings/api-keys.md',
     title: 'Settings: API Keys',
@@ -236,7 +231,7 @@ function fixLinks(body) {
     .replace(/\]\(settings-home\.md(#[^)]*)?\)/g, '](/docs/using/settings/home/$1)')
     .replace(/\]\(settings-pairing\.md(#[^)]*)?\)/g, '](/docs/using/settings/pairing/$1)')
     .replace(/\]\(settings-library\.md(#[^)]*)?\)/g, '](/docs/using/settings/library/$1)')
-    .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/settings/disks/$1)')
+    .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/devices/$1)')
     .replace(/\]\(settings-updates\.md(#[^)]*)?\)/g, '](/docs/using/settings/updates/$1)')
     .replace(/\]\(settings-api-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/api-keys/$1)')
     .replace(/\]\(settings-ssh-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/ssh-keys/$1)')

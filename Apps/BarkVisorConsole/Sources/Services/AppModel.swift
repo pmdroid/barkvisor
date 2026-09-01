@@ -151,6 +151,7 @@ final class AppModel {
     }
 
     private var token: String?
+    private var diskSettingsHostId: String?
     private var refreshToken: String?
     /// Origin the JWT was issued for. Polling must never follow a draft URL edit.
     private var sessionURL: URL?
@@ -484,10 +485,26 @@ final class AppModel {
         }
     }
 
-    func refreshDiskSettings() async {
+    func diskSettings(for device: HomeDeviceHealthSnapshot) -> DiskSettingsSnapshot? {
+        guard diskSettingsHostId == device.hostId else { return nil }
+        return diskSettings
+    }
+
+    func clearDiskSettings(for device: HomeDeviceHealthSnapshot) {
+        diskSettings = nil
+        diskSettingsHostId = device.hostId
+    }
+
+    func refreshDiskSettings(on device: HomeDeviceHealthSnapshot) async {
+        let host = device.hostId
+        diskSettings = nil
+        diskSettingsHostId = host
         do {
-            diskSettings = try await requireClient().diskSettings()
+            let settings = try await requireClient().diskSettings(on: device)
+            guard diskSettingsHostId == host else { return }
+            diskSettings = settings
         } catch {
+            guard diskSettingsHostId == host else { return }
             diskSettings = nil
             handle(error)
         }
@@ -579,13 +596,19 @@ final class AppModel {
     }
 
     @discardableResult
-    func saveDiskSettings(_ directory: String) async -> Bool {
+    func saveDiskSettings(_ directory: String, on device: HomeDeviceHealthSnapshot) async -> Bool {
+        let host = device.hostId
         do {
-            diskSettings = try await requireClient().saveDiskSettings(
+            let saved = try await requireClient().saveDiskSettings(
                 DiskSettingsUpdate(diskDirectory: directory),
+                on: device,
             )
+            guard diskSettingsHostId == nil || diskSettingsHostId == host else { return true }
+            diskSettings = saved
+            diskSettingsHostId = host
             return true
         } catch {
+            guard diskSettingsHostId == nil || diskSettingsHostId == host else { return false }
             handle(error)
             return false
         }

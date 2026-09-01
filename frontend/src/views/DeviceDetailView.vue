@@ -13,9 +13,10 @@ import {
 import { apiErrorMessage } from '../api/errors'
 import { saveDeviceName } from '../api/deviceName'
 import api from '../api/client'
-import type { HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
+import type { DiskSettings, HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
+import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { useDeviceDisksStore } from '../stores/deviceDisks'
@@ -28,7 +29,7 @@ import {
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
-import { canFetchDeviceWorkloads, deviceAboutPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { canFetchDeviceWorkloads, deviceAboutPath, deviceDiskSettingsPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
   reachabilityHint,
@@ -83,10 +84,22 @@ const deviceStats = ref<SystemStats | null>(null)
 const renaming = ref(false)
 const nameDraft = ref('')
 const nameSaving = ref(false)
+const diskSettings = ref<DiskSettings | null>(null)
+const diskDirectoryDraft = ref('')
+const diskDirDirty = ref(false)
+const diskDirLoading = ref(true)
+const diskDirSaving = ref(false)
+const showDiskDirPicker = ref(false)
+let diskSettingsHost = ''
+let diskLoadSeq = 0
 const canRename = computed(() => {
   const row = device.value
   if (!row) return false
   return canFetchDeviceWorkloads(row)
+})
+const diskDirCanEdit = computed(() => {
+  const row = device.value
+  return Boolean(row && canFetchDeviceWorkloads(row))
 })
 
 const failedVms = computed(() => vms.value.filter((vm) => vmHealth(vm) === 'failed'))
@@ -294,6 +307,14 @@ function clearHostTransientState() {
   renaming.value = false
   nameDraft.value = ''
   nameSaving.value = false
+  diskSettings.value = null
+  diskDirectoryDraft.value = ''
+  diskDirDirty.value = false
+  diskDirLoading.value = true
+  diskDirSaving.value = false
+  showDiskDirPicker.value = false
+  diskSettingsHost = ''
+  diskLoadSeq += 1
   for (const id of Object.keys(restartLoading)) {
     delete restartLoading[id]
   }
@@ -332,6 +353,66 @@ async function saveRename() {
   }
 }
 
+async function fetchDiskSettings(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    diskDirLoading.value = false
+    return
+  }
+  const host = row.hostId
+  const seq = ++diskLoadSeq
+  diskSettingsHost = host
+  diskDirLoading.value = true
+  try {
+    const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(row))
+    if (hostId.value !== host || seq !== diskLoadSeq) return
+    if (diskDirDirty.value || diskDirSaving.value) return
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+  } catch (e: unknown) {
+    if (hostId.value !== host || seq !== diskLoadSeq) return
+    toast.error(apiErrorMessage(e, 'Could not load disk directory'))
+  } finally {
+    if (hostId.value === host && seq === diskLoadSeq) {
+      diskDirLoading.value = false
+      diskSettingsHost = host
+    }
+  }
+}
+
+async function saveDiskSettings(opts?: { allowEmpty?: boolean }) {
+  const row = device.value
+  if (!row || !diskDirCanEdit.value || diskDirSaving.value) return
+  const host = row.hostId
+  const directory = diskDirectoryDraft.value
+  if (!opts?.allowEmpty && directory === '') return
+  diskLoadSeq += 1
+  diskDirSaving.value = true
+  try {
+    const { data } = await api.put<DiskSettings>(deviceDiskSettingsPath(row), {
+      diskDirectory: directory,
+    })
+    if (hostId.value !== host) return
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+    diskDirDirty.value = false
+    toast.success('Disk directory saved')
+  } catch (e: unknown) {
+    if (hostId.value !== host) return
+    toast.error(apiErrorMessage(e, 'Could not save disk directory'))
+  } finally {
+    if (hostId.value === host) {
+      diskDirSaving.value = false
+      diskDirLoading.value = false
+    }
+  }
+}
+
+async function resetDiskSettings() {
+  diskDirectoryDraft.value = ''
+  diskDirDirty.value = true
+  await saveDiskSettings({ allowEmpty: true })
+}
+
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
@@ -344,16 +425,34 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
 }
 
 let refreshSeq = 0
-async function refresh() {
+async function refresh(loadDisk = false) {
   const seq = ++refreshSeq
+  const needsDisk = loadDisk || diskSettingsHost !== hostId.value
+  if (needsDisk) diskDirLoading.value = true
+  const rowNow = devices.deviceByHostId(hostId.value)
+  const earlyDisk =
+    needsDisk && rowNow && canFetchDeviceWorkloads(rowNow)
+      ? fetchDiskSettings(rowNow)
+      : null
   await devices.fetchHealth()
   if (seq !== refreshSeq) return
-  await refreshDevice(devices.deviceByHostId(hostId.value))
+  const row = devices.deviceByHostId(hostId.value)
+  const canFetch = Boolean(row && canFetchDeviceWorkloads(row))
+  if (!canFetch) {
+    diskSettingsHost = ''
+    diskDirLoading.value = false
+    await refreshDevice(row)
+    return
+  }
+  const diskPromise = earlyDisk ?? (needsDisk ? fetchDiskSettings(row) : Promise.resolve())
+  await refreshDevice(row)
+  if (seq !== refreshSeq) return
+  await diskPromise
 }
 
 let pollTimer: number
 onMounted(() => {
-  void refresh()
+  void refresh(true)
   pollTimer = window.setInterval(() => { void refresh() }, 5000)
 })
 onUnmounted(() => {
@@ -365,8 +464,15 @@ watch(hostId, () => {
   resetHistory()
   deviceAbout.value = null
   deviceStats.value = null
-  void refresh()
+  void refresh(true)
 })
+watch(diskDirectoryDraft, (next) => {
+  if (diskSettings.value == null) {
+    diskDirDirty.value = true
+    return
+  }
+  diskDirDirty.value = next !== diskSettings.value.diskDirectory
+}, { flush: 'sync' })
 
 async function doStart(id: string) {
   const row = device.value
@@ -609,6 +715,58 @@ async function doStop() {
         </div>
       </div>
 
+      <div v-if="canFetchDeviceWorkloads(device)" class="sheet disk-sheet">
+        <div class="sheet-head"><h3>Disk directory</h3></div>
+        <div class="disk-sheet-body">
+          <p class="disk-dir-copy">New disks on this {{ DEVICE_LABEL }} go here unless Create Disk picks another folder.</p>
+          <div class="form-group">
+            <label>Default VM disk directory</label>
+            <div class="disk-dir-row">
+              <input
+                v-model="diskDirectoryDraft"
+                :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit"
+                placeholder="/var/lib/barkvisor/disks"
+              />
+              <AppButton
+                size="sm"
+                :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit"
+                @click="showDiskDirPicker = true"
+              >
+                Browse
+              </AppButton>
+            </div>
+            <p class="disk-dir-hint">
+              {{ diskSettings?.isDefault ? 'Using the default path on this Device.' : 'Using a custom disk directory.' }}
+              Absolute path required. Must be writable by the daemon and must not contain a comma.
+            </p>
+          </div>
+          <div class="disk-dir-actions">
+            <AppButton
+              variant="primary"
+              :loading="diskDirSaving"
+              loading-text="Saving..."
+              :disabled="diskDirLoading || !diskDirCanEdit || diskDirectoryDraft === ''"
+              @click="saveDiskSettings"
+            >
+              Save
+            </AppButton>
+            <AppButton
+              :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit || diskSettings?.isDefault !== false"
+              @click="resetDiskSettings"
+            >
+              Reset to default
+            </AppButton>
+          </div>
+        </div>
+        <FolderPicker
+          v-if="showDiskDirPicker"
+          :model-value="diskDirectoryDraft"
+          :device="device"
+          @update:model-value="diskDirectoryDraft = $event"
+          @close="showDiskDirPicker = false"
+        />
+      </div>
+
       <template v-if="canFetchDeviceWorkloads(device)">
         <p v-if="listError" class="list-error">{{ listError }}</p>
 
@@ -787,6 +945,40 @@ async function doStop() {
 .vm-row:hover { background: var(--bg-hover); }
 .about-sheet {
   margin-bottom: 14px;
+}
+.disk-sheet {
+  margin-bottom: 14px;
+}
+.disk-sheet-body {
+  padding: 4px 14px 14px;
+  max-width: 640px;
+}
+.disk-dir-copy,
+.disk-dir-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.disk-dir-copy {
+  margin: 0 0 12px;
+}
+.disk-dir-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+.disk-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.disk-dir-row input {
+  flex: 1;
+}
+.disk-dir-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }
 .ops-banner {
   align-items: center;

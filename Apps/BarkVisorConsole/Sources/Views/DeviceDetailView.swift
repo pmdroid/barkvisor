@@ -26,6 +26,11 @@ struct DeviceDetailView: View {
                 }
             }
 
+            if device.isSelf || device.isReachable {
+                DiskDirectorySection(device: device)
+                    .id(device.hostId)
+            }
+
             #if os(iOS)
                 Section {
                     NavigationLink {
@@ -215,6 +220,9 @@ struct DeviceDetailView: View {
         } message: {
             Text("How this Device appears in the Home.")
         }
+        .onChange(of: deviceID) { _, _ in
+            model.clearDiskSettings(for: device)
+        }
         .task(id: "\(deviceID)-\(device.role)-\(device.reachability)") {
             await model.select(device)
             await loadHistory()
@@ -306,5 +314,81 @@ struct DeviceDetailView: View {
         renaming = true
         defer { renaming = false }
         _ = await model.saveDeviceName(name, on: device)
+    }
+}
+
+private struct DiskDirectorySection: View {
+    @Environment(AppModel.self) private var model
+    var device: HomeDeviceHealthSnapshot
+    @State private var draft = ""
+    @State private var saving = false
+    #if os(iOS)
+        @State private var showFolderPicker = false
+    #endif
+
+    var body: some View {
+        Section {
+            Text("New disks on this \(Copy.device) go here unless Create Disk picks another folder.")
+                .foregroundStyle(.secondary)
+            TextField("Default VM disk directory", text: $draft)
+                .disabled(saving || !canEdit)
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            #endif
+            #if os(iOS)
+            Button("Browse") {
+                showFolderPicker = true
+            }
+            .disabled(saving || !canEdit)
+            #endif
+            if let settings = model.diskSettings(for: device) {
+                Text(settings.isDefault ? "Using the default path on this Device." : "Using a custom disk directory.")
+                    .foregroundStyle(.secondary)
+            }
+            Button("Save") {
+                Task {
+                    let host = device.hostId
+                    let directory = draft
+                    guard !directory.isEmpty else { return }
+                    saving = true
+                    defer { if device.hostId == host { saving = false } }
+                    _ = await model.saveDiskSettings(directory, on: device)
+                    guard device.hostId == host else { return }
+                    if let settings = model.diskSettings(for: device) { draft = settings.diskDirectory }
+                }
+            }
+            .disabled(saving || !canEdit || draft.isEmpty)
+            Button("Reset to default") {
+                Task {
+                    let host = device.hostId
+                    saving = true
+                    defer { if device.hostId == host { saving = false } }
+                    _ = await model.saveDiskSettings("", on: device)
+                    guard device.hostId == host else { return }
+                    if let settings = model.diskSettings(for: device) { draft = settings.diskDirectory }
+                }
+            }
+            .disabled(saving || !canEdit || model.diskSettings(for: device)?.isDefault != false)
+        } header: {
+            Text("Disk directory")
+        }
+        .task(id: "\(device.hostId)-\(device.isReachable)") {
+            model.clearDiskSettings(for: device)
+            await model.refreshDiskSettings(on: device)
+            if !draft.isEmpty, draft != (model.diskSettings(for: device)?.diskDirectory ?? "") { return }
+            draft = model.diskSettings(for: device)?.diskDirectory ?? ""
+        }
+        #if os(iOS)
+            .sheet(isPresented: $showFolderPicker) {
+                FolderPickerView(device: device) { path in
+                    draft = path
+                }
+            }
+        #endif
+    }
+
+    private var canEdit: Bool {
+        device.isSelf || device.isReachable
     }
 }

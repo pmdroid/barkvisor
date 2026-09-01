@@ -502,12 +502,20 @@ struct APIClient {
         try await send(method: "PUT", path: "/api/ollama/settings", body: body, as: OllamaSettingsSnapshot.self)
     }
 
-    func diskSettings() async throws -> DiskSettingsSnapshot {
-        try await get("/api/system/disk/settings")
+    func diskSettings(on device: HomeDeviceHealthSnapshot) async throws -> DiskSettingsSnapshot {
+        try await get(scoped("/system/disk/settings", on: device))
     }
 
-    func saveDiskSettings(_ body: DiskSettingsUpdate) async throws -> DiskSettingsSnapshot {
-        try await send(method: "PUT", path: "/api/system/disk/settings", body: body, as: DiskSettingsSnapshot.self)
+    func saveDiskSettings(
+        _ body: DiskSettingsUpdate,
+        on device: HomeDeviceHealthSnapshot,
+    ) async throws -> DiskSettingsSnapshot {
+        try await send(
+            method: "PUT",
+            path: scoped("/system/disk/settings", on: device),
+            body: body,
+            as: DiskSettingsSnapshot.self,
+        )
     }
 
     func checkUpdates() async throws -> UpdateCheckResponse {
