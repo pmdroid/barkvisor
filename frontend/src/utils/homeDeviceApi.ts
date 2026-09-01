@@ -142,6 +142,16 @@ export function deviceImagePath(device: DeviceApiTarget, imageId: string): strin
   return devicePath(device, `/images/${encodeURIComponent(imageId)}`)
 }
 
+export function owningMemberDevice<T extends DeviceApiTarget>(
+  hostId: string | null | undefined,
+  lookup: (hostId: string) => T | null,
+): T | null {
+  if (!hostId) return null
+  const device = lookup(hostId)
+  if (!device || isSelfDevice(device)) return null
+  return device
+}
+
 export function deviceLogsPath(device: DeviceApiTarget): string {
   return devicePath(device, '/logs')
 }

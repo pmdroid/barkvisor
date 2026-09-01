@@ -930,6 +930,18 @@ final class AppModel {
         }
     }
 
+    func deleteLibraryImage(_ image: LibraryImage) async {
+        let id = "image-delete:\(image.id)"
+        actionIDs.insert(id)
+        defer { actionIDs.remove(id) }
+        do {
+            try await requireClient().deleteImage(image.id, on: libraryDevice)
+            await refreshLibraryImages()
+        } catch {
+            handle(error)
+        }
+    }
+
     func refreshLibrary() async {
         guard let client else { return }
         let generation = catalogGeneration

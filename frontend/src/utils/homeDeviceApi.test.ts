@@ -35,7 +35,9 @@ import {
   deviceVmsBasePath,
   deviceWsTicketPath,
   defaultPickedHostId,
+  deviceImagePath,
   isSelfDevice,
+  owningMemberDevice,
   resolveSelectedDevice,
   selectedHostIsLive,
   usesLocalDeviceInventory,
@@ -232,6 +234,19 @@ describe('homeDeviceApi (PAS-218)', () => {
     expect(deviceBrowsePath(member)).toBe('/home/devices/peer%2F1/v1/system/browse')
     expect(deviceBlockDevicesPath(member)).toBe('/home/devices/peer%2F1/v1/system/block-devices')
     expect(deviceDiskPath(member, 'd-1')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (GH-459)', () => {
+  test('Home-union image delete routes to the owning Device, never self', () => {
+    const byId = (id: string) => (id === member.hostId ? member : id === self.hostId ? self : null)
+    expect(owningMemberDevice(member.hostId, byId)).toBe(member)
+    expect(owningMemberDevice(self.hostId, byId)).toBeNull()
+    expect(owningMemberDevice(undefined, byId)).toBeNull()
+    expect(owningMemberDevice('', byId)).toBeNull()
+    expect(owningMemberDevice('gone', byId)).toBeNull()
+    expect(deviceImagePath(member, 'img/1')).toBe('/home/devices/peer%2F1/v1/images/img%2F1')
+    expect(deviceImagePath(self, 'img-1')).toBe('/images/img-1')
   })
 })
 

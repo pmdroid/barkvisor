@@ -64,9 +64,26 @@ public enum ImageService {
             try? FileManager.default.removeItem(atPath: upload.chunkPath)
         }
 
+        await removeLeftoverDownloadFiles(imageId: id, db: db)
+
         // Delete from DB (cascade deletes tus_uploads)
         _ = try await db.write { db in
             try VMImage.deleteOne(db, key: id)
+        }
+    }
+
+    static func removeLeftoverDownloadFiles(imageId: String, db: DatabasePool) async {
+        guard !imageId.isEmpty else { return }
+        let dirs = (try? await db.read { db in
+            try [LibrarySettings.resolvedDirectory(from: db)]
+                + LibrarySettings.previousDirectories(from: db)
+        }) ?? []
+        let fm = FileManager.default
+        for dir in dirs {
+            guard let entries = try? fm.contentsOfDirectory(atPath: dir.path) else { continue }
+            for entry in entries where entry.hasPrefix("\(imageId).") {
+                try? fm.removeItem(at: dir.appendingPathComponent(entry))
+            }
         }
     }
 

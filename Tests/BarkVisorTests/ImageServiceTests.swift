@@ -310,6 +310,66 @@ final class ImageServiceTests {
         #expect(FileManager.default.fileExists(atPath: readyFile.path))
     }
 
+    @Test func `delete failed download removes row and partial file`() async throws {
+        let now = "2026-01-01T00:00:00Z"
+        let library = tmpDir.appendingPathComponent("library-delete-failed")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let partial = library.appendingPathComponent("img-failed.iso")
+        try Data("partial-bytes".utf8).write(to: partial)
+        let other = library.appendingPathComponent("img-other.iso")
+        try Data("other-bytes".utf8).write(to: other)
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-failed", name: "Failed", imageType: "iso", arch: "arm64",
+                path: nil, sizeBytes: nil, status: "error", error: "Download failed",
+                sourceUrl: "https://example.com/failed.iso", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let pool = dbPool
+        let downloader = ImageDownloader(dbPool: { pool })
+
+        try await ImageService.delete(id: "img-failed", downloader: downloader, db: dbPool)
+
+        let stored = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-failed") }
+        #expect(stored == nil)
+        #expect(!FileManager.default.fileExists(atPath: partial.path))
+        #expect(FileManager.default.fileExists(atPath: other.path))
+    }
+
+    @Test func `delete failed download removes partial file from previous library dir`() async throws {
+        let now = "2026-01-01T00:00:00Z"
+        let previous = tmpDir.appendingPathComponent("library-previous")
+        let current = tmpDir.appendingPathComponent("library-current")
+        try FileManager.default.createDirectory(at: previous, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: current.path)
+                .save(db, onConflict: .replace)
+            try LibrarySettings.recordPreviousDirectory(previous, db: db)
+        }
+        let partial = previous.appendingPathComponent("img-moved.img.xz")
+        try Data("partial-bytes".utf8).write(to: partial)
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-moved", name: "Moved", imageType: "cloud-image", arch: "arm64",
+                path: nil, sizeBytes: nil, status: "error", error: "Download interrupted",
+                sourceUrl: "https://example.com/moved.img.xz", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let pool = dbPool
+        let downloader = ImageDownloader(dbPool: { pool })
+
+        try await ImageService.delete(id: "img-moved", downloader: downloader, db: dbPool)
+
+        let stored = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-moved") }
+        #expect(stored == nil)
+        #expect(!FileManager.default.fileExists(atPath: partial.path))
+    }
+
     @Test func `start download rejects private URL before inserting`() async throws {
         let pool = dbPool
         let downloader = ImageDownloader(dbPool: { pool })

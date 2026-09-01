@@ -24,6 +24,7 @@ import { formatBytes } from '../utils/format'
 import { imageStorageLine } from '../utils/imageStorage'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
+import { deviceImagePath, owningMemberDevice } from '../utils/homeDeviceApi'
 import { imageProgressPercent } from '../utils/imageProgress'
 import { librarySpaceCopy, onLibrarySettingsChanged } from '../utils/librarySpace'
 import {
@@ -473,11 +474,12 @@ function cancelUpload() {
   uploadProgress.value = 0
 }
 
-const confirmTarget = ref<{ id: string; name: string } | null>(null)
+const confirmTarget = ref<{ id: string; name: string; hostId?: string } | null>(null)
 const deleting = ref(false)
+const deleteError = ref('')
 
-async function deleteImage(id: string, name: string) {
-  confirmTarget.value = { id, name }
+async function deleteImage(id: string, name: string, hostId?: string) {
+  confirmTarget.value = { id, name, hostId }
 }
 
 function onLibraryFolderSaved(data: LibrarySettings) {
@@ -486,11 +488,19 @@ function onLibraryFolderSaved(data: LibrarySettings) {
 
 async function doDeleteImage() {
   if (!confirmTarget.value) return
-  const { id } = confirmTarget.value
+  const { id, hostId } = confirmTarget.value
   deleting.value = true
+  deleteError.value = ''
   try {
-    await store.remove(id)
+    const owner = owningMemberDevice(hostId, devicesStore.deviceByHostId)
+    if (owner) {
+      await api.delete(deviceImagePath(owner, id))
+    } else {
+      await store.remove(id)
+    }
     await homeLibrary.fetchImages(devicesStore.devices)
+  } catch (e: unknown) {
+    deleteError.value = apiErrorMessage(e, 'Failed to delete image')
   } finally {
     deleting.value = false
     confirmTarget.value = null
@@ -524,6 +534,7 @@ async function doDeleteImage() {
   <EmptyState v-else-if="libraryFolderReady && visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
 
   <div v-else-if="libraryFolderReady" class="sheet">
+  <FormError v-if="deleteError" :message="deleteError" />
   <table>
     <thead>
       <tr><th>Name</th><th>Type</th><th>Arch</th><th>Size</th><th>Location</th><th>Status</th><th></th></tr>
@@ -550,7 +561,7 @@ async function doDeleteImage() {
             <div v-if="usedByNames(img)" class="row-sub">{{ usedByNames(img) }}</div>
           </td>
           <td class="del">
-            <AppButton size="sm" variant="danger" aria-label="Delete" @click="deleteImage(img.id, img.name)">Delete</AppButton>
+            <AppButton size="sm" variant="danger" aria-label="Delete" @click="deleteImage(img.id, img.name, 'hostId' in img ? img.hostId : undefined)">Delete</AppButton>
           </td>
         </tr>
     </tbody>
