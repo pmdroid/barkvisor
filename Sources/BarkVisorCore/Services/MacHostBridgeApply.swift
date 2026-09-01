@@ -57,7 +57,7 @@ import Foundation
         }
 
         private static func check(probe: MacHostBridgeApplyProbe) -> LinuxHostBridgeApplyResult {
-            var changes = [
+            let changes = [
                 probe.facts.ready
                     ? "Bridged networking is ready on this Device."
                     : "Bridged networking is not ready yet.",
@@ -124,18 +124,7 @@ import Foundation
                 "After Apply, click Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or Revert to undo.",
             )
 
-            let socketPlan = SocketVmnetApply.evaluate(
-                request: SocketVmnetApplyRequest(
-                    action: probe.socketProbe.ownedServiceLoaded || probe.socketProbe.brewServiceLoaded
-                        ? .start : .setup,
-                    interface: device,
-                ),
-                probe: probe.socketProbe,
-            )
-            var changes = socketPlan.changes.map {
-                LinuxHostBridgeChange(description: $0, command: "")
-            }
-            changes += HostInterfaceAddressApply.plannedDiffs(
+            let changes = HostInterfaceAddressApply.plannedDiffs(
                 plan: plan,
                 interfaceLabel: "\(service) (\(device))",
             ).map {
@@ -145,7 +134,7 @@ import Foundation
                 service: service,
                 device: device,
                 plan: plan,
-            ) + socketPlan.commands
+            )
 
             if !request.confirm, probe.facts.onlyUplink {
                 return LinuxHostBridgeApplyResult(
@@ -160,19 +149,6 @@ import Foundation
                 )
             }
 
-            if socketPlan.refused {
-                return LinuxHostBridgeApplyResult(
-                    success: false,
-                    applied: false,
-                    needsConfirm: false,
-                    backend: socketPlan.backend,
-                    changes: changes.map(\.description),
-                    warnings: warnings + socketPlan.warnings,
-                    commands: commands,
-                    message: socketPlan.message,
-                )
-            }
-
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -182,8 +158,8 @@ import Foundation
                 warnings: warnings,
                 commands: commands,
                 message: dryRun
-                    ? "Dry run: bridged host apply plan."
-                    : "Apply bridged host networking (socket_vmnet + Device address).",
+                    ? "Dry run: Device address apply plan."
+                    : "Apply Device addresses on \(service) (\(device)).",
             )
         }
 
@@ -228,7 +204,6 @@ import Foundation
             } else {
                 changes.append("Set \(device) back to DHCP (no saved profile)")
             }
-            changes.append("Stop BarkVisor-managed socket_vmnet when loaded")
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -238,9 +213,8 @@ import Foundation
                 warnings: [],
                 commands: [
                     "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
-                    "launchctl bootout system/com.barkvisor.socket-vmnet.\(device)",
                 ],
-                message: "Revert BarkVisor host network changes.",
+                message: "Revert BarkVisor host address changes.",
             )
         }
 
@@ -279,16 +253,6 @@ import Foundation
 
             switch request.action {
             case .apply:
-                let socketAction: SocketVmnetApplyAction =
-                    if resolved.socketProbe.ownedServiceLoaded || resolved.socketProbe.brewServiceLoaded {
-                        .start
-                    } else {
-                        .setup
-                    }
-                _ = try SocketVmnetApplyLive.run(
-                    request: SocketVmnetApplyRequest(action: socketAction, interface: resolved.device),
-                    probe: resolved.socketProbe,
-                )
                 guard let service = resolved.serviceName else {
                     throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
                 }
@@ -309,7 +273,7 @@ import Foundation
                 plan.commitDeadline = pending.commitDeadline
                 plan.rollbackSeconds = pending.rollbackSeconds
                 plan.message =
-                    "Applied bridged host networking on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                    "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
             case .commit:
                 guard let pending = HostNetworkPendingCommitService.readMac(device: resolved.device) else {
                     throw BarkVisorError.badRequest("No pending host network apply for \(resolved.device).")
@@ -334,13 +298,9 @@ import Foundation
                     )
                     plan.changes.insert("Set \(service) to DHCP.", at: 0)
                 }
-                _ = try? SocketVmnetApplyLive.run(
-                    request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
-                    probe: resolved.socketProbe,
-                )
                 plan.applied = true
                 plan.pendingCommit = false
-                plan.message = "Reverted BarkVisor host network changes."
+                plan.message = "Reverted BarkVisor host address changes."
             case .check, .dryRun:
                 break
             }

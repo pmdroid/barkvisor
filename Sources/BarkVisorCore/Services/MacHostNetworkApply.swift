@@ -246,6 +246,22 @@ import Foundation
                 }
             }
             let aliasTargets = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            let plannedAliasIPs = Set(try aliasTargets.map { try parseStaticAddress($0).ip })
+            let primaryIP: String?
+            if plan.dhcpEnabled {
+                let info = try run(networksetupPath, ["-getinfo", service])
+                primaryIP = info.succeeded ? parseInfoValue(info.stdoutString, key: "IP address") : nil
+            } else if let primary = plan.primaryStaticCIDR {
+                primaryIP = try parseStaticAddress(primary).ip
+            } else {
+                primaryIP = nil
+            }
+            try removeStaleAliases(
+                device: device,
+                primaryIP: primaryIP,
+                plannedAliasIPs: plannedAliasIPs,
+                run: run,
+            )
             for cidr in aliasTargets {
                 let parsed = try parseStaticAddress(cidr)
                 let aliasResult = try run(
@@ -324,6 +340,42 @@ import Foundation
             }
             removeMarker(device: device)
             return true
+        }
+
+        static func listIPv4Addresses(
+            device: String,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws -> [String] {
+            let result = try run("/sbin/ifconfig", [device])
+            guard result.succeeded else { return [] }
+            var ips: [String] = []
+            for raw in result.stdoutString.split(whereSeparator: \.isNewline) {
+                let line = String(raw).trimmingCharacters(in: .whitespaces)
+                guard line.hasPrefix("inet ") else { continue }
+                let parts = line.split(whereSeparator: \.isWhitespace).map(String.init)
+                guard parts.count >= 2, parts[1].contains(".") else { continue }
+                ips.append(parts[1])
+            }
+            return ips
+        }
+
+        static func removeStaleAliases(
+            device: String,
+            primaryIP: String?,
+            plannedAliasIPs: Set<String>,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws {
+            let liveIPs = try listIPv4Addresses(device: device, run: run)
+            for ip in liveIPs {
+                if ip == primaryIP { continue }
+                if plannedAliasIPs.contains(ip) { continue }
+                let aliasResult = try run("/sbin/ifconfig", [device, "-alias", ip])
+                guard aliasResult.succeeded else {
+                    throw BarkVisorError.preconditionFailed(
+                        "ifconfig -alias failed for \(ip): \(aliasResult.stderrString)",
+                    )
+                }
+            }
         }
 
         static func parseInfoValue(_ text: String, key: String) -> String? {

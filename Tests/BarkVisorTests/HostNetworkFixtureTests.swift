@@ -247,6 +247,9 @@ struct HostNetworkFixtureTests {
             gateway: addressing.gateway,
             dns: addressing.dns,
             managedByBarkvisor: addressing.managedByBarkvisor,
+            operState: nil,
+            carrier: nil,
+            bridgeMaster: nil,
         )
 
         let encoded = try JSONEncoder().encode(dto)

@@ -218,6 +218,37 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.success)
             #expect(result.changes.contains(where: { $0.contains("DNS") }))
             #expect(result.commands.joined(separator: "\n").contains("-setdnsservers"))
+            #expect(!result.changes.joined(separator: "\n").localizedCaseInsensitiveContains("socket_vmnet"))
+            #expect(!result.commands.joined(separator: "\n").localizedCaseInsensitiveContains("socket_vmnet"))
+        }
+
+        @Test func `mac apply plan does not set up socket_vmnet`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(
+                    action: .apply,
+                    nic: "en0",
+                    addresses: [
+                        HostInterfaceAddressApplyEntry(kind: .dhcp),
+                        HostInterfaceAddressApplyEntry(kind: .alias, cidr: "10.0.0.2/24"),
+                    ],
+                ),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.message.contains("Device address"))
+            #expect(!result.message.localizedCaseInsensitiveContains("socket_vmnet"))
+            #expect(result.commands.joined(separator: "\n").contains("ifconfig en0 alias"))
         }
     #endif
 }
