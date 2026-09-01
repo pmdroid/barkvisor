@@ -37,6 +37,21 @@ public enum LinuxHostNetwork {
         return entries.filter { isBridgeInterface($0) }.sorted()
     }
 
+    public static func listHostInterfaceNames() -> [String] {
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: netClassPath)
+        else {
+            return []
+        }
+        return entries.filter { name in
+            guard !name.hasPrefix("."), name != "lo" else { return false }
+            if name.hasPrefix("veth") || name.hasPrefix("docker")
+                || name.hasPrefix("cni") || name.hasPrefix("flannel") {
+                return false
+            }
+            return interfaceExists(name)
+        }.sorted()
+    }
+
     /// Ports enslaved to `bridge` (`/sys/class/net/<bridge>/brif`).
     public static func enslavedInterfaces(onBridge name: String) -> [String] {
         guard isBridgeInterface(name) else { return [] }
