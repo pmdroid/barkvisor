@@ -662,7 +662,7 @@ struct APIDecodingTests {
         #expect(busy.occupancyCopy == "In use by host")
     }
 
-    @Test func `host usb device attach requires persistable serial`() throws {
+    @Test func `host usb device attach persists serial or bus port`() throws {
         let serialJSON = """
         {
           "id": "0x1234:0x5678:ZX9",
@@ -698,8 +698,27 @@ struct APIDecodingTests {
         }
         """.data(using: .utf8)!
         let bus = try decoder.decode(HostUSBDevice.self, from: busJSON)
-        #expect(!bus.canAttach)
-        #expect(bus.occupancyCopy == USBPassthroughCopy.noSerial)
+        #expect(bus.canAttach)
+        #expect(bus.occupancyCopy == USBPassthroughCopy.portPath)
+        #expect(bus.serialNumber == nil)
+
+        let sessionJSON = """
+        {
+          "id": "0x1234:0x5678",
+          "vendorId": "0x1234",
+          "productId": "0x5678",
+          "name": "Probe",
+          "manufacturer": null,
+          "serialNumber": null,
+          "idUnstable": true,
+          "attachable": true,
+          "claimedByVMId": null,
+          "claimedByVMName": null
+        }
+        """.data(using: .utf8)!
+        let session = try decoder.decode(HostUSBDevice.self, from: sessionJSON)
+        #expect(!session.canAttach)
+        #expect(session.occupancyCopy == USBPassthroughCopy.sessionOnly)
     }
 
     @Test func `gpu detach is only allowed when the workload is stopped`() {

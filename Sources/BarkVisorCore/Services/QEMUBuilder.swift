@@ -638,10 +638,6 @@ public enum QEMUBuilder {
         index: Int,
     ) throws -> String {
         let suffix = ",guest-reset=off,id=usb-pt-\(index)"
-        if let deviceId = stored.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            throw USBPassthroughService.busAddressIdentityError(deviceId)
-        }
-
         let lookup = stored.deviceId ?? USBDeviceIdentity.make(
             vendorId: stored.vendorId,
             productId: stored.productId,

@@ -75,13 +75,6 @@ public enum USBPassthroughService {
         return false
     }
 
-    public static func busAddressIdentityError(_ id: String) -> BarkVisorError {
-        .conflict(
-            "USB device id \(id) is a bus address, which is not stable across replug. "
-                + "Re-attach using a serial number.",
-        )
-    }
-
     public static func missingSerialIdentityError(_ id: String) -> BarkVisorError {
         .conflict("USB device \(id) has no serial; cannot persist.")
     }
@@ -141,9 +134,6 @@ public enum USBPassthroughService {
         }
         guard let host = live.first else {
             throw BarkVisorError.notFound("USB device \(rawId) is not connected")
-        }
-        guard USBDeviceIdentity.normalizedSerial(host.serialNumber) != nil else {
-            throw missingSerialIdentityError(rawId)
         }
         return host
     }
