@@ -220,6 +220,11 @@ private struct RemoteAccessSection: View {
             )
             .foregroundStyle(.secondary)
             if let status = model.remoteAccess {
+                if !displayedURL(status).isEmpty {
+                    Text(displayedURL(status))
+                        .font(.body.monospaced())
+                        .textSelection(.enabled)
+                }
                 Picker("Device URL", selection: $selectedHost) {
                     ForEach(status.advertisedHosts, id: \.self) { host in
                         Text(host).tag(host)
@@ -252,6 +257,13 @@ private struct RemoteAccessSection: View {
         .onChange(of: model.remoteAccess, initial: true) { _, _ in
             syncPicker()
         }
+    }
+
+    private func displayedURL(_ status: RemoteAccessStatus) -> String {
+        let saved = DeviceURL.formatHomeDeviceURL(status.deviceUrl)
+        if !saved.isEmpty { return saved }
+        guard status.tailscale.available else { return "" }
+        return DeviceURL.formatHomeDeviceURL(status.tailscale.dnsName)
     }
 
     private func syncPicker() {

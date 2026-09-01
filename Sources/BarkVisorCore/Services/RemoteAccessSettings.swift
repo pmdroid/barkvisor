@@ -31,6 +31,35 @@ public enum RemoteAccessSettings {
         return clean
     }
 
+    public static func isMagicDNSHost(_ host: String) -> Bool {
+        let h = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return h.hasSuffix(".ts.net") || h.hasSuffix(".tailscale.net")
+    }
+
+    public static func magicDNSHost(tailnet: TailnetInfo) -> String? {
+        guard tailnet.available else { return nil }
+        do {
+            return try parseAdvertiseHost(tailnet.dnsName)
+        } catch {
+            return nil
+        }
+    }
+
+    public static func formatDeviceURL(_ raw: String?) -> String {
+        let host: String
+        do {
+            guard let parsed = try parseAdvertiseHost(raw) else { return "" }
+            host = parsed
+        } catch {
+            return ""
+        }
+        if isMagicDNSHost(host) {
+            return "https://\(host)"
+        }
+        let formatted = host.contains(":") ? "[\(host)]" : host
+        return "http://\(formatted):\(Config.port)"
+    }
+
     public static func save(
         deviceUrl: String? = nil,
         updateDeviceUrl: Bool = false,

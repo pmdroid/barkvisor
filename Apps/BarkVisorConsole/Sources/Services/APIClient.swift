@@ -756,6 +756,22 @@ enum DeviceURL {
         "http://192.168.30.1:7777"
     }
 
+    static func isMagicDNSHost(_ host: String?) -> Bool {
+        guard let host else { return false }
+        let h = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return h.hasSuffix(".ts.net") || h.hasSuffix(".tailscale.net")
+    }
+
+    static func formatHomeDeviceURL(_ raw: String?) -> String {
+        let host = PairingAdvertisedHost.hostFromDeviceURL(raw ?? "")
+        if host.isEmpty { return "" }
+        if isMagicDNSHost(host) {
+            return "https://\(host)"
+        }
+        let formatted = host.contains(":") ? "[\(host)]" : host
+        return "http://\(formatted):\(defaultPort)"
+    }
+
     /// One-time upgrade for host-only values saved before `normalize` required a scheme.
     static func migrateStored(_ raw: String) -> String {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -775,7 +791,8 @@ enum DeviceURL {
             throw APIError.invalidURL
         }
         components.scheme = scheme
-        if components.port == nil, components.host != nil {
+        if components.port == nil, components.host != nil,
+           !(scheme == "https" && isMagicDNSHost(components.host)) {
             components.port = defaultPort
         }
         components.path = ""

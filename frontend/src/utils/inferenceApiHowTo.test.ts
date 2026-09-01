@@ -8,8 +8,10 @@ import {
   HOME_LISTEN_PORT,
   MISSING_INFERENCE_KEY,
   advertiseHostName,
+  formatDeviceURL,
   inferenceHowTo,
   inferenceHowToFromOrigin,
+  isMagicDNSHost,
   lanCompletionsURL,
   lanListenHost,
   lanListenPort,
@@ -170,5 +172,23 @@ describe('inferenceApiHowTo (#212)', () => {
     expect(models).not.toContain('CAGE_OPENAI_BASE_URL')
     expect(models).not.toContain('howTo.cageBaseURL')
     expect(models).toContain('howTo.lanCompletionsURL')
+  })
+
+  test('Device URL display is https MagicDNS without a port', () => {
+    expect(isMagicDNSHost('box.tailnet.ts.net')).toBe(true)
+    expect(isMagicDNSHost('box.tailscale.net')).toBe(true)
+    expect(isMagicDNSHost('192.168.0.4')).toBe(false)
+    expect(formatDeviceURL('box.tailnet.ts.net')).toBe('https://box.tailnet.ts.net')
+    expect(formatDeviceURL('https://box.tailnet.ts.net:443')).toBe('https://box.tailnet.ts.net')
+    expect(formatDeviceURL('192.168.0.4')).toBe('http://192.168.0.4:7777')
+    expect(formatDeviceURL('box.tailnet.ts.net')).not.toContain(':7777')
+    expect(formatDeviceURL('box.tailnet.ts.net')).not.toContain(':443')
+    expect(formatDeviceURL('')).toBe('')
+    expect(formatDeviceURL(null)).toBe('')
+
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).toContain('formatDeviceURL')
+    expect(settings).toContain('tailscale?.available')
+    expect(settings).not.toContain('http://${formatListenHost(host)}:7777')
   })
 })

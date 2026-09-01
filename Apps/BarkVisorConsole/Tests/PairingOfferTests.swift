@@ -113,7 +113,23 @@ struct PairingOfferTests {
         )
         #expect(
             PairingAdvertisedHost.syncAdvertisePicker(deviceUrl: nil, listedHosts: hosts)
-                == .init(selectedHost: PairingAdvertisedHost.customSentinel, customHost: ""),
+                == .init(selectedHost: "studio.local", customHost: ""),
+        )
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(
+                deviceUrl: nil,
+                listedHosts: ["box.tailnet.ts.net", "192.168.0.8"],
+            ) == .init(selectedHost: "box.tailnet.ts.net", customHost: ""),
+        )
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(
+                deviceUrl: "https://home.ts.net", listedHosts: hosts,
+            ) == .init(selectedHost: PairingAdvertisedHost.customSentinel, customHost: "home.ts.net"),
+        )
+        #expect(PairingAdvertisedHost.hostFromDeviceURL("https://nas.home") == "nas.home")
+        #expect(
+            PairingAdvertisedHost.applyCustomHost("https://box.ts.net", currentIssued: nil)
+                == .issue("box.ts.net"),
         )
         #expect(PairingAdvertisedHost.hostForOffer(selectedHost: "100.64.0.8", customHost: "") == "100.64.0.8")
         #expect(
