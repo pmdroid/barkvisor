@@ -7,6 +7,7 @@ struct SystemBridgeController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let system = routes.grouped("api", "system")
         system.get("bridges", use: listBridges)
+        system.get("bridges", "next", use: nextBridge)
         system.post("bridges", use: installBridge)
         system.post("bridges", ":interface", "start", use: startBridge)
         system.post("bridges", ":interface", "stop", use: stopBridge)
@@ -31,6 +32,11 @@ struct SystemBridgeController: RouteCollection {
                 status: r.status,
             )
         }
+    }
+
+    @Sendable
+    func nextBridge(req _: Vapor.Request) async throws -> NextBridgeResponse {
+        NextBridgeResponse(bridge: LinuxHostBridgeApply.nextFreeBridgeLive())
     }
 
     private static func bridgeInfo(from dto: BridgeStateDTO) -> BridgeInfo {
@@ -112,6 +118,9 @@ struct SystemBridgeController: RouteCollection {
         let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
         let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
         let result = try LinuxHostBridgeApplyLive.run(request: request)
+        if result.conflict {
+            throw BarkVisorError.conflict(result.message)
+        }
         if result.applied {
             let auditAction = switch request.action {
             case .revert: "host-bridge.revert"
@@ -126,10 +135,13 @@ struct SystemBridgeController: RouteCollection {
                 req: req,
             )
         }
-        return Self.bridgeActionResponse(from: result)
+        return Self.bridgeActionResponse(from: result, target: request.bridge)
     }
 
-    private static func bridgeActionResponse(from result: LinuxHostBridgeApplyResult) -> BridgeActionResponse {
+    private static func bridgeActionResponse(
+        from result: LinuxHostBridgeApplyResult,
+        target: String? = nil,
+    ) -> BridgeActionResponse {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return BridgeActionResponse(
@@ -140,6 +152,7 @@ struct SystemBridgeController: RouteCollection {
             pendingCommit: result.pendingCommit ? true : nil,
             commitDeadline: result.commitDeadline.map { formatter.string(from: $0) },
             rollbackSeconds: result.rollbackSeconds,
+            target: target,
             backend: result.backend,
             changes: result.changes,
             warnings: result.warnings,
@@ -184,13 +197,17 @@ struct SystemBridgeController: RouteCollection {
         let action = parseAction(body, default: defaultAction)
         let addressing: LinuxHostBridgeAddressing =
             body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
-        let nic = body.interface
-            ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
+        let names = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: body.bridge,
+            bodyInterface: body.interface,
+            pathInterface: req.parameters.get("interface"),
+            linuxHost: PlatformCapabilities.supportsHostBridgeManagement,
+        )
         let addresses = try parseAddressApplyEntries(body.addresses)
         return LinuxHostBridgeApplyRequest(
             action: action,
-            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
-            nic: nic,
+            bridge: names.bridge,
+            nic: names.nic,
             addressing: addressing,
             address: body.address,
             gateway: body.gateway,

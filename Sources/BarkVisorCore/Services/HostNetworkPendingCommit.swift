@@ -69,7 +69,32 @@ public enum HostNetworkPendingCommitService {
         return try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
     }
 
+    public static func blockingPending(
+        target: String,
+        existing: [HostNetworkPendingCommit],
+    ) -> HostNetworkPendingCommit? {
+        existing.first { $0.target != target && !$0.expired }
+    }
+
+    public static func listLinuxPending(runDir: String = "/run/barkvisor") -> [HostNetworkPendingCommit] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: runDir)) ?? []
+        var result: [HostNetworkPendingCommit] = []
+        for name in names where name.hasSuffix("-pending.json") {
+            let path = "\(runDir)/\(name)"
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let pending = try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
+            else { continue }
+            result.append(pending)
+        }
+        return result
+    }
+
     public static func writeLinux(_ pending: HostNetworkPendingCommit) throws {
+        if let other = blockingPending(target: pending.target, existing: listLinuxPending()) {
+            throw BarkVisorError.conflict(
+                "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+            )
+        }
         let path = linuxPendingPath(bridge: pending.target)
         try FileManager.default.createDirectory(
             atPath: "/run/barkvisor",
@@ -107,12 +132,11 @@ public enum HostNetworkPendingCommitService {
 
     public static func activePending() -> HostNetworkPendingCommit? {
         #if os(Linux)
-            if let pending = readLinux(bridge: HostBridgeFactsService.suggestedBridgeName),
-               !pending.expired {
-                return pending
+            let all = listLinuxPending()
+            if let live = all.first(where: { !$0.expired }) {
+                return live
             }
-            if let pending = readLinux(bridge: HostBridgeFactsService.suggestedBridgeName),
-               pending.expired {
+            for pending in all where pending.expired {
                 clearLinux(bridge: pending.target)
             }
             return nil

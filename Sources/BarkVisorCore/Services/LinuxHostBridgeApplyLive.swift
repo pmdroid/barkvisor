@@ -16,12 +16,15 @@ public enum LinuxHostBridgeApplyLive {
             resolved = probe
         } else {
             #if os(Linux)
-                resolved = LinuxHostBridgeApply.liveProbe()
+                resolved = LinuxHostBridgeApply.liveProbe(bridge: request.bridge)
             #else
                 throw BarkVisorError.forbidden("Linux host-bridge apply runs on a Linux Device.")
             #endif
         }
         var plan = LinuxHostBridgeApply.evaluate(request: request, probe: resolved)
+        if plan.conflict {
+            throw BarkVisorError.conflict(plan.message)
+        }
         guard plan.success, !plan.needsConfirm, !plan.refused else {
             return plan
         }
@@ -152,7 +155,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             switch probe.backend {
             case .netplan:
                 try writeAtomically(
-                    LinuxHostBridgeApply.netplanPath,
+                    LinuxHostBridgeApply.netplanPath(bridge: request.bridge),
                     LinuxHostBridgeApply.netplanYAML(
                         bridge: request.bridge,
                         nic: nic,
@@ -178,7 +181,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             try writeACL(bridge: request.bridge, existing: probe.aclContents)
             // Marker before setuid so Revert can clean up if chmod hits EROFS.
-            try writeOwnerMarker(bridge: request.bridge, createdBridge: probe.facts.bridges.isEmpty)
+            try writeOwnerMarker(
+                bridge: request.bridge,
+                uplink: nic,
+                createdBridge: LinuxHostBridgeApply.createdBridgeForApply(request: request, probe: probe),
+            )
             try setuidHelpers(probe.helperPaths)
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
@@ -199,7 +206,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
             switch probe.backend {
             case .netplan:
-                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath)
+                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath(bridge: request.bridge))
                 try commitNetplanTry(beginNetplanTry())
             case .networkManager:
                 _ = try? PlatformProcess.run(
@@ -208,8 +215,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     timeout: 30,
                 )
             case .systemdNetworkd:
-                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetdevPath)
-                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetworkPath)
+                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetdevPath(bridge: request.bridge))
+                try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetworkPath(bridge: request.bridge))
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
                     arguments: ["reload"],
@@ -255,13 +262,17 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
         }
 
-        private func writeOwnerMarker(bridge: String, createdBridge: Bool) throws {
+        private func writeOwnerMarker(bridge: String, uplink: String, createdBridge: Bool) throws {
             let url = LinuxHostBridgeApply.ownerMarkerURL(bridge: bridge)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
             )
-            let payload = ["bridge": bridge, "createdBridge": createdBridge] as [String: Any]
+            let payload: [String: Any] = [
+                "bridge": bridge,
+                "uplink": uplink,
+                "createdBridge": createdBridge,
+            ]
             let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
             try data.write(to: url, options: .atomic)
         }
@@ -298,8 +309,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             network += "\n[Bridge]\n"
             _ = nic
-            try writeAtomically(LinuxHostBridgeApply.networkdNetdevPath, netdev)
-            try writeAtomically(LinuxHostBridgeApply.networkdNetworkPath, network)
+            try writeAtomically(LinuxHostBridgeApply.networkdNetdevPath(bridge: request.bridge), netdev)
+            try writeAtomically(LinuxHostBridgeApply.networkdNetworkPath(bridge: request.bridge), network)
             let portNetwork = """
             # managed-by: barkvisor
             [Match]

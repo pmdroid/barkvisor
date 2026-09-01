@@ -535,6 +535,7 @@ export interface BridgeActionResponse {
   pendingCommit?: boolean
   commitDeadline?: string
   rollbackSeconds?: number
+  target?: string
   backend?: string
   changes?: string[]
   warnings?: string[]

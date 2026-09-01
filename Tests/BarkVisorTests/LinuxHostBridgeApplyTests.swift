@@ -34,7 +34,7 @@ struct LinuxHostBridgeApplyTests {
             sessionRiskNics: session,
             sessionWarnings: warnings,
             owned: owned,
-            existingInterfaces: [nic, "lo", "br0"],
+            existingInterfaces: ready ? [nic, "lo", "br0"] : [nic, "lo"],
         )
     }
 
@@ -276,5 +276,164 @@ struct LinuxHostBridgeApplyTests {
         #if os(Linux)
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
         #endif
+    }
+
+    @Test func `br1 apply writes per-bridge ACL pending and netplan paths`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .dryRun,
+                bridge: "br1",
+                nic: "eth1",
+                confirm: true,
+            ),
+            probe: LinuxHostBridgeApplyProbe(
+                facts: facts(nic: "eth1"),
+                backend: .netplan,
+                existingInterfaces: ["eth1", "lo", "br0"],
+            ),
+        )
+        #expect(result.success)
+        #expect(!result.conflict)
+        #expect(result.changes.contains { $0.contains("90-barkvisor-br1.yaml") })
+        #expect(!result.changes.contains { $0.contains("90-barkvisor-br0.yaml") })
+        #expect(result.commands.contains { $0.contains("# barkvisor:allow-br1") })
+        #expect(!result.commands.contains { $0.contains("# barkvisor:allow-br0") })
+        #expect(LinuxHostBridgeApply.netplanPath(bridge: "br1") == "/etc/netplan/90-barkvisor-br1.yaml")
+        #expect(HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1") == "/run/barkvisor/br1-pending.json")
+        #expect(LinuxHostBridgeApply.aclMarker(for: "br1") == "# barkvisor:allow-br1")
+    }
+
+    @Test func `createdBridge is true for br1 when foreign br0 exists`() {
+        let probe = LinuxHostBridgeApplyProbe(
+            facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                helperPath: HostBridgeFactsService.qemuBridgeHelperCandidates[0],
+                helperSetuid: true,
+                aclAllowsSuggested: true,
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["eth0"])],
+                defaultRouteInterface: "eth0",
+            )),
+            backend: .netplan,
+            existingInterfaces: ["eth0", "lo", "br0"],
+        )
+        #expect(!LinuxHostBridgeApply.createdBridge(
+            named: "br0",
+            existingInterfaces: probe.existingInterfaces,
+            factsBridges: probe.facts.bridges,
+        ))
+        #expect(LinuxHostBridgeApply.createdBridge(
+            named: "br1",
+            existingInterfaces: probe.existingInterfaces,
+            factsBridges: probe.facts.bridges,
+        ))
+        #expect(LinuxHostBridgeApply.createdBridgeForApply(
+            request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br1", nic: "eth1", confirm: true),
+            probe: probe,
+        ))
+        #expect(!probe.facts.bridges.isEmpty)
+    }
+
+    @Test func `apply create-equivalent 409 when name exists`() throws {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(ready: true),
+        )
+        #expect(result.conflict)
+        #expect(result.refused)
+        #expect(result.message.contains("already exists"))
+
+        let owned = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(owned: true, ready: true),
+        )
+        #expect(!owned.conflict)
+        #expect(owned.success)
+
+        do {
+            _ = try LinuxHostBridgeApplyLive.run(
+                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth0", confirm: true),
+                probe: probe(ready: true),
+                mutator: RecordingLinuxHostBridgeMutator(),
+            )
+            Issue.record("expected conflict")
+        } catch let error as BarkVisorError {
+            #expect(error.httpStatus == 409)
+        }
+    }
+
+    @Test func `next-free skips sysfs and markers`() {
+        #expect(LinuxHostBridgeApply.nextFreeBridge(existingInterfaces: [], markerBridges: []) == "br0")
+        #expect(LinuxHostBridgeApply.nextFreeBridge(
+            existingInterfaces: ["br0", "eth0"],
+            markerBridges: [],
+        ) == "br1")
+        #expect(LinuxHostBridgeApply.nextFreeBridge(
+            existingInterfaces: ["br0"],
+            markerBridges: ["br1"],
+        ) == "br2")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try? Data("{\"bridge\":\"br0\"}".utf8).write(to: dir.appendingPathComponent("host-bridge-br0.json"))
+        try? Data("{\"bridge\":\"br2\"}".utf8).write(to: dir.appendingPathComponent("host-bridge-br2.json"))
+        #expect(LinuxHostBridgeApply.listedMarkerBridges(dataDir: dir) == ["br0", "br2"])
+        #expect(LinuxHostBridgeApply.nextFreeBridge(
+            existingInterfaces: LinuxHostBridgeApply.listedMarkerBridges(dataDir: dir),
+            markerBridges: LinuxHostBridgeApply.listedMarkerBridges(dataDir: dir),
+        ) == "br1")
+    }
+
+    @Test func `one pending commit per Device`() {
+        let br0 = HostNetworkPendingCommitService.makePending(target: "br0")
+        let br1 = HostNetworkPendingCommitService.makePending(target: "br1")
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [br0])?.target == "br0")
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [br0]) == nil)
+        let expired = HostNetworkPendingCommit(
+            target: "br0",
+            commitDeadline: Date().addingTimeInterval(-1),
+            rollbackSeconds: 30,
+        )
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [expired]) == nil)
+    }
+
+    @Test func `ACL merge for br1 leaves br0 marker`() {
+        let br0 = LinuxHostBridgeApply.mergeACL(existing: "allow virbr0\n", bridge: "br0")
+        let both = LinuxHostBridgeApply.mergeACL(existing: br0, bridge: "br1")
+        #expect(both.contains("# barkvisor:allow-br0"))
+        #expect(both.contains("# barkvisor:allow-br1"))
+        #expect(both.contains("allow br0"))
+        #expect(both.contains("allow br1"))
+        let stripped = LinuxHostBridgeApply.stripMarkedACL(existing: both, bridge: "br1")
+        #expect(stripped.contains("# barkvisor:allow-br0"))
+        #expect(!stripped.contains("# barkvisor:allow-br1"))
+        #expect(stripped.contains("allow br0"))
+        #expect(!stripped.contains("allow br1"))
+    }
+
+    @Test func `path parameter is the bridge name on Linux`() {
+        let linux = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: nil,
+            bodyInterface: "eth1",
+            pathInterface: "br1",
+            linuxHost: true,
+        )
+        #expect(linux.bridge == "br1")
+        #expect(linux.nic == "eth1")
+        let mac = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: nil,
+            bodyInterface: nil,
+            pathInterface: "en0",
+            linuxHost: false,
+        )
+        #expect(mac.bridge == HostBridgeFactsService.suggestedBridgeName)
+        #expect(mac.nic == "en0")
+    }
+
+    @Test func `rollback helper is per-bridge`() {
+        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br1", dataDir: "/var/lib/barkvisor")
+        #expect(script.contains("/etc/netplan/90-barkvisor-br1.yaml"))
+        #expect(script.contains("barkvisor-br1"))
+        #expect(script.contains("host-bridge-br1.json"))
+        #expect(script.contains("/run/barkvisor/br1-pending.json"))
+        #expect(!script.contains("90-barkvisor-br0.yaml"))
     }
 }

@@ -120,6 +120,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
     public var commands: [String]
     public var message: String
     public var refused: Bool
+    public var conflict: Bool
 
     public init(
         success: Bool,
@@ -134,6 +135,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         commands: [String] = [],
         message: String,
         refused: Bool = false,
+        conflict: Bool = false,
     ) {
         self.success = success
         self.applied = applied
@@ -147,6 +149,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         self.commands = commands
         self.message = message
         self.refused = refused
+        self.conflict = conflict
     }
 }
 
@@ -169,11 +172,88 @@ public enum LinuxHostBridgeApply {
     public static let networkdNetdevPath = "/etc/systemd/network/90-barkvisor-br0.netdev"
     public static let networkdNetworkPath = "/etc/systemd/network/90-barkvisor-br0.network"
 
+    public static func aclMarker(for bridge: String) -> String {
+        "# barkvisor:allow-\(bridge)"
+    }
+
+    public static func netplanPath(bridge: String) -> String {
+        "/etc/netplan/90-barkvisor-\(bridge).yaml"
+    }
+
+    public static func networkdNetdevPath(bridge: String) -> String {
+        "/etc/systemd/network/90-barkvisor-\(bridge).netdev"
+    }
+
+    public static func networkdNetworkPath(bridge: String) -> String {
+        "/etc/systemd/network/90-barkvisor-\(bridge).network"
+    }
+
     public static func commitStampPath(bridge: String) -> String {
         "/run/barkvisor/\(bridge)-commit"
     }
 
-    /// Host-timer helper. Exits 0 when apply wrote the commit stamp.
+    public static func createdBridge(
+        named bridge: String,
+        existingInterfaces: Set<String>,
+        factsBridges: [HostBridgeSnapshot],
+    ) -> Bool {
+        !existingInterfaces.contains(bridge) && !factsBridges.contains { $0.name == bridge }
+    }
+
+    public static func nextFreeBridge(
+        existingInterfaces: Set<String>,
+        markerBridges: Set<String>,
+    ) -> String {
+        var n = 0
+        while n < 1_024 {
+            let name = "br\(n)"
+            if !existingInterfaces.contains(name), !markerBridges.contains(name) {
+                return name
+            }
+            n += 1
+        }
+        return "br0"
+    }
+
+    public static func listedMarkerBridges(dataDir: URL = Config.dataDir) -> Set<String> {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dataDir.path)) ?? []
+        let prefix = "\(ownedMarkerName)-"
+        let suffix = ".json"
+        var result: Set<String> = []
+        for name in names {
+            guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { continue }
+            let bridge = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+            if !bridge.isEmpty {
+                result.insert(bridge)
+            }
+        }
+        return result
+    }
+
+    public static func nextFreeBridgeLive(
+        facts: HostBridgeFacts = HostBridgeFactsService.probe(),
+        dataDir: URL = Config.dataDir,
+    ) -> String {
+        var existing = Set(facts.bridges.map(\.name))
+        existing.formUnion(existingInterfaceNames())
+        return nextFreeBridge(existingInterfaces: existing, markerBridges: listedMarkerBridges(dataDir: dataDir))
+    }
+
+    public static func resolveNames(
+        bodyBridge: String?,
+        bodyInterface: String?,
+        pathInterface: String?,
+        linuxHost: Bool,
+    ) -> (bridge: String, nic: String?) {
+        if linuxHost {
+            let bridge = bodyBridge ?? pathInterface ?? HostBridgeFactsService.suggestedBridgeName
+            return (bridge, bodyInterface)
+        }
+        let nic = bodyInterface ?? pathInterface
+        let bridge = bodyBridge ?? HostBridgeFactsService.suggestedBridgeName
+        return (bridge, nic)
+    }
+
     public static func rollbackHelperScript(bridge: String, dataDir: String) -> String {
         let stamp = commitStampPath(bridge: bridge)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
@@ -181,10 +261,10 @@ public enum LinuxHostBridgeApply {
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
-        rm -f \(LinuxHostBridgeApply.netplanPath) || true
+        rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
-        rm -f \(networkdNetdevPath) \(networkdNetworkPath) || true
+        rm -f \(networkdNetdevPath(bridge: bridge)) \(networkdNetworkPath(bridge: bridge)) || true
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
         rm -f \(marker) \(pending) || true
         """
@@ -210,6 +290,7 @@ public enum LinuxHostBridgeApply {
     public static func liveProbe(
         facts: HostBridgeFacts = HostBridgeFactsService.probe(),
         listenPort: Int = Config.port,
+        bridge: String = HostBridgeFactsService.suggestedBridgeName,
     ) -> LinuxHostBridgeApplyProbe {
         let backend = detectBackend()
         let wireless = Set(existingInterfaceNames().filter { LinuxHostNetwork.isWirelessInterface($0) })
@@ -222,7 +303,7 @@ public enum LinuxHostBridgeApply {
             contentsOfFile: HostBridgeFactsService.defaultACLPath,
             encoding: .utf8,
         )
-        let marker = readOwnerMarker(bridge: facts.suggestedBridge)
+        let marker = readOwnerMarker(bridge: bridge)
         return LinuxHostBridgeApplyProbe(
             facts: facts,
             backend: backend,
@@ -265,26 +346,28 @@ public enum LinuxHostBridgeApply {
 
     public static func mergeACL(existing: String?, bridge: String) -> String {
         let allow = "allow \(bridge)"
+        let marker = aclMarker(for: bridge)
         let current = existing ?? ""
         if LinuxHostNetwork.bridgeACLAllows(bridge, fileContents: current) {
-            if current.contains(aclMarker) {
+            if current.contains(marker) {
                 return current
             }
-            return current.trimmingCharacters(in: .newlines) + "\n\(aclMarker)\n"
+            return current.trimmingCharacters(in: .newlines) + "\n\(marker)\n"
         }
         let prefix = current.trimmingCharacters(in: .newlines)
         if prefix.isEmpty {
-            return "\(aclMarker)\n\(allow)\n"
+            return "\(marker)\n\(allow)\n"
         }
-        return prefix + "\n\(aclMarker)\n\(allow)\n"
+        return prefix + "\n\(marker)\n\(allow)\n"
     }
 
     public static func stripMarkedACL(existing: String, bridge: String) -> String {
+        let marker = aclMarker(for: bridge)
         var lines = existing.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var i = 0
         while i < lines.count {
             let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
-            if trimmed == aclMarker {
+            if trimmed == marker {
                 lines.remove(at: i)
                 if i < lines.count,
                    lines[i].trimmingCharacters(in: .whitespaces) == "allow \(bridge)" {
@@ -365,6 +448,16 @@ public enum LinuxHostBridgeApply {
         if !validInterfaceName(request.bridge) {
             return refuse(backend: probe.backend, message: "Invalid bridge name '\(request.bridge)'.")
         }
+        if !probe.owned, bridgeNameExists(request.bridge, probe: probe) {
+            return LinuxHostBridgeApplyResult(
+                success: false,
+                applied: false,
+                backend: probe.backend.rawValue,
+                message: "Bridge '\(request.bridge)' already exists.",
+                refused: true,
+                conflict: true,
+            )
+        }
         let planResult = HostInterfaceAddressApply.resolve(from: request)
         guard case let .success(plan) = planResult else {
             if case let .failure(error) = planResult {
@@ -439,8 +532,8 @@ public enum LinuxHostBridgeApply {
         switch probe.backend {
         case .netplan:
             changes.append(LinuxHostBridgeChange(
-                description: "Remove \(netplanPath)",
-                command: "sudo rm -f \(netplanPath) && sudo netplan try --timeout \(rollbackSeconds)",
+                description: "Remove \(netplanPath(bridge: request.bridge))",
+                command: "sudo rm -f \(netplanPath(bridge: request.bridge)) && sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
             changes.append(LinuxHostBridgeChange(
@@ -450,7 +543,8 @@ public enum LinuxHostBridgeApply {
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
                 description: "Remove systemd-networkd barkvisor units",
-                command: "sudo rm -f \(networkdNetdevPath) \(networkdNetworkPath) && sudo networkctl reload",
+                command: "sudo rm -f \(networkdNetdevPath(bridge: request.bridge)) "
+                    + "\(networkdNetworkPath(bridge: request.bridge)) && sudo networkctl reload",
             ))
         case .ifupdown, .unknown:
             return refuse(
@@ -460,7 +554,7 @@ public enum LinuxHostBridgeApply {
         }
         changes.append(LinuxHostBridgeChange(
             description: "Remove marker-tagged allow \(request.bridge) from \(HostBridgeFactsService.defaultACLPath)",
-            command: "# strip \(aclMarker) + allow \(request.bridge)",
+            command: "# strip \(aclMarker(for: request.bridge)) + allow \(request.bridge)",
         ))
         changes.append(LinuxHostBridgeChange(
             description: "Leave \(request.bridge) in place (shared bridges are never default-deleted)",
@@ -547,7 +641,7 @@ public enum LinuxHostBridgeApply {
         switch probe.backend {
         case .netplan:
             changes.append(LinuxHostBridgeChange(
-                description: "Write \(netplanPath) and `netplan try` (\(rollbackSeconds)s keep window)",
+                description: "Write \(netplanPath(bridge: request.bridge)) and `netplan try` (\(rollbackSeconds)s keep window)",
                 command: "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
@@ -557,7 +651,7 @@ public enum LinuxHostBridgeApply {
             ))
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
-                description: "Write \(networkdNetdevPath) + systemd-run \(rollbackSeconds)s revert",
+                description: "Write \(networkdNetdevPath(bridge: request.bridge)) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo networkctl reload",
             ))
         case .ifupdown, .unknown:
@@ -565,7 +659,8 @@ public enum LinuxHostBridgeApply {
         }
         changes.append(LinuxHostBridgeChange(
             description: "Marker-tagged allow \(request.bridge) in \(HostBridgeFactsService.defaultACLPath)",
-            command: "printf '%s\\n%s\\n' '\(aclMarker)' 'allow \(request.bridge)' | sudo tee -a \(HostBridgeFactsService.defaultACLPath)",
+            command: "printf '%s\\n%s\\n' '\(aclMarker(for: request.bridge))' "
+                + "'allow \(request.bridge)' | sudo tee -a \(HostBridgeFactsService.defaultACLPath)",
         ))
         let helper = probe.facts.helperPath ?? probe.helperPaths.first
             ?? HostBridgeFactsService.qemuBridgeHelperCandidates[0]
@@ -664,6 +759,10 @@ public enum LinuxHostBridgeApply {
         )
     }
 
+    private static func bridgeNameExists(_ bridge: String, probe: LinuxHostBridgeApplyProbe) -> Bool {
+        probe.existingInterfaces.contains(bridge) || probe.facts.bridges.contains { $0.name == bridge }
+    }
+
     private static func validInterfaceName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count < 16, !name.contains("/"), !name.contains("\0") else {
             return false
@@ -732,14 +831,29 @@ public enum LinuxHostBridgeApply {
         return false
     }
 
-    private struct OwnerMarker: Codable {
+    struct OwnerMarker: Codable {
         var bridge: String
+        var uplink: String?
         var createdBridge: Bool
     }
 
-    private static func readOwnerMarker(bridge: String) -> OwnerMarker? {
-        let url = ownerMarkerURL(bridge: bridge)
+    static func readOwnerMarker(bridge: String, dataDir: URL = Config.dataDir) -> OwnerMarker? {
+        let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(OwnerMarker.self, from: data)
+    }
+
+    public static func createdBridgeForApply(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> Bool {
+        if let marker = readOwnerMarker(bridge: request.bridge) {
+            return marker.createdBridge
+        }
+        return createdBridge(
+            named: request.bridge,
+            existingInterfaces: probe.existingInterfaces,
+            factsBridges: probe.facts.bridges,
+        )
     }
 }

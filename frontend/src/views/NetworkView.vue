@@ -55,6 +55,8 @@ import {
   interfaceRouteColumn,
   interfaceRoleBadgeClass,
   interfaceRoleLabel,
+  pendingCommitMatchesInterface,
+  hostBridgeActionPath,
 } from '../utils/hostInterfaceDisplay'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, vmHealth } from '../utils/workloadHealth'
@@ -362,7 +364,7 @@ function setPendingCommitFromResponse(hostId: string, nic: string, data: BridgeA
   pendingCommit.value = {
     hostId,
     nic,
-    target: ready?.pendingCommit?.target ?? ready?.suggestedBridge ?? nic,
+    target: data.target ?? ready?.pendingCommit?.target ?? nic,
     commitDeadline: data.commitDeadline,
     rollbackSeconds: data.rollbackSeconds ?? 30,
   }
@@ -397,11 +399,11 @@ const showPendingCommitBanner = computed(() => {
   const row = selectedInterfaceRow.value
   const pending = pendingCommit.value
   if (!row || !pending || pending.hostId !== row.hostId) return false
-  const ready = selectedInterfaceReadiness.value
-  if (selectedInterfaceMode.value === 'macos-guide') {
-    return pending.target === row.iface.name
-  }
-  return pending.target === (ready?.suggestedBridge ?? 'br0')
+  return pendingCommitMatchesInterface(
+    pending,
+    row.iface.name,
+    selectedInterfaceMode.value,
+  )
 })
 
 async function keepPendingCommit() {
@@ -415,7 +417,7 @@ async function keepPendingCommit() {
     const { data } = await api.post<BridgeActionResponse>(path, {
       action: 'commit',
       interface: pending.nic,
-      bridge: selectedInterfaceReadiness.value?.suggestedBridge ?? 'br0',
+      bridge: pending.target,
       confirm: true,
     })
     linuxApplyResult.value = data
@@ -441,9 +443,9 @@ async function autoRevertPendingCommit() {
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
-    const path = hostBridgeRevertPath(pending.nic, device ?? undefined)
+    const path = hostBridgeRevertPath(pending.nic, device ?? undefined, pending.target)
     const { data } = await api.delete<BridgeActionResponse>(path, {
-      data: { confirm: true, action: 'revert', interface: pending.nic },
+      data: { confirm: true, action: 'revert', interface: pending.nic, bridge: pending.target },
     })
     clearPendingCommitState()
     if (data.success) {
@@ -461,13 +463,14 @@ async function autoRevertPendingCommit() {
   }
 }
 
-function hostBridgeRevertPath(nic: string, device?: HomeDeviceHealthSnapshot | null) {
+function hostBridgeRevertPath(
+  nic: string,
+  device?: HomeDeviceHealthSnapshot | null,
+  target?: string | null,
+) {
   const base = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
   const mode = device ? deviceBridgeGuideMode(device) : 'hidden'
-  if (mode === 'macos-guide') {
-    return `${base}/${encodeURIComponent(nic)}`
-  }
-  return `${base}/br0`
+  return hostBridgeActionPath(base, nic, mode, target)
 }
 
 function rowKey(row: HomeNetworkRow): string {
@@ -592,8 +595,19 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
     const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
     const data = action === 'revert'
       ? await api.delete<BridgeActionResponse>(
-        hostBridgeRevertPath(nic, device ?? undefined),
-        { data: { confirm, action: 'revert', interface: nic } },
+        hostBridgeRevertPath(
+          nic,
+          device ?? undefined,
+          pendingCommit.value?.target ?? selectedInterfaceReadiness.value?.suggestedBridge,
+        ),
+        {
+          data: {
+            confirm,
+            action: 'revert',
+            interface: nic,
+            bridge: pendingCommit.value?.target ?? selectedInterfaceReadiness.value?.suggestedBridge,
+          },
+        },
       ).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,

@@ -36,6 +36,8 @@ struct UninstallTaggedBridgeTests {
         allow virbr0
         # barkvisor:allow-br0
         allow br0
+        # barkvisor:allow-br1
+        allow br1
         allow shared0
         """
         try acl.write(
@@ -93,9 +95,25 @@ struct UninstallTaggedBridgeTests {
             encoding: .utf8,
         )
         try """
-        {"bridge":"br0","createdBridge":true}
+        {"bridge":"br0","uplink":"eth0","createdBridge":true}
         """.write(
             to: dir.appendingPathComponent("var/lib/barkvisor/host-bridge-br0.json"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        try """
+        # managed-by: barkvisor
+        network:
+          version: 2
+        """.write(
+            to: dir.appendingPathComponent("etc/netplan/90-barkvisor-br1.yaml"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        try """
+        {"bridge":"br1","uplink":"eth1","createdBridge":true}
+        """.write(
+            to: dir.appendingPathComponent("var/lib/barkvisor/host-bridge-br1.json"),
             atomically: true,
             encoding: .utf8,
         )
@@ -155,7 +173,9 @@ struct UninstallTaggedBridgeTests {
             encoding: .utf8,
         )
         #expect(!acl.contains(LinuxHostBridgeApply.aclMarker))
+        #expect(!acl.contains("# barkvisor:allow-br1"))
         #expect(!acl.contains("allow br0"))
+        #expect(!acl.contains("allow br1"))
         #expect(acl.contains("allow virbr0"))
         #expect(acl.contains("allow shared0"))
     }
@@ -169,6 +189,11 @@ struct UninstallTaggedBridgeTests {
         #expect(
             !FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("etc/netplan/90-barkvisor-br0.yaml").path,
+            ),
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("etc/netplan/90-barkvisor-br1.yaml").path,
             ),
         )
         #expect(
@@ -358,7 +383,7 @@ struct UninstallTaggedBridgeTests {
         #expect(uninstall.contains("Appliance data preserved"))
 
         for tagged in [postrm, lib] {
-            #expect(tagged.contains("# barkvisor:allow-br0"))
+            #expect(tagged.contains("# barkvisor:allow-"))
             #expect(tagged.contains("# managed-by: barkvisor"))
         }
         #expect(postrm.contains("BARKVISOR_REMOVE_BRIDGE"))

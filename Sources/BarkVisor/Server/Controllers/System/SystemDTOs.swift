@@ -59,10 +59,15 @@ struct BridgeActionResponse: Content {
     var pendingCommit: Bool?
     var commitDeadline: String?
     var rollbackSeconds: Int?
+    var target: String?
     var backend: String?
     var changes: [String]?
     var warnings: [String]?
     var commands: [String]?
+}
+
+struct NextBridgeResponse: Content {
+    var bridge: String
 }
 
 struct OnboardingStatus: Content {
