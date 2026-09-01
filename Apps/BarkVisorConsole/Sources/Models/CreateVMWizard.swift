@@ -73,6 +73,11 @@ enum CreateVMWizard {
         key.isDefault && keyCount > 1 ? "\(key.name) (default)" : key.name
     }
 
+    static func applyingCreatedKey(_ created: SSHKeyRecord, to keys: [SSHKeyRecord]) -> [SSHKeyRecord] {
+        if keys.contains(where: { $0.id == created.id }) { return keys }
+        return [created] + keys
+    }
+
     static func defaultName(for kind: GalleryKind, template: VMTemplateRecord?) -> String {
         switch kind {
         case .template:

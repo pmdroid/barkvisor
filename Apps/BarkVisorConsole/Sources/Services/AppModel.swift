@@ -854,6 +854,15 @@ final class AppModel {
         }
     }
 
+    func createSSHKey(name: String, publicKey: String) async -> SSHKeyRecord? {
+        do {
+            return try await requireClient().createSSHKey(name: name, publicKey: publicKey)
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
     func diskList(on device: HomeDeviceHealthSnapshot) async -> [DiskRecord]? {
         guard device.isReachable else { return nil }
         do {

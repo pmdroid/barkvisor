@@ -115,6 +115,48 @@ struct CreateVMWizardTests {
         #expect(CreateVMWizard.sshKeyLabel(other, keyCount: 2) == "laptop")
     }
 
+    @Test func applyingCreatedKeySelectsTheNewKeyWithoutDroppingExisting() {
+        func key(_ id: String, name: String) -> SSHKeyRecord {
+            SSHKeyRecord(
+                id: id,
+                name: name,
+                publicKey: "ssh-ed25519 AAA",
+                fingerprint: "fp",
+                keyType: "ed25519",
+                isDefault: false,
+                createdAt: "now",
+            )
+        }
+        let existing = key("k1", name: "Github")
+        let created = key("k-new", name: "ci-server")
+        let next = CreateVMWizard.applyingCreatedKey(created, to: [existing])
+        #expect(next.map(\.id) == ["k-new", "k1"])
+        #expect(CreateVMWizard.applyingCreatedKey(created, to: next).map(\.id) == ["k-new", "k1"])
+    }
+
+    @Test func createWizardAddsSSHKeyInPlace() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/CreateVMWizardView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("Add another key"))
+        #expect(source.contains("Add an SSH key"))
+        #expect(source.contains("createSSHKey"))
+        #expect(source.contains("applyingCreatedKey"))
+        #expect(source.contains("This VM needs an SSH key for first login"))
+        #expect(!source.contains("settings?tab=sshkeys"))
+        #expect(!source.contains("target=\"_blank\""))
+        let client = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/APIClient.swift"),
+            encoding: .utf8,
+        )
+        #expect(client.contains("func createSSHKey(name: String, publicKey: String)"))
+        #expect(client.contains("\"/api/ssh-keys\""))
+    }
+
     @Test func resolveTemplateBySlugOnMember() {
         let home = VMTemplateRecord(
             id: "self-id",

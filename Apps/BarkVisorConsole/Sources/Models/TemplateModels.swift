@@ -114,6 +114,11 @@ struct DeployRecipeBody: Encodable {
     var image: DeployRecipeImageBody
 }
 
+struct CreateSSHKeyBody: Encodable, Equatable {
+    var name: String
+    var publicKey: String
+}
+
 struct SSHKeyRecord: Decodable, Identifiable, Hashable {
     var id: String
     var name: String

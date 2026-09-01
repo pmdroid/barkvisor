@@ -130,6 +130,12 @@ enum CreateWorkload {
             case .invalidOpenAIBaseURL: "OPENAI_BASE_URL must be an http(s) URL"
             case .missingOpenAIAPIKey: "OPENAI_API_KEY is required"
             case .invalidOpenAIAPIKey: "OPENAI_API_KEY is invalid"
+            case .staticAddressingNotBridged: "Static addressing needs a bridged network"
+            case .staticAddressingNotCloudInit: "Static addressing needs a cloud-init image"
+            case .invalidGuestIPv4: "Guest IPv4 is invalid"
+            case .invalidGuestPrefixLength: "Prefix length is invalid"
+            case .invalidGuestGateway: "Gateway is invalid"
+            case .invalidGuestNameserver: "Nameserver is invalid"
             }
         }
     }

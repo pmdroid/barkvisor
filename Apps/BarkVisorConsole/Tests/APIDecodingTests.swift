@@ -20,7 +20,7 @@ struct APIDecodingTests {
                 .appendingPathComponent("Sources/Views/DeviceDetailView.swift"),
             encoding: .utf8,
         )
-        let settings = try String(
+        let settingsSource = try String(
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -33,8 +33,8 @@ struct APIDecodingTests {
         #expect(source.contains("saveDiskSettings"))
         #expect(source.contains("guard !directory.isEmpty else { return }"))
         #expect(source.contains("guard device.hostId == host else { return }"))
-        #expect(!settings.contains("DiskDirectorySection"))
-        #expect(!settings.contains("Default VM disk directory"))
+        #expect(!settingsSource.contains("DiskDirectorySection"))
+        #expect(!settingsSource.contains("Default VM disk directory"))
     }
 
     @Test func `remote access status decodes advertised hosts`() throws {

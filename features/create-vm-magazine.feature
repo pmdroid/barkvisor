@@ -52,6 +52,12 @@ Feature: Create VM magazine wizard
     Then the new key should be selected in the picker
     And the wizard should stay on step 2 with my name intact
 
+  Scenario: Console Create VM adds a key without leaving configure
+    Given the Console Create Workload wizard is on configure
+    When I add a new SSH key from the wizard
+    Then the new key should be selected in the picker
+    And the wizard should stay on configure with my name intact
+
   Scenario: Custom image flow requires an image on configure
     Given the Create VM dialog is open on step 1
     When I choose Use your own image

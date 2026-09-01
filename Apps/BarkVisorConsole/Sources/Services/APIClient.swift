@@ -159,6 +159,10 @@ struct APIClient {
         try await get("/api/ssh-keys")
     }
 
+    func createSSHKey(name: String, publicKey: String) async throws -> SSHKeyRecord {
+        try await post("/api/ssh-keys", body: CreateSSHKeyBody(name: name, publicKey: publicKey))
+    }
+
     func deployTemplate(_ body: DeployTemplateBody, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
         var request = try makeRequest(method: "POST", path: scoped("/templates/deploy", on: device), query: [])
         request.httpBody = try Self.encoder.encode(body)

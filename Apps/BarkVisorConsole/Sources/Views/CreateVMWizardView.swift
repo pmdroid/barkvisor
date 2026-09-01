@@ -36,6 +36,11 @@ struct CreateVMWizardView: View {
     @State private var localError: String?
     @State private var sharedPaths: [String] = []
     @State private var showFolderPicker = false
+    @State private var addKeyOpen = false
+    @State private var newKeyName = ""
+    @State private var newKeyPublicKey = ""
+    @State private var addKeyBusy = false
+    @State private var addKeyError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -185,10 +190,40 @@ struct CreateVMWizardView: View {
 
         if requiresSSH {
             Section("SSH key") {
-                Picker("Authorized key", selection: $sshKeyID) {
-                    Text("Choose a key").tag("")
-                    ForEach(sshKeys) { key in
-                        Text(CreateVMWizard.sshKeyLabel(key, keyCount: sshKeys.count)).tag(key.id)
+                if sshKeys.isEmpty {
+                    Text("This VM needs an SSH key for first login. There is no key yet.")
+                        .foregroundStyle(.red)
+                } else {
+                    Picker("Authorized key", selection: $sshKeyID) {
+                        Text("Choose a key").tag("")
+                        ForEach(sshKeys) { key in
+                            Text(CreateVMWizard.sshKeyLabel(key, keyCount: sshKeys.count)).tag(key.id)
+                        }
+                    }
+                }
+                if addKeyOpen {
+                    TextField("Name, e.g. macbook", text: $newKeyName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Paste a public key, e.g. ssh-ed25519 AAAA...", text: $newKeyPublicKey, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .lineLimit(3 ... 6)
+                    if let addKeyError {
+                        Text(addKeyError).foregroundStyle(.red)
+                    }
+                    HStack {
+                        Button("Cancel") { closeAddKey() }
+                            .disabled(addKeyBusy)
+                        Spacer()
+                        Button(addKeyBusy ? "Adding..." : "Add key") {
+                            Task { await submitAddKey() }
+                        }
+                        .disabled(addKeyBusy || !canSubmitAddKey)
+                    }
+                } else {
+                    Button(sshKeys.isEmpty ? "Add an SSH key" : "Add another key") {
+                        addKeyOpen = true
                     }
                 }
             }
@@ -362,6 +397,34 @@ struct CreateVMWizardView: View {
 
     private var unusedDisks: [DiskRecord] {
         CreateVMWizard.unusedDisks(disks)
+    }
+
+    private var canSubmitAddKey: Bool {
+        !newKeyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !newKeyPublicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func closeAddKey() {
+        addKeyOpen = false
+        newKeyName = ""
+        newKeyPublicKey = ""
+        addKeyError = nil
+    }
+
+    private func submitAddKey() async {
+        let name = newKeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let publicKey = newKeyPublicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !addKeyBusy, !name.isEmpty, !publicKey.isEmpty else { return }
+        addKeyBusy = true
+        addKeyError = nil
+        defer { addKeyBusy = false }
+        if let created = await model.createSSHKey(name: name, publicKey: publicKey) {
+            sshKeys = CreateVMWizard.applyingCreatedKey(created, to: sshKeys)
+            sshKeyID = created.id
+            closeAddKey()
+        } else {
+            addKeyError = model.banner ?? "Could not add the SSH key."
+        }
     }
 
     private var canAdvance: Bool {
