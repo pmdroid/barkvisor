@@ -331,6 +331,20 @@ export function bridgeSetupInterfaceKey(
   return uplink ? `${hostId}:${uplink}` : null
 }
 
+export function bridgedPickerInterfaces(
+  ifaces: HostInterface[],
+  readiness?: HostBridgeReadiness | null,
+  selected?: string,
+): HostInterface[] {
+  const bridges = ifaces.filter((iface) => inferInterfaceRole(iface, readiness) === 'bridge')
+  if (bridges.length === 0) return ifaces
+  if (selected && !bridges.some((iface) => iface.name === selected)) {
+    const current = ifaces.find((iface) => iface.name === selected)
+    if (current) return [current, ...bridges]
+  }
+  return bridges
+}
+
 export function pendingCommitMatchesInterface(
   pending: { target: string; nic: string },
   ifaceName: string,

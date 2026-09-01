@@ -749,10 +749,6 @@ public enum QEMUBuilder {
 
     // MARK: - socket_vmnet resolution
 
-    static func isSharedSocketVmnetPath(_ path: String) -> Bool {
-        SocketVmnetDiscovery.isSharedSocketPath(path)
-    }
-
     /// Per-iface (operator lima plist) then Homebrew shared `brew services` socket.
     public static func socketVmnetSocketCandidates(bridgeInterface: String) -> [String] {
         SocketVmnetDiscovery.candidates(bridgeInterface: bridgeInterface)
@@ -763,11 +759,13 @@ public enum QEMUBuilder {
         bridgeInterface: String?,
         dbSocketPath: String? = nil,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        uplinkForBridge: (String) -> String = { SocketVmnetDiscovery.resolveUplink(forBridge: $0) },
     ) throws -> String {
-        if let dbPath = dbSocketPath, fileExists(dbPath), !isSharedSocketVmnetPath(dbPath) {
+        if let dbPath = dbSocketPath, fileExists(dbPath), !SocketVmnetDiscovery.isSharedSocketPath(dbPath) {
             return dbPath
         }
-        let iface = bridgeInterface ?? "en0"
+        let requested = bridgeInterface ?? "en0"
+        let iface = uplinkForBridge(requested)
         guard let socketPath = socketVmnetSocketCandidates(bridgeInterface: iface).first(where: fileExists)
         else {
             throw BarkVisorError.processSpawnFailed(

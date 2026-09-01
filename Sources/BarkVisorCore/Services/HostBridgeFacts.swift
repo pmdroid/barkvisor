@@ -74,13 +74,10 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
         #else
             let sockets = SocketVmnetDiscovery.existingSockets()
             return HostBridgeFactInputs(
-                bridges: sockets.map {
-                    HostBridgeSnapshot(
-                        name: $0.interface,
-                        enslaved: [],
-                        createdBridge: LinuxHostBridgeApply.createdBridgeForUplink($0.interface),
-                    )
-                },
+                bridges: HostBridgeFactsService.macSyntheticBridges(
+                    markers: LinuxHostBridgeApply.listOwnerMarkers(),
+                    sockets: sockets,
+                ),
                 defaultRouteInterface: SocketVmnetDiscovery.sharedUplinkInterface(),
                 macSocketVmnet: true,
             )
@@ -148,6 +145,24 @@ public enum HostBridgeFactsService {
             bridges: [],
             defaultRouteInterface: nil,
         )).readiness
+    }
+
+    public static func macSyntheticBridges(
+        markers: [LinuxHostBridgeApply.OwnerMarker],
+        sockets: [(interface: String, path: String)] = [],
+    ) -> [HostBridgeSnapshot] {
+        let fromMarkers = markers.compactMap { marker -> HostBridgeSnapshot? in
+            guard let uplink = marker.uplink, !uplink.isEmpty else { return nil }
+            return HostBridgeSnapshot(
+                name: marker.bridge,
+                enslaved: [uplink],
+                createdBridge: marker.createdBridge,
+            )
+        }
+        if !fromMarkers.isEmpty {
+            return fromMarkers
+        }
+        return sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) }
     }
 
     public static func assemble(from inputs: HostBridgeFactInputs) -> HostBridgeFacts {

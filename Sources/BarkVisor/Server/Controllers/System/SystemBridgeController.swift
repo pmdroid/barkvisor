@@ -322,8 +322,14 @@ struct SystemBridgeController: RouteCollection {
     }
 
     private static func syncMacBridgedNetwork(req: Vapor.Request, body: BridgeRequest?) async {
-        let iface = body?.interface ?? req.parameters.get("interface")
-        guard let name = iface, !name.isEmpty else { return }
+        let names = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: body?.bridge,
+            bodyInterface: body?.interface,
+            pathInterface: req.parameters.get("interface"),
+            linuxHost: false,
+        )
+        let name = names.bridge
+        guard !name.isEmpty else { return }
         await BridgeSyncService.syncOnce(db: req.db)
         let before = try? await req.db.read { db in
             try Network.filter(Column("bridge") == name).fetchOne(db)

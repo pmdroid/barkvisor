@@ -354,6 +354,47 @@ struct QEMUBuilderValidationTests {
 
     // MARK: - socket_vmnet (PAS-294 Homebrew service)
 
+    @Test func `socket_vmnet brN resolves to uplink socket path`() throws {
+        let perIface = "/var/run/socket_vmnet.bridged.en0"
+        let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "br0",
+            dbSocketPath: nil,
+            fileExists: { $0 == perIface },
+            uplinkForBridge: { $0 == "br0" ? "en0" : $0 },
+        )
+        #expect(path == perIface)
+        let legacy = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "en0",
+            dbSocketPath: nil,
+            fileExists: { $0 == perIface },
+            uplinkForBridge: { SocketVmnetDiscovery.resolveUplink(forBridge: $0) },
+        )
+        #expect(legacy == perIface)
+    }
+
+    @Test func `resolveUplink reads marker map`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("bv-446-qemu-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try LinuxHostBridgeApply.writeOwnerMarker(
+            bridge: "br0", uplink: "en0", createdBridge: true, dataDir: dir,
+        )
+        #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "br0", dataDir: dir) == "en0")
+        #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "en0", dataDir: dir) == "en0")
+        #expect(SocketVmnetDiscovery.bridgeName(forUplink: "en0", dataDir: dir) == "br0")
+        let states = SocketVmnetDiscovery.bridgeStates(
+            fileExists: { $0.hasSuffix("socket_vmnet.bridged.en0") },
+            listBridged: { dir in
+                dir == "/var/run" ? ["socket_vmnet.bridged.en0"] : []
+            },
+            sharedUplink: { "en0" },
+            dataDir: dir,
+        )
+        #expect(states.map(\.interface) == ["br0"])
+        #expect(states[0].socketPath?.hasSuffix("socket_vmnet.bridged.en0") == true)
+        #expect(states[0].status == "active")
+    }
+
     @Test func `socket_vmnet candidates include Homebrew shared socket`() {
         let iface = "en0"
         let candidates = QEMUBuilder.socketVmnetSocketCandidates(bridgeInterface: iface)
@@ -361,18 +402,18 @@ struct QEMUBuilderValidationTests {
         #expect(candidates.contains("/var/run/socket_vmnet.bridged.\(iface)"))
         #expect(candidates.contains("/opt/homebrew/var/run/socket_vmnet"))
         #expect(candidates.contains("/var/run/socket_vmnet"))
-        #expect(QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet"))
-        #expect(QEMUBuilder.isSharedSocketVmnetPath("/opt/homebrew/var/run/socket_vmnet"))
-        #expect(!QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet.bridged.en0"))
+        #expect(SocketVmnetDiscovery.isSharedSocketPath("/var/run/socket_vmnet"))
+        #expect(SocketVmnetDiscovery.isSharedSocketPath("/opt/homebrew/var/run/socket_vmnet"))
+        #expect(!SocketVmnetDiscovery.isSharedSocketPath("/var/run/socket_vmnet.bridged.en0"))
     }
 
     @Test func `shared socket_vmnet is used when per-iface is missing`() throws {
         let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
             bridgeInterface: "en0",
             dbSocketPath: nil,
-            fileExists: { QEMUBuilder.isSharedSocketVmnetPath($0) },
+            fileExists: { SocketVmnetDiscovery.isSharedSocketPath($0) },
         )
-        #expect(QEMUBuilder.isSharedSocketVmnetPath(path))
+        #expect(SocketVmnetDiscovery.isSharedSocketPath(path))
     }
 
     @Test func `missing socket_vmnet tells the operator to start Homebrew service`() {

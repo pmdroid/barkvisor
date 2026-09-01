@@ -226,11 +226,11 @@ public enum HostInfoService {
             }
             return name
         #else
+            if name.hasPrefix("br") || name.hasPrefix("bridge") {
+                return "\(name) (Bridge)"
+            }
             if name.hasPrefix("en") {
                 return "\(name) (Ethernet/Wi-Fi)"
-            }
-            if name.hasPrefix("bridge") {
-                return "\(name) (Bridge)"
             }
             if name == "lo0" {
                 return "lo0 (Loopback)"
@@ -254,6 +254,7 @@ public enum HostInfoService {
     public static func listInterfaceSnapshots(
         bridgeStatusByInterface: [String: String] = [:],
         addressingByInterface: [String: HostInterfaceAddressing]? = nil,
+        syntheticBridges: [HostBridgeSnapshot]? = nil,
     ) -> [HostInterfaceSnapshot] {
         var byName: [String: HostInterfaceSnapshot] = [:]
         let addressing = addressingByInterface ?? HostInterfaceAddressDiscovery.discoverByInterface()
@@ -284,6 +285,33 @@ public enum HostInfoService {
                 )
             }
         #endif
+
+        let extras: [HostBridgeSnapshot]
+        if let syntheticBridges {
+            extras = syntheticBridges
+        } else {
+            #if os(macOS)
+                extras = HostBridgeFactsService.probe().bridges
+            #else
+                extras = []
+            #endif
+        }
+        for snap in extras {
+            if byName[snap.name] != nil { continue }
+            let overlayUplink = !interfaceExists(snap.name)
+            let config: HostInterfaceAddressing = if overlayUplink, let uplink = snap.enslaved.first, let fromUplink = addressing[uplink] {
+                fromUplink
+            } else {
+                addressing[snap.name] ?? HostInterfaceAddressing()
+            }
+            byName[snap.name] = snapshot(
+                name: snap.name,
+                ipAddress: primaryIPv4(from: config) ?? "",
+                bridgeStatusByInterface: bridgeStatusByInterface,
+                config: config,
+                link: linkFlags[snap.name],
+            )
+        }
 
         return byName.values.sorted { $0.name < $1.name }
     }
