@@ -23,12 +23,34 @@ import Foundation
             public var service: String
             public var infoText: String
             public var dnsServers: [String]
+            /// `ifconfig alias` CIDRs applied after the snapshot was taken (removed on revert).
+            public var appliedAliasCIDRs: [String]
 
-            public init(device: String, service: String, infoText: String, dnsServers: [String]) {
+            public init(
+                device: String,
+                service: String,
+                infoText: String,
+                dnsServers: [String],
+                appliedAliasCIDRs: [String] = [],
+            ) {
                 self.device = device
                 self.service = service
                 self.infoText = infoText
                 self.dnsServers = dnsServers
+                self.appliedAliasCIDRs = appliedAliasCIDRs
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case device, service, infoText, dnsServers, appliedAliasCIDRs
+            }
+
+            public init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                device = try container.decode(String.self, forKey: .device)
+                service = try container.decode(String.self, forKey: .service)
+                infoText = try container.decode(String.self, forKey: .infoText)
+                dnsServers = try container.decodeIfPresent([String].self, forKey: .dnsServers) ?? []
+                appliedAliasCIDRs = try container.decodeIfPresent([String].self, forKey: .appliedAliasCIDRs) ?? []
             }
         }
 
@@ -173,21 +195,44 @@ import Foundation
                 try PlatformProcess.run(path: path, arguments: args, timeout: 30)
             },
         ) throws {
+            guard case let .success(plan) = HostInterfaceAddressApply.resolveLegacy(
+                addressing: addressing,
+                address: address,
+                gateway: gateway,
+                dns: dns,
+            ) else {
+                throw BarkVisorError.badRequest("Invalid host address plan.")
+            }
+            try apply(
+                device: device,
+                service: service,
+                plan: plan,
+                run: run,
+            )
+        }
+
+        public static func apply(
+            device: String,
+            service: String,
+            plan: HostInterfaceAddressApplyPlan,
+            run: (String, [String]) throws -> CommandResult = { path, args in
+                try PlatformProcess.run(path: path, arguments: args, timeout: 30)
+            },
+        ) throws {
             if readMarker(device: device) == nil {
                 let before = try captureSnapshot(device: device, service: service, run: run)
                 try writeMarker(before)
             }
-            switch addressing {
-            case .dhcp:
+            if plan.dhcpEnabled {
                 let result = try run(networksetupPath, ["-setdhcp", service])
                 guard result.succeeded else {
                     throw BarkVisorError.preconditionFailed(
                         "networksetup -setdhcp failed: \(result.stderrString)",
                     )
                 }
-            case .staticIP:
-                let parsed = try parseStaticAddress(address ?? "")
-                guard let gateway, !gateway.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            } else if let primary = plan.primaryStaticCIDR {
+                let parsed = try parseStaticAddress(primary)
+                guard let gateway = plan.gateway, !gateway.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw BarkVisorError.badRequest("Static host address needs gateway")
                 }
                 try validateIPv4(gateway, label: "gateway")
@@ -200,13 +245,30 @@ import Foundation
                     )
                 }
             }
-            if !dns.isEmpty {
-                let dnsResult = try run(networksetupPath, ["-setdnsservers", service] + dns)
+            let aliasTargets = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            for cidr in aliasTargets {
+                let parsed = try parseStaticAddress(cidr)
+                let aliasResult = try run(
+                    "/sbin/ifconfig",
+                    [device, "alias", parsed.ip, "netmask", parsed.mask],
+                )
+                guard aliasResult.succeeded else {
+                    throw BarkVisorError.preconditionFailed(
+                        "ifconfig alias failed for \(cidr): \(aliasResult.stderrString)",
+                    )
+                }
+            }
+            if !plan.dns.isEmpty {
+                let dnsResult = try run(networksetupPath, ["-setdnsservers", service] + plan.dns)
                 guard dnsResult.succeeded else {
                     throw BarkVisorError.preconditionFailed(
                         "networksetup -setdnsservers failed: \(dnsResult.stderrString)",
                     )
                 }
+            }
+            if !aliasTargets.isEmpty, var marker = readMarker(device: device) {
+                marker.appliedAliasCIDRs = aliasTargets
+                try writeMarker(marker)
             }
         }
 
@@ -218,6 +280,15 @@ import Foundation
         ) throws -> Bool {
             guard let marker = readMarker(device: device) else {
                 return false
+            }
+            for cidr in marker.appliedAliasCIDRs {
+                let parsed = try parseStaticAddress(cidr)
+                let aliasResult = try run("/sbin/ifconfig", [device, "-alias", parsed.ip])
+                guard aliasResult.succeeded else {
+                    throw BarkVisorError.preconditionFailed(
+                        "ifconfig -alias failed for \(cidr): \(aliasResult.stderrString)",
+                    )
+                }
             }
             let lower = marker.infoText.lowercased()
             if lower.contains("dhcp configuration") {
@@ -274,22 +345,41 @@ import Foundation
             gateway: String?,
             dns: [String],
         ) -> [String] {
+            guard case let .success(plan) = HostInterfaceAddressApply.resolveLegacy(
+                addressing: addressing,
+                address: address,
+                gateway: gateway,
+                dns: dns,
+            ) else {
+                return ["# invalid address plan"]
+            }
+            return equivalentCommands(service: service, device: device, plan: plan)
+        }
+
+        public static func equivalentCommands(
+            service: String,
+            device: String,
+            plan: HostInterfaceAddressApplyPlan,
+        ) -> [String] {
             var lines = [
                 "# Device address on \(device) (\(service)) — not a Workload guest address.",
                 "networksetup -listallhardwareports",
             ]
-            switch addressing {
-            case .dhcp:
+            if plan.dhcpEnabled {
                 lines.append("sudo networksetup -setdhcp \"\(service)\"")
-            case .staticIP:
-                let parsed = (try? parseStaticAddress(address ?? "")) ?? (ip: "192.168.1.10", mask: "255.255.255.0")
-                let gw = gateway ?? "192.168.1.1"
+            } else if let primary = plan.primaryStaticCIDR {
+                let parsed = (try? parseStaticAddress(primary)) ?? (ip: "192.168.1.10", mask: "255.255.255.0")
+                let gw = plan.gateway ?? "192.168.1.1"
                 lines.append(
                     "sudo networksetup -setmanual \"\(service)\" \(parsed.ip) \(parsed.mask) \(gw)",
                 )
             }
-            if !dns.isEmpty {
-                lines.append("sudo networksetup -setdnsservers \"\(service)\" \(dns.joined(separator: " "))")
+            for cidr in plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs {
+                let parsed = (try? parseStaticAddress(cidr)) ?? (ip: cidr, mask: "255.255.255.0")
+                lines.append("sudo ifconfig \(device) alias \(parsed.ip) netmask \(parsed.mask)")
+            }
+            if !plan.dns.isEmpty {
+                lines.append("sudo networksetup -setdnsservers \"\(service)\" \(plan.dns.joined(separator: " "))")
             }
             lines.append("sudo networksetup -setdhcp \"\(service)\"  # revert to DHCP")
             return lines

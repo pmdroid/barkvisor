@@ -159,7 +159,21 @@ export function buildLinuxBridgeApplyBody(input: {
   address?: string
   gateway?: string
   dns?: string
+  addresses?: HostBridgeApplyRequest['addresses']
 }): HostBridgeApplyRequest {
+  if (input.addresses?.length) {
+    const body: HostBridgeApplyRequest = {
+      interface: input.nic,
+      action: 'apply',
+      confirm: input.confirm ?? false,
+      addresses: input.addresses,
+    }
+    const gateway = input.gateway?.trim()
+    if (gateway) body.gateway = gateway
+    const dns = input.dns?.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean) ?? []
+    if (dns.length) body.dns = dns
+    return body
+  }
   const body: HostBridgeApplyRequest = {
     interface: input.nic,
     action: 'apply',

@@ -76,6 +76,8 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
     public var address: String?
     public var gateway: String?
     public var dns: [String]
+    /// Multi-address apply (#430). When non-empty, takes precedence over `addressing` / `address`.
+    public var addresses: [HostInterfaceAddressApplyEntry]
     public var confirm: Bool
     public var deleteBridge: Bool
 
@@ -87,6 +89,7 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         address: String? = nil,
         gateway: String? = nil,
         dns: [String] = [],
+        addresses: [HostInterfaceAddressApplyEntry] = [],
         confirm: Bool = false,
         deleteBridge: Bool = false,
     ) {
@@ -97,6 +100,7 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         self.address = address
         self.gateway = gateway
         self.dns = dns
+        self.addresses = addresses
         self.confirm = confirm
         self.deleteBridge = deleteBridge
     }
@@ -288,48 +292,25 @@ public enum LinuxHostBridgeApply {
         gateway: String?,
         dns: [String],
     ) -> String {
-        var body = """
-        # managed-by: barkvisor
-        network:
-          version: 2
-          renderer: networkd
-          ethernets:
-            \(nic):
-              dhcp4: false
-          bridges:
-            \(bridge):
-              interfaces: [\(nic)]
-
-        """
-        switch addressing {
-        case .dhcp:
-            body += """
-                  dhcp4: true
-
-            """
-        case .staticIP:
-            let addr = address ?? ""
-            body += """
-                  addresses: [\(addr)]
-
-            """
-            if let gateway, !gateway.isEmpty {
-                body += """
-                      routes:
-                        - to: default
-                          via: \(gateway)
-
-                """
-            }
-            if !dns.isEmpty {
-                body += """
-                      nameservers:
-                        addresses: [\(dns.joined(separator: ", "))]
-
-                """
-            }
+        let plan: HostInterfaceAddressApplyPlan = if case let .success(resolved) = HostInterfaceAddressApply.resolveLegacy(
+            addressing: addressing,
+            address: address,
+            gateway: gateway,
+            dns: dns,
+        ) {
+            resolved
+        } else {
+            HostInterfaceAddressApplyPlan(dhcpEnabled: addressing == .dhcp, dns: dns)
         }
-        return body
+        return HostInterfaceAddressApply.netplanYAML(bridge: bridge, nic: nic, plan: plan)
+    }
+
+    public static func netplanYAML(
+        bridge: String,
+        nic: String,
+        plan: HostInterfaceAddressApplyPlan,
+    ) -> String {
+        HostInterfaceAddressApply.netplanYAML(bridge: bridge, nic: nic, plan: plan)
     }
 
     // MARK: - Plan
@@ -367,22 +348,14 @@ public enum LinuxHostBridgeApply {
         if !validInterfaceName(request.bridge) {
             return refuse(backend: probe.backend, message: "Invalid bridge name '\(request.bridge)'.")
         }
-        if request.addressing == .staticIP {
-            guard let address = request.address, !address.isEmpty else {
-                return refuse(
-                    backend: probe.backend,
-                    message: "Static host address on \(request.bridge) needs --address (Device, not guest).",
-                )
+        let planResult = HostInterfaceAddressApply.resolve(from: request)
+        guard case let .success(plan) = planResult else {
+            if case let .failure(error) = planResult {
+                return refuse(backend: probe.backend, message: error.message)
             }
-            guard let gateway = request.gateway, !gateway.isEmpty else {
-                return refuse(
-                    backend: probe.backend,
-                    message: "Static host address on \(request.bridge) needs --gateway.",
-                )
-            }
-            _ = address
-            _ = gateway
+            return refuse(backend: probe.backend, message: "Invalid address plan.")
         }
+        _ = plan
 
         var warnings = probe.sessionWarnings
         if probe.facts.onlyUplink {
@@ -397,7 +370,7 @@ public enum LinuxHostBridgeApply {
             )
         }
 
-        let changes = plannedChanges(request: request, probe: probe, nic: nic)
+        let changes = plannedChanges(request: request, probe: probe, nic: nic, plan: plan)
         let commands = changes.map(\.command)
         let changeText = changes.map(\.description)
 
@@ -518,17 +491,22 @@ public enum LinuxHostBridgeApply {
         }
         let helper = probe.facts.helperPath ?? probe.helperPaths.first
         let ready = probe.facts.ready
+        var changes = [
+            "backend=\(probe.backend.rawValue)",
+            "bridge=\(request.bridge) present=\(probe.facts.bridges.contains { $0.name == request.bridge })",
+            "helper=\(helper ?? "missing") setuid=\(probe.facts.helperSetuid)",
+            "acl=\(probe.facts.aclAllowsSuggested == true)",
+            "owned=\(probe.owned)",
+        ]
+        if case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) {
+            let label = request.bridge
+            changes += HostInterfaceAddressApply.plannedDiffs(plan: plan, interfaceLabel: label)
+        }
         return LinuxHostBridgeApplyResult(
             success: ready && probe.backend != .ifupdown && probe.backend != .unknown,
             applied: false,
             backend: probe.backend.rawValue,
-            changes: [
-                "backend=\(probe.backend.rawValue)",
-                "bridge=\(request.bridge) present=\(probe.facts.bridges.contains { $0.name == request.bridge })",
-                "helper=\(helper ?? "missing") setuid=\(probe.facts.helperSetuid)",
-                "acl=\(probe.facts.aclAllowsSuggested == true)",
-                "owned=\(probe.owned)",
-            ],
+            changes: changes,
             warnings: warnings,
             commands: equivalentCommands(request: request, probe: probe),
             message: ready
@@ -541,18 +519,13 @@ public enum LinuxHostBridgeApply {
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
         nic: String,
+        plan: HostInterfaceAddressApplyPlan,
     ) -> [LinuxHostBridgeChange] {
         var changes: [LinuxHostBridgeChange] = []
-        let addrFlag = switch request.addressing {
-        case .dhcp:
-            "--dhcp"
-        case .staticIP:
-            "--static --address \(request.address ?? "") --gateway \(request.gateway ?? "")"
-                + (request.dns.isEmpty ? "" : " --dns \(request.dns.joined(separator: ","))")
-        }
+        let addrParts = addressCLIFlags(plan: plan)
         changes.append(LinuxHostBridgeChange(
-            description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device address \(request.addressing.rawValue) on \(request.bridge), not the guest)",
-            command: "sudo \(scriptName) --apply --nic \(nic) \(addrFlag) --confirm",
+            description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device addresses on \(request.bridge), not the guest)",
+            command: "sudo \(scriptName) --apply --nic \(nic) \(addrParts) --confirm",
         ))
         switch probe.backend {
         case .netplan:
@@ -588,6 +561,24 @@ public enum LinuxHostBridgeApply {
         return changes
     }
 
+    private static func addressCLIFlags(plan: HostInterfaceAddressApplyPlan) -> String {
+        var parts: [String] = []
+        if plan.dhcpEnabled { parts.append("--dhcp") }
+        if !plan.dhcpEnabled, plan.staticCIDRs.isEmpty == false {
+            parts.append("--static")
+        }
+        for cidr in plan.staticCIDRs {
+            parts.append("--address \(cidr)")
+        }
+        if let gateway = plan.gateway, !gateway.isEmpty {
+            parts.append("--gateway \(gateway)")
+        }
+        if !plan.dns.isEmpty {
+            parts.append("--dns \(plan.dns.joined(separator: ","))")
+        }
+        return parts.isEmpty ? "--dhcp" : parts.joined(separator: " ")
+    }
+
     private static func equivalentCommands(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
@@ -596,7 +587,17 @@ public enum LinuxHostBridgeApply {
         if nic.isEmpty {
             return ["# no wired uplink"]
         }
-        return plannedChanges(request: request, probe: probe, nic: nic).map(\.command)
+        guard let plan = resolvedPlan(from: request) else {
+            return ["# invalid address plan"]
+        }
+        return plannedChanges(request: request, probe: probe, nic: nic, plan: plan).map(\.command)
+    }
+
+    private static func resolvedPlan(from request: LinuxHostBridgeApplyRequest) -> HostInterfaceAddressApplyPlan? {
+        guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
+            return nil
+        }
+        return plan
     }
 
     private static func resolvedNic(

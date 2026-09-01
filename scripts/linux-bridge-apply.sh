@@ -23,6 +23,7 @@ ACTION=""
 NIC=""
 ADDRESSING="dhcp"
 ADDRESS=""
+ADDRESSES=()
 GATEWAY=""
 DNS=""
 CONFIRM=0
@@ -42,7 +43,7 @@ while [[ $# -gt 0 ]]; do
     --bridge) BRIDGE="${2:-}"; shift ;;
     --dhcp) ADDRESSING=dhcp ;;
     --static) ADDRESSING=static ;;
-    --address) ADDRESS="${2:-}"; shift ;;
+    --address) ADDRESSES+=("${2:-}"); shift ;;
     --gateway) GATEWAY="${2:-}"; shift ;;
     --dns) DNS="${2:-}"; shift ;;
     --confirm) CONFIRM=1 ;;
@@ -84,12 +85,24 @@ is_wifi() {
 
 print_changes() {
   local backend="$1" nic="$2"
-  echo "CHANGE persist ${BRIDGE} via ${backend} (Device ${ADDRESSING} on ${BRIDGE}, not guest)"
-  if [[ "$ADDRESSING" == "static" ]]; then
-    echo "CHANGE Device address ${ADDRESS} gateway ${GATEWAY} on ${BRIDGE}"
-    if [[ -n "$DNS" ]]; then
-      echo "CHANGE nameservers ${DNS} on ${BRIDGE}"
-    fi
+  echo "CHANGE persist ${BRIDGE} via ${backend} (Device addresses on ${BRIDGE}, not guest)"
+  if [[ "$ADDRESSING" == "dhcp" ]]; then
+    echo "CHANGE Device IPv4: DHCP (primary)"
+  fi
+  if [[ ${#ADDRESSES[@]} -gt 0 ]]; then
+    for addr in "${ADDRESSES[@]}"; do
+      if [[ "$ADDRESSING" == "dhcp" ]]; then
+        echo "CHANGE Device static alias ${addr} on ${BRIDGE}"
+      else
+        echo "CHANGE Device static address ${addr} on ${BRIDGE}"
+      fi
+    done
+  fi
+  if [[ -n "$GATEWAY" ]]; then
+    echo "CHANGE default route gateway ${GATEWAY} on ${BRIDGE}"
+  fi
+  if [[ -n "$DNS" ]]; then
+    echo "CHANGE nameservers ${DNS} on ${BRIDGE}"
   fi
   echo "CHANGE marker-tagged allow ${BRIDGE} in ${ACL_PATH} (${ACL_MARKER})"
   echo "CHANGE setuid qemu-bridge-helper on known paths"
@@ -107,9 +120,8 @@ print_changes() {
   echo "CMD sudo linux-bridge-apply.sh --apply --nic ${nic} --${ADDRESSING} --confirm"
 }
 
-# Same fields as LinuxHostBridgeApply.netplanYAML (Device address on the bridge).
 emit_netplan() {
-  if [[ "$ADDRESSING" == "dhcp" ]]; then
+  if [[ "$ADDRESSING" == "dhcp" && ${#ADDRESSES[@]} -eq 0 ]]; then
     cat <<EOF
 # managed-by: barkvisor
 network:
@@ -136,9 +148,23 @@ network:
   bridges:
     ${BRIDGE}:
       interfaces: [${NIC}]
-      addresses: [${ADDRESS}]
 EOF
-  if [[ -n "$GATEWAY" ]]; then
+  if [[ "$ADDRESSING" == "dhcp" ]]; then
+    echo "      dhcp4: true"
+  fi
+  if [[ ${#ADDRESSES[@]} -gt 0 ]]; then
+    if [[ ${#ADDRESSES[@]} -eq 1 ]]; then
+      echo "      addresses: [${ADDRESSES[0]}]"
+    else
+      echo "      addresses:"
+      for addr in "${ADDRESSES[@]}"; do
+        echo "        - ${addr}"
+      done
+    fi
+  elif [[ -n "$ADDRESS" ]]; then
+    echo "      addresses: [${ADDRESS}]"
+  fi
+  if [[ -n "$GATEWAY" && "$ADDRESSING" != "dhcp" ]]; then
     cat <<EOF
       routes:
         - to: default
@@ -212,8 +238,15 @@ if is_wifi "$NIC"; then
   echo "error: refuse Wi-Fi uplink '${NIC}'. Bridge a wired NIC." >&2
   exit 7
 fi
-if [[ "$ADDRESSING" == "static" && ( -z "$ADDRESS" || -z "$GATEWAY" ) ]]; then
-  echo "error: static host address on ${BRIDGE} needs --address and --gateway (Device, not guest)." >&2
+if [[ ${#ADDRESSES[@]} -eq 0 && -n "$ADDRESS" ]]; then
+  ADDRESSES+=("$ADDRESS")
+fi
+if [[ "$ADDRESSING" == "static" && ${#ADDRESSES[@]} -eq 0 ]]; then
+  echo "error: static host address on ${BRIDGE} needs --address (Device, not guest)." >&2
+  exit 8
+fi
+if [[ "$ADDRESSING" == "static" && -z "$GATEWAY" ]]; then
+  echo "error: static host address on ${BRIDGE} needs --gateway (Device, not guest)." >&2
   exit 8
 fi
 
@@ -260,15 +293,24 @@ case "$BACKEND" in
     fi
     ;;
   network-manager)
+    addr_joined=""
+    if [[ ${#ADDRESSES[@]} -gt 0 ]]; then
+      addr_joined="$(IFS=,; echo "${ADDRESSES[*]}")"
+    elif [[ -n "$ADDRESS" ]]; then
+      addr_joined="$ADDRESS"
+    fi
     if [[ "$ADDRESSING" == "static" ]]; then
       if [[ -n "$DNS" ]]; then
         nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
-          ipv4.method manual ipv4.addresses "$ADDRESS" ipv4.gateway "$GATEWAY" \
+          ipv4.method manual ipv4.addresses "$addr_joined" ipv4.gateway "$GATEWAY" \
           ipv4.dns "$DNS" || true
       else
         nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
-          ipv4.method manual ipv4.addresses "$ADDRESS" ipv4.gateway "$GATEWAY" || true
+          ipv4.method manual ipv4.addresses "$addr_joined" ipv4.gateway "$GATEWAY" || true
       fi
+    elif [[ -n "$addr_joined" ]]; then
+      nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
+        ipv4.method auto ipv4.addresses "$addr_joined" || true
     else
       nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
         ipv4.method auto || true
@@ -291,15 +333,22 @@ EOF
       echo "[Network]"
       if [[ "$ADDRESSING" == "dhcp" ]]; then
         echo "DHCP=yes"
-      else
+      fi
+      if [[ ${#ADDRESSES[@]} -gt 0 ]]; then
+        for addr in "${ADDRESSES[@]}"; do
+          echo "Address=${addr}"
+        done
+      elif [[ -n "$ADDRESS" ]]; then
         echo "Address=${ADDRESS}"
+      fi
+      if [[ -n "$GATEWAY" && "$ADDRESSING" != "dhcp" ]]; then
         echo "Gateway=${GATEWAY}"
-        if [[ -n "$DNS" ]]; then
-          IFS=',' read -ra _dns <<< "$DNS"
-          for d in "${_dns[@]}"; do
-            echo "DNS=${d// /}"
-          done
-        fi
+      fi
+      if [[ -n "$DNS" ]]; then
+        IFS=',' read -ra _dns <<< "$DNS"
+        for d in "${_dns[@]}"; do
+          echo "DNS=${d// /}"
+        done
       fi
     } >"/etc/systemd/network/90-barkvisor-${BRIDGE}.network"
     systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
