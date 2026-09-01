@@ -875,16 +875,45 @@ public enum LinuxHostBridgeApply {
         return false
     }
 
-    struct OwnerMarker: Codable {
-        var bridge: String
-        var uplink: String?
-        var createdBridge: Bool
+    public struct OwnerMarker: Codable, Sendable, Equatable {
+        public var bridge: String
+        public var uplink: String?
+        public var createdBridge: Bool
+
+        public init(bridge: String, uplink: String? = nil, createdBridge: Bool) {
+            self.bridge = bridge
+            self.uplink = uplink
+            self.createdBridge = createdBridge
+        }
     }
 
-    static func readOwnerMarker(bridge: String, dataDir: URL = Config.dataDir) -> OwnerMarker? {
+    public static func readOwnerMarker(bridge: String, dataDir: URL = Config.dataDir) -> OwnerMarker? {
         let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(OwnerMarker.self, from: data)
+    }
+
+    public static func writeOwnerMarker(
+        bridge: String,
+        uplink: String,
+        createdBridge: Bool,
+        dataDir: URL = Config.dataDir,
+    ) throws {
+        let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let marker = OwnerMarker(bridge: bridge, uplink: uplink, createdBridge: createdBridge)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(marker).write(to: url, options: .atomic)
+    }
+
+    public static func listOwnerMarkers(dataDir: URL = Config.dataDir) -> [OwnerMarker] {
+        listedMarkerBridges(dataDir: dataDir)
+            .sorted()
+            .compactMap { readOwnerMarker(bridge: $0, dataDir: dataDir) }
     }
 
     public static func createdBridgeForApply(
@@ -1022,26 +1051,6 @@ extension LinuxHostBridgeApply {
             commands: changes.map(\.command),
             message: "Ready to delete owned \(request.bridge). Keep changes within \(rollbackSeconds)s or they auto-revert.",
         )
-    }
-
-    public static func writeOwnerMarker(
-        bridge: String,
-        uplink: String,
-        createdBridge: Bool,
-        dataDir: URL = Config.dataDir,
-    ) throws {
-        let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
-        let payload: [String: Any] = [
-            "bridge": bridge,
-            "uplink": uplink,
-            "createdBridge": createdBridge,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-        try data.write(to: url, options: .atomic)
     }
 
     public static func createdBridgeForUplink(_ uplink: String, dataDir: URL = Config.dataDir) -> Bool {

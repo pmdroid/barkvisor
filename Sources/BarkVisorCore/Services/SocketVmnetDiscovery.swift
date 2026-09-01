@@ -37,6 +37,26 @@ public enum SocketVmnetDiscovery {
         name == "lo" || name == "lo0"
     }
 
+    public static func resolveUplink(
+        forBridge name: String,
+        dataDir: URL = Config.dataDir,
+    ) -> String {
+        if let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: name, dataDir: dataDir)?.uplink,
+           !uplink.isEmpty {
+            return uplink
+        }
+        return name
+    }
+
+    public static func bridgeName(
+        forUplink uplink: String,
+        dataDir: URL = Config.dataDir,
+    ) -> String? {
+        LinuxHostBridgeApply.listOwnerMarkers(dataDir: dataDir)
+            .first(where: { $0.uplink == uplink })?
+            .bridge
+    }
+
     public static func perInterfaceSocketPaths(_ interface: String) -> [String] {
         [
             "/opt/homebrew/var/run/socket_vmnet.bridged.\(interface)",
@@ -96,8 +116,33 @@ public enum SocketVmnetDiscovery {
 
     public static func bridgeStates(
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        listBridged: (String) -> [String] = { dir in
+            (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        },
+        sharedUplink: () -> String? = { sharedUplinkInterface() },
+        dataDir: URL = Config.dataDir,
     ) -> [BridgeStateDTO] {
-        existingSockets(fileExists: fileExists).map { item in
+        let sockets = existingSockets(
+            fileExists: fileExists,
+            listBridged: listBridged,
+            sharedUplink: sharedUplink,
+        )
+        let markers = LinuxHostBridgeApply.listOwnerMarkers(dataDir: dataDir)
+        if !markers.isEmpty {
+            let pathByUplink = Dictionary(uniqueKeysWithValues: sockets.map { ($0.interface, $0.path) })
+            return markers.compactMap { marker in
+                guard let uplink = marker.uplink, !uplink.isEmpty else { return nil }
+                let path = pathByUplink[uplink]
+                return BridgeStateDTO(
+                    interface: marker.bridge,
+                    socketPath: path,
+                    plistExists: false,
+                    daemonRunning: path != nil,
+                    status: path != nil ? "active" : "inactive",
+                )
+            }
+        }
+        return sockets.map { item in
             BridgeStateDTO(
                 interface: item.interface,
                 socketPath: item.path,

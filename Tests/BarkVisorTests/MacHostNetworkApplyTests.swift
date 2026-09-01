@@ -412,5 +412,32 @@ struct MacHostBridgeApplyPlannerTests {
                 #expect(error.httpStatus == 409)
             }
         }
+
+        @Test func `mac apply plan persists brN to uplink map`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["en0"])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(
+                    facts: facts,
+                    interface: "en0",
+                    brewFormulaInstalled: true,
+                    brewServiceLoaded: true,
+                ),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "en0"),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.changes.contains(where: {
+                $0.contains("host-bridge-br0.json") && $0.contains("en0")
+            }))
+        }
     #endif
 }

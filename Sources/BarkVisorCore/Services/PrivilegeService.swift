@@ -69,7 +69,10 @@ public enum PrivilegeService {
 
         public func bridgeStatus(interface: String) async throws -> String {
             let states = SocketVmnetDiscovery.bridgeStates()
-            if let match = states.first(where: { $0.interface == interface }) {
+            let uplink = SocketVmnetDiscovery.resolveUplink(forBridge: interface)
+            let mapped = SocketVmnetDiscovery.bridgeName(forUplink: interface)
+            let names = Set([interface, uplink, mapped].compactMap(\.self))
+            if let match = states.first(where: { names.contains($0.interface) }) {
                 return match.status
             }
             if SocketVmnetDiscovery.socketAvailable() {

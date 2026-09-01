@@ -137,6 +137,12 @@ import Foundation
             ).map {
                 LinuxHostBridgeChange(description: $0, command: "")
             }
+            changes.append(
+                LinuxHostBridgeChange(
+                    description: "Map \(request.bridge) → \(device) in host-bridge-\(request.bridge).json",
+                    command: "",
+                ),
+            )
             let commands = MacHostNetworkApply.equivalentCommands(
                 service: service,
                 device: device,
@@ -301,9 +307,13 @@ import Foundation
         }
 
         private static func resolvedDevice(nic: String?, facts: HostBridgeFacts) -> String? {
-            if let nic, !nic.isEmpty { return nic }
+            if let nic, !nic.isEmpty {
+                return SocketVmnetDiscovery.resolveUplink(forBridge: nic)
+            }
             if let route = facts.defaultRouteInterface, !route.isEmpty { return route }
-            return facts.bridges.first?.name
+            return facts.bridges.first.flatMap { snap in
+                snap.enslaved.first ?? snap.name
+            }
         }
     }
 
@@ -338,10 +348,11 @@ import Foundation
                         return plan
                     }(),
                 )
+                let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
                 try LinuxHostBridgeApply.writeOwnerMarker(
                     bridge: request.bridge,
                     uplink: resolved.device,
-                    createdBridge: true,
+                    createdBridge: created,
                 )
                 let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
                 try HostNetworkPendingCommitService.writeMac(pending)

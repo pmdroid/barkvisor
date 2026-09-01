@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { HostInterface } from '../api/types'
 import {
+  bridgedPickerInterfaces,
   bridgeSetupInterfaceKey,
   formatInterfaceAddressSummary,
   formatInterfaceLinkSummary,
@@ -338,5 +339,29 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), owned)).toBe(true)
     expect(interfaceShowsDelete(iface({ name: 'br0' }), foreign)).toBe(false)
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), foreign)).toBe(false)
+  })
+
+  test('VM picker lists brN not raw uplink when synthetic bridge exists', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    const ifaces = [
+      iface({ name: 'en0', ipAddress: '192.168.1.10' }),
+      iface({ name: 'br0', ipAddress: '192.168.1.10' }),
+      iface({ name: 'lo0' }),
+    ]
+    expect(bridgedPickerInterfaces(ifaces, ready).map((row) => row.name)).toEqual(['br0'])
+    expect(bridgedPickerInterfaces(ifaces, ready, 'en0').map((row) => row.name)).toEqual(['en0', 'br0'])
+    expect(bridgedPickerInterfaces(
+      [iface({ name: 'en0' }), iface({ name: 'lo0' })],
+      { ...ready, bridges: [] },
+    ).map((row) => row.name)).toEqual(['en0', 'lo0'])
   })
 })
