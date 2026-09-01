@@ -58,8 +58,8 @@ export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommand
       id: 'allow-acl',
       label: `Allow ${br} in qemu-bridge.conf`,
       commands: [
-        '# barkvisor:allow-br0',
-        `printf '%s\\n%s\\n' '# barkvisor:allow-br0' 'allow ${br}' | sudo tee -a ${HOST_BRIDGE_ACL_PATH}`,
+        `# barkvisor:allow-${br}`,
+        `printf '%s\\n%s\\n' '# barkvisor:allow-${br}' 'allow ${br}' | sudo tee -a ${HOST_BRIDGE_ACL_PATH}`,
       ].join('\n'),
     })
   }

@@ -321,3 +321,24 @@ export function bridgeSetupInterfaceKey(
   const uplink = readiness.defaultRouteInterface
   return uplink ? `${hostId}:${uplink}` : null
 }
+
+export function pendingCommitMatchesInterface(
+  pending: { target: string; nic: string },
+  ifaceName: string,
+  mode: string,
+): boolean {
+  if (mode === 'macos-guide') return pending.target === ifaceName
+  return pending.target === ifaceName || pending.nic === ifaceName
+}
+
+export function hostBridgeActionPath(
+  base: string,
+  nic: string,
+  mode: string,
+  target?: string | null,
+): string {
+  if (mode === 'macos-guide') {
+    return `${base}/${encodeURIComponent(nic)}`
+  }
+  return `${base}/${encodeURIComponent(target || nic)}`
+}

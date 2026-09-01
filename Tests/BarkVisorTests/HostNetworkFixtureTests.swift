@@ -58,7 +58,7 @@ struct HostNetworkFixtureTests {
                 interface: "br0",
                 liveIPv4: ["192.168.1.10", "10.0.0.2"],
                 readFile: { path in
-                    path == LinuxHostBridgeApply.netplanPath ? yaml : nil
+                    path == LinuxHostBridgeApply.netplanPath(bridge: "br0") ? yaml : nil
                 },
                 run: { _, _ in
                     Issue.record("nmcli should not run when netplan fixture matches")
