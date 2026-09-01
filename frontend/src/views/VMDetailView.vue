@@ -89,6 +89,7 @@ import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughS
 import { isAgentWorkload } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
+  startOnBootFooterFromWorkload,
   startOnBootLabel,
 } from '../utils/workloadStartOnBoot'
 import {
@@ -1345,6 +1346,21 @@ const healthBanner = computed(() => {
       >{{ healthLabel(vmHealth(vm)) }}</span>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
+        <label
+          class="boot-toggle"
+          :class="{ disabled: controlDisabled }"
+          :title="startOnBootFooterFromWorkload(vm)"
+        >
+          <span>{{ startOnBootLabel() }}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            :checked="startOnBootOn"
+            :disabled="controlDisabled"
+            :aria-label="startOnBootLabel()"
+            @change="toggleStartOnBoot(($event.target as HTMLInputElement).checked)"
+          >
+        </label>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
@@ -1508,14 +1524,6 @@ const healthBanner = computed(() => {
             <div class="detail-row">
               <span class="detail-label">Description</span>
               <span class="dim-text">{{ vm.description || '—' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">{{ startOnBootLabel() }}</span>
-              <span>
-                <button type="button" class="mini" :disabled="controlDisabled" @click="toggleStartOnBoot(!startOnBootOn)">
-                  {{ startOnBootOn ? 'On' : 'Off' }}
-                </button>
-              </span>
             </div>
             <div class="detail-row">
               <span class="detail-label">Boot Order</span>
@@ -2150,6 +2158,52 @@ const healthBanner = computed(() => {
   flex-wrap: wrap;
   padding-top: 8px;
   padding-bottom: 8px;
+}
+.boot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.boot-toggle.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.boot-toggle input {
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--progress-track);
+  border: 1px solid var(--border-glass);
+  position: relative;
+  cursor: inherit;
+  flex-shrink: 0;
+}
+.boot-toggle input::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.boot-toggle input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.boot-toggle input:checked::after {
+  transform: translateX(14px);
+  background: #fff;
 }
 .empty p,
 .list-error {

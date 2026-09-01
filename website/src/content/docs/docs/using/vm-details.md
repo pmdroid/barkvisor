@@ -8,6 +8,7 @@ Every VM row links to its detail page. This is where you drive a single **Worklo
 
 ## Toolbar actions
 
+- **Start when this Device boots** — labeled toggle next to Start. Off unless you turn it on.
 - **Start** — boot the Workload
 - **Stop** — split button: **Shutdown** (clean ACPI shutdown) vs **Force Stop** (pull the plug), with confirmation
 - **Restart** — clean reboot

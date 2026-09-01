@@ -449,6 +449,31 @@ struct WorkloadDetailTests {
         #expect(object?["startOnBoot"] as? Bool == true)
     }
 
+    @Test func `startOnBoot toggle sits beside Start and still PATCHes startOnBoot`() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/WorkloadDetailView.swift"),
+            encoding: .utf8,
+        )
+        let client = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/APIClient.swift"),
+            encoding: .utf8,
+        )
+        let toggle = try #require(source.range(of: "Toggle(isOn: Binding("))
+        let start = try #require(source.range(of: "Button(\"Start\")"))
+        #expect(toggle.lowerBound < start.lowerBound)
+        #expect(source.contains("WorkloadStartOnBoot.label"))
+        #expect(source.contains("setStartOnBoot(workload, enabled: enabled, on: device)"))
+        #expect(!source.contains("Hardware facts"))
+        #expect(client.contains("WorkloadStartOnBootBody(startOnBoot: enabled)"))
+        #expect(client.contains("method: \"PATCH\""))
+    }
+
     @Test func `ready isos come from that device library excluding attached`() {
         let fedora = libraryImage(id: "iso-fedora", name: "Fedora DVD", status: "ready")
         let downloading = libraryImage(id: "iso-dl", name: "Ubuntu", status: "downloading")
