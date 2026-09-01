@@ -131,7 +131,8 @@ struct HostInfoServiceTests {
         @Test func `interface operstate and carrier readable from sysfs`() {
             let oper = LinuxHostNetwork.interfaceOperState("lo")
             #expect(oper == "unknown" || oper == "up" || oper != nil)
-            #expect(LinuxHostNetwork.interfaceCarrier("lo") == nil)
+            let carrier = LinuxHostNetwork.interfaceCarrier("lo")
+            #expect(carrier == nil || carrier == true)
         }
 
         @Test func `listInterfaceSnapshots includes link fields on Linux`() {

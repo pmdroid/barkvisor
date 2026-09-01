@@ -59,7 +59,6 @@ import {
   interfaceRoleLabel,
   interfaceRouteColumn,
   interfaceBridgeColumn,
-  interfaceBridgeFieldsReadOnly,
   interfaceEnslavedToBridge,
   resolveBridgeApplyNic,
 } from '../utils/hostInterfaceDisplay'
@@ -275,21 +274,6 @@ const canApplyAddresses = computed(() => {
   return interfaceAddressValidation.value.ok
 })
 
-const canApplyBridgeSetup = computed(() => {
-  const row = selectedInterfaceRow.value
-  if (!row) return false
-  const ready = selectedInterfaceReadiness.value
-  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
-  if (!interfaceOwnsBridgeSetupApply(role, row.iface, ready, selectedInterfaceMode.value)) return false
-  const deviceCaps = deviceCapsFor(row.hostId)
-  return hostBridgeCanApply({
-    platform: deviceCaps.platform,
-    supportsHostMutation: deviceCaps.supportsHostMutation,
-    supportsHostBridgeManagement: deviceCaps.supportsHostBridgeManagement,
-    supportsManagedBridgeDaemon: deviceCaps.supportsManagedBridgeDaemon,
-  })
-})
-
 const canApplySelectedInterface = computed(() => canApplyAddresses.value)
 
 const showAddressEditor = computed(() => {
@@ -363,7 +347,6 @@ const interfaceBridgeStatusSummary = computed(() => {
   const row = selectedInterfaceRow.value
   const ready = selectedInterfaceReadiness.value
   if (!row || !ready) return ''
-  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
   if (!showBridgeSetupPanel.value) return ''
   const device = devicesStore.deviceByHostId(row.hostId)
   const name = device ? deviceDisplayLabel(device) : undefined
@@ -1236,7 +1219,7 @@ async function doDeleteNetwork() {
           >
             IPv4 is configured on member port{{ selectedBridgeMembers.length === 1 ? '' : 's' }}
             {{ selectedBridgeMembers.length ? selectedBridgeMembers.join(', ') : '(none yet)' }}.
-            Select a port row to edit addresses. Use Apply bridge below for enslave, helper, and ACL.
+            Select a port row to edit addresses.
           </p>
 
           <HostInterfaceAddressList

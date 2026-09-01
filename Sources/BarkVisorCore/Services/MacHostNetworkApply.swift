@@ -25,6 +25,7 @@ import Foundation
             public var dnsServers: [String]
             /// `ifconfig alias` CIDRs applied after the snapshot was taken (removed on revert).
             public var appliedAliasCIDRs: [String]
+            public var removedAliasCIDRs: [String]
 
             public init(
                 device: String,
@@ -32,16 +33,18 @@ import Foundation
                 infoText: String,
                 dnsServers: [String],
                 appliedAliasCIDRs: [String] = [],
+                removedAliasCIDRs: [String] = [],
             ) {
                 self.device = device
                 self.service = service
                 self.infoText = infoText
                 self.dnsServers = dnsServers
                 self.appliedAliasCIDRs = appliedAliasCIDRs
+                self.removedAliasCIDRs = removedAliasCIDRs
             }
 
             enum CodingKeys: String, CodingKey {
-                case device, service, infoText, dnsServers, appliedAliasCIDRs
+                case device, service, infoText, dnsServers, appliedAliasCIDRs, removedAliasCIDRs
             }
 
             public init(from decoder: any Decoder) throws {
@@ -51,6 +54,7 @@ import Foundation
                 infoText = try container.decode(String.self, forKey: .infoText)
                 dnsServers = try container.decodeIfPresent([String].self, forKey: .dnsServers) ?? []
                 appliedAliasCIDRs = try container.decodeIfPresent([String].self, forKey: .appliedAliasCIDRs) ?? []
+                removedAliasCIDRs = try container.decodeIfPresent([String].self, forKey: .removedAliasCIDRs) ?? []
             }
         }
 
@@ -256,12 +260,25 @@ import Foundation
             } else {
                 primaryIP = nil
             }
-            try removeStaleAliases(
-                device: device,
-                primaryIP: primaryIP,
-                plannedAliasIPs: plannedAliasIPs,
-                run: run,
-            )
+            let skipStale = plan.dhcpEnabled && primaryIP == nil
+            if !skipStale {
+                let stale = try staleAliasCIDRs(
+                    device: device,
+                    primaryIP: primaryIP,
+                    plannedAliasIPs: plannedAliasIPs,
+                    run: run,
+                )
+                if !stale.isEmpty, var marker = readMarker(device: device) {
+                    marker.removedAliasCIDRs = stale
+                    try writeMarker(marker)
+                }
+                try removeStaleAliases(
+                    device: device,
+                    primaryIP: primaryIP,
+                    plannedAliasIPs: plannedAliasIPs,
+                    run: run,
+                )
+            }
             for cidr in aliasTargets {
                 let parsed = try parseStaticAddress(cidr)
                 let aliasResult = try run(
@@ -338,6 +355,13 @@ import Foundation
             } else {
                 _ = try? run(networksetupPath, ["-setdnsservers", marker.service] + marker.dnsServers)
             }
+            for cidr in marker.removedAliasCIDRs {
+                let parsed = try parseStaticAddress(cidr)
+                _ = try run(
+                    "/sbin/ifconfig",
+                    [device, "alias", parsed.ip, "netmask", parsed.mask],
+                )
+            }
             removeMarker(device: device)
             return true
         }
@@ -346,17 +370,56 @@ import Foundation
             device: String,
             run: (String, [String]) throws -> CommandResult,
         ) throws -> [String] {
+            try listIPv4Rows(device: device, run: run).map(\.ip)
+        }
+
+        static func listIPv4Rows(
+            device: String,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws -> [(ip: String, cidr: String)] {
             let result = try run("/sbin/ifconfig", [device])
             guard result.succeeded else { return [] }
-            var ips: [String] = []
+            var rows: [(ip: String, cidr: String)] = []
             for raw in result.stdoutString.split(whereSeparator: \.isNewline) {
                 let line = String(raw).trimmingCharacters(in: .whitespaces)
                 guard line.hasPrefix("inet ") else { continue }
                 let parts = line.split(whereSeparator: \.isWhitespace).map(String.init)
                 guard parts.count >= 2, parts[1].contains(".") else { continue }
-                ips.append(parts[1])
+                let ip = parts[1]
+                var prefix = 32
+                if let idx = parts.firstIndex(of: "netmask"), idx + 1 < parts.count,
+                   let parsed = prefixLength(fromNetmask: parts[idx + 1]) {
+                    prefix = parsed
+                }
+                rows.append((ip, "\(ip)/\(prefix)"))
             }
-            return ips
+            return rows
+        }
+
+        static func prefixLength(fromNetmask raw: String) -> Int? {
+            if raw.hasPrefix("0x"), let value = UInt32(raw.dropFirst(2), radix: 16) {
+                return value.nonzeroBitCount
+            }
+            let octets = raw.split(separator: ".").compactMap { UInt8($0) }
+            guard octets.count == 4 else { return nil }
+            var bits: UInt32 = 0
+            for octet in octets {
+                bits = (bits << 8) | UInt32(octet)
+            }
+            return bits.nonzeroBitCount
+        }
+
+        static func staleAliasCIDRs(
+            device: String,
+            primaryIP: String?,
+            plannedAliasIPs: Set<String>,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws -> [String] {
+            try listIPv4Rows(device: device, run: run).compactMap { row in
+                if row.ip == primaryIP { return nil }
+                if plannedAliasIPs.contains(row.ip) { return nil }
+                return row.cidr
+            }
         }
 
         static func removeStaleAliases(
