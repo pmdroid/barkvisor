@@ -233,6 +233,12 @@ public enum HostInfoService {
         return status
     }
 
+    static func isHiddenHostInterface(_ name: String) -> Bool {
+        let n = name.lowercased()
+        guard n.count > 6, n.hasPrefix("bridge") else { return false }
+        return n.dropFirst(6).allSatisfy(\.isNumber)
+    }
+
     /// List host interfaces with display names and optional per-interface bridge status.
     ///
     /// On Linux, also includes **bridge devices without an IPv4 address** (from sysfs).
@@ -248,6 +254,7 @@ public enum HostInfoService {
         let addressing = addressingByInterface ?? HostInterfaceAddressDiscovery.discoverByInterface()
 
         for iface in listInterfaces() {
+            if isHiddenHostInterface(iface.name) { continue }
             let config = addressing[iface.name] ?? HostInterfaceAddressing()
             byName[iface.name] = HostInterfaceSnapshot(
                 name: iface.name,
@@ -262,8 +269,27 @@ public enum HostInfoService {
             )
         }
 
+        #if os(Linux)
+            for name in LinuxHostNetwork.listHostInterfaceNames() {
+                if byName[name] != nil || isHiddenHostInterface(name) { continue }
+                let config = addressing[name] ?? HostInterfaceAddressing()
+                byName[name] = HostInterfaceSnapshot(
+                    name: name,
+                    displayName: displayName(for: name),
+                    ipAddress: primaryIPv4(from: config) ?? "",
+                    bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
+                    addresses: config.addresses,
+                    dhcpEnabled: config.dhcpEnabled,
+                    gateway: config.gateway,
+                    dns: config.dns,
+                    managedByBarkvisor: config.managedByBarkvisor,
+                )
+            }
+        #endif
+
         let extras = syntheticBridges ?? HostBridgeFactsService.probe().bridges
         for snap in extras {
+            if isHiddenHostInterface(snap.name) { continue }
             if byName[snap.name] != nil { continue }
             let overlayUplink = !interfaceExists(snap.name)
             let config: HostInterfaceAddressing = if overlayUplink, let uplink = snap.enslaved.first, let fromUplink = addressing[uplink] {

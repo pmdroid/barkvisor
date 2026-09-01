@@ -162,13 +162,7 @@ public enum HostBridgeFactsService {
         if !fromMarkers.isEmpty {
             return fromMarkers
         }
-        return sockets.map {
-            HostBridgeSnapshot(
-                name: $0.interface,
-                enslaved: [],
-                createdBridge: LinuxHostBridgeApply.createdBridgeForUplink($0.interface),
-            )
-        }
+        return []
     }
 
     public static func assemble(from inputs: HostBridgeFactInputs) -> HostBridgeFacts {

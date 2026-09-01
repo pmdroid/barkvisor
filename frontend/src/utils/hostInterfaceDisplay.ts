@@ -2,17 +2,42 @@ import type { BridgeInfo, HostBridgeReadiness, HostInterface } from '../api/type
 
 export type HostInterfaceRole = 'uplink' | 'bridge' | 'loopback' | 'tailscale' | 'external'
 
+export function interfaceEnslavedToBridge(
+  iface: HostInterface,
+  readiness?: HostBridgeReadiness | null,
+): string | null {
+  const parent = readiness?.bridges.find((bridge) => bridge.enslaved.includes(iface.name))
+  return parent?.name ?? null
+}
+
+export function hostInterfaceListed(iface: { name: string }): boolean {
+  const name = iface.name.toLowerCase()
+  if (name === 'lo' || name === 'lo0') return false
+  if (/^bridge\d+$/.test(name)) return false
+  return true
+}
+
 export function inferInterfaceRole(
   iface: HostInterface,
   readiness?: HostBridgeReadiness | null,
 ): HostInterfaceRole {
   const name = iface.name.toLowerCase()
   if (name === 'lo' || name === 'lo0') return 'loopback'
-  if (readiness?.bridges.some((bridge) => bridge.name === iface.name)) return 'bridge'
-  if (name.startsWith('br') || name.startsWith('bridge')) return 'bridge'
-  if (readiness?.defaultRouteInterface === iface.name) return 'uplink'
   if (name.startsWith('utun') || name.includes('tailscale')) return 'tailscale'
+  if (/^bridge\d+$/.test(name)) return 'external'
   if (name.startsWith('docker') || name.startsWith('veth') || name.startsWith('virbr')) return 'external'
+  const readinessBridge = readiness?.bridges.find((bridge) => bridge.name === iface.name)
+  if (readinessBridge && /^br\d+$/.test(readinessBridge.name)) return 'bridge'
+  if (/^br\d+$/.test(name) || name.startsWith('virbr')) return 'bridge'
+  if (interfaceEnslavedToBridge(iface, readiness)) return 'uplink'
+  if (readiness?.defaultRouteInterface === iface.name) return 'uplink'
+  if (
+    name.startsWith('en') || name.startsWith('eth') || name.startsWith('enp')
+    || name.startsWith('ens') || name.startsWith('eno') || name.startsWith('wl')
+    || name.startsWith('bond')
+  ) {
+    return 'uplink'
+  }
   return 'external'
 }
 
@@ -109,11 +134,13 @@ export function interfaceOwnsBridgeApply(
 
 export function interfaceOwnsAddressApply(
   role: HostInterfaceRole,
-  _iface: HostInterface,
-  _readiness: HostBridgeReadiness | null | undefined,
+  iface: HostInterface,
+  readiness: HostBridgeReadiness | null | undefined,
   _mode: string,
 ): boolean {
-  return role === 'bridge'
+  if (role === 'external' || role === 'loopback' || role === 'tailscale') return false
+  if (interfaceEnslavedToBridge(iface, readiness)) return false
+  return role === 'bridge' || role === 'uplink'
 }
 
 export function addressApplyTargets(

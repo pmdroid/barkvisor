@@ -56,6 +56,7 @@ import {
   addressApplyTargets,
   bridgedPickerInterfaces,
   bridgeSetupInterfaceKey,
+  hostInterfaceListed,
   inferInterfaceRole,
   interfaceAddressColumn,
   interfaceBridgeColumn,
@@ -201,7 +202,7 @@ const interfaceTableRows = computed<InterfaceTableRow[]>(() => {
       ? homeNets.interfacesFor(device.hostId)
       : localInterfaces.value
     for (const iface of ifaces) {
-      if (iface.name === 'lo' || iface.name === 'lo0') continue
+      if (!hostInterfaceListed(iface)) continue
       rows.push({
         key: `${device.hostId}:${iface.name}`,
         hostId: device.hostId,

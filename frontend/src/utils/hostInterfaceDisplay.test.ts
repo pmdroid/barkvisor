@@ -6,6 +6,7 @@ import {
   bridgeSetupInterfaceKey,
   formatInterfaceAddressSummary,
   hostBridgeActionPath,
+  hostInterfaceListed,
   inferInterfaceRole,
   interfaceAddressColumn,
   interfaceShowsDelete,
@@ -34,6 +35,23 @@ describe('hostInterfaceDisplay', () => {
       iface({ name: 'en0' }),
       { defaultRouteInterface: 'en0', bridges: [], onlyUplink: false, ready: false, helperPath: null, helperSetuid: false, suggestedBridge: 'br0', aclAllowsSuggested: null },
     )).toBe('uplink')
+  })
+
+  test('does not treat Apple vmnet bridgeNNN or socket en0 as a BarkVisor bridge', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'en0', enslaved: [] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    expect(inferInterfaceRole(iface({ name: 'en0' }), ready)).toBe('uplink')
+    expect(inferInterfaceRole(iface({ name: 'bridge100' }), ready)).toBe('external')
+    expect(hostInterfaceListed(iface({ name: 'bridge100' }))).toBe(false)
+    expect(hostInterfaceListed(iface({ name: 'en0' }))).toBe(true)
   })
 
   test('infers bridge from readiness snapshot', () => {
@@ -133,7 +151,7 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
     expect(interfaceOwnsAddressApply('external', iface({ name: 'docker0' }), ready, 'linux-guide')).toBe(false)
   })
 

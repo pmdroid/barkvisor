@@ -85,6 +85,14 @@ struct HostInfoServiceTests {
         #endif
     }
 
+    @Test func `hides Apple vmnet bridgeNNN`() {
+        #expect(HostInfoService.isHiddenHostInterface("bridge100"))
+        #expect(HostInfoService.isHiddenHostInterface("bridge101"))
+        #expect(!HostInfoService.isHiddenHostInterface("br0"))
+        #expect(!HostInfoService.isHiddenHostInterface("en0"))
+        #expect(!HostInfoService.isHiddenHostInterface("bridge"))
+    }
+
     @Test func `apiBridgeStatus hides not_configured`() {
         #expect(HostInfoService.apiBridgeStatus(nil) == nil)
         #expect(HostInfoService.apiBridgeStatus("not_configured") == nil)
