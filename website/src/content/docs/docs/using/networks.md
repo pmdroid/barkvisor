@@ -109,7 +109,7 @@ Use **Apply** in the drawer, or the API:
 ```sh
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","action":"apply","confirm":true,"addressing":"dhcp"}'
+  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
   -d '{"interface":"<wired-uplink>","action":"commit","confirm":true}'

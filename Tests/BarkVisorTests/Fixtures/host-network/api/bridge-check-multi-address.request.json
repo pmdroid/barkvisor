@@ -1,6 +1,7 @@
 {
   "action": "check",
   "interface": "eth0",
+  "bridge": "br0",
   "addresses": [
     { "kind": "dhcp" },
     { "kind": "alias", "cidr": "10.0.0.2/24" }

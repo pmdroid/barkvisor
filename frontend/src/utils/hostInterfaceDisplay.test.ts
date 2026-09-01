@@ -15,6 +15,7 @@ import {
   interfaceOwnsBridgeSetupApply,
   interfaceRouteColumn,
   interfaceRoleLabel,
+  existingBridgeForInterfaceApply,
   pendingCommitMatchesInterface,
   resolveBridgeApplyNic,
 } from './hostInterfaceDisplay'
@@ -272,6 +273,32 @@ describe('hostInterfaceDisplay', () => {
       ready,
       'macos-guide',
     )).toBe(true)
+  })
+
+  test('existingBridgeForInterfaceApply is parent or self, never implied br0', () => {
+    const pending = {
+      defaultRouteInterface: 'eth0',
+      bridges: [],
+      onlyUplink: false,
+      ready: false,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    const ready = {
+      ...pending,
+      bridges: [{ name: 'br1', enslaved: ['eth1'] }],
+      ready: true,
+      aclAllowsSuggested: true,
+    }
+    expect(existingBridgeForInterfaceApply('uplink', iface({ name: 'eth0' }), pending)).toBe(null)
+    expect(existingBridgeForInterfaceApply(
+      'uplink',
+      iface({ name: 'eth1', bridgeMaster: 'br1' }),
+      ready,
+    )).toBe('br1')
+    expect(existingBridgeForInterfaceApply('bridge', iface({ name: 'br1' }), ready)).toBe('br1')
   })
 
   test('resolveBridgeApplyNic uses enslaved port when drawer targets br0', () => {
