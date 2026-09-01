@@ -357,6 +357,41 @@ struct USBPassthroughTests {
         #expect(!args.contains { $0.contains("vendorid=") })
     }
 
+    @Test func `stored bus identity fails when live host vendor product differs`() {
+        let live = HostUSBDevice(
+            vendorId: "0x046d", productId: "0xc52b", name: "Receiver",
+            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
+        )
+        let stored = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "bus:003.002",
+        )
+        #expect(!USBPassthroughService.matches(stored, host: live))
+        let persistErr = #expect(throws: BarkVisorError.self) {
+            _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [live])
+        }
+        if case let .notFound(message) = persistErr {
+            #expect(message?.contains("bus:003.002") == true)
+        } else {
+            Issue.record("expected notFound, got \(String(describing: persistErr))")
+        }
+
+        let usb = [
+            WorkloadUSBDevice(
+                vendorId: "0x1234", productId: "0x5678", label: "Probe",
+                deviceId: "bus:003.002",
+            ),
+        ]
+        let qemuErr = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [live])
+        }
+        if case let .notFound(message) = qemuErr {
+            #expect(message?.contains("bus:003.002") == true)
+        } else {
+            Issue.record("expected notFound, got \(String(describing: qemuErr))")
+        }
+    }
+
     @Test func `legacy stored bus identity is rejected when the live bus is gone`() {
         let stored = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",

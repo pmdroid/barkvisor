@@ -27,3 +27,9 @@ Feature: USB attach without a serial
     When QEMU args are built
     Then they contain hostbus=3,hostaddr=2
     And they do not contain vendorid=
+
+  Scenario: QEMU refuses bus persist when live vendor product differs
+    Given a stored bus:003.002 device with vendor 1234 product 5678
+    And a different device now sits at that address
+    When QEMU args are built
+    Then they fail because the stored device is not connected

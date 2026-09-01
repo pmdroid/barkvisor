@@ -643,7 +643,12 @@ public enum QEMUBuilder {
             productId: stored.productId,
             serial: stored.serialNumber,
         ).id
-        let host = try USBPassthroughService.resolve(deviceId: lookup, hostDevices: hostDevices)
+        let host = try USBPassthroughService.resolve(
+            deviceId: lookup,
+            hostDevices: hostDevices,
+            vendorId: stored.vendorId,
+            productId: stored.productId,
+        )
         guard host.attachable else {
             throw BarkVisorError.badRequest(
                 host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,

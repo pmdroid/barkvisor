@@ -82,13 +82,21 @@ public enum USBPassthroughService {
     public static func resolve(
         deviceId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String = "",
+        productId: String = "",
     ) throws -> HostUSBDevice {
         let trimmed = deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parsed = USBDeviceIdentity.parse(trimmed) else {
             throw BarkVisorError.badRequest("Invalid USB device id")
         }
         if USBDeviceIdentity.isBusAddressId(trimmed) {
-            return try resolveLiveBus(parsed, rawId: trimmed, hostDevices: hostDevices)
+            return try resolveLiveBus(
+                parsed,
+                rawId: trimmed,
+                hostDevices: hostDevices,
+                vendorId: vendorId,
+                productId: productId,
+            )
         }
         if parsed.serial == nil {
             throw missingSerialIdentityError(trimmed)
@@ -108,8 +116,15 @@ public enum USBPassthroughService {
     public static func resolveAttachable(
         deviceId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String = "",
+        productId: String = "",
     ) throws -> HostUSBDevice {
-        let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
+        let host = try resolve(
+            deviceId: deviceId,
+            hostDevices: hostDevices,
+            vendorId: vendorId,
+            productId: productId,
+        )
         guard host.attachable else {
             throw BarkVisorError.badRequest(
                 host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
@@ -122,6 +137,8 @@ public enum USBPassthroughService {
         _ parsed: USBDeviceIdentity.Ref,
         rawId: String,
         hostDevices: [HostUSBDevice],
+        vendorId: String,
+        productId: String,
     ) throws -> HostUSBDevice {
         guard let bus = parsed.bus, let address = parsed.address else {
             throw BarkVisorError.badRequest("Invalid USB device id")
@@ -133,6 +150,11 @@ public enum USBPassthroughService {
             )
         }
         guard let host = live.first else {
+            throw BarkVisorError.notFound("USB device \(rawId) is not connected")
+        }
+        let vid = USBDeviceIdentity.normalizeHexId(vendorId)
+        let pid = USBDeviceIdentity.normalizeHexId(productId)
+        if (!vid.isEmpty && vid != host.vendorId) || (!pid.isEmpty && pid != host.productId) {
             throw BarkVisorError.notFound("USB device \(rawId) is not connected")
         }
         return host
@@ -242,7 +264,12 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            let host = try resolveAttachable(deviceId: deviceId, hostDevices: hostDevices)
+            let host = try resolveAttachable(
+                deviceId: deviceId,
+                hostDevices: hostDevices,
+                vendorId: device.vendorId,
+                productId: device.productId,
+            )
             return USBPassthroughDevice(
                 vendorId: host.vendorId,
                 productId: host.productId,
