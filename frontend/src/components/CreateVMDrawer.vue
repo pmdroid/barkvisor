@@ -67,6 +67,7 @@ const imagePinVariant = computed(() => wizard.galleryKind.value === 'windows' ? 
           :show-ssh-key="wizard.showSshKeyRow.value"
           :selected-s-s-h-key-id="wizard.selectedSSHKeyId.value"
           :ssh-key-options="wizard.sshKeyOptions.value"
+          :add-ssh-key="wizard.addSSHKey"
           :template-inputs="wizard.templateInputs.value"
           :template-input-values="wizard.templateInputValues.value"
           @update:name="wizard.name.value = $event"

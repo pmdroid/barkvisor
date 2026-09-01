@@ -148,7 +148,7 @@ describe('settings tab query', () => {
     expect(router).not.toContain('RegistryView')
   })
 
-  test('Create VM SSH picker is on Configure and opens Settings sshkeys in a new tab', () => {
+  test('Create VM SSH picker is on Configure and adds keys in the dialog', () => {
     const configure = readFileSync(
       join(here, '../components/create-vm/CreateVMConfigureStep.vue'),
       'utf8',
@@ -158,8 +158,10 @@ describe('settings tab query', () => {
     expect(ssh).toBeGreaterThan(-1)
     expect(adv).toBeGreaterThan(-1)
     expect(ssh).toBeLessThan(adv)
-    expect(configure).toContain('SSH_KEYS_SETTINGS_HREF')
-    expect(configure).toContain('target="_blank"')
+    expect(configure).not.toContain('SSH_KEYS_SETTINGS_HREF')
+    expect(configure).not.toContain('target="_blank"')
+    expect(configure).toContain('Add another key')
+    expect(configure).toContain('addSshKey')
     expect(configure).toContain('This VM needs an SSH key for first login')
   })
 

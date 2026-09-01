@@ -6,7 +6,7 @@ import type { DevicePickOption } from '../../utils/deviceCompatibility'
 import type { TemplateInput } from '../../api/types'
 import type { SizePreset } from '../../utils/hostBuffer'
 import { hostnameFromVMName } from '../../utils/hostnameFromVMName'
-import { SSH_KEYS_SETTINGS_HREF } from '../../utils/settingsTabs'
+import { apiErrorMessage } from '../../api/errors'
 
 const props = defineProps<{
   name: string
@@ -37,6 +37,7 @@ const props = defineProps<{
   showSshKey: boolean
   selectedSSHKeyId: string
   sshKeyOptions: Array<{ value: string; label: string }>
+  addSshKey: (name: string, publicKey: string) => Promise<unknown>
   templateInputs: TemplateInput[]
   templateInputValues: Record<string, string>
 }>()
@@ -58,6 +59,33 @@ const emit = defineEmits<{
 }>()
 
 const advancedOpen = ref(false)
+
+const addKeyOpen = ref(false)
+const newKeyName = ref('')
+const newKeyPublicKey = ref('')
+const addKeyBusy = ref(false)
+const addKeyError = ref('')
+
+function closeAddKey() {
+  addKeyOpen.value = false
+  newKeyName.value = ''
+  newKeyPublicKey.value = ''
+  addKeyError.value = ''
+}
+
+async function submitAddKey() {
+  if (addKeyBusy.value || !newKeyName.value.trim() || !newKeyPublicKey.value.trim()) return
+  addKeyBusy.value = true
+  addKeyError.value = ''
+  try {
+    await props.addSshKey(newKeyName.value, newKeyPublicKey.value)
+    closeAddKey()
+  } catch (e: unknown) {
+    addKeyError.value = apiErrorMessage(e, 'Could not add the SSH key.')
+  } finally {
+    addKeyBusy.value = false
+  }
+}
 
 const hostnameSlug = computed(() => hostnameFromVMName(props.name))
 const memCount = computed(() => Math.max(1, Math.round(props.memoryMB / 1024)))
@@ -134,12 +162,39 @@ function deviceLine(option: DevicePickOption): string {
       <p v-else class="mag-ssh-err">
         This VM needs an SSH key for first login. There is no key yet.
       </p>
-      <a
+      <button
+        v-if="!addKeyOpen"
+        type="button"
         class="mag-ssh-link"
-        :href="SSH_KEYS_SETTINGS_HREF"
-        target="_blank"
-        rel="noopener"
-      >{{ sshKeyOptions.length ? 'Add another key' : 'Add an SSH key' }}</a>
+        @click="addKeyOpen = true"
+      >{{ sshKeyOptions.length ? 'Add another key' : 'Add an SSH key' }}</button>
+      <div v-else class="mag-ssh-add">
+        <input
+          v-model="newKeyName"
+          placeholder="Name, e.g. macbook"
+          :disabled="addKeyBusy"
+        />
+        <textarea
+          v-model="newKeyPublicKey"
+          rows="3"
+          placeholder="Paste a public key, e.g. ssh-ed25519 AAAA..."
+          :disabled="addKeyBusy"
+        />
+        <p v-if="addKeyError" class="mag-ssh-err">{{ addKeyError }}</p>
+        <div class="mag-ssh-add-actions">
+          <button type="button" class="mag-ssh-btn" :disabled="addKeyBusy" @click="closeAddKey">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="mag-ssh-btn primary"
+            :disabled="addKeyBusy || !newKeyName.trim() || !newKeyPublicKey.trim()"
+            @click="submitAddKey"
+          >
+            {{ addKeyBusy ? 'Adding...' : 'Add key' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="templateInputs.length" class="mag-tpl">
@@ -323,8 +378,53 @@ input, select, textarea {
   font-size: 12px;
   color: var(--mag-accent);
   text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
 .mag-ssh-link:hover { text-decoration: underline; }
+.mag-ssh-add {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--mag-line);
+  border-radius: 2px;
+  background: var(--mag-panel);
+}
+.mag-ssh-add input { margin-bottom: 8px; }
+.mag-ssh-add textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  resize: vertical;
+}
+.mag-ssh-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mag-ssh-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 2px;
+  border: 1px solid var(--mag-line);
+  background: none;
+  color: var(--mag-dim);
+  cursor: pointer;
+}
+.mag-ssh-btn:hover { color: var(--mag-text); }
+.mag-ssh-btn.primary {
+  background: var(--mag-accent);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+.mag-ssh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .mag-req { color: var(--red, #e5484d); }
 .mag-tpl { margin-top: 2px; }
 .mag-tpl-field { margin-bottom: 8px; }

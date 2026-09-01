@@ -18,6 +18,7 @@ import type {
   HostBlockDevice,
   Image,
   Network,
+  SSHKey,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useNetworkStore } from '../stores/networks'
@@ -1075,9 +1076,15 @@ export function useCreateVMWizard(
   const sshKeyOptions = computed(() =>
     sshKeyStore.keys.map((k) => ({
       value: k.id,
-      label: k.isDefault ? `${k.name} (default)` : k.name,
+      label: k.isDefault && sshKeyStore.keys.length > 1 ? `${k.name} (default)` : k.name,
     })),
   )
+
+  async function addSSHKey(keyName: string, publicKey: string): Promise<SSHKey> {
+    const key = await sshKeyStore.create(keyName.trim(), publicKey.trim())
+    selectedSSHKeyId.value = key.id
+    return key
+  }
 
   return {
     sshKeys: computed(() => sshKeyStore.keys),
@@ -1166,6 +1173,7 @@ export function useCreateVMWizard(
     templateInputValues,
     setTemplateInput,
     refreshSSHKeys,
+    addSSHKey,
     networkBridged,
     isNAT,
     error,
