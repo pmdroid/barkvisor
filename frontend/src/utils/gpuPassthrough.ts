@@ -55,9 +55,6 @@ export function groupGpusByVendor<T extends { vendorId: string }>(
 export const GPU_IOMMU_NOT_READY =
   'GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready.'
 
-export const GPU_SINGLE_DISPLAY_WARNING =
-  'This machine lists one GPU. Passing it through can blank the host display.'
-
 export const GPU_PASSTHROUGH_DOCS_HREF = 'https://barkvisor.dev/docs/guides/gpu-passthrough/'
 
 /** Other PCI addresses in the same IOMMU group (not the GPU itself). */
@@ -108,7 +105,7 @@ export function gpuPassthroughSupported(
 
 /** Occupancy is the host GPU driver, not an Ollama TCP probe. */
 export function gpuHostOccupancyLabel(inUseByHost: boolean | undefined): string | null {
-  return inUseByHost ? 'In use by host' : null
+  return inUseByHost ? 'Host GPU driver' : null
 }
 
 /** vfio-pci is bound at start. Detach is only safe when the Workload is stopped. */

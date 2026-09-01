@@ -160,11 +160,6 @@ struct WorkloadDetailView: View {
                         .foregroundStyle(.secondary)
                     Link("IOMMU setup", destination: GPUPassthroughCopy.docsURL)
                 }
-                if hostGPUs.count == 1 {
-                    Text(GPUPassthroughCopy.singleDisplayWarning)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.red)
-                }
                 if let attached = workload.gpuDevices, !attached.isEmpty {
                     ForEach(attached) { gpu in
                         LabeledContent(gpu.displayName, value: "IOMMU \(gpu.iommuGroup)")

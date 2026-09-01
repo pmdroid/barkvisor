@@ -856,8 +856,6 @@ enum GPUPassthroughCopy {
         "This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. The same card cannot be host and guest."
     static let iommuNotReady =
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready."
-    static let singleDisplayWarning =
-        "This machine lists one GPU. Passing it through can blank the host display."
     static let docsURL = URL(string: "https://barkvisor.dev/docs/guides/gpu-passthrough/")!
 
     static func groupMatesLabel(pciAddress: String, groupAddresses: [String]?) -> String {
@@ -993,7 +991,7 @@ struct HostGPUDevice: Decodable, Hashable, Identifiable {
             return "Attached to \(claimedByVMName)"
         }
         if inUseByHost == true {
-            return "In use by host"
+            return "Host GPU driver"
         }
         return excludedReason
     }
