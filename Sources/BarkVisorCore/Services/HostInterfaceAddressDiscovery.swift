@@ -358,8 +358,10 @@ public enum LinuxHostInterfaceAddressRead {
             }
             if trimmed.hasPrefix("addresses:") {
                 for cidr in parseYAMLAddressList(trimmed) {
+                    let source: HostInterfaceAddressSource =
+                        addressing.dhcpEnabled || !addressing.addresses.isEmpty ? .alias : .static
                     addressing.addresses.append(
-                        HostInterfaceAddressEntry(cidr: cidr, source: .static, primary: false),
+                        HostInterfaceAddressEntry(cidr: cidr, source: source, primary: false),
                     )
                 }
             }
