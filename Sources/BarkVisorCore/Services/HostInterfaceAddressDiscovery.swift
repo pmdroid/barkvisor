@@ -68,8 +68,12 @@ public enum HostInterfaceAddressDiscovery {
         var merged = config
         let configuredCIDRs = Set(merged.addresses.map(\.cidr))
         let configuredIPs = Set(merged.addresses.map { ipFromCIDR($0.cidr) })
+        let configuredDHCPIP = merged.addresses.first(where: { $0.source == .dhcp })
+            .map { ipFromCIDR($0.cidr) }
         for (index, ip) in liveIPv4.enumerated() {
-            if merged.dhcpEnabled, index == 0 { continue }
+            if merged.dhcpEnabled, isLiveDHCPCandidate(ip: ip, index: index, configuredDHCPIP: configuredDHCPIP) {
+                continue
+            }
             let cidr = inferCIDR(ip: ip, existing: merged.addresses)
             if configuredCIDRs.contains(cidr) || configuredIPs.contains(ip) {
                 continue
@@ -90,17 +94,18 @@ public enum HostInterfaceAddressDiscovery {
             }
         } else if merged.dhcpEnabled {
             for (index, ip) in liveIPv4.enumerated() {
+                guard isLiveDHCPCandidate(ip: ip, index: index, configuredDHCPIP: configuredDHCPIP) else {
+                    continue
+                }
                 let cidr = inferCIDR(ip: ip, existing: merged.addresses)
                 if let rowIndex = merged.addresses.firstIndex(where: {
                     HostInterfaceAddressDiscovery.ipFromCIDR($0.cidr) == ip
                 }) {
-                    if index == 0 {
-                        var row = merged.addresses.remove(at: rowIndex)
-                        row.source = .dhcp
-                        row.primary = true
-                        merged.addresses.insert(row, at: 0)
-                    }
-                } else if index == 0 {
+                    var row = merged.addresses.remove(at: rowIndex)
+                    row.source = .dhcp
+                    row.primary = true
+                    merged.addresses.insert(row, at: 0)
+                } else {
                     merged.addresses.insert(
                         HostInterfaceAddressEntry(cidr: cidr, source: .dhcp, primary: true),
                         at: 0,
@@ -112,6 +117,18 @@ public enum HostInterfaceAddressDiscovery {
             merged.addresses[0].primary = true
         }
         return merged
+    }
+
+    /// When `networksetup` supplied a DHCP lease, prefer that IP over `getifaddrs` ordering.
+    private static func isLiveDHCPCandidate(
+        ip: String,
+        index: Int,
+        configuredDHCPIP: String?,
+    ) -> Bool {
+        if let configuredDHCPIP {
+            return ip == configuredDHCPIP
+        }
+        return index == 0
     }
 
     // MARK: - Platform discovery
@@ -129,8 +146,8 @@ public enum HostInterfaceAddressDiscovery {
     private static func unionInterfaceNames(liveAddresses: [HostInterfaceInfo]) -> [String] {
         var names = Set(liveAddresses.map(\.name))
         #if os(Linux)
-            for br in LinuxHostNetwork.listBridgeInterfaces() {
-                names.insert(br)
+            for name in LinuxHostNetwork.listHostInterfaceNames() {
+                names.insert(name)
             }
         #endif
         return names.sorted()
@@ -250,11 +267,19 @@ public enum HostInterfaceAddressDiscovery {
         public struct ParsedInfo: Sendable, Equatable {
             public var dhcpEnabled: Bool
             public var staticCIDR: String?
+            /// Current DHCP lease from `networksetup -getinfo` (when in DHCP mode).
+            public var dhcpCIDR: String?
             public var gateway: String?
 
-            public init(dhcpEnabled: Bool = false, staticCIDR: String? = nil, gateway: String? = nil) {
+            public init(
+                dhcpEnabled: Bool = false,
+                staticCIDR: String? = nil,
+                dhcpCIDR: String? = nil,
+                gateway: String? = nil,
+            ) {
                 self.dhcpEnabled = dhcpEnabled
                 self.staticCIDR = staticCIDR
+                self.dhcpCIDR = dhcpCIDR
                 self.gateway = gateway
             }
         }
@@ -264,6 +289,11 @@ public enum HostInterfaceAddressDiscovery {
             var info = ParsedInfo()
             if lower.contains("dhcp configuration") {
                 info.dhcpEnabled = true
+                if let ip = MacHostNetworkApply.parseInfoValue(text, key: "IP address"),
+                   let mask = MacHostNetworkApply.parseInfoValue(text, key: "Subnet mask"),
+                   let prefix = HostInterfaceAddressDiscovery.prefixLength(fromMask: mask) {
+                    info.dhcpCIDR = HostInterfaceAddressDiscovery.cidr(ip: ip, prefixLength: prefix)
+                }
             } else if lower.contains("manual configuration") {
                 info.dhcpEnabled = false
                 if let ip = MacHostNetworkApply.parseInfoValue(text, key: "IP address"),
@@ -303,8 +333,10 @@ public enum HostInterfaceAddressDiscovery {
             managedByBarkvisor: Bool,
         ) -> HostInterfaceAddressing {
             var addresses: [HostInterfaceAddressEntry] = []
-            if parsed.dhcpEnabled {
-                // Primary DHCP address appears live via getifaddrs; config marks mode only.
+            if parsed.dhcpEnabled, let cidr = parsed.dhcpCIDR {
+                addresses.append(
+                    HostInterfaceAddressEntry(cidr: cidr, source: .dhcp, primary: true),
+                )
             } else if let cidr = parsed.staticCIDR {
                 addresses.append(
                     HostInterfaceAddressEntry(cidr: cidr, source: .static, primary: true),
@@ -412,13 +444,12 @@ public enum LinuxHostInterfaceAddressRead {
                 }
             }
         }
-        if method.isEmpty, !addressing.addresses.isEmpty {
-            addressing.dhcpEnabled = true
-        }
-        if addressing.dhcpEnabled {
+        if method == "auto" {
             for index in addressing.addresses.indices {
                 addressing.addresses[index].source = .dhcp
             }
+        } else if !method.isEmpty, method != "manual" {
+            // ignore unknown methods
         }
         return addressing
     }

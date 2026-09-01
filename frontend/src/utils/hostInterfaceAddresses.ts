@@ -1,6 +1,7 @@
 import type { HostBridgeAddressApplyEntry, HostBridgeApplyRequest, HostInterface, HostInterfaceAddress } from '../api/types'
 
-export type EditableAddressKind = 'dhcp' | 'static' | 'alias'
+/** UI row kinds — apply layer still uses dhcp / static / alias. */
+export type EditableAddressKind = 'dhcp' | 'primary' | 'additional'
 
 export interface EditableHostAddress {
   id: string
@@ -28,39 +29,92 @@ export function isValidCIDR(value: string): boolean {
   })
 }
 
+function isIpRow(kind: EditableAddressKind): boolean {
+  return kind === 'primary' || kind === 'additional'
+}
+
+function rowLabel(kind: EditableAddressKind, dhcpEnabled: boolean): string {
+  if (kind === 'primary') return 'Primary address'
+  if (kind === 'additional') return dhcpEnabled ? 'Additional address' : 'Additional address'
+  return 'DHCP'
+}
+
+export function addressRowLabel(kind: EditableAddressKind, dhcpEnabled: boolean): string {
+  return rowLabel(kind, dhcpEnabled)
+}
+
+/** Map API/discovered addresses into editable drawer rows. */
 export function addressesFromInterface(iface?: HostInterface | null): EditableHostAddress[] {
-  const rows = iface?.addresses ?? []
+  const configRows = iface?.addresses ?? []
   const out: EditableHostAddress[] = []
+
   if (iface?.dhcpEnabled) {
-    out.push({ id: 'dhcp', kind: 'dhcp', cidr: '' })
+    const dhcpCidr = configRows.find((row) => row.source === 'dhcp')?.cidr
+      || (iface.ipAddress?.includes('/') ? iface.ipAddress : iface.ipAddress ? `${iface.ipAddress}/32` : '')
+    out.push({ id: 'dhcp', kind: 'dhcp', cidr: dhcpCidr })
+    for (const row of configRows) {
+      if (row.source === 'dhcp') continue
+      out.push({
+        id: addressRowId(row.cidr, out.length),
+        kind: 'additional',
+        cidr: row.cidr,
+      })
+    }
+    return out
   }
-  for (const row of rows) {
+
+  let primarySet = false
+  for (const row of configRows) {
     if (row.source === 'dhcp') continue
-    out.push({
-      id: row.cidr,
-      kind: row.source === 'alias' ? 'alias' : 'static',
-      cidr: row.cidr,
-    })
+    if (!primarySet) {
+      out.push({ id: 'primary', kind: 'primary', cidr: row.cidr })
+      primarySet = true
+    } else {
+      out.push({
+        id: addressRowId(row.cidr, out.length),
+        kind: 'additional',
+        cidr: row.cidr,
+      })
+    }
   }
-  if (out.length === 0 && !iface?.dhcpEnabled) {
-    out.push({ id: 'static-new', kind: 'static', cidr: '' })
+  if (!primarySet) {
+    out.push({ id: 'primary', kind: 'primary', cidr: iface?.ipAddress?.includes('/')
+      ? iface.ipAddress
+      : iface?.ipAddress
+        ? `${iface.ipAddress}/32`
+        : '' })
   }
   return out
 }
 
+function addressRowId(cidr: string, index: number): string {
+  return cidr ? `addr-${cidr}` : `addr-new-${index}`
+}
+
 export function validateAddressList(
   rows: EditableHostAddress[],
-  opts?: { onlyUplink?: boolean },
+  opts?: { onlyUplink?: boolean; gateway?: string },
 ): AddressListValidation {
   const errors: string[] = []
   const warnings: string[] = []
   const hasDHCP = rows.some((r) => r.kind === 'dhcp')
-  const staticRows = rows.filter((r) => r.kind !== 'dhcp')
-  const cidrs = staticRows.map((r) => r.cidr.trim()).filter(Boolean)
+  const primary = rows.find((r) => r.kind === 'primary')
+  const additional = rows.filter((r) => r.kind === 'additional')
 
-  if (!hasDHCP && cidrs.length === 0) {
-    errors.push('Add DHCP or at least one static address.')
+  if (!hasDHCP) {
+    if (!primary?.cidr?.trim()) {
+      errors.push('Primary address is required when DHCP is off (e.g. 192.168.1.10/24).')
+    }
+    if (!opts?.gateway?.trim()) {
+      errors.push('Gateway is required when using a static primary address.')
+    }
   }
+
+  const cidrs = [
+    ...(hasDHCP ? [] : [primary?.cidr?.trim() ?? '']),
+    ...additional.map((r) => r.cidr.trim()),
+  ].filter(Boolean)
+
   const seen = new Set<string>()
   for (const cidr of cidrs) {
     if (!isValidCIDR(cidr)) {
@@ -72,28 +126,29 @@ export function validateAddressList(
     }
     seen.add(cidr)
   }
-  if (!hasDHCP && cidrs.length > 0) {
-    // gateway validated by caller — static-only needs gateway at apply time
-  }
+
   if (opts?.onlyUplink) {
     warnings.push('This Device has a single uplink. Changing its address can drop SSH and the SPA.')
   }
   return { ok: errors.length === 0, errors, warnings }
 }
 
+/** Normalize UI rows to backend apply entries (static + alias semantics). */
 export function buildAddressApplyEntries(rows: EditableHostAddress[]): HostBridgeAddressApplyEntry[] {
   const entries: HostBridgeAddressApplyEntry[] = []
-  for (const row of rows) {
-    if (row.kind === 'dhcp') {
-      entries.push({ kind: 'dhcp' })
-      continue
-    }
+  const hasDHCP = rows.some((r) => r.kind === 'dhcp')
+  if (hasDHCP) {
+    entries.push({ kind: 'dhcp' })
+  }
+  const ipRows = rows.filter((r) => isIpRow(r.kind))
+  for (const [index, row] of ipRows.entries()) {
     const cidr = row.cidr.trim()
     if (!cidr) continue
-    entries.push({
-      kind: row.kind,
-      cidr,
-    })
+    if (!hasDHCP && index === 0) {
+      entries.push({ kind: 'static', cidr })
+    } else {
+      entries.push({ kind: 'alias', cidr })
+    }
   }
   return entries
 }
@@ -113,6 +168,7 @@ export function buildHostBridgeApplyBody(input: {
     confirm: input.confirm ?? false,
     addresses,
   }
+  const hasDHCP = input.rows.some((r) => r.kind === 'dhcp')
   const hasLegacyStaticOnly = addresses.length === 1
     && addresses[0]?.kind === 'static'
     && addresses[0]?.cidr
@@ -121,7 +177,7 @@ export function buildHostBridgeApplyBody(input: {
     body.address = addresses[0]?.cidr
     const gateway = input.gateway?.trim()
     if (gateway) body.gateway = gateway
-  } else if (addresses.some((a) => a.kind === 'dhcp') && addresses.every((a) => a.kind === 'dhcp')) {
+  } else if (hasDHCP && addresses.every((a) => a.kind === 'dhcp')) {
     body.addressing = 'dhcp'
   }
   const gateway = input.gateway?.trim()
@@ -137,4 +193,28 @@ export function summarizeLiveAddresses(rows: HostInterfaceAddress[] | undefined)
     const tag = r.source === 'dhcp' ? 'DHCP' : r.source === 'alias' ? 'alias' : 'static'
     return `${r.cidr} (${tag})`
   }).join(', ')
+}
+
+/** Ensure static mode has a primary row; dhcp mode drops primary. */
+export function applyDhcpToggle(rows: EditableHostAddress[], enabled: boolean): EditableHostAddress[] {
+  const withoutDhcp = rows.filter((r) => r.kind !== 'dhcp')
+  const dhcpRow = rows.find((r) => r.kind === 'dhcp')
+  const extras = withoutDhcp.filter((r) => r.kind === 'additional')
+  if (enabled) {
+    const primary = withoutDhcp.find((r) => r.kind === 'primary')
+    return [
+      { id: 'dhcp', kind: 'dhcp', cidr: primary?.cidr.trim() || dhcpRow?.cidr?.trim() || '' },
+      ...extras,
+    ]
+  }
+  const primary = withoutDhcp.find((r) => r.kind === 'primary')
+    ?? { id: 'primary', kind: 'primary' as const, cidr: dhcpRow?.cidr?.trim() || '' }
+  return [primary, ...extras]
+}
+
+export function addAdditionalAddress(rows: EditableHostAddress[]): EditableHostAddress[] {
+  return [
+    ...rows,
+    { id: `addr-new-${Date.now()}`, kind: 'additional', cidr: '' },
+  ]
 }

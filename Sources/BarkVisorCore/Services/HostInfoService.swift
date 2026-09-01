@@ -23,6 +23,12 @@ public struct HostInterfaceSnapshot: Sendable {
     public let gateway: String?
     public let dns: [String]
     public let managedByBarkvisor: Bool
+    /// Linux sysfs `operstate` (`up`, `down`, …); nil on macOS or when unreadable.
+    public let operState: String?
+    /// Linux sysfs `carrier` (cable/link detected). Nil when absent (common on bridges).
+    public let carrier: Bool?
+    /// Linux bridge master when this port is enslaved (`/sys/class/net/<name>/master`).
+    public let bridgeMaster: String?
 
     public init(
         name: String,
@@ -34,6 +40,9 @@ public struct HostInterfaceSnapshot: Sendable {
         gateway: String? = nil,
         dns: [String] = [],
         managedByBarkvisor: Bool = false,
+        operState: String? = nil,
+        carrier: Bool? = nil,
+        bridgeMaster: String? = nil,
     ) {
         self.name = name
         self.displayName = displayName
@@ -44,6 +53,9 @@ public struct HostInterfaceSnapshot: Sendable {
         self.gateway = gateway
         self.dns = dns
         self.managedByBarkvisor = managedByBarkvisor
+        self.operState = operState
+        self.carrier = carrier
+        self.bridgeMaster = bridgeMaster
     }
 }
 
@@ -245,42 +257,93 @@ public enum HostInfoService {
     ) -> [HostInterfaceSnapshot] {
         var byName: [String: HostInterfaceSnapshot] = [:]
         let addressing = addressingByInterface ?? HostInterfaceAddressDiscovery.discoverByInterface()
+        let linkFlags = linkFlagsByInterface()
 
         for iface in listInterfaces() {
             let config = addressing[iface.name] ?? HostInterfaceAddressing()
-            byName[iface.name] = HostInterfaceSnapshot(
+            byName[iface.name] = snapshot(
                 name: iface.name,
-                displayName: displayName(for: iface.name),
                 ipAddress: primaryIPv4(from: config) ?? iface.ipAddress,
-                bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[iface.name]),
-                addresses: config.addresses,
-                dhcpEnabled: config.dhcpEnabled,
-                gateway: config.gateway,
-                dns: config.dns,
-                managedByBarkvisor: config.managedByBarkvisor,
+                bridgeStatusByInterface: bridgeStatusByInterface,
+                config: config,
+                link: linkFlags[iface.name],
             )
         }
 
         #if os(Linux)
-            // Merge bridge-class devices that have no AF_INET address (down / L2-only).
-            for name in HostBridgeFactsService.probe().bridges.map(\.name) {
+            // Merge sysfs interfaces without AF_INET (down NICs, bridge members, L2-only bridges).
+            for name in LinuxHostNetwork.listHostInterfaceNames() {
                 if byName[name] != nil { continue }
                 let config = addressing[name] ?? HostInterfaceAddressing()
-                byName[name] = HostInterfaceSnapshot(
+                byName[name] = snapshot(
                     name: name,
-                    displayName: displayName(for: name),
                     ipAddress: primaryIPv4(from: config) ?? "",
-                    bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
-                    addresses: config.addresses,
-                    dhcpEnabled: config.dhcpEnabled,
-                    gateway: config.gateway,
-                    dns: config.dns,
-                    managedByBarkvisor: config.managedByBarkvisor,
+                    bridgeStatusByInterface: bridgeStatusByInterface,
+                    config: config,
+                    link: linkFlags[name],
                 )
             }
         #endif
 
         return byName.values.sorted { $0.name < $1.name }
+    }
+
+    private static func snapshot(
+        name: String,
+        ipAddress: String,
+        bridgeStatusByInterface: [String: String],
+        config: HostInterfaceAddressing,
+        link: (operState: String, carrier: Bool?)? = nil,
+    ) -> HostInterfaceSnapshot {
+        #if os(Linux)
+            return HostInterfaceSnapshot(
+                name: name,
+                displayName: displayName(for: name),
+                ipAddress: ipAddress,
+                bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
+                addresses: config.addresses,
+                dhcpEnabled: config.dhcpEnabled,
+                gateway: config.gateway,
+                dns: config.dns,
+                managedByBarkvisor: config.managedByBarkvisor,
+                operState: LinuxHostNetwork.interfaceOperState(name) ?? link?.operState,
+                carrier: LinuxHostNetwork.interfaceCarrier(name) ?? link?.carrier,
+                bridgeMaster: LinuxHostNetwork.bridgeMaster(for: name),
+            )
+        #else
+            return HostInterfaceSnapshot(
+                name: name,
+                displayName: displayName(for: name),
+                ipAddress: ipAddress,
+                bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
+                addresses: config.addresses,
+                dhcpEnabled: config.dhcpEnabled,
+                gateway: config.gateway,
+                dns: config.dns,
+                managedByBarkvisor: config.managedByBarkvisor,
+                operState: link?.operState,
+                carrier: link?.carrier,
+            )
+        #endif
+    }
+
+    private static func linkFlagsByInterface() -> [String: (operState: String, carrier: Bool?)] {
+        var out: [String: (operState: String, carrier: Bool?)] = [:]
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return out }
+        defer { freeifaddrs(first) }
+        var current: UnsafeMutablePointer<ifaddrs>? = first
+        while let addr = current {
+            let name = String(cString: addr.pointee.ifa_name)
+            if out[name] == nil {
+                let flags = addr.pointee.ifa_flags
+                let up = (flags & UInt32(IFF_UP)) != 0
+                let running = (flags & UInt32(IFF_RUNNING)) != 0
+                out[name] = (up ? "up" : "down", running)
+            }
+            current = addr.pointee.ifa_next
+        }
+        return out
     }
 
     /// First primary IPv4 CIDR, or first address, for legacy `ipAddress` field.

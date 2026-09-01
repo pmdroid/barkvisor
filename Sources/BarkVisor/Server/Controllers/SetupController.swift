@@ -234,6 +234,9 @@ struct SetupController: RouteCollection {
         let gateway: String?
         let dns: [String]
         let managedByBarkvisor: Bool
+        let operState: String?
+        let carrier: Bool?
+        let bridgeMaster: String?
     }
 
     @Sendable
@@ -263,6 +266,9 @@ struct SetupController: RouteCollection {
                 gateway: $0.gateway,
                 dns: $0.dns,
                 managedByBarkvisor: $0.managedByBarkvisor,
+                operState: $0.operState,
+                carrier: $0.carrier,
+                bridgeMaster: $0.bridgeMaster,
             )
         }
     }

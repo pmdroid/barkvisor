@@ -37,6 +37,65 @@ public enum LinuxHostNetwork {
         return entries.filter { isBridgeInterface($0) }.sorted()
     }
 
+    /// Sysfs interface names for Networks UI (includes down / no-IP ports and bridges).
+    /// Excludes loopback and ephemeral container veth names.
+    public static func listHostInterfaceNames() -> [String] {
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: netClassPath)
+        else {
+            return []
+        }
+        return entries.filter { name in
+            guard !name.hasPrefix("."), name != "lo" else { return false }
+            if name.hasPrefix("veth") || name.hasPrefix("docker")
+                || name.hasPrefix("cni") || name.hasPrefix("flannel") {
+                return false
+            }
+            return interfaceExists(name)
+        }.sorted()
+    }
+
+    /// `operstate` from sysfs (`up`, `down`, `dormant`, …). Nil when unreadable.
+    public static func interfaceOperState(_ name: String, netClass: String = netClassPath) -> String? {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return nil
+        }
+        let path = "\(netClass)/\(name)/operstate"
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Physical link (`carrier` sysfs). Nil when the file is absent (e.g. some bridges).
+    public static func interfaceCarrier(_ name: String, netClass: String = netClassPath) -> Bool? {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return nil
+        }
+        let path = "\(netClass)/\(name)/carrier"
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "1": return true
+        case "0": return false
+        default: return nil
+        }
+    }
+
+    /// Bridge master for `name` when enslaved (`/sys/class/net/<name>/master` symlink), if any.
+    public static func bridgeMaster(for name: String) -> String? {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return nil
+        }
+        let masterLink = "\(netClassPath)/\(name)/master"
+        guard let dest = try? FileManager.default.destinationOfSymbolicLink(atPath: masterLink) else {
+            return nil
+        }
+        let master = URL(fileURLWithPath: dest).lastPathComponent
+        return master.isEmpty ? nil : master
+    }
+
     /// Ports enslaved to `bridge` (`/sys/class/net/<bridge>/brif`).
     public static func enslavedInterfaces(onBridge name: String) -> [String] {
         guard isBridgeInterface(name) else { return [] }

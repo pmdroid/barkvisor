@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import type { HostInterface } from '../api/types'
 import {
+  addAdditionalAddress,
+  addressRowLabel,
+  applyDhcpToggle,
   type EditableHostAddress,
   validateAddressList,
 } from '../utils/hostInterfaceAddresses'
@@ -10,6 +13,7 @@ const props = defineProps<{
   modelValue: EditableHostAddress[]
   iface?: HostInterface | null
   onlyUplink?: boolean
+  gateway?: string
   disabled?: boolean
 }>()
 
@@ -17,9 +21,15 @@ const emit = defineEmits<{
   'update:modelValue': [EditableHostAddress[]]
 }>()
 
-const validation = computed(() => validateAddressList(props.modelValue, { onlyUplink: props.onlyUplink }))
-const staticRows = computed(() => props.modelValue.filter((r) => r.kind !== 'dhcp'))
+const validation = computed(() => validateAddressList(props.modelValue, {
+  onlyUplink: props.onlyUplink,
+  gateway: props.gateway,
+}))
 const dhcpEnabled = computed(() => props.modelValue.some((r) => r.kind === 'dhcp'))
+const dhcpRow = computed(() => props.modelValue.find((r) => r.kind === 'dhcp'))
+const primaryRow = computed(() => props.modelValue.find((r) => r.kind === 'primary'))
+const additionalRows = computed(() => props.modelValue.filter((r) => r.kind === 'additional'))
+const primaryCidr = computed(() => dhcpEnabled.value ? (dhcpRow.value?.cidr ?? '') : (primaryRow.value?.cidr ?? ''))
 
 function rowIndex(id: string): number {
   return props.modelValue.findIndex((r) => r.id === id)
@@ -36,18 +46,12 @@ function removeRow(id: string) {
   emit('update:modelValue', props.modelValue.filter((r) => r.id !== id))
 }
 
-function addStatic() {
-  emit('update:modelValue', [
-    ...props.modelValue,
-    { id: `static-${Date.now()}`, kind: 'alias', cidr: '' },
-  ])
+function toggleDHCP(enabled: boolean) {
+  emit('update:modelValue', applyDhcpToggle(props.modelValue, enabled))
 }
 
-function toggleDHCP(enabled: boolean) {
-  const without = props.modelValue.filter((r) => r.kind !== 'dhcp')
-  emit('update:modelValue', enabled
-    ? [{ id: 'dhcp', kind: 'dhcp', cidr: '' }, ...without]
-    : without)
+function addAddress() {
+  emit('update:modelValue', addAdditionalAddress(props.modelValue))
 }
 </script>
 
@@ -65,21 +69,24 @@ function toggleDHCP(enabled: boolean) {
         :disabled="disabled"
         @change="toggleDHCP(($event.target as HTMLInputElement).checked)"
       >
-      <span>DHCP (primary)</span>
+      <span>Use DHCP for primary address</span>
     </label>
 
-    <div v-for="row in staticRows" :key="row.id" class="address-row">
-      <select
-        :value="row.kind"
-        :disabled="disabled"
-        @change="updateRow(row.id, { kind: ($event.target as HTMLSelectElement).value as 'static' | 'alias' })"
+    <div v-if="dhcpEnabled || primaryRow" class="address-row">
+      <span class="row-label">{{ addressRowLabel('primary', dhcpEnabled) }}</span>
+      <input
+        :value="primaryCidr"
+        placeholder="192.168.1.10/24"
+        :disabled="disabled || dhcpEnabled"
+        @input="primaryRow && updateRow(primaryRow.id, { cidr: ($event.target as HTMLInputElement).value })"
       >
-        <option value="static">static</option>
-        <option value="alias">alias</option>
-      </select>
+    </div>
+
+    <div v-for="row in additionalRows" :key="row.id" class="address-row">
+      <span class="row-label">{{ addressRowLabel('additional', dhcpEnabled) }}</span>
       <input
         :value="row.cidr"
-        placeholder="192.168.1.10/24"
+        placeholder="192.168.1.20/24"
         :disabled="disabled"
         @input="updateRow(row.id, { cidr: ($event.target as HTMLInputElement).value })"
       >
@@ -88,9 +95,16 @@ function toggleDHCP(enabled: boolean) {
       </button>
     </div>
 
-    <button type="button" class="ghost add-btn" :disabled="disabled" @click="addStatic">
+    <button type="button" class="ghost add-btn" :disabled="disabled" @click="addAddress">
       + Add address
     </button>
+
+    <p v-if="!dhcpEnabled" class="hint">
+      Static primary needs a gateway below. Extra rows are additional IPs on the same interface (Linux and macOS).
+    </p>
+    <p v-else class="hint">
+      DHCP supplies the primary IP. Add rows below for extra addresses on the same interface.
+    </p>
 
     <ul v-if="validation.errors.length" class="errors">
       <li v-for="err in validation.errors" :key="err">{{ err }}</li>
@@ -123,8 +137,19 @@ function toggleDHCP(enabled: boolean) {
   align-items: center;
   gap: 0.5rem;
 }
+.row-label {
+  flex: 0 0 9.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #64748b);
+}
 .address-row input {
   flex: 1;
+}
+.hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #64748b);
+  line-height: 1.4;
 }
 .errors { color: #dc2626; margin: 0; padding-left: 1rem; }
 .warnings { color: #b45309; margin: 0; padding-left: 1rem; }

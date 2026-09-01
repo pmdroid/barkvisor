@@ -11,6 +11,9 @@ struct HostInterface: Content {
     let gateway: String?
     let dns: [String]
     let managedByBarkvisor: Bool
+    let operState: String?
+    let carrier: Bool?
+    let bridgeMaster: String?
 }
 
 struct HostInterfaceAddressDTO: Content {
