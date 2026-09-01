@@ -23,6 +23,7 @@ struct LinuxHostBridgeApplyTests {
         session: Set<String> = [],
         warnings: [String] = [],
         owned: Bool = false,
+        createdBridge: Bool = false,
         nic: String = "eth0",
         ready: Bool = false,
         onlyUplink: Bool = false,
@@ -34,6 +35,7 @@ struct LinuxHostBridgeApplyTests {
             sessionRiskNics: session,
             sessionWarnings: warnings,
             owned: owned,
+            createdBridge: createdBridge,
             existingInterfaces: ready ? [nic, "lo", "br0"] : [nic, "lo"],
         )
     }
@@ -80,6 +82,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(script.contains("/run/barkvisor/br0-commit"))
         #expect(script.contains("then exit 0"))
         #expect(script.contains("nmcli connection delete barkvisor-br0"))
+        #expect(script.contains("grep \"^barkvisor-br0-\""))
         #expect(script.contains("netplan apply"))
     }
 
@@ -299,6 +302,8 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.commands.contains { $0.contains("# barkvisor:allow-br1") })
         #expect(!result.commands.contains { $0.contains("# barkvisor:allow-br0") })
         #expect(LinuxHostBridgeApply.netplanPath(bridge: "br1") == "/etc/netplan/90-barkvisor-br1.yaml")
+        #expect(LinuxHostBridgeApply.networkdPortPath(nic: "eth1") == "/etc/systemd/network/90-barkvisor-eth1.network")
+        #expect(LinuxHostBridgeApply.nmSlaveConnectionName(bridge: "br1", nic: "eth1") == "barkvisor-br1-eth1")
         #expect(HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1") == "/run/barkvisor/br1-pending.json")
         #expect(LinuxHostBridgeApply.aclMarker(for: "br1") == "# barkvisor:allow-br1")
     }
@@ -434,6 +439,119 @@ struct LinuxHostBridgeApplyTests {
         #expect(script.contains("barkvisor-br1"))
         #expect(script.contains("host-bridge-br1.json"))
         #expect(script.contains("/run/barkvisor/br1-pending.json"))
+        #expect(script.contains("grep \"^barkvisor-br1-\""))
+        #expect(script.contains("90-barkvisor-\"$uplink\".network"))
+        #expect(script.contains("nmcli device reapply"))
         #expect(!script.contains("90-barkvisor-br0.yaml"))
+    }
+
+    @Test func `owned delete detaches ports and ip link dels`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+        )
+        #expect(result.success)
+        #expect(!result.refused)
+        #expect(result.changes.contains { $0.contains("Detach eth0") })
+        #expect(result.changes.contains { $0.contains("Restore L3") })
+        #expect(result.commands.contains { $0.contains("ip link del br0") })
+        #expect(result.message.contains("Keep changes"))
+    }
+
+    @Test func `owned delete restores NM slave and networkd port L3`() {
+        let nm = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(backend: .networkManager, owned: true, createdBridge: true, ready: true),
+        )
+        #expect(nm.success)
+        #expect(nm.commands.contains { $0.contains("nmcli connection delete barkvisor-br0-eth0") })
+        #expect(nm.commands.contains { $0.contains("nmcli device reapply eth0") })
+        let networkd = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(backend: .systemdNetworkd, owned: true, createdBridge: true, ready: true),
+        )
+        #expect(networkd.success)
+        #expect(networkd.commands.contains { $0.contains("90-barkvisor-eth0.network") })
+        #expect(networkd.commands.contains { $0.contains("networkctl reapply eth0") || $0.contains("networkctl reload") })
+    }
+
+    @Test func `revert restores NM slave and networkd port L3`() {
+        let nm = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .revert, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(backend: .networkManager, owned: true, createdBridge: false, ready: true),
+        )
+        #expect(nm.success)
+        #expect(nm.commands.contains { $0.contains("nmcli connection delete barkvisor-br0-eth0") })
+        #expect(nm.commands.contains { $0.contains("nmcli device reapply eth0") })
+        #expect(!nm.commands.contains { $0.contains("ip link del") })
+        let networkd = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .revert, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(backend: .systemdNetworkd, owned: true, createdBridge: false, ready: true),
+        )
+        #expect(networkd.success)
+        #expect(networkd.commands.contains { $0.contains("90-barkvisor-eth0.network") })
+        #expect(networkd.commands.contains { $0.contains("networkctl reapply eth0") })
+        #expect(!networkd.commands.contains { $0.contains("ip link del") })
+    }
+
+    @Test func `foreign revert never ip link dels`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .revert, confirm: true),
+            probe: probe(owned: true, createdBridge: false),
+        )
+        #expect(result.success)
+        #expect(!result.commands.contains { $0.contains("ip link del") })
+        #expect(result.changes.contains { $0.contains("Leave br0") || $0.contains("never default-deleted") })
+        let denied = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, confirm: true),
+            probe: probe(owned: true, createdBridge: false),
+        )
+        #expect(denied.refused)
+        #expect(denied.message.contains("foreign"))
+        #expect(!denied.commands.contains { $0.contains("ip link del") })
+    }
+
+    @Test func `delete refuses when Workloads still reference the bridge`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .delete,
+                bridge: "br1",
+                nic: "eth1",
+                confirm: true,
+                attachedWorkloadCount: 2,
+            ),
+            probe: probe(owned: true, createdBridge: true, nic: "eth1"),
+        )
+        #expect(result.refused)
+        #expect(result.conflict)
+        #expect(result.message.contains("Workload"))
+        #expect(!result.commands.contains { $0.contains("ip link del") })
+    }
+
+    @Test func `createdBridgeForUplink reads marker uplink`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try LinuxHostBridgeApply.writeOwnerMarker(
+            bridge: "br1",
+            uplink: "en0",
+            createdBridge: true,
+            dataDir: dir,
+        )
+        #expect(LinuxHostBridgeApply.createdBridgeForUplink("en0", dataDir: dir))
+        #expect(!LinuxHostBridgeApply.createdBridgeForUplink("eth0", dataDir: dir))
+    }
+
+    @Test func `live delete records keep window without touching the host`() throws {
+        let recorder = RecordingLinuxHostBridgeMutator()
+        let result = try LinuxHostBridgeApplyLive.run(
+            request: LinuxHostBridgeApplyRequest(action: .delete, nic: "eth0", confirm: true),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+            mutator: recorder,
+        )
+        #expect(result.applied)
+        #expect(result.pendingCommit)
+        #expect(recorder.steps.contains { $0.contains("action=delete") })
+        #expect(recorder.steps.contains { $0.contains("ip link del") || $0.contains("Delete br0") })
     }
 }

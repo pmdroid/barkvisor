@@ -233,6 +233,10 @@ struct UninstallTaggedBridgeTests {
         #expect(result.stdout.contains("--remove-bridge"))
         #expect(!result.stdout.contains("ip link delete"))
         #expect(!result.stderr.contains("ip link delete"))
+        let strip = try run(lib, args: ["--strip-tagged"], env: hostEnv(root))
+        #expect(strip.exitCode == 0)
+        #expect(!strip.stdout.contains("ip link delete"))
+        #expect(!strip.stderr.contains("ip link delete"))
     }
 
     @Test func `remove-bridge without created marker refuses`() throws {

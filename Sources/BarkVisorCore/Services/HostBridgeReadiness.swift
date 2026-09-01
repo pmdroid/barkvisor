@@ -5,10 +5,30 @@ import Foundation
 public struct HostBridgeSnapshot: Codable, Sendable, Equatable {
     public var name: String
     public var enslaved: [String]
+    public var createdBridge: Bool
 
-    public init(name: String, enslaved: [String]) {
+    enum CodingKeys: String, CodingKey {
+        case name, enslaved, createdBridge
+    }
+
+    public init(name: String, enslaved: [String], createdBridge: Bool = false) {
         self.name = name
         self.enslaved = enslaved
+        self.createdBridge = createdBridge
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        enslaved = try c.decodeIfPresent([String].self, forKey: .enslaved) ?? []
+        createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(enslaved, forKey: .enslaved)
+        try c.encode(createdBridge, forKey: .createdBridge)
     }
 }
 

@@ -342,3 +342,21 @@ export function hostBridgeActionPath(
   }
   return `${base}/${encodeURIComponent(target || nic)}`
 }
+
+export function interfaceAssociatedBridge(
+  iface: HostInterface,
+  readiness?: HostBridgeReadiness | null,
+): { name: string; createdBridge: boolean } | null {
+  const master = readiness?.bridges.find((bridge) => bridge.name === iface.name)
+  if (master) return { name: master.name, createdBridge: master.createdBridge === true }
+  const parent = readiness?.bridges.find((bridge) => bridge.enslaved.includes(iface.name))
+  if (parent) return { name: parent.name, createdBridge: parent.createdBridge === true }
+  return null
+}
+
+export function interfaceShowsDelete(
+  iface: HostInterface,
+  readiness?: HostBridgeReadiness | null,
+): boolean {
+  return interfaceAssociatedBridge(iface, readiness)?.createdBridge === true
+}

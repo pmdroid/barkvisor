@@ -59,6 +59,7 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                 HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
+                    createdBridge: LinuxHostBridgeApply.readOwnerMarker(bridge: name)?.createdBridge == true,
                 )
             }
             return HostBridgeFactInputs(
@@ -73,7 +74,13 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
         #else
             let sockets = SocketVmnetDiscovery.existingSockets()
             return HostBridgeFactInputs(
-                bridges: sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) },
+                bridges: sockets.map {
+                    HostBridgeSnapshot(
+                        name: $0.interface,
+                        enslaved: [],
+                        createdBridge: LinuxHostBridgeApply.createdBridgeForUplink($0.interface),
+                    )
+                },
                 defaultRouteInterface: SocketVmnetDiscovery.sharedUplinkInterface(),
                 macSocketVmnet: true,
             )

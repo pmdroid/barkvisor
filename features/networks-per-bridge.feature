@@ -35,3 +35,30 @@ Feature: Per-bridge host network apply
     Then Keep posts bridge br1
     And DELETE uses /br1 not /br0
     And Keep banner matches the uplink or br1
+
+  Scenario: owned delete unenslaves and removes the kernel bridge
+    Given marker createdBridge is true for br1
+    And no Workload references br1
+    When POST action delete targets br1
+    Then the plan unenslaves the uplink
+    And restores NIC L3
+    And runs ip link del br1
+    And Keep is required within 30s
+
+  Scenario: foreign revert never deletes the kernel bridge
+    Given marker createdBridge is false for br0
+    When action revert targets br0
+    Then tagged files are stripped
+    And the plan never contains ip link del
+
+  Scenario: delete is blocked when a Workload still uses the bridge
+    Given marker createdBridge is true for br1
+    And a Workload is attached to br1
+    When POST action delete targets br1
+    Then the server returns 409
+
+  Scenario: UI Delete vs Revert follows the marker
+    Given createdBridge is true
+    Then the drawer shows Delete not Revert
+    Given createdBridge is false
+    Then the drawer shows Revert not Delete
