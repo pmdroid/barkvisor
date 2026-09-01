@@ -394,6 +394,11 @@ struct APIClient {
         try await get(scoped("/images/\(id)", on: device))
     }
 
+    func deleteImage(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) ?? id
+        try await delete(scoped("/images/\(encoded)", on: device))
+    }
+
     func repositories(on device: HomeDeviceHealthSnapshot?) async throws -> [ImageRepository] {
         try await get(scoped("/repositories", on: device))
     }

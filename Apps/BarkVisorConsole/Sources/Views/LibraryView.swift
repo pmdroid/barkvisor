@@ -74,6 +74,7 @@ struct LibraryView: View {
 }
 
 private struct LibraryImageRow: View {
+    @Environment(AppModel.self) private var model
     var image: LibraryImage
 
     var body: some View {
@@ -89,6 +90,21 @@ private struct LibraryImageRow: View {
             }
             Text(image.status)
                 .foregroundStyle(Color.status(image.status))
+            if image.status == "error" {
+                if deleting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button(role: .destructive) {
+                        Task { await model.deleteLibraryImage(image) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Delete \(image.name)")
+                }
+            }
         } label: {
             Text(image.name)
             Text(detail)
@@ -97,6 +113,10 @@ private struct LibraryImageRow: View {
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    private var deleting: Bool {
+        model.actionIDs.contains("image-delete:\(image.id)")
     }
 
     private var detail: String {
