@@ -239,10 +239,11 @@ See [Networks](using-networks.md).
 
 ## GPU and PCI passthrough (optional)
 
-GPU attach needs IOMMU groups, vfio-pci, and KVM. macOS does not offer VFIO.
+GPU attach needs IOMMU groups, vfio-pci, and KVM. macOS does not offer VFIO. Setup: [GPU passthrough](getting-started-gpu-passthrough.md).
 
 - The GPU list labels **NVIDIA**, **Intel**, and **AMD**. Multiple cards per vendor stay separate rows.
-- Attach/detach a GPU like USB when the Device is ready. Occupancy is the host GPU driver.
+- Attach/detach a GPU like USB when the Device is ready. Occupancy is the host GPU driver. **In use by host** does not block Attach.
+- Passing the host GPU can blank the host display. The UI warns. Attach still works.
 - Workload detail also has a **PCI** picker for non-GPU VFIO devices. The boot disk and the last remaining uplink are excluded.
 
 If passthrough is unavailable, the UI says why. Do not invent a macOS VFIO path.

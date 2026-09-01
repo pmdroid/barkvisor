@@ -3,6 +3,7 @@ import { defaultCapabilities } from './capabilitiesParse'
 import {
   GUEST_OLLAMA_PATH,
   GPU_IOMMU_NOT_READY,
+  GPU_PASSTHROUGH_DOCS_HREF,
   GPU_SINGLE_DISPLAY_WARNING,
   gpuDetachAllowed,
   gpuGroupMateAddresses,
@@ -113,6 +114,10 @@ describe('gpuPassthrough copy (PAS-275)', () => {
   test('single-GPU display warning is loud copy', () => {
     expect(GPU_SINGLE_DISPLAY_WARNING).toContain('one GPU')
     expect(GPU_SINGLE_DISPLAY_WARNING).toContain('host display')
+  })
+
+  test('IOMMU setup docs href is the published guide', () => {
+    expect(GPU_PASSTHROUGH_DOCS_HREF).toBe('https://barkvisor.dev/docs/guides/gpu-passthrough/')
   })
 })
 

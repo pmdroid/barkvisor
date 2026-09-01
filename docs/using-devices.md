@@ -28,6 +28,7 @@ The detail page for one Device has:
 - A **Workloads** table (Name, OS, CPU·Memory, Ports, Status) with per-row **Start / Stop / Restart** actions and a confirmation dialog before stopping
 - A **failed-workload banner** with an inline **Start** button when something did not survive a reboot
 - **Create VM** to place a new Workload directly on this Device
+- GPU passthrough readiness on Linux (IOMMU / vfio-pci / KVM). Setup: [GPU passthrough](getting-started-gpu-passthrough.md)
 
 When a member Device is unreachable, its page still renders — controls that need the agent grey out instead of pretending.
 
@@ -36,3 +37,4 @@ When a member Device is unreachable, its page still renders — controls that ne
 - [Virtual Machines](using-vms.md)
 - [Settings: Pairing](settings-pairing.md) — issue the pairing offer
 - [Networks](using-networks.md) — how Devices reach each other
+- [GPU passthrough](getting-started-gpu-passthrough.md)

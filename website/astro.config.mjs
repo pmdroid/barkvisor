@@ -43,6 +43,7 @@ export default defineConfig({
             { label: 'First launch', link: '/docs/getting-started/first-launch/' },
             { label: 'Home and pairing', link: '/docs/guides/home-and-pairing/' },
             { label: 'Create a Workload', link: '/docs/guides/create-workload/' },
+            { label: 'GPU passthrough', link: '/docs/guides/gpu-passthrough/' },
             { label: 'Changelog', link: '/docs/changelog/' },
             { label: 'Roadmap', link: '/docs/roadmap/' },
             { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },

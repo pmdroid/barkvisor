@@ -85,7 +85,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, GPU_PASSTHROUGH_DOCS_HREF, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
 import { isAgentWorkload } from '../utils/workloadClass'
 import {
@@ -1838,7 +1838,7 @@ onMounted(fetchVMEvents)
             >Attach GPU</AppButton>
           </div>
           <div v-if="!gpuReady" class="item none">
-            <span>None<span class="note">{{ gpuExplanation }}</span></span>
+            <span>None<span class="note">{{ gpuExplanation }} <a :href="GPU_PASSTHROUGH_DOCS_HREF" target="_blank" rel="noreferrer">IOMMU setup</a></span></span>
           </div>
           <template v-else>
             <p v-if="singleGPUDisplay" role="alert" class="item none" style="color:var(--red);font-weight:700">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
@@ -1998,7 +1998,7 @@ onMounted(fetchVMEvents)
             </tr>
           </template>
         </DataTable>
-        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. Guest Ollama is {{ GUEST_OLLAMA_PATH }}.</p>
+        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. Guest Ollama is {{ GUEST_OLLAMA_PATH }}. <a :href="GPU_PASSTHROUGH_DOCS_HREF" target="_blank" rel="noreferrer">IOMMU setup</a></p>
         <div class="modal-actions">
           <AppButton @click="showAttachGPU = false">Close</AppButton>
         </div>

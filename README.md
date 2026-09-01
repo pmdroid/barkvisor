@@ -203,6 +203,7 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 - [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing
 - [Ollama](docs/ollama.md) — Install, pull, Start, library search
 - [Create a Workload](docs/create-workload.md) — Place a VM; Linux disks, GPU, PCI
+- [GPU passthrough](docs/getting-started-gpu-passthrough.md) — Intel/AMD IOMMU, vfio-pci, verify groups (Linux)
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
 - [Building Releases](docs/getting-started-building-releases.md) — macOS release script + Linux package builds
 - [Troubleshooting](docs/getting-started-troubleshooting.md) — Leftover helper XPC, disk-full, QEMU paths

@@ -560,6 +560,7 @@ struct APIDecodingTests {
         #expect(!ready.macosSocketVmnetSupported)
         #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
         #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
+        #expect(GPUPassthroughCopy.docsURL.absoluteString == "https://barkvisor.dev/docs/guides/gpu-passthrough/")
     }
 
     @Test func `host bridge apply response decodes change list`() throws {

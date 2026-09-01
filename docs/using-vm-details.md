@@ -43,3 +43,4 @@ This Workload's log stream, filtered from the global [Logs](using-logs.md) feed.
 - [Virtual Machines](using-vms.md)
 - [Devices](using-devices.md)
 - [Networks](using-networks.md) — ports and interfaces shown under Overview
+- [GPU passthrough](getting-started-gpu-passthrough.md) — IOMMU / vfio-pci on a Linux Device

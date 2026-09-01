@@ -859,6 +859,7 @@ enum GPUPassthroughCopy {
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready."
     static let singleDisplayWarning =
         "This machine lists one GPU. Passing it through can blank the host display."
+    static let docsURL = URL(string: "https://barkvisor.dev/docs/guides/gpu-passthrough/")!
 
     static func groupMatesLabel(pciAddress: String, groupAddresses: [String]?) -> String {
         let mates = (groupAddresses ?? []).filter { !$0.isEmpty && $0 != pciAddress }
