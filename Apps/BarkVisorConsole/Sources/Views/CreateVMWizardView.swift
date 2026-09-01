@@ -188,7 +188,7 @@ struct CreateVMWizardView: View {
                 Picker("Authorized key", selection: $sshKeyID) {
                     Text("Choose a key").tag("")
                     ForEach(sshKeys) { key in
-                        Text(key.name).tag(key.id)
+                        Text(CreateVMWizard.sshKeyLabel(key, keyCount: sshKeys.count)).tag(key.id)
                     }
                 }
             }

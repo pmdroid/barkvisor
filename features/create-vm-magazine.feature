@@ -38,6 +38,20 @@ Feature: Create VM magazine wizard
     Then there should be no password field
     And an SSH key should be required before Next
 
+  Scenario: SSH key picker labels stay readable
+    Given a single SSH key named Github exists
+    When the Create VM dialog asks for an SSH key
+    Then the picker should show Github without a default suffix
+    When a second key exists and Github is the default
+    Then the picker should show Github (default) and the other key by name
+
+  Scenario: Add another key stays in the dialog and selects the new key
+    Given the Create VM dialog is open with a cloud OS template selected
+    And I have filled in a name on step 2
+    When I add a new SSH key from the dialog
+    Then the new key should be selected in the picker
+    And the wizard should stay on step 2 with my name intact
+
   Scenario: Custom image flow requires an image on configure
     Given the Create VM dialog is open on step 1
     When I choose Use your own image

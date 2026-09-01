@@ -69,6 +69,10 @@ enum CreateVMWizard {
         CreateWorkload.ready(images).first { CodingAgentImage.matches(name: $0.name) }
     }
 
+    static func sshKeyLabel(_ key: SSHKeyRecord, keyCount: Int) -> String {
+        key.isDefault && keyCount > 1 ? "\(key.name) (default)" : key.name
+    }
+
     static func defaultName(for kind: GalleryKind, template: VMTemplateRecord?) -> String {
         switch kind {
         case .template:

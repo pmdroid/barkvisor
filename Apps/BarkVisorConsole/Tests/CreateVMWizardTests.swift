@@ -95,6 +95,26 @@ struct CreateVMWizardTests {
         #expect(key.cloudInitAuthorizedKey.hasSuffix(" laptop"))
     }
 
+    @Test func sshKeyLabelMarksDefaultOnlyAmongMultipleKeys() {
+        func key(_ id: String, name: String, isDefault: Bool) -> SSHKeyRecord {
+            SSHKeyRecord(
+                id: id,
+                name: name,
+                publicKey: "ssh-ed25519 AAA",
+                fingerprint: "fp",
+                keyType: "ed25519",
+                isDefault: isDefault,
+                createdAt: "now",
+            )
+        }
+        let lone = key("k1", name: "Github", isDefault: true)
+        #expect(CreateVMWizard.sshKeyLabel(lone, keyCount: 1) == "Github")
+        let primary = key("k1", name: "Github", isDefault: true)
+        let other = key("k2", name: "laptop", isDefault: false)
+        #expect(CreateVMWizard.sshKeyLabel(primary, keyCount: 2) == "Github (default)")
+        #expect(CreateVMWizard.sshKeyLabel(other, keyCount: 2) == "laptop")
+    }
+
     @Test func resolveTemplateBySlugOnMember() {
         let home = VMTemplateRecord(
             id: "self-id",

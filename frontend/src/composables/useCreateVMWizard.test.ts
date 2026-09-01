@@ -594,6 +594,58 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.canProceed()).toBe(true)
   })
 
+  test('SSH key labels mark the default only among multiple keys', () => {
+    const store = useSSHKeyStore()
+    const wizard = useCreateVMWizard(() => {})
+    store.keys = [{ ...demoKey(), name: 'Github' }]
+    expect(wizard.sshKeyOptions.value).toEqual([{ value: 'k1', label: 'Github' }])
+    store.keys = [
+      { ...demoKey(), name: 'Github' },
+      { ...demoKey(), id: 'k2', name: 'laptop', isDefault: false },
+    ]
+    expect(wizard.sshKeyOptions.value).toEqual([
+      { value: 'k1', label: 'Github (default)' },
+      { value: 'k2', label: 'laptop' },
+    ])
+  })
+
+  test('addSSHKey adds a key in the dialog and keeps wizard state', async () => {
+    patchSelfDevice()
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate()]
+    library.templates = catalogTemplates
+    const prevPost = api.post
+    api.post = mock((url: string, body?: unknown) => {
+      if (url === '/ssh-keys') {
+        const req = body as { name: string; publicKey: string }
+        return Promise.resolve({
+          data: {
+            ...demoKey(),
+            id: 'k-new',
+            name: req.name,
+            publicKey: req.publicKey,
+            isDefault: false,
+          },
+        })
+      }
+      return prevPost(url, body)
+    }) as typeof api.post
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    expect(wizard.selectedSSHKeyId.value).toBe('k1')
+    wizard.name.value = 'my-vm'
+    const created = await wizard.addSSHKey(' ci-server ', ' ssh-ed25519 BBB ci ')
+    expect(created.id).toBe('k-new')
+    expect(created.name).toBe('ci-server')
+    expect(created.publicKey).toBe('ssh-ed25519 BBB ci')
+    expect(wizard.selectedSSHKeyId.value).toBe('k-new')
+    expect(wizard.step.value).toBe(2)
+    expect(wizard.name.value).toBe('my-vm')
+    expect(useSSHKeyStore().keys.some((k) => k.id === 'k-new')).toBe(true)
+    expect(wizard.canProceed()).toBe(true)
+  })
+
   test('custom cloud cannot leave configure without an SSH key', async () => {
     patchSelfDevice()
     const image = readyImage({
