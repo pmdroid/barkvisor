@@ -46,15 +46,22 @@ import {
 } from '../utils/hostInterfaceAddresses'
 import {
   bridgeSetupInterfaceKey,
+  bridgeMemberNames,
+  effectiveInterfaceForDisplay,
   formatInterfaceAddressSummary,
+  formatInterfaceLinkSummary,
   inferInterfaceRole,
-  interfaceBridgeColumn,
-  interfaceBridgeFieldsReadOnly,
+  interfaceAddressFieldsReadOnly,
   interfaceBridgeRoleDetail,
-  interfaceOwnsBridgeApply,
-  interfaceRouteColumn,
+  interfaceOwnsAddressApply,
+  interfaceOwnsBridgeSetupApply,
   interfaceRoleBadgeClass,
   interfaceRoleLabel,
+  interfaceRouteColumn,
+  interfaceBridgeColumn,
+  interfaceBridgeFieldsReadOnly,
+  interfaceEnslavedToBridge,
+  resolveBridgeApplyNic,
 } from '../utils/hostInterfaceDisplay'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, vmHealth } from '../utils/workloadHealth'
@@ -247,15 +254,33 @@ const selectedInterfaceReadiness = computed(() => {
 const interfaceAddressValidation = computed(() =>
   validateAddressList(interfaceEditRows.value, {
     onlyUplink: selectedInterfaceReadiness.value?.onlyUplink,
+    gateway: interfaceGateway.value,
   }),
 )
 
-const canApplySelectedInterface = computed(() => {
+const canApplyAddresses = computed(() => {
   const row = selectedInterfaceRow.value
   if (!row) return false
   const ready = selectedInterfaceReadiness.value
-  const role = inferInterfaceRole(row.iface, ready)
-  if (!interfaceOwnsBridgeApply(role, row.iface, ready, selectedInterfaceMode.value)) return false
+  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
+  if (!interfaceOwnsAddressApply(role, row.iface, ready, selectedInterfaceMode.value)) return false
+  if (!showAddressEditor.value) return false
+  const deviceCaps = deviceCapsFor(row.hostId)
+  if (!hostBridgeCanApply({
+    platform: deviceCaps.platform,
+    supportsHostMutation: deviceCaps.supportsHostMutation,
+    supportsHostBridgeManagement: deviceCaps.supportsHostBridgeManagement,
+    supportsManagedBridgeDaemon: deviceCaps.supportsManagedBridgeDaemon,
+  })) return false
+  return interfaceAddressValidation.value.ok
+})
+
+const canApplyBridgeSetup = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  const ready = selectedInterfaceReadiness.value
+  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
+  if (!interfaceOwnsBridgeSetupApply(role, row.iface, ready, selectedInterfaceMode.value)) return false
   const deviceCaps = deviceCapsFor(row.hostId)
   return hostBridgeCanApply({
     platform: deviceCaps.platform,
@@ -265,33 +290,81 @@ const canApplySelectedInterface = computed(() => {
   })
 })
 
+const canApplySelectedInterface = computed(() => canApplyAddresses.value)
+
+const showAddressEditor = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  if (selectedInterfaceMode.value === 'linux-guide' && selectedInterfaceRole.value === 'bridge') {
+    return false
+  }
+  return interfaceOwnsAddressApply(
+    selectedInterfaceRole.value,
+    row.iface,
+    selectedInterfaceReadiness.value,
+    selectedInterfaceMode.value,
+  )
+})
+
+const showBridgeSetupPanel = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  return interfaceOwnsBridgeSetupApply(
+    selectedInterfaceRole.value,
+    row.iface,
+    selectedInterfaceReadiness.value,
+    selectedInterfaceMode.value,
+  )
+})
+
+const applyButtonLabel = computed(() => 'Apply addresses')
+
+const selectedBridgeMembers = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row || selectedInterfaceRole.value !== 'bridge') return []
+  return bridgeMemberNames(row.iface.name, selectedInterfaceReadiness.value)
+})
+
+const selectedInterfaceReadOnly = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return true
+  return interfaceAddressFieldsReadOnly(
+    selectedInterfaceRole.value,
+    row.iface,
+    selectedInterfaceReadiness.value,
+    selectedInterfaceMode.value,
+  )
+})
+
 const selectedInterfaceRole = computed(() => {
   const row = selectedInterfaceRow.value
   if (!row) return 'external' as const
-  return inferInterfaceRole(row.iface, selectedInterfaceReadiness.value)
+  return inferInterfaceRole(row.iface, selectedInterfaceReadiness.value, selectedInterfaceMode.value)
 })
-
-const selectedInterfaceReadOnly = computed(() =>
-  interfaceBridgeFieldsReadOnly(selectedInterfaceRole.value),
-)
 
 const interfaceBridgeGuideGroups = computed(() => {
   const row = selectedInterfaceRow.value
   const ready = selectedInterfaceReadiness.value
   if (!row || !ready) return []
-  const role = inferInterfaceRole(row.iface, ready)
-  if (!interfaceOwnsBridgeApply(role, row.iface, ready, selectedInterfaceMode.value)) return []
-  return selectedInterfaceMode.value === 'macos-guide'
-    ? macosSocketVmnetSetupGroups(ready)
-    : linuxBridgeSetupGroups(ready)
+  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
+  if (selectedInterfaceMode.value === 'linux-guide') {
+    if (role === 'bridge') return linuxBridgeSetupGroups(ready)
+    if (interfaceEnslavedToBridge(row.iface, ready)) return []
+    if (interfaceOwnsBridgeSetupApply(role, row.iface, ready, selectedInterfaceMode.value)) {
+      return linuxBridgeSetupGroups(ready)
+    }
+    return []
+  }
+  if (!interfaceOwnsBridgeSetupApply(role, row.iface, ready, selectedInterfaceMode.value)) return []
+  return macosSocketVmnetSetupGroups(ready)
 })
 
 const interfaceBridgeStatusSummary = computed(() => {
   const row = selectedInterfaceRow.value
   const ready = selectedInterfaceReadiness.value
   if (!row || !ready) return ''
-  const role = inferInterfaceRole(row.iface, ready)
-  if (!interfaceOwnsBridgeApply(role, row.iface, ready, selectedInterfaceMode.value)) return ''
+  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
+  if (!showBridgeSetupPanel.value) return ''
   const device = devicesStore.deviceByHostId(row.hostId)
   const name = device ? deviceDisplayLabel(device) : undefined
   return selectedInterfaceMode.value === 'macos-guide'
@@ -530,16 +603,31 @@ watch(selectedInterfaceRow, (row) => {
     interfaceDNS.value = ''
     return
   }
-  interfaceEditRows.value = addressesFromInterface(row.iface)
-  interfaceGateway.value = row.iface.gateway ?? ''
-  interfaceDNS.value = (row.iface.dns ?? []).join(', ')
+  interfaceEditRows.value = addressesFromInterface(displayInterfaceForRow(row))
+  const displayIface = displayInterfaceForRow(row)
+  interfaceGateway.value = displayIface.gateway ?? ''
+  interfaceDNS.value = (displayIface.dns ?? []).join(', ')
   if (!readinessByHost.value[row.hostId]) {
     void fetchHostReadiness(devicesStore.deviceByHostId(row.hostId))
   }
 })
 
+function interfacesForHost(hostId: string): HostInterface[] {
+  if (useHomeUnion.value) return homeNets.interfacesFor(hostId)
+  return localInterfaces.value
+}
+
 function interfaceReadinessFor(row: InterfaceTableRow) {
   return readinessByHost.value[row.hostId] ?? null
+}
+
+function displayInterfaceForRow(row: InterfaceTableRow): HostInterface {
+  return effectiveInterfaceForDisplay(
+    row.iface,
+    interfacesForHost(row.hostId),
+    interfaceReadinessFor(row),
+    interfaceModeFor(row),
+  )
 }
 
 function interfaceModeFor(row: InterfaceTableRow) {
@@ -573,6 +661,35 @@ async function refreshInterfaceContext(hostId: string) {
   if (bridged.available) await fetchLocalBridges()
 }
 
+function applyPayloadForSelectedInterface(): {
+  rows: EditableHostAddress[]
+  gateway: string
+  dns: string
+} {
+  const row = selectedInterfaceRow.value
+  if (!row) return { rows: [], gateway: '', dns: '' }
+  if (showAddressEditor.value) {
+    return {
+      rows: interfaceEditRows.value,
+      gateway: interfaceGateway.value,
+      dns: interfaceDNS.value,
+    }
+  }
+  const members = selectedBridgeMembers.value
+  const memberRow = interfaceTableRows.value.find(
+    (item) => item.hostId === row.hostId && members.includes(item.iface.name),
+  )
+  if (memberRow) {
+    const display = displayInterfaceForRow(memberRow)
+    return {
+      rows: addressesFromInterface(display),
+      gateway: display.gateway ?? '',
+      dns: (display.dns ?? []).join(', '),
+    }
+  }
+  return { rows: interfaceEditRows.value, gateway: interfaceGateway.value, dns: interfaceDNS.value }
+}
+
 async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = false) {
   const row = selectedInterfaceRow.value
   if (!row) return
@@ -581,14 +698,16 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
     toast.error('Device is unreachable. Workloads on this Device keep running locally.')
     return
   }
-  if (action === 'apply' && !interfaceAddressValidation.value.ok) {
+  if (action === 'apply' && showAddressEditor.value && !interfaceAddressValidation.value.ok) {
     toast.error(interfaceAddressValidation.value.errors[0] || 'Fix address list before applying.')
     return
   }
   linuxApplyResult.value = null
   linuxApplyLoading.value = true
   try {
-    const nic = row.iface.name
+    const ready = readinessByHost.value[row.hostId]
+    const nic = resolveBridgeApplyNic(row.iface, ready)
+    const payload = applyPayloadForSelectedInterface()
     const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
     const data = action === 'revert'
       ? await api.delete<BridgeActionResponse>(
@@ -598,9 +717,9 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
         confirm,
-        rows: interfaceEditRows.value,
-        gateway: interfaceGateway.value,
-        dns: interfaceDNS.value,
+        rows: payload.rows,
+        gateway: payload.gateway,
+        dns: payload.dns,
       })).then((r) => r.data)
     linuxApplyResult.value = data
     if (data.needsConfirm && !confirm) {
@@ -618,9 +737,9 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
       await refreshInterfaceContext(row.hostId)
       const refreshed = interfaceTableRows.value.find((item) => item.key === row.key)
       if (refreshed) {
-        interfaceEditRows.value = addressesFromInterface(refreshed.iface)
-        interfaceGateway.value = refreshed.iface.gateway ?? ''
-        interfaceDNS.value = (refreshed.iface.dns ?? []).join(', ')
+        interfaceEditRows.value = addressesFromInterface(displayInterfaceForRow(refreshed))
+        interfaceGateway.value = displayInterfaceForRow(refreshed).gateway ?? ''
+        interfaceDNS.value = (displayInterfaceForRow(refreshed).dns ?? []).join(', ')
       }
     } else if (data.message) {
       toast.error(data.message)
@@ -660,7 +779,7 @@ async function openBridgeSetupForPending(item: PendingBridge) {
   }
   const fallback = interfaceTableRows.value.find((row) => {
     if (row.hostId !== item.hostId) return false
-    const role = inferInterfaceRole(row.iface, readinessByHost.value[row.hostId])
+    const role = inferInterfaceRole(row.iface, readinessByHost.value[row.hostId], mode)
     return role === 'uplink' || role === 'bridge'
   })
   if (fallback) selectedInterfaceKey.value = fallback.key
@@ -1070,6 +1189,7 @@ async function doDeleteNetwork() {
           ...(showInterfaceDeviceColumn ? [{ key: 'device', label: DEVICE_LABEL }] : []),
           { key: 'interface', label: 'Interface' },
           { key: 'role', label: 'Role' },
+          { key: 'link', label: 'Link' },
           { key: 'addresses', label: 'Addresses (live)' },
           { key: 'bridge', label: 'Bridge' },
           { key: 'route', label: 'Route' },
@@ -1087,10 +1207,11 @@ async function doDeleteNetwork() {
           <td>
             <span
               class="badge"
-              :class="interfaceRoleBadgeClass(inferInterfaceRole(row.iface, interfaceReadinessFor(row)))"
-            >{{ interfaceRoleLabel(inferInterfaceRole(row.iface, interfaceReadinessFor(row))) }}</span>
+              :class="interfaceRoleBadgeClass(inferInterfaceRole(row.iface, interfaceReadinessFor(row), interfaceModeFor(row)))"
+            >{{ interfaceRoleLabel(inferInterfaceRole(row.iface, interfaceReadinessFor(row), interfaceModeFor(row))) }}</span>
           </td>
-          <td class="mono">{{ formatInterfaceAddressSummary(row.iface) }}</td>
+          <td>{{ formatInterfaceLinkSummary(row.iface) }}</td>
+          <td class="mono">{{ formatInterfaceAddressSummary(row.iface, interfaceReadinessFor(row), { mode: interfaceModeFor(row), allIfaces: interfacesForHost(row.hostId) }) }}</td>
           <td class="mono">{{ interfaceBridgeColumn(row.iface, interfaceReadinessFor(row), interfaceBridgeInfo(row), interfaceModeFor(row)) }}</td>
           <td>{{ interfaceRouteColumn(row.iface, interfaceReadinessFor(row)) }}</td>
         </tr>
@@ -1099,17 +1220,35 @@ async function doDeleteNetwork() {
       <section v-if="selectedInterfaceRow" class="iface-drawer sheet">
         <div class="sheet-head">
           <span>Edit {{ selectedInterfaceRow.iface.name }}</span>
-          <span class="n">read from host · {{ (selectedInterfaceRow.iface.addresses?.length ?? 0) + (selectedInterfaceRow.iface.dhcpEnabled ? 1 : 0) }} addresses</span>
+          <span class="n">
+            <template v-if="selectedInterfaceRole === 'bridge' && selectedInterfaceMode === 'linux-guide'">
+              bridge · {{ selectedBridgeMembers.length ? `members ${selectedBridgeMembers.join(', ')}` : 'no member ports' }}
+            </template>
+            <template v-else>
+              read from host · {{ (displayInterfaceForRow(selectedInterfaceRow).addresses?.length ?? 0) + (displayInterfaceForRow(selectedInterfaceRow).dhcpEnabled ? 1 : 0) }} addresses
+            </template>
+          </span>
         </div>
         <div class="iface-drawer-body">
+          <p
+            v-if="selectedInterfaceRole === 'bridge' && selectedInterfaceMode === 'linux-guide'"
+            class="iface-drawer-hint"
+          >
+            IPv4 is configured on member port{{ selectedBridgeMembers.length === 1 ? '' : 's' }}
+            {{ selectedBridgeMembers.length ? selectedBridgeMembers.join(', ') : '(none yet)' }}.
+            Select a port row to edit addresses. Use Apply bridge below for enslave, helper, and ACL.
+          </p>
+
           <HostInterfaceAddressList
+            v-if="showAddressEditor"
             v-model="interfaceEditRows"
-            :iface="selectedInterfaceRow.iface"
+            :iface="displayInterfaceForRow(selectedInterfaceRow)"
             :only-uplink="selectedInterfaceReadiness?.onlyUplink"
+            :gateway="interfaceGateway"
             :disabled="linuxApplyLoading || selectedInterfaceReadOnly"
           />
 
-          <div class="iface-fields-grid">
+          <div v-if="showAddressEditor" class="iface-fields-grid">
             <div class="form-group">
               <label>Gateway</label>
               <input v-model="interfaceGateway" placeholder="192.168.1.1" spellcheck="false" :disabled="linuxApplyLoading || selectedInterfaceReadOnly" />
@@ -1118,6 +1257,9 @@ async function doDeleteNetwork() {
               <label>DNS</label>
               <input v-model="interfaceDNS" placeholder="1.1.1.1, 8.8.8.8" spellcheck="false" :disabled="linuxApplyLoading || selectedInterfaceReadOnly" />
             </div>
+          </div>
+
+          <div class="iface-fields-grid">
             <div class="form-group">
               <label>Bridge role</label>
               <input
@@ -1134,7 +1276,7 @@ async function doDeleteNetwork() {
           >{{ interfaceBridgeStatusSummary }}</p>
 
           <details v-if="interfaceBridgeGuideGroups.length" class="iface-advanced">
-            <summary>Advanced CLI</summary>
+            <summary>Advanced CLI (bridge setup)</summary>
             <GuestCommandAccordion
               :groups="interfaceBridgeGuideGroups"
               :initial-open="null"
@@ -1170,10 +1312,10 @@ async function doDeleteNetwork() {
             <AppButton
               variant="primary"
               size="sm"
-              :disabled="!canApplySelectedInterface || linuxApplyLoading || !interfaceAddressValidation.ok"
+              :disabled="!canApplySelectedInterface || linuxApplyLoading || (showAddressEditor && !interfaceAddressValidation.ok)"
               :loading="linuxApplyLoading"
               @click="applySelectedInterface"
-            >Apply</AppButton>
+            >{{ applyButtonLabel }}</AppButton>
             <AppButton
               size="sm"
               :disabled="!canApplySelectedInterface || linuxApplyLoading"
