@@ -1006,26 +1006,6 @@ extension LinuxHostBridgeApply {
         )
     }
 
-    public static func writeOwnerMarker(
-        bridge: String,
-        uplink: String,
-        createdBridge: Bool,
-        dataDir: URL = Config.dataDir,
-    ) throws {
-        let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
-        let payload: [String: Any] = [
-            "bridge": bridge,
-            "uplink": uplink,
-            "createdBridge": createdBridge,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-        try data.write(to: url, options: .atomic)
-    }
-
     public static func createdBridgeForUplink(_ uplink: String, dataDir: URL = Config.dataDir) -> Bool {
         if readOwnerMarker(bridge: uplink, dataDir: dataDir)?.createdBridge == true {
             return true
