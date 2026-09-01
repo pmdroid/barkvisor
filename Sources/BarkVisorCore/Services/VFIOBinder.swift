@@ -107,24 +107,56 @@ public enum VFIOBinder {
     private static func bindOne(address: String, paths: VFIOBindPaths, sysfs: VFIOSysfs) throws {
         let deviceDir = URL(fileURLWithPath: paths.devicesRoot, isDirectory: true)
             .appendingPathComponent(address, isDirectory: true)
-        guard sysfs.fileExists(deviceDir.path) else {
-            throw BarkVisorError.forbidden(
-                "GPU \(address) is missing from sysfs; refusing vfio bind",
-            )
-        }
+        try requireSysfsNode(
+            deviceDir.path,
+            operation: "bind",
+            cause: "PCI device \(address) is missing from sysfs",
+            sysfs: sysfs,
+        )
         if sysfs.currentDriver(address) == "vfio-pci" { return }
 
+        try requireSysfsNode(
+            deviceDir.appendingPathComponent("iommu_group").path,
+            operation: "bind",
+            cause: "PCI device \(address) has no IOMMU group; the IOMMU is disabled or unsupported on this Device",
+            sysfs: sysfs,
+        )
+        try requireSysfsNode(
+            paths.vfioPciDriver,
+            operation: "bind",
+            cause: "the vfio-pci kernel module is not loaded",
+            sysfs: sysfs,
+        )
+        let bind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
+            .appendingPathComponent("bind")
+            .path
+        try requireSysfsNode(
+            bind,
+            operation: "bind",
+            cause: "the vfio-pci bind node is missing from sysfs",
+            sysfs: sysfs,
+        )
+
         let override = deviceDir.appendingPathComponent("driver_override").path
+        try requireSysfsNode(
+            override,
+            operation: "bind",
+            cause: "this kernel does not support driver_override",
+            sysfs: sysfs,
+        )
         try write("vfio-pci\n", to: override, sysfs: sysfs)
 
         if sysfs.currentDriver(address) != nil {
             let unbind = deviceDir.appendingPathComponent("driver").appendingPathComponent("unbind").path
+            try requireSysfsNode(
+                unbind,
+                operation: "bind",
+                cause: "PCI device \(address) has no host driver to unbind from",
+                sysfs: sysfs,
+            )
             try write("\(address)\n", to: unbind, sysfs: sysfs)
         }
 
-        let bind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
-            .appendingPathComponent("bind")
-            .path
         try write("\(address)\n", to: bind, sysfs: sysfs)
 
         guard sysfs.currentDriver(address) == "vfio-pci" else {
@@ -140,13 +172,37 @@ public enum VFIOBinder {
         guard sysfs.fileExists(deviceDir.path) else { return }
         guard sysfs.currentDriver(address) == "vfio-pci" else { return }
 
+        try requireSysfsNode(
+            paths.vfioPciDriver,
+            operation: "unbind",
+            cause: "the vfio-pci kernel module is not loaded",
+            sysfs: sysfs,
+        )
         let unbind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
             .appendingPathComponent("unbind")
             .path
+        try requireSysfsNode(
+            unbind,
+            operation: "unbind",
+            cause: "the vfio-pci unbind node is missing from sysfs",
+            sysfs: sysfs,
+        )
         try write("\(address)\n", to: unbind, sysfs: sysfs)
 
         let override = deviceDir.appendingPathComponent("driver_override").path
+        try requireSysfsNode(
+            override,
+            operation: "unbind",
+            cause: "this kernel does not support driver_override",
+            sysfs: sysfs,
+        )
         try write("\n", to: override, sysfs: sysfs)
+        try requireSysfsNode(
+            paths.driversProbe,
+            operation: "unbind",
+            cause: "the PCI drivers_probe node is missing from sysfs",
+            sysfs: sysfs,
+        )
         try write("\(address)\n", to: paths.driversProbe, sysfs: sysfs)
 
         if sysfs.currentDriver(address) == "vfio-pci" {
@@ -156,12 +212,25 @@ public enum VFIOBinder {
         }
     }
 
+    private static func requireSysfsNode(
+        _ path: String,
+        operation: String,
+        cause: String,
+        sysfs: VFIOSysfs,
+    ) throws {
+        guard sysfs.fileExists(path) else {
+            throw BarkVisorError.forbidden(
+                "vfio-pci \(operation) failed: \(path) does not exist; \(cause)",
+            )
+        }
+    }
+
     private static func write(_ text: String, to path: String, sysfs: VFIOSysfs) throws {
         do {
             try sysfs.write(text, path)
         } catch {
             throw BarkVisorError.forbidden(
-                "vfio-pci sysfs write failed at \(URL(fileURLWithPath: path).lastPathComponent): \(error.localizedDescription)",
+                "vfio-pci sysfs write failed at \(path): \(error.localizedDescription)",
             )
         }
     }
