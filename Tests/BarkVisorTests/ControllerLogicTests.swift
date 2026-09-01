@@ -167,7 +167,10 @@ struct ControllerLogicTests {
             #expect(!DirectoryBrowser.isAllowed("/Users/pascal/External", home: "/var/root"))
         #endif
         #expect(DirectoryBrowser.isAllowed("/Volumes"))
+        #expect(DirectoryBrowser.isAllowed("/Volumes/Data"))
+        #expect(DirectoryBrowser.isAllowed("/Volumes/Data/workspace"))
         #expect(DirectoryBrowser.isAllowed("/Volumes/External"))
+        #expect(DirectoryBrowser.parentPath(of: "/Volumes/Data") == "/Volumes")
         #expect(DirectoryBrowser.isAllowed("/mnt"))
         #expect(DirectoryBrowser.isAllowed("/mnt/data"))
         #expect(DirectoryBrowser.isAllowed("/media/usb"))
@@ -232,6 +235,32 @@ struct ControllerLogicTests {
             #expect(!reason.isEmpty)
             #expect(!reason.contains(locked))
         }
+    }
+
+    @Test func `directory browser rejects symlink escape and lists Volumes Data`() throws {
+        let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: base) }
+        let escape = (base as NSString).appendingPathComponent("escape")
+        try FileManager.default.createSymbolicLink(atPath: escape, withDestinationPath: "/etc")
+        #expect(!DirectoryBrowser.isAllowed(escape, extraRoots: [base]))
+        #expect(throws: BarkVisorError.self) {
+            try DirectoryBrowser.list(path: escape, extraRoots: [base])
+        }
+
+        #if os(macOS)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: "/Volumes/Data", isDirectory: &isDir),
+               isDir.boolValue {
+                do {
+                    let entries = try DirectoryBrowser.list(path: "/Volumes/Data")
+                    #expect(entries.contains { $0.name == ".." && $0.path == "/Volumes" })
+                } catch let error as BarkVisorError {
+                    #expect(error.code == "permission_denied")
+                    #expect(error.httpStatus == 403)
+                }
+            }
+        #endif
     }
 
     @Test func `directory browser permission error detection`() {

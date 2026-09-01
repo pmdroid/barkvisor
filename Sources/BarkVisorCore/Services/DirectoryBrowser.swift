@@ -31,14 +31,41 @@ public enum DirectoryBrowser {
         extraRoots: [String] = [],
         home: String = NSHomeDirectory(),
     ) -> Bool {
+        let standardized = (path as NSString).standardizingPath
         let resolvedPath = (path as NSString).resolvingSymlinksInPath
         let roots = staticRoots(home: home) + extraRoots
-        let inRoot = roots.contains { root in
+        if matchesAnyRoot(resolvedPath, roots: roots) || resolvedPath == "/" {
+            return true
+        }
+        guard matchesAnyRoot(standardized, roots: roots) || standardized == "/" else {
+            return false
+        }
+        if resolvedPath == standardized || resolvedPath == "/" {
+            return true
+        }
+        return isUnderVolumeRoot(standardized) && isMacSystemVolume(resolvedPath)
+    }
+
+    private static func matchesAnyRoot(_ path: String, roots: [String]) -> Bool {
+        roots.contains { root in
             let canonical = (root as NSString).resolvingSymlinksInPath
             let rootWithSlash = canonical.hasSuffix("/") ? canonical : canonical + "/"
-            return resolvedPath == canonical || resolvedPath.hasPrefix(rootWithSlash)
+            return path == canonical || path.hasPrefix(rootWithSlash)
         }
-        return inRoot || resolvedPath == "/"
+    }
+
+    private static func isUnderVolumeRoot(_ path: String) -> Bool {
+        volumeRoots.contains { root in
+            path == root || path.hasPrefix(root + "/")
+        }
+    }
+
+    private static func isMacSystemVolume(_ path: String) -> Bool {
+        #if os(macOS)
+            path == "/System/Volumes" || path.hasPrefix("/System/Volumes/")
+        #else
+            false
+        #endif
     }
 
     public static func rootEntries(
@@ -73,20 +100,20 @@ public enum DirectoryBrowser {
             return rootEntries(extraRoots: extraRoots, home: home)
         }
 
-        let resolvedPath = (trimmed as NSString).resolvingSymlinksInPath
-        guard isAllowed(resolvedPath, extraRoots: extraRoots, home: home) else {
+        let listPath = (trimmed as NSString).standardizingPath
+        guard isAllowed(listPath, extraRoots: extraRoots, home: home) else {
             throw BarkVisorError.forbidden("Access denied: path is outside allowed directories")
         }
 
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir), isDir.boolValue
+        guard FileManager.default.fileExists(atPath: listPath, isDirectory: &isDir), isDir.boolValue
         else {
             throw BarkVisorError.badRequest("Path is not a directory")
         }
 
         let contents: [String]
         do {
-            contents = try FileManager.default.contentsOfDirectory(atPath: resolvedPath)
+            contents = try FileManager.default.contentsOfDirectory(atPath: listPath)
         } catch {
             if isPermissionError(error) {
                 throw BarkVisorError.permissionDenied(permissionDeniedMessage())
@@ -97,13 +124,13 @@ public enum DirectoryBrowser {
         }
         var entries: [Entry] = []
 
-        if let parent = parentPath(of: resolvedPath, extraRoots: extraRoots, home: home) {
+        if let parent = parentPath(of: listPath, extraRoots: extraRoots, home: home) {
             entries.append(Entry(name: "..", path: parent))
         }
 
         for name in contents.sorted() {
             if name.hasPrefix(".") { continue }
-            let fullPath = (resolvedPath as NSString).appendingPathComponent(name)
+            let fullPath = (listPath as NSString).appendingPathComponent(name)
             var childIsDir: ObjCBool = false
             FileManager.default.fileExists(atPath: fullPath, isDirectory: &childIsDir)
             guard childIsDir.boolValue else { continue }
@@ -132,26 +159,33 @@ public enum DirectoryBrowser {
             throw BarkVisorError.badRequest("Invalid folder name")
         }
 
-        let resolvedParent = (parent as NSString).resolvingSymlinksInPath
-        guard isAllowed(resolvedParent, extraRoots: extraRoots, home: home) else {
+        let parentDir = (parent as NSString).standardizingPath
+        guard isAllowed(parentDir, extraRoots: extraRoots, home: home) else {
             throw BarkVisorError.forbidden("Access denied: path is outside allowed directories")
         }
 
         var parentIsDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: resolvedParent, isDirectory: &parentIsDir),
+        guard FileManager.default.fileExists(atPath: parentDir, isDirectory: &parentIsDir),
               parentIsDir.boolValue
         else {
             throw BarkVisorError.badRequest("Parent path is not a directory")
         }
 
-        let newPath = (resolvedParent as NSString).appendingPathComponent(name)
+        let newPath = (parentDir as NSString).appendingPathComponent(name)
         guard isAllowed(newPath, extraRoots: extraRoots, home: home) else {
             throw BarkVisorError.forbidden("Access denied: path is outside allowed directories")
         }
         if FileManager.default.fileExists(atPath: newPath) {
             throw BarkVisorError.badRequest("A file or folder with that name already exists")
         }
-        try FileManager.default.createDirectory(atPath: newPath, withIntermediateDirectories: false)
+        do {
+            try FileManager.default.createDirectory(atPath: newPath, withIntermediateDirectories: false)
+        } catch {
+            if isPermissionError(error) {
+                throw BarkVisorError.permissionDenied(permissionDeniedMessage())
+            }
+            throw error
+        }
         return Entry(name: name, path: newPath)
     }
 
@@ -188,7 +222,7 @@ public enum DirectoryBrowser {
         extraRoots: [String] = [],
         home: String = NSHomeDirectory(),
     ) -> String? {
-        let resolved = (path as NSString).resolvingSymlinksInPath
+        let resolved = (path as NSString).standardizingPath
         if resolved == "/" { return nil }
         let parent = (resolved as NSString).deletingLastPathComponent
         if isAllowed(parent, extraRoots: extraRoots, home: home) {

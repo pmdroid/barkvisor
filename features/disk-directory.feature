@@ -22,3 +22,9 @@ Feature: Per-Device VM disk directory
     Then the daemon answers with a typed permission_denied error, not a generic 500
     And the picker shows how to grant Full Disk Access on macOS
     And the picker keeps the current folder listing instead of jumping back to Places
+
+  Scenario: Mac Data volume is an allowed folder
+    Given the folder picker is open on a Mac
+    When I browse /Volumes/Data
+    Then that path is allowed even if it firmlinks to /System/Volumes/Data
+    And a permission failure is typed, never a generic 500

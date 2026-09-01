@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'bun:test'
 import {
   asFolderEntries,
@@ -49,6 +52,15 @@ describe('folderBrowse', () => {
       { name: '..', path: '' },
       { name: 'disks', path: '/var/lib/barkvisor/disks' },
     ])
+  })
+
+  test('folder picker keeps the listing when browse returns permission_denied', () => {
+    const picker = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../components/FolderPicker.vue'),
+      'utf8',
+    )
+    expect(picker).toContain("apiErrorCode(err) === 'permission_denied' && path")
+    expect(picker).toContain('FormError')
   })
 
   test('root listings count as real folders even with a parent row', () => {

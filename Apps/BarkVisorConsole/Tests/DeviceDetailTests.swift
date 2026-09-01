@@ -124,6 +124,13 @@ struct DeviceDetailTests {
         #expect(source.contains("Default VM disk directory"))
         #expect(source.contains("saveDiskSettings"))
         #expect(source.contains("FolderPickerView(device: device)"))
+        let picker = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/FolderPickerView.swift"),
+            encoding: .utf8,
+        )
+        #expect(picker.contains("if let api = error as? APIError, case .permissionDenied = api, !path.isEmpty"))
+        #expect(picker.contains("self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription"))
         #expect(source.contains("guard !directory.isEmpty else { return }"))
         #expect(source.contains("guard device.hostId == host else { return }"))
         #expect(source.contains(".id(device.hostId)"))
