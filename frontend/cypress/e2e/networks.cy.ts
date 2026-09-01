@@ -324,4 +324,32 @@ describe('Network Management', () => {
       cy.get('input[type="checkbox"]').first().should('be.disabled')
     })
   })
+
+  it('Keep banner shows on the Bridge row when pending target is the uplink', () => {
+    const readiness = {
+      helperPath: null,
+      helperSetuid: true,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      defaultRouteInterface: 'en0',
+      onlyUplink: false,
+      ready: true,
+      pendingCommit: {
+        target: 'en0',
+        commitDeadline: new Date(Date.now() + 30_000).toISOString(),
+        rollbackSeconds: 30,
+      },
+    }
+    cy.intercept('GET', '**/system/interfaces', [
+      { name: 'en0', displayName: 'en0', ipAddress: '192.168.1.10' },
+      { name: 'br0', displayName: 'br0', ipAddress: '' },
+    ]).as('ifaces')
+    cy.intercept('GET', '**/system/host-bridge-readiness', readiness).as('ready')
+    cy.visit('/networks')
+    cy.wait('@ifaces')
+    cy.wait('@ready')
+    cy.contains('.iface-row', 'br0').click()
+    cy.get('.iface-drawer').contains('Keep changes').should('be.visible')
+  })
 })

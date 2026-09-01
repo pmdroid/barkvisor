@@ -187,6 +187,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).not.toContain('Device address on')
     expect(src).toContain('hostBridgeSetupPending')
     expect(src).toContain('interfaceAddressColumn')
+    expect(src).toContain('pendingCommitBridgeName')
+    expect(src).toContain('pendingCommitMatchesInterface')
     expect(src).toContain('recheckSelectedInterface')
   })
 

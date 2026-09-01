@@ -74,6 +74,7 @@ import {
   overlayBridgeAddresses,
   existingBridgeForInterfaceApply,
   resolveBridgeApplyNic,
+  pendingCommitBridgeName,
   pendingCommitMatchesInterface,
   hostBridgeActionPath,
   interfaceAssociatedBridge,
@@ -503,16 +504,22 @@ function clearPendingCommitState() {
   pendingCommitAutoRevert = false
 }
 
-function setPendingCommitFromResponse(hostId: string, nic: string, data: BridgeActionResponse) {
+function setPendingCommitFromResponse(
+  hostId: string,
+  nic: string,
+  data: BridgeActionResponse,
+  bridge?: string,
+) {
   if (!data.pendingCommit || !data.commitDeadline) {
     return
   }
   const ready = readinessByHost.value[hostId]
+  const hinted = data.target || bridge || ready?.pendingCommit?.target || nic
   pendingCommitAutoRevert = false
   pendingCommit.value = {
     hostId,
     nic,
-    target: data.target ?? ready?.pendingCommit?.target ?? nic,
+    target: pendingCommitBridgeName({ target: hinted, nic }, ready),
     commitDeadline: data.commitDeadline,
     rollbackSeconds: data.rollbackSeconds ?? 30,
   }
@@ -536,7 +543,7 @@ function syncPendingCommitFromReadiness(hostId: string, ready: HostBridgeReadine
   pendingCommit.value = {
     hostId,
     nic,
-    target: row.target,
+    target: pendingCommitBridgeName({ target: row.target, nic }, ready),
     commitDeadline: row.commitDeadline,
     rollbackSeconds: row.rollbackSeconds,
   }
@@ -551,6 +558,7 @@ const showPendingCommitBanner = computed(() => {
     pending,
     row.iface.name,
     selectedInterfaceMode.value,
+    selectedInterfaceReadiness.value,
   )
 })
 
@@ -855,7 +863,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
       return
     }
     if (data.pendingCommit && data.commitDeadline && (action === 'apply' || action === 'delete')) {
-      setPendingCommitFromResponse(row.hostId, nic, data)
+      setPendingCommitFromResponse(row.hostId, nic, data, targetBridge)
     } else if (action === 'revert' || action === 'apply' || action === 'delete') {
       if (pendingCommit.value?.hostId === row.hostId) clearPendingCommitState()
     }
@@ -1297,7 +1305,7 @@ async function applyCreateBridge(confirm = false) {
     }
     if (data.pendingCommit && data.commitDeadline) {
       const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
-      if (hostId) setPendingCommitFromResponse(hostId, nic, data)
+      if (hostId) setPendingCommitFromResponse(hostId, nic, data, bridge)
     }
     if (data.success) {
       if (createBridgeVmNetwork.value) {

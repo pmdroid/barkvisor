@@ -15,3 +15,9 @@ Feature: Device IPs live on the Bridge row
     Given Mac synthetic br0 maps to en0
     Then the UI shows IPs on br0
     And Apply writes interface en0 with bridge br0
+
+  Scenario: Keep banner follows the Bridge row
+    Given Mac synthetic br0 maps to en0
+    And Apply from br0 is pending with nic en0
+    Then Keep shows on br0
+    And Keep does not show on en0

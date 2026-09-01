@@ -20,6 +20,7 @@ import {
   interfaceRoleLabel,
   existingBridgeForInterfaceApply,
   overlayBridgeAddresses,
+  pendingCommitBridgeName,
   pendingCommitMatchesInterface,
   resolveBridgeApplyNic,
 } from './hostInterfaceDisplay'
@@ -382,6 +383,25 @@ describe('hostInterfaceDisplay', () => {
       .not.toBe('/system/bridges/br1')
     expect(hostBridgeActionPath('/system/bridges', 'en0', 'macos-guide', 'br1'))
       .toBe('/system/bridges/en0')
+  })
+
+  test('Mac Keep follows the Bridge row when Apply sent nic en0', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+    }
+    const pending = { target: 'en0', nic: 'en0' }
+    expect(pendingCommitBridgeName(pending, ready)).toBe('br0')
+    expect(pendingCommitMatchesInterface(pending, 'br0', 'macos-guide', ready)).toBe(true)
+    expect(pendingCommitMatchesInterface(pending, 'en0', 'macos-guide', ready)).toBe(false)
+    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'br0', 'macos-guide', ready)).toBe(true)
+    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'en0', 'macos-guide', ready)).toBe(false)
   })
 
   test('Delete vs Revert follows createdBridge on the marker snapshot', () => {

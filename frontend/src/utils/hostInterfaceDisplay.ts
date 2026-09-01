@@ -374,13 +374,33 @@ export function bridgedPickerInterfaces(
   return bridges
 }
 
+export function pendingCommitBridgeName(
+  pending: { target: string; nic: string },
+  readiness?: HostBridgeReadiness | null,
+): string {
+  const parent = readiness?.bridges.find(
+    (bridge) =>
+      bridge.name === pending.target
+      || bridge.enslaved.includes(pending.target)
+      || bridge.enslaved.includes(pending.nic),
+  )
+  return parent?.name ?? pending.target
+}
+
 export function pendingCommitMatchesInterface(
   pending: { target: string; nic: string },
   ifaceName: string,
   mode: string,
+  readiness?: HostBridgeReadiness | null,
 ): boolean {
-  if (mode === 'macos-guide') return pending.target === ifaceName
-  return pending.target === ifaceName || pending.nic === ifaceName
+  if (
+    mode === 'macos-guide'
+    && readiness?.bridges.some((bridge) => bridge.enslaved.includes(ifaceName))
+  ) {
+    return false
+  }
+  if (pending.target === ifaceName || pending.nic === ifaceName) return true
+  return pendingCommitBridgeName(pending, readiness) === ifaceName
 }
 
 export function hostBridgeActionPath(
