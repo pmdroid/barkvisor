@@ -85,6 +85,7 @@ Linux install guide: [Installation (Linux)](getting-started-linux.md).
 - **Bridge fails:** use **Networks → Bridge setup → Apply**, or run the equivalent commands on that page. Rollback is a host timer. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
 - **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. The daemon is root; dropped QEMU needs group `kvm` when KVM is present.
+- **GPU attach not ready:** enable Intel or AMD IOMMU, load vfio-pci, then confirm IOMMU groups. See [GPU passthrough](getting-started-gpu-passthrough.md). Host GPU blanking and **In use by host** do not block Attach.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
 
 ## Onboarding issues

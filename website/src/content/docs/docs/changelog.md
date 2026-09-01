@@ -8,6 +8,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- GPU passthrough setup: Intel/AMD IOMMU, vfio-pci, and IOMMU group checks on a Linux Device. Host GPU blanking and **In use by host** are information, not Attach blockers. Guide: [GPU passthrough](/docs/guides/gpu-passthrough/).
 - Appliance getting-started is Ubuntu / Debian `.deb` and macOS Apple Silicon `.pkg`. Bootstrap is inspect-then-run (`get-barkvisor.sh`). Updates are **Settings → Updates**, not `brew upgrade barkvisor`. Networks **Bridge setup** Applies Linux `br0` and starts macOS `socket_vmnet`; equivalent commands stay on the page. Uninstall reverts tagged files and never default-deletes shared `br0`. Homebrew is runtime `qemu` / `swtpm` / `socket_vmnet` only.
 - Device daemon runs as root on Linux (`User=root`) and macOS (LaunchDaemon without `UserName`). QEMU drops to `barkvisor`/`qemu` with kvm/disk on Linux. macOS HVF/USB stay the daemon uid until a drop is proven. Networks **Bridge setup** uses Apply/Revert on Linux (`br0`) and macOS (`socket_vmnet` + `networksetup`). `--check` reports socket plus service. No XPC helper. NAT still works when bridged host networking is down.
 - Settings Home is Device URL, not remote access. Pairing and login QR `host=` and Models `OPENAI_BASE_URL` use the saved Device URL. Require Tailscale for the Home API is gone.

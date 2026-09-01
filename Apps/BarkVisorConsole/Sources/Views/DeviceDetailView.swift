@@ -72,12 +72,14 @@ struct DeviceDetailView: View {
                         )
                         Text(caps.gpuPassthroughExplanation)
                             .foregroundStyle(.secondary)
+                        Link("IOMMU setup", destination: GPUPassthroughCopy.docsURL)
                         if caps.gpuPassthroughSupported {
                             LabeledContent("Guest Ollama", value: GPUPassthroughCopy.guestOllamaPath)
                         }
                     } else {
                         Text(GPUPassthroughCopy.iommuNotReady)
                             .foregroundStyle(.secondary)
+                        Link("IOMMU setup", destination: GPUPassthroughCopy.docsURL)
                     }
                     if hostGPUs.count == 1 {
                         Text(GPUPassthroughCopy.singleDisplayWarning)

@@ -76,6 +76,12 @@ const map = {
     title: 'Create a Workload',
     description: 'Create a VM on this Device or another paired Device from the Home dashboard.',
   },
+  'getting-started-gpu-passthrough.md': {
+    out: 'guides/gpu-passthrough.md',
+    title: 'GPU passthrough',
+    description:
+      'Enable Intel or AMD IOMMU and vfio-pci on a Linux Device, then verify IOMMU groups.',
+  },
   'using-overview.md': {
     out: 'using/index.md',
     title: 'Using the web UI',
@@ -212,6 +218,7 @@ function fixLinks(body) {
     .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
     .replace(/\]\(ollama\.md(#[^)]*)?\)/g, '](/docs/guides/ollama/$1)')
     .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
+    .replace(/\]\(getting-started-gpu-passthrough\.md(#[^)]*)?\)/g, '](/docs/guides/gpu-passthrough/$1)')
     .replace(/\]\(img\/([^)]+)\)/g, '](/docs-img/$1)')
     .replace(/\]\(using-overview\.md(#[^)]*)?\)/g, '](/docs/using/$1)')
     .replace(/\]\(using-dashboard\.md(#[^)]*)?\)/g, '](/docs/using/dashboard/$1)')

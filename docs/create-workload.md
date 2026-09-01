@@ -27,7 +27,7 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 ## GPU and PCI (Linux)
 
 - GPU list labels **NVIDIA**, **Intel**, and **AMD**. Several cards of the same vendor stay listed separately.
-- GPU attach is the existing passthrough path (IOMMU / vfio-pci / KVM). Fail closed if that is not ready.
+- GPU attach is the existing passthrough path (IOMMU / vfio-pci / KVM). Fail closed if that is not ready. Linux host setup: [GPU passthrough](getting-started-gpu-passthrough.md).
 - Workload detail also has a **PCI** picker for other VFIO devices. The boot disk and the last remaining uplink stay excluded. The picker is hidden on **macOS**.
 
 ## After create
@@ -40,4 +40,5 @@ The Workload lives in that Device’s SQLite. Start, stop, and console from the 
 - [Home and pairing](home-and-pairing.md)
 - [Settings: Repositories](settings-repositories.md)
 - [Ollama](ollama.md)
+- [GPU passthrough](getting-started-gpu-passthrough.md)
 - [Changelog](changelog.md)

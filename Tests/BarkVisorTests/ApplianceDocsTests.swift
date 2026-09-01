@@ -79,6 +79,52 @@ struct ApplianceDocsTests {
         #expect(updates.contains("installer -pkg"))
     }
 
+    @Test func `gpu passthrough docs cover intel amd vfio and occupancy`() throws {
+        let feature = try read("features/gpu-passthrough-docs.feature")
+        #expect(feature.contains("intel_iommu=on"))
+        #expect(feature.contains("amd_iommu=on"))
+        #expect(feature.contains("In use by host"))
+        #expect(feature.contains("/docs/guides/gpu-passthrough/"))
+
+        let text = try read("docs/getting-started-gpu-passthrough.md")
+        #expect(text.contains("intel_iommu=on"))
+        #expect(text.contains("amd_iommu=on"))
+        #expect(text.contains("update-grub"))
+        #expect(text.contains("vfio-pci"))
+        #expect(text.contains("/sys/kernel/iommu_groups"))
+        #expect(text.contains("blank the host display"))
+        #expect(text.contains("does not block"))
+        #expect(text.contains("In use by host"))
+        #expect(text.contains("not a blocker"))
+        #expect(text.contains("does not turn IOMMU on"))
+        #expect(!text.contains("vfio-pci.ids"))
+        #expect(!text.contains("cluster"))
+        #expect(!text.contains("quorum"))
+        #expect(text.contains("Device"))
+        #expect(text.contains("Workload"))
+        #expect(text.contains("Home") || text.contains("Device"))
+
+        let linux = try read("docs/getting-started-linux.md")
+        #expect(linux.contains("getting-started-gpu-passthrough.md"))
+        #expect(linux.contains("does not block Attach"))
+
+        let website = try read("website/src/content/docs/docs/guides/gpu-passthrough.md")
+        #expect(website.contains("intel_iommu=on"))
+        #expect(website.contains("/docs/linux/"))
+
+        let sync = try read("website/scripts/sync-content.mjs")
+        #expect(sync.contains("getting-started-gpu-passthrough.md"))
+        #expect(sync.contains("guides/gpu-passthrough.md"))
+
+        let vue = try read("frontend/src/utils/gpuPassthrough.ts")
+        #expect(vue.contains("https://barkvisor.dev/docs/guides/gpu-passthrough/"))
+        let consoleCopy = try read("Apps/BarkVisorConsole/Sources/Models/Models.swift")
+        #expect(consoleCopy.contains("https://barkvisor.dev/docs/guides/gpu-passthrough/"))
+        let attach = try read("frontend/src/views/VMDetailView.vue")
+        #expect(attach.contains("GPU_PASSTHROUGH_DOCS_HREF"))
+        #expect(attach.contains("IOMMU setup"))
+    }
+
     @Test func `privilege boundary tests still forbid helper xpc`() throws {
         let text = try read("Tests/BarkVisorTests/PrivilegeBoundaryTests.swift")
         #expect(text.contains("HelperXPCClient"))

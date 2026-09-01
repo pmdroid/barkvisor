@@ -61,6 +61,8 @@ export const GPU_IOMMU_NOT_READY =
 export const GPU_SINGLE_DISPLAY_WARNING =
   'This machine lists one GPU. Passing it through can blank the host display.'
 
+export const GPU_PASSTHROUGH_DOCS_HREF = 'https://barkvisor.dev/docs/guides/gpu-passthrough/'
+
 /** Other PCI addresses in the same IOMMU group (not the GPU itself). */
 export function gpuGroupMateAddresses(
   pciAddress: string,
