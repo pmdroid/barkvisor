@@ -151,6 +151,15 @@ struct VirtUIErrorTests {
         #expect(error.sanitizedDescription == "Name is required")
     }
 
+    @Test func `sanitized description keeps vfio sysfs bind path`() {
+        let path = "/sys/bus/pci/drivers/vfio-pci/bind"
+        let error = BarkVisorError.forbidden(
+            "vfio-pci bind failed: \(path) does not exist; the vfio-pci bind node is missing from sysfs",
+        )
+        #expect(error.sanitizedDescription.contains(path))
+        #expect(!error.sanitizedDescription.contains("<path>"))
+    }
+
     @Test func `interface and acl preflight messages keep remediation`() {
         let missing = BarkVisorError.interfaceMissing("br0")
         #expect(missing.sanitizedDescription.contains("does not exist"))

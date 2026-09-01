@@ -591,6 +591,26 @@ struct WorkloadDetailTests {
         #expect(APIError.http(status: 409, reason: "busy").localizedDescription == "busy")
     }
 
+    @Test func `vfio bind errors keep the sysfs path on the banner`() throws {
+        let vfioReason =
+            "vfio-pci bind failed: /sys/bus/pci/drivers/vfio-pci/bind does not exist; the vfio-pci bind node is missing from sysfs"
+        #expect(APIError.http(status: 403, reason: vfioReason).localizedDescription == vfioReason)
+        #expect(
+            APIError.http(status: 403, reason: vfioReason).localizedDescription
+                .contains("/sys/bus/pci/drivers/vfio-pci/bind"),
+        )
+        let model = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/AppModel.swift"),
+            encoding: .utf8,
+        )
+        #expect(model.contains("func attachGPU"))
+        #expect(model.contains("func startWorkload"))
+        #expect(model.contains("banner = api.localizedDescription"))
+    }
+
     private func snapshot(
         hostId: String,
         role: String,

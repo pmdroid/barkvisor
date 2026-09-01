@@ -113,9 +113,101 @@ struct VFIOBinderTests {
         }
         if case let .forbidden(message) = err {
             #expect(message.contains("/sys/bus/pci/drivers/vfio-pci/bind"))
+            #expect(message.contains("vfio-pci sysfs write failed at /sys/bus/pci/drivers/vfio-pci/bind"))
+            #expect(!message.contains("failed at bind:"))
         } else {
             Issue.record("expected forbidden, got \(String(describing: err))")
         }
+    }
+
+    @Test func `vfio bind with a missing driver_override names the exact path`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.addDevice(address, driver: "nvidia")
+        fake.addVFIOPCIDriver()
+        fake.exists.remove("/sys/bus/pci/devices/\(address)/driver_override")
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try VFIOBinder.bind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        }
+        if case let .forbidden(message) = err {
+            #expect(message.contains("/sys/bus/pci/devices/\(address)/driver_override"))
+            #expect(message.contains("does not exist"))
+            #expect(message.contains("driver_override"))
+        } else {
+            Issue.record("expected forbidden, got \(String(describing: err))")
+        }
+        #expect(fake.writes.isEmpty)
+        #expect(fake.driver[address] == "nvidia")
+    }
+
+    @Test func `vfio bind with a missing host unbind node names the exact path`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.addDevice(address, driver: "nvidia")
+        fake.addVFIOPCIDriver()
+        fake.exists.remove("/sys/bus/pci/devices/\(address)/driver/unbind")
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try VFIOBinder.bind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        }
+        if case let .forbidden(message) = err {
+            #expect(message.contains("/sys/bus/pci/devices/\(address)/driver/unbind"))
+            #expect(message.contains("does not exist"))
+        } else {
+            Issue.record("expected forbidden, got \(String(describing: err))")
+        }
+        #expect(fake.writes.contains { $0.path.hasSuffix("driver_override") })
+        #expect(!fake.writes.contains { $0.path.hasSuffix("/bind") && $0.path.contains("vfio-pci") })
+        #expect(fake.driver[address] == "nvidia")
+    }
+
+    @Test func `vfio unbind with a missing unbind node names the exact path`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.addDevice(address, driver: "vfio-pci")
+        fake.addVFIOPCIDriver()
+        fake.exists.remove("/sys/bus/pci/drivers/vfio-pci/unbind")
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try VFIOBinder.unbind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        }
+        if case let .forbidden(message) = err {
+            #expect(message.contains("/sys/bus/pci/drivers/vfio-pci/unbind"))
+            #expect(message.contains("does not exist"))
+            #expect(message.contains("unbind node is missing from sysfs"))
+        } else {
+            Issue.record("expected forbidden, got \(String(describing: err))")
+        }
+        #expect(fake.writes.isEmpty)
+        #expect(fake.driver[address] == "vfio-pci")
+    }
+
+    @Test func `vfio bind does not write new_id`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.addDevice(address, driver: "nvidia")
+        fake.addVFIOPCIDriver()
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        try VFIOBinder.bind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        #expect(!fake.writes.contains { $0.path.hasSuffix("new_id") })
+        #expect(fake.driver[address] == "vfio-pci")
     }
 
     @Test func `qemu vfio args bind path uses sysfs without reading bind`() throws {

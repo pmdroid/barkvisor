@@ -28,6 +28,13 @@ describe('isNotFoundError (PAS-202)', () => {
     expect(apiErrorMessage(axiosResponse(502, 'Device is unreachable'))).toBe('Device is unreachable')
     expect(apiErrorMessage(axiosResponse(404, 'Workload not found'))).toBe('Workload not found')
   })
+
+  test('apiErrorMessage keeps the vfio-pci bind sysfs path verbatim', () => {
+    const reason =
+      'vfio-pci bind failed: /sys/bus/pci/drivers/vfio-pci/bind does not exist; the vfio-pci bind node is missing from sysfs'
+    expect(apiErrorMessage(axiosResponse(403, reason))).toBe(reason)
+    expect(apiErrorMessage(axiosResponse(403, reason))).toContain('/sys/bus/pci/drivers/vfio-pci/bind')
+  })
 })
 
 describe('apiErrorCode (GH-461)', () => {

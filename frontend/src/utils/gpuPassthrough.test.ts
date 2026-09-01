@@ -148,6 +148,19 @@ describe('gpuPassthrough copy (PAS-275)', () => {
   test('IOMMU setup docs href is the published guide', () => {
     expect(GPU_PASSTHROUGH_DOCS_HREF).toBe('https://barkvisor.dev/docs/guides/gpu-passthrough/')
   })
+
+  test('attach and start toast the server error verbatim', () => {
+    const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const attach = view.slice(
+      view.indexOf('async function gpuAttach'),
+      view.indexOf('async function gpuDetach'),
+    )
+    expect(attach).toContain('toast.error(apiErrorMessage(e))')
+    const action = view.slice(view.indexOf('async function action'))
+    expect(action).toContain('const reason = apiErrorMessage(e)')
+    expect(action).toContain('toast.error(reason)')
+    expect(view).toContain("action('start', () => startWorkload())")
+  })
 })
 
 describe('gpu vendor labels', () => {
