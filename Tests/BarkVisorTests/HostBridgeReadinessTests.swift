@@ -102,6 +102,8 @@ struct HostBridgeReadinessTests {
         #expect(!missing.ready)
         #expect(missing.remediations.map(\.id) == ["create-bridge", "allow-acl", "setuid-helper"])
         #expect(missing.suggestedBridge == HostBridgeFactsService.suggestedBridgeName)
+        #expect(missing.remediations.first { $0.id == "create-bridge" }?.commands.contains("\"bridge\"") == true)
+        #expect(missing.remediations.first { $0.id == "create-bridge" }?.commands.contains("Create → Bridge") == true)
 
         stub.helperSetuid = true
         stub.aclAllowsSuggested = true

@@ -134,6 +134,8 @@ describe('linuxBridgeApply', () => {
     expect(cmds.join('\n')).toContain('/api/system/bridges')
     expect(cmds.join('\n')).toContain('Keep changes')
     expect(cmds.join('\n')).toContain('"bridge"')
+    expect(cmds.join('\n')).toContain('Create → Bridge')
+    expect(cmds.join('\n')).not.toContain('select eth0 → Apply')
     expect(cmds.join('\n')).not.toContain('guest static')
   })
 

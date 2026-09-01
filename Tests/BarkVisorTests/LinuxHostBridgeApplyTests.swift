@@ -418,13 +418,22 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(linux.bridge == "br1")
         #expect(linux.nic == "eth1")
+        let omitted = LinuxHostBridgeApply.resolveNames(
+            bodyBridge: nil,
+            bodyInterface: "eth0",
+            pathInterface: nil,
+            linuxHost: true,
+        )
+        #expect(omitted.bridge.isEmpty)
+        #expect(omitted.nic == "eth0")
+        #expect(omitted.bridge != HostBridgeFactsService.suggestedBridgeName)
         let mac = LinuxHostBridgeApply.resolveNames(
             bodyBridge: nil,
             bodyInterface: nil,
             pathInterface: "en0",
             linuxHost: false,
         )
-        #expect(mac.bridge == HostBridgeFactsService.suggestedBridgeName)
+        #expect(mac.bridge.isEmpty)
         #expect(mac.nic == "en0")
     }
 

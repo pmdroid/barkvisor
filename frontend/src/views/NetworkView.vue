@@ -68,6 +68,7 @@ import {
   interfaceRouteColumn,
   interfaceBridgeColumn,
   interfaceEnslavedToBridge,
+  existingBridgeForInterfaceApply,
   resolveBridgeApplyNic,
   pendingCommitMatchesInterface,
   hostBridgeActionPath,
@@ -268,6 +269,7 @@ const createBridgePorts = computed(() =>
 const createBridgeAddressValidation = computed(() =>
   validateAddressList(createBridgeRows.value, {
     onlyUplink: createBridgeReadiness.value?.onlyUplink,
+    gateway: createBridgeGateway.value,
   }),
 )
 
@@ -307,6 +309,8 @@ const canApplyAddresses = computed(() => {
   const ready = selectedInterfaceReadiness.value
   const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
   if (!interfaceOwnsAddressApply(role, row.iface, ready, selectedInterfaceMode.value)) return false
+  if (selectedInterfaceMode.value === 'linux-guide'
+    && !existingBridgeForInterfaceApply(role, row.iface, ready)) return false
   if (!showAddressEditor.value) return false
   const deviceCaps = deviceCapsFor(row.hostId)
   if (!hostBridgeCanApply({
@@ -742,11 +746,20 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
     toast.error(interfaceAddressValidation.value.errors[0] || 'Fix address list before applying.')
     return
   }
+  const ready = readinessByHost.value[row.hostId]
+  const existingBridge = existingBridgeForInterfaceApply(
+    selectedInterfaceRole.value,
+    row.iface,
+    ready,
+  )
+  if (action === 'apply' && selectedInterfaceMode.value === 'linux-guide' && !existingBridge) {
+    toast.error('Create a Bridge first. Applying addresses on an uplink does not create one.')
+    return
+  }
   linuxApplySource.value = 'drawer'
   linuxApplyResult.value = null
   linuxApplyLoading.value = true
   try {
-    const ready = readinessByHost.value[row.hostId]
     const nic = resolveBridgeApplyNic(row.iface, ready)
     const payload = applyPayloadForSelectedInterface()
     const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
@@ -755,20 +768,20 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
         hostBridgeRevertPath(
           nic,
           device ?? undefined,
-          pendingCommit.value?.target ?? selectedInterfaceReadiness.value?.suggestedBridge,
+          pendingCommit.value?.target ?? existingBridge ?? selectedInterfaceReadiness.value?.suggestedBridge,
         ),
         {
           data: {
             confirm,
             action: 'revert',
             interface: nic,
-            bridge: pendingCommit.value?.target ?? selectedInterfaceReadiness.value?.suggestedBridge,
+            bridge: pendingCommit.value?.target ?? existingBridge ?? selectedInterfaceReadiness.value?.suggestedBridge,
           },
         },
       ).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
-        bridge: selectedInterfaceRole.value === 'bridge' ? nic : undefined,
+        bridge: existingBridge ?? undefined,
         confirm,
         rows: payload.rows,
         gateway: payload.gateway,
@@ -1706,6 +1719,7 @@ async function doDeleteNetwork() {
     <HostInterfaceAddressList
       v-model="createBridgeRows"
       :only-uplink="createBridgeReadiness?.onlyUplink"
+      :gateway="createBridgeGateway"
       :disabled="linuxApplyLoading"
     />
     <div class="iface-fields-grid">

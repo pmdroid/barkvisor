@@ -194,11 +194,11 @@ public enum HostBridgeFactsService {
                 id: "create-bridge",
                 label: "Create \(br)",
                 commands: [
-                    "Networks → Host interfaces → select the wired uplink → Apply.",
+                    "Networks → Host interfaces → Create → Bridge.",
                     "# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.",
                     "curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\",
                     "  -H 'Content-Type: application/json' \\",
-                    "  -d '{\"interface\":\"<wired-uplink>\",\"action\":\"apply\",\"confirm\":true,\"addressing\":\"dhcp\"}'",
+                    "  -d '{\"interface\":\"<wired-uplink>\",\"bridge\":\"\(br)\",\"action\":\"apply\",\"confirm\":true,\"addressing\":\"dhcp\"}'",
                 ].joined(separator: "\n"),
             ))
         }
