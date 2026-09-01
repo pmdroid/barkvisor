@@ -803,77 +803,7 @@ public enum LinuxHostBridgeApply {
         )
     }
 
-    private static func bridgeNameExists(_ bridge: String, probe: LinuxHostBridgeApplyProbe) -> Bool {
-        probe.existingInterfaces.contains(bridge) || probe.facts.bridges.contains { $0.name == bridge }
-    }
-
-    private static func validInterfaceName(_ name: String) -> Bool {
-        guard !name.isEmpty, name.count < 16, !name.contains("/"), !name.contains("\0") else {
-            return false
-        }
-        return name.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).contains($0) }
-    }
-
     // MARK: - Live host
-
-    private static func existingInterfaceNames() -> [String] {
-        (try? FileManager.default.contentsOfDirectory(atPath: LinuxHostNetwork.netClassPath)) ?? []
-    }
-
-    private static func sessionRisk(facts: HostBridgeFacts, listenPort: Int) -> (
-        nics: Set<String>,
-        warnings: [String],
-    ) {
-        guard let nic = facts.defaultRouteInterface, !nic.isEmpty else {
-            return ([], [])
-        }
-        var warnings: [String] = []
-        var nics = Set<String>()
-        if establishedOnPort(22) {
-            nics.insert(nic)
-            warnings.append("SSH looks active on the default-route NIC (\(nic)).")
-        }
-        if listeningOnPort(listenPort) {
-            nics.insert(nic)
-            warnings.append("SPA/API port \(listenPort) is listening; \(nic) may carry this session.")
-        }
-        return (nics, warnings)
-    }
-
-    private static func establishedOnPort(_ port: Int) -> Bool {
-        tcpTableHasPort(path: "/proc/net/tcp", port: port, established: true)
-            || tcpTableHasPort(path: "/proc/net/tcp6", port: port, established: true)
-    }
-
-    private static func listeningOnPort(_ port: Int) -> Bool {
-        tcpTableHasPort(path: "/proc/net/tcp", port: port, established: false)
-            || tcpTableHasPort(path: "/proc/net/tcp6", port: port, established: false)
-    }
-
-    /// `/proc/net/tcp` hex port in column 1 (`local_address`). State 0A = LISTEN, 01 = ESTABLISHED.
-    public static func tcpTableHasPort(path: String, port: Int, established: Bool) -> Bool {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
-            return false
-        }
-        return tcpTableHasPort(contents: text, port: port, established: established)
-    }
-
-    public static func tcpTableHasPort(contents: String, port: Int, established: Bool) -> Bool {
-        let want = String(format: "%04X", port)
-        let state = established ? "01" : "0A"
-        for raw in contents.split(whereSeparator: \.isNewline).dropFirst() {
-            let cols = raw.split(whereSeparator: \.isWhitespace)
-            guard cols.count >= 4, cols[3].uppercased() == state else { continue }
-            let local = cols[1].split(separator: ":")
-            let remote = cols[2].split(separator: ":")
-            let localHit = local.count == 2 && local[1].uppercased() == want
-            let remoteHit = established && remote.count == 2 && remote[1].uppercased() == want
-            if localHit || remoteHit {
-                return true
-            }
-        }
-        return false
-    }
 
     public struct OwnerMarker: Codable, Sendable, Equatable {
         public var bridge: String
@@ -1061,6 +991,75 @@ extension LinuxHostBridgeApply {
             if let marker = readOwnerMarker(bridge: name, dataDir: dataDir),
                marker.uplink == uplink {
                 return marker.createdBridge
+            }
+        }
+        return false
+    }
+
+    fileprivate static func bridgeNameExists(_ bridge: String, probe: LinuxHostBridgeApplyProbe) -> Bool {
+        probe.existingInterfaces.contains(bridge) || probe.facts.bridges.contains { $0.name == bridge }
+    }
+
+    fileprivate static func validInterfaceName(_ name: String) -> Bool {
+        guard !name.isEmpty, name.count < 16, !name.contains("/"), !name.contains("\0") else {
+            return false
+        }
+        return name.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).contains($0) }
+    }
+
+    fileprivate static func existingInterfaceNames() -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: LinuxHostNetwork.netClassPath)) ?? []
+    }
+
+    fileprivate static func sessionRisk(facts: HostBridgeFacts, listenPort: Int) -> (
+        nics: Set<String>,
+        warnings: [String],
+    ) {
+        guard let nic = facts.defaultRouteInterface, !nic.isEmpty else {
+            return ([], [])
+        }
+        var warnings: [String] = []
+        var nics = Set<String>()
+        if establishedOnPort(22) {
+            nics.insert(nic)
+            warnings.append("SSH looks active on the default-route NIC (\(nic)).")
+        }
+        if listeningOnPort(listenPort) {
+            nics.insert(nic)
+            warnings.append("SPA/API port \(listenPort) is listening; \(nic) may carry this session.")
+        }
+        return (nics, warnings)
+    }
+
+    fileprivate static func establishedOnPort(_ port: Int) -> Bool {
+        tcpTableHasPort(path: "/proc/net/tcp", port: port, established: true)
+            || tcpTableHasPort(path: "/proc/net/tcp6", port: port, established: true)
+    }
+
+    fileprivate static func listeningOnPort(_ port: Int) -> Bool {
+        tcpTableHasPort(path: "/proc/net/tcp", port: port, established: false)
+            || tcpTableHasPort(path: "/proc/net/tcp6", port: port, established: false)
+    }
+
+    public static func tcpTableHasPort(path: String, port: Int, established: Bool) -> Bool {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return false
+        }
+        return tcpTableHasPort(contents: text, port: port, established: established)
+    }
+
+    public static func tcpTableHasPort(contents: String, port: Int, established: Bool) -> Bool {
+        let want = String(format: "%04X", port)
+        let state = established ? "01" : "0A"
+        for raw in contents.split(whereSeparator: \.isNewline).dropFirst() {
+            let cols = raw.split(whereSeparator: \.isWhitespace)
+            guard cols.count >= 4, cols[3].uppercased() == state else { continue }
+            let local = cols[1].split(separator: ":")
+            let remote = cols[2].split(separator: ":")
+            let localHit = local.count == 2 && local[1].uppercased() == want
+            let remoteHit = established && remote.count == 2 && remote[1].uppercased() == want
+            if localHit || remoteHit {
+                return true
             }
         }
         return false
