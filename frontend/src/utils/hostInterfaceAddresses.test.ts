@@ -153,6 +153,28 @@ describe('hostInterfaceAddresses', () => {
     expect(body.action).toBe('apply')
   })
 
+  test('buildHostBridgeApplyBody uses Bridge name not uplink for synthetic brN', () => {
+    const body = buildHostBridgeApplyBody({
+      nic: 'en0',
+      bridge: 'br0',
+      confirm: true,
+      rows: [{ id: 'd', kind: 'dhcp', cidr: '' }],
+    })
+    expect(body.interface).toBe('en0')
+    expect(body.bridge).toBe('br0')
+    expect(body.bridge).not.toBe(body.interface)
+  })
+
+  test('buildHostBridgeApplyBody omits bridge when uplink Apply has no name', () => {
+    const body = buildHostBridgeApplyBody({
+      nic: 'en0',
+      confirm: true,
+      rows: [{ id: 'd', kind: 'dhcp', cidr: '' }],
+    })
+    expect(body.interface).toBe('en0')
+    expect(body.bridge).toBeUndefined()
+  })
+
   test('check action body includes addresses', () => {
     const body = buildHostBridgeApplyBody({
       nic: 'eth0',
