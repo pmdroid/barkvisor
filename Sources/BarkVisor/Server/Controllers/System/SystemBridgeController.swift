@@ -113,19 +113,33 @@ struct SystemBridgeController: RouteCollection {
         let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
         let result = try LinuxHostBridgeApplyLive.run(request: request)
         if result.applied {
+            let auditAction = switch request.action {
+            case .revert: "host-bridge.revert"
+            case .commit: "host-bridge.commit"
+            default: "host-bridge.apply"
+            }
             AuditService.log(
-                action: request.action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                action: auditAction,
                 resourceType: "host-bridge",
                 resourceId: request.bridge,
                 resourceName: request.bridge,
                 req: req,
             )
         }
+        return Self.bridgeActionResponse(from: result)
+    }
+
+    private static func bridgeActionResponse(from result: LinuxHostBridgeApplyResult) -> BridgeActionResponse {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return BridgeActionResponse(
             success: result.success,
             message: result.message,
             applied: result.applied,
             needsConfirm: result.needsConfirm,
+            pendingCommit: result.pendingCommit ? true : nil,
+            commitDeadline: result.commitDeadline.map { formatter.string(from: $0) },
+            rollbackSeconds: result.rollbackSeconds,
             backend: result.backend,
             changes: result.changes,
             warnings: result.warnings,
@@ -143,24 +157,20 @@ struct SystemBridgeController: RouteCollection {
             let request = try bridgeApplyRequest(from: body, req: req, defaultAction: defaultAction)
             let result = try MacHostBridgeApplyLive.run(request: request)
             if result.applied {
+                let auditAction = switch request.action {
+                case .revert: "host-bridge.revert"
+                case .commit: "host-bridge.commit"
+                default: "host-bridge.apply"
+                }
                 AuditService.log(
-                    action: request.action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                    action: auditAction,
                     resourceType: "host-bridge",
                     resourceId: request.nic ?? "socket_vmnet",
                     resourceName: request.nic ?? "socket_vmnet",
                     req: req,
                 )
             }
-            return BridgeActionResponse(
-                success: result.success,
-                message: result.message,
-                applied: result.applied,
-                needsConfirm: result.needsConfirm,
-                backend: result.backend,
-                changes: result.changes,
-                warnings: result.warnings,
-                commands: result.commands,
-            )
+            return Self.bridgeActionResponse(from: result)
         #else
             throw BarkVisorError.forbidden("macOS host network apply runs on a macOS Device.")
         #endif

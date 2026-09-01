@@ -98,6 +98,7 @@ struct HostInfoServiceTests {
         #expect(lo != nil)
         #expect(lo?.displayName.contains("Loopback") == true)
         #expect(lo?.bridgeStatus == nil)
+        #expect(lo?.operState == "up" || lo?.operState == "unknown")
     }
 
     #if os(Linux)
@@ -109,14 +110,35 @@ struct HostInfoServiceTests {
             let snapNames = Set(snaps.map(\.name))
             #expect(snapNames.isSuperset(of: ipv4Names))
 
-            let bridges = LinuxHostNetwork.listBridgeInterfaces()
-            for br in bridges {
-                #expect(snapNames.contains(br), "snapshot list should include bridge \(br)")
-                if !ipv4Names.contains(br) {
-                    let snap = snaps.first(where: { $0.name == br })
-                    #expect(snap?.ipAddress == "")
+            for name in LinuxHostNetwork.listHostInterfaceNames() {
+                #expect(snapNames.contains(name), "snapshot list should include \(name)")
+                if !ipv4Names.contains(name) {
+                    let snap = snaps.first(where: { $0.name == name })
+                    #expect(snap != nil)
                 }
             }
+        }
+
+        @Test func `listHostInterfaceNames includes sysfs ports without IPv4`() {
+            let sysfs = Set(LinuxHostNetwork.listHostInterfaceNames())
+            #expect(!sysfs.isEmpty)
+            for name in sysfs {
+                #expect(LinuxHostNetwork.interfaceExists(name))
+                #expect(name != "lo")
+            }
+        }
+
+        @Test func `interface operstate and carrier readable from sysfs`() {
+            let oper = LinuxHostNetwork.interfaceOperState("lo")
+            #expect(oper == "unknown" || oper == "up" || oper != nil)
+            let carrier = LinuxHostNetwork.interfaceCarrier("lo")
+            #expect(carrier == nil || carrier == true)
+        }
+
+        @Test func `listInterfaceSnapshots includes link fields on Linux`() {
+            let snaps = HostInfoService.listInterfaceSnapshots()
+            let lo = snaps.first(where: { $0.name == "lo" })
+            #expect(lo?.operState != nil)
         }
     #endif
 }

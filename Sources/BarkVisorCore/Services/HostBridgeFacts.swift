@@ -105,6 +105,7 @@ public struct HostBridgeFacts: Sendable, Equatable {
             onlyUplink: onlyUplink,
             ready: ready,
             remediations: remediations,
+            pendingCommit: HostNetworkPendingCommitService.activePending()?.publicInfo,
         )
     }
 }
@@ -193,10 +194,11 @@ public enum HostBridgeFactsService {
                 id: "create-bridge",
                 label: "Create \(br)",
                 commands: [
-                    "# Persist \(br) with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.",
-                    "# Host address on \(br) is DHCP or static for this Device.",
-                    "sudo linux-bridge-apply.sh --apply --nic <wired-uplink> --dhcp",
-                    "# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.",
+                    "Networks → Host interfaces → select the wired uplink → Apply.",
+                    "# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.",
+                    "curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\",
+                    "  -H 'Content-Type: application/json' \\",
+                    "  -d '{\"interface\":\"<wired-uplink>\",\"action\":\"apply\",\"confirm\":true,\"addressing\":\"dhcp\"}'",
                 ].joined(separator: "\n"),
             ))
         }

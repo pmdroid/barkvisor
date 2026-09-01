@@ -11,6 +11,9 @@ struct HostInterface: Content {
     let gateway: String?
     let dns: [String]
     let managedByBarkvisor: Bool
+    let operState: String?
+    let carrier: Bool?
+    let bridgeMaster: String?
 }
 
 struct HostInterfaceAddressDTO: Content {
@@ -56,6 +59,9 @@ struct BridgeActionResponse: Content {
     var message: String?
     var applied: Bool?
     var needsConfirm: Bool?
+    var pendingCommit: Bool?
+    var commitDeadline: String?
+    var rollbackSeconds: Int?
     var backend: String?
     var changes: [String]?
     var warnings: [String]?

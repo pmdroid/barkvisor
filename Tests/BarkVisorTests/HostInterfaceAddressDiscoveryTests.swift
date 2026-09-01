@@ -70,6 +70,7 @@ struct HostInterfaceAddressDiscoveryTests {
             """
             let parsed = MacHostInterfaceAddressRead.parseGetInfo(text)
             #expect(parsed.dhcpEnabled)
+            #expect(parsed.dhcpCIDR == "192.168.30.50/24")
             #expect(parsed.gateway == "192.168.30.1")
             #expect(parsed.staticCIDR == nil)
         }
@@ -119,6 +120,32 @@ struct HostInterfaceAddressDiscoveryTests {
             #expect(config.addresses.count == 2)
             #expect(config.addresses[0].source == .dhcp)
             #expect(config.addresses[1].source == .alias)
+        }
+
+        @Test func `macOS dhcp lease wins over getifaddrs order`() {
+            let info = """
+            DHCP Configuration
+            IP address: 192.168.8.224
+            Subnet mask: 255.255.0.0
+            Router: 192.168.8.1
+            """
+            let parsed = MacHostInterfaceAddressRead.parseGetInfo(info)
+            let config = MacHostInterfaceAddressRead.buildAddressing(
+                parsed: parsed,
+                additionalCIDRs: [],
+                dns: [],
+                managedByBarkvisor: false,
+            )
+            let merged = HostInterfaceAddressDiscovery.mergeLiveAddresses(
+                config: config,
+                liveIPv4: ["192.168.10.10", "192.168.8.224"],
+            )
+            #expect(merged.dhcpEnabled)
+            #expect(merged.addresses.count == 2)
+            #expect(merged.addresses[0].source == .dhcp)
+            #expect(HostInterfaceAddressDiscovery.ipFromCIDR(merged.addresses[0].cidr) == "192.168.8.224")
+            #expect(merged.addresses[1].source == .alias)
+            #expect(HostInterfaceAddressDiscovery.ipFromCIDR(merged.addresses[1].cidr) == "192.168.10.10")
         }
     #endif
 
@@ -189,6 +216,20 @@ struct HostInterfaceAddressDiscoveryTests {
         #expect(parsed.dns == ["1.1.1.1"])
         #expect(parsed.addresses.count == 1)
         #expect(parsed.addresses[0].source == .dhcp)
+    }
+
+    @Test func `parse nmcli unmanaged bridge does not assume dhcp`() {
+        let text = """
+        GENERAL.STATE:10 (unmanaged)
+        IP4.ADDRESS[1]:192.168.8.199/16
+        IP4.ADDRESS[2]:192.168.30.1/16
+        IP4.GATEWAY:192.168.8.1
+        """
+        let parsed = LinuxHostInterfaceAddressRead.parseNmcliDeviceShow(text)
+        #expect(!parsed.dhcpEnabled)
+        #expect(parsed.addresses.count == 2)
+        #expect(parsed.addresses.allSatisfy { $0.source == .static })
+        #expect(parsed.addresses.map(\.cidr) == ["192.168.8.199/16", "192.168.30.1/16"])
     }
 
     @Test func `listInterfaceSnapshots includes addressing fields`() {

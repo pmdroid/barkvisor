@@ -517,6 +517,83 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--text-dim);
   font-size: 12px;
 }
+.ops-toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.networks-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-left: 8px;
+}
+.networks-seg-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.networks-seg-btn.on {
+  background: rgba(0, 144, 248, 0.18);
+  color: var(--text);
+}
+.iface-row {
+  cursor: pointer;
+}
+.iface-row.selected td {
+  background: rgba(0, 144, 248, 0.08);
+}
+.iface-drawer {
+  margin-top: 16px;
+}
+.iface-drawer-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.iface-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.iface-drawer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.iface-drawer-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0;
+  line-height: 1.45;
+}
+.iface-advanced {
+  margin-top: 4px;
+}
+.iface-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  list-style: none;
+}
+.iface-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.iface-advanced[open] > summary {
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
 .ops-actions {
   margin-left: auto;
   display: flex;
@@ -1596,6 +1673,14 @@ tr.pending td:first-child { box-shadow: none; }
 .detail-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .detail-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .detail-head .spacer { flex: 1; }
+.detail-head-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+.vm-tab-intro {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+  max-width: 52rem;
+}
 .detail-meta { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {

@@ -11,8 +11,6 @@ export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] 
 export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
 export const MACOS_SOCKET_VMNET_ACTION_KEYS = ['setup', 'start', 'stop'] as const
 
-export const LINUX_BRIDGE_APPLY_SCRIPT = 'linux-bridge-apply.sh'
-
 /**
  * Cached host-bridge facts belong to the Device (and guide mode) currently shown.
  * Pass mode when switching Linux ↔ macOS so a shared snapshot cannot leak commands.
@@ -126,11 +124,14 @@ export function macosSocketVmnetSetupGroups(
   }
   groups.push({
     id: 'device-address',
-    label: 'Device address (DHCP or static)',
+    label: 'Device address (Apply in Networks or API)',
     commands: [
+      'Networks → Host interfaces → select LAN NIC → Apply.',
+      '# After Apply: Keep changes within 30s in the SPA (POST action commit).',
       'networksetup -listallhardwareports',
-      `sudo networksetup -setdhcp "Ethernet"  # or your hardware port for ${iface}`,
-      `# Static: sudo networksetup -setmanual "Ethernet" 192.168.1.10 255.255.255.0 192.168.1.1`,
+      `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
+      `  -H 'Content-Type: application/json' \\`,
+      `  -d '{"interface":"${iface}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
     ].join('\n'),
   })
   return groups
@@ -151,7 +152,20 @@ export function macosSocketVmnetStatusSummary(
   return `${name} is not ready for Bridged networks yet. Install socket_vmnet with Homebrew (not sudo brew install). The Device starts the service. Then Re-check.`
 }
 
-/** Equivalent apply commands. Addressing stays on the script, not the SPA. */
+/** Equivalent apply hints when server remediations are absent. Prefer Networks → Apply. */
+export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
+  const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
+  const nic = ready.defaultRouteInterface || '<wired-uplink>'
+  return [
+    `Networks → Host interfaces → select ${nic} → Apply.`,
+    `# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.`,
+    `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
+    `  -H 'Content-Type: application/json' \\`,
+    `  -d '{"interface":"${nic}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
+    `# Revert: DELETE /api/system/bridges/${br} or Revert in the drawer.`,
+  ]
+}
+
 export function buildLinuxBridgeApplyBody(input: {
   nic?: string
   confirm?: boolean
@@ -189,18 +203,6 @@ export function buildLinuxBridgeApplyBody(input: {
     if (dns.length) body.dns = dns
   }
   return body
-}
-
-export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
-  const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
-  const nic = ready.defaultRouteInterface || '<wired-uplink>'
-  return [
-    `# Persist ${br} with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.`,
-    `# Host address on ${br} is DHCP or static for this Device.`,
-    `sudo ${LINUX_BRIDGE_APPLY_SCRIPT} --apply --nic ${nic} --dhcp`,
-    `# Static example: sudo ${LINUX_BRIDGE_APPLY_SCRIPT} --apply --nic ${nic} --address 192.168.1.10/24 --gateway 192.168.1.1`,
-    '# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.',
-  ]
 }
 
 export function linuxBridgeCanApply(caps: {

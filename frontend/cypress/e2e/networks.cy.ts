@@ -1,6 +1,10 @@
 describe('Network Management', () => {
   const netName = 'cypress-test-net'
 
+  function openVmNetworksTab() {
+    cy.contains('[role="tab"]', 'VM networks').click()
+  }
+
   before(() => cy.deleteNetworkByName(netName))
   after(() => cy.deleteNetworkByName(netName))
 
@@ -9,29 +13,40 @@ describe('Network Management', () => {
     cy.visit('/networks')
   })
 
-  it('shows page header with Bridge setup and Create Network', () => {
+  it('shows segmented tabs with Host interfaces default', () => {
     cy.contains('h1', 'Networks').should('be.visible')
-    cy.contains('button', 'Bridge setup').should('exist')
-    cy.contains('button', 'Create Network').should('exist')
+    cy.contains('[role="tab"]', 'Host interfaces').should('have.attr', 'aria-selected', 'true')
+    cy.contains('[role="tab"]', 'VM networks').should('exist')
+    cy.contains('button', 'Bridge setup').should('not.exist')
+    cy.get('.iface-row').should('exist')
+    cy.contains('button', 'Create Network').should('not.exist')
   })
 
-  it('selects the first network row by default', () => {
+  it('VM networks tab shows Create Network and Workload network copy', () => {
+    openVmNetworksTab()
+    cy.contains('[role="tab"]', 'VM networks').should('have.attr', 'aria-selected', 'true')
+    cy.contains('button', 'Create Network').should('be.visible')
+    cy.contains('Workload networks are logical').should('be.visible')
+    cy.contains('Device addresses').should('be.visible')
+  })
+
+  it('selects the first network row by default on VM tab', () => {
+    openVmNetworksTab()
     cy.get('.nrow').first().should('have.class', 'selected')
     cy.get('.inspect .detail-head h2').should('exist')
   })
 
-  it('Create Network button is visible in the toolbar', () => {
-    cy.contains('button', 'Create Network').should('exist')
-  })
-
   it('lists the default NAT network', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', 'Default NAT').should('exist')
     cy.contains('.nrow', 'Default NAT').find('.badge, .tag').contains(/nat/i).should('exist')
     cy.contains('.nrow', 'Default NAT').click()
     cy.get('.inspect').contains('.chip', 'Default NAT').should('exist')
+    cy.get('.inspect .detail-meta').should('contain', 'Workload network')
   })
 
-  it('network list and inspector show Name, Mode, Bridge, DNS', () => {
+  it('network list and inspector show Mode, DNS, Device', () => {
+    openVmNetworksTab()
     cy.get('.nrow .nrow-name').should('have.length.gte', 1)
     cy.get('.nrow').first().click()
     cy.get('.inspect .sheet').should('contain', 'Mode')
@@ -40,6 +55,7 @@ describe('Network Management', () => {
   })
 
   it('default network has no Edit / Delete buttons', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', 'Default NAT').click()
     cy.get('.inspect .detail-head').within(() => {
       cy.contains('button', 'Edit').should('not.exist')
@@ -49,16 +65,19 @@ describe('Network Management', () => {
 
   // --- Create Network ---
 
-  it('opens Create Network modal with name, mode, DNS fields', () => {
+  it('opens Create Workload network modal with name, mode, DNS fields', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal-overlay').should('be.visible')
-    cy.contains('h2', 'Create Network').should('be.visible')
+    cy.contains('h2', 'Create Workload network').should('be.visible')
     cy.get('.modal input[placeholder="my-network"]').should('exist')
     cy.get('.modal select').should('exist')
     cy.contains('DNS Server').should('exist')
+    cy.contains('Device addresses').should('be.visible')
   })
 
   it('create network modal has NAT, Bridged, and Isolated mode options', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal select').first().within(() => {
       cy.get('option').should('contain', 'NAT')
@@ -69,21 +88,24 @@ describe('Network Management', () => {
   })
 
   it('create network validates name is required', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal').contains('button', 'Create').click()
     cy.contains('Name required').should('be.visible')
     cy.get('.modal').contains('button', 'Cancel').click()
   })
 
-  it('shows bridge interface selector when mode is Bridged', () => {
+  it('shows host bridge interface selector when mode is Bridged', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal select').first().select('bridged')
-    cy.contains('Bridge Interface').should('exist')
-    // DNS Server should be hidden in bridged mode
+    cy.contains('Host bridge interface').should('exist')
+    cy.contains('Host interfaces tab').should('exist')
     cy.get('.modal').contains('button', 'Cancel').click()
   })
 
   it('bridged mode validates bridge interface is required', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal input[placeholder="my-network"]').type('test-bridged')
     cy.get('.modal select').first().select('bridged')
@@ -93,6 +115,7 @@ describe('Network Management', () => {
   })
 
   it('NAT mode shows DNS Server field', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal select').first().select('nat')
     cy.contains('DNS Server').should('exist')
@@ -101,6 +124,7 @@ describe('Network Management', () => {
   })
 
   it('creates a NAT network', () => {
+    openVmNetworksTab()
     cy.contains('button', 'Create Network').click()
     cy.get('.modal input[placeholder="my-network"]').type(netName)
     cy.get('.modal').contains('button', 'Create').click()
@@ -109,12 +133,14 @@ describe('Network Management', () => {
   })
 
   it('created network shows in the list with nat mode', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).within(() => {
-      cy.get('.nrow-state').should('contain', 'nat')
+      cy.get('.tag').should('contain', 'NAT')
     })
   })
 
   it('created network has Edit and Delete buttons in the inspector', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).click()
     cy.get('.inspect .detail-head').within(() => {
       cy.contains('button', 'Edit').should('exist')
@@ -125,18 +151,19 @@ describe('Network Management', () => {
   // --- Edit ---
 
   it('opens Edit modal for the created network', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).click()
-    cy.get('.inspect').contains('button', 'Edit').click()
+    cy.get('.inspect .detail-head').contains('button', 'Edit').click()
     cy.get('.modal-overlay').should('be.visible')
-    cy.contains('h2', 'Edit Network').should('be.visible')
-    // Name should be pre-filled
+    cy.contains('h2', 'Edit Workload network').should('be.visible')
     cy.get('.modal input[placeholder="my-network"]').should('have.value', netName)
     cy.get('.modal').contains('button', 'Cancel').click()
   })
 
   it('edit modal shows Save button instead of Create', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).click()
-    cy.get('.inspect').contains('button', 'Edit').click()
+    cy.get('.inspect .detail-head').contains('button', 'Edit').click()
     cy.get('.modal').contains('button', 'Save').should('exist')
     cy.get('.modal').contains('button', 'Cancel').click()
   })
@@ -144,8 +171,9 @@ describe('Network Management', () => {
   // --- Delete ---
 
   it('delete opens confirm dialog with network name', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).click()
-    cy.get('.inspect').contains('button', 'Delete').click()
+    cy.get('.inspect .detail-head').contains('button', 'Delete').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('Delete Network').should('be.visible')
     cy.contains(netName).should('exist')
@@ -154,30 +182,33 @@ describe('Network Management', () => {
   })
 
   it('deletes the created network', () => {
+    openVmNetworksTab()
     cy.contains('.nrow', netName).click()
-    cy.get('.inspect').contains('button', 'Delete').click()
+    cy.get('.inspect .detail-head').contains('button', 'Delete').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('Delete Network').should('be.visible')
     cy.get('.modal-overlay').contains('button', 'Delete').click()
     cy.contains(netName).should('not.exist')
   })
 
-  it('Bridge setup opens the setup modal and closes', () => {
-    cy.contains('button', 'Bridge setup').then(($btn) => {
-      if ($btn.prop('disabled')) return
-      cy.wrap($btn).click()
-      cy.get('.modal-overlay').should('be.visible')
-      cy.contains('Bridge setup').should('exist')
-      cy.get('.modal-overlay').contains('Device address').should('exist')
-      cy.get('.modal-overlay').contains('DHCP').should('exist')
-      cy.get('.modal-overlay').contains('static').should('exist')
-      cy.get('.modal-overlay').contains('button', 'Apply').should('exist')
-      cy.get('.modal-overlay').contains('button', 'Revert').should('exist')
-      cy.get('.modal-overlay').contains('button', /^Setup$/).should('not.exist')
-      cy.get('.modal-overlay').contains('button', /^Start$/).should('not.exist')
-      cy.get('.modal-overlay').contains('button', /^Stop$/).should('not.exist')
-      cy.get('.modal-overlay').contains('button', 'Close').click()
-      cy.get('.modal-overlay').should('not.exist')
+  it('Host interfaces tab shows interface table and edit drawer', () => {
+    cy.contains('[role="tab"]', 'Host interfaces').should('have.attr', 'aria-selected', 'true')
+    cy.get('.iface-row').should('have.length.gte', 1)
+    cy.get('.iface-drawer').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Apply').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Revert').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Re-check').should('exist')
+    cy.get('.iface-drawer').contains('VM network records').should('exist')
+  })
+
+  it('Host interfaces drawer shows multi-address editor', () => {
+    cy.get('.iface-drawer').within(() => {
+      cy.contains('Addresses').should('be.visible')
+      cy.contains('DHCP (primary)').should('exist')
+      cy.contains('Gateway').should('exist')
+      cy.contains('DNS').should('exist')
+      cy.contains('Bridge role').should('exist')
+      cy.contains('button', 'Add address').should('exist')
     })
   })
 })

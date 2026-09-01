@@ -76,10 +76,11 @@ struct LinuxHostBridgeApplyTests {
 
     @Test func `rollback helper keeps config only after commit stamp`() {
         #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0") == "/run/barkvisor/br0-commit")
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0")
+        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
         #expect(script.contains("/run/barkvisor/br0-commit"))
         #expect(script.contains("then exit 0"))
-        #expect(script.contains("nmcli connection down barkvisor-br0"))
+        #expect(script.contains("nmcli connection delete barkvisor-br0"))
+        #expect(script.contains("netplan apply"))
     }
 
     @Test func `static host address is Device not guest`() {
@@ -118,7 +119,7 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(!pending.success)
         #expect(pending.needsConfirm)
-        #expect(pending.warnings.contains { $0.contains("host timer") })
+        #expect(pending.warnings.contains { $0.contains("Keep changes") })
         #expect(!pending.applied)
 
         let confirmed = LinuxHostBridgeApply.evaluate(
@@ -219,6 +220,16 @@ struct LinuxHostBridgeApplyTests {
         #expect(!LinuxHostBridgeApply.tcpTableHasPort(contents: table, port: 80, established: false))
     }
 
+    @Test func `commit requires pending apply`() {
+        let missing = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .commit),
+            probe: probe(owned: true),
+        )
+        #expect(!missing.success)
+        #expect(missing.refused)
+        #expect(missing.message.contains("No pending"))
+    }
+
     @Test func `live mutator records without touching the host`() throws {
         let recorder = RecordingLinuxHostBridgeMutator()
         let result = try LinuxHostBridgeApplyLive.run(
@@ -230,78 +241,6 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.success)
         #expect(recorder.steps.contains { $0.contains("action=apply") })
         #expect(recorder.steps.contains { $0.contains("netplan") })
-    }
-
-    @Test func `script refuses ifupdown wifi and delete-bridge`() throws {
-        let script = Self.scriptURL()
-        let ifup = try Self.runScript(script, args: ["--dry-run", "--nic", "eth0"], env: [
-            "BARKVISOR_BRIDGE_BACKEND": "ifupdown",
-        ])
-        #expect(ifup.exitCode == 3)
-        #expect(ifup.stderr.contains("refuse ifupdown"))
-
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: dir.appendingPathComponent("wlan0/wireless"), withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let wifi = try Self.runScript(script, args: ["--dry-run", "--nic", "wlan0"], env: [
-            "BARKVISOR_BRIDGE_BACKEND": "netplan",
-            "BARKVISOR_BRIDGE_SYSFS": dir.path,
-        ])
-        #expect(wifi.exitCode == 7)
-        #expect(wifi.stderr.contains("Wi-Fi"))
-
-        let del = try Self.runScript(script, args: ["--revert", "--delete-bridge"], env: [
-            "BARKVISOR_BRIDGE_BACKEND": "netplan",
-            "BARKVISOR_BRIDGE_OWNED": "1",
-        ])
-        #expect(del.exitCode == 4)
-        #expect(del.stderr.contains("default-delete"))
-
-        let dry = try Self.runScript(script, args: ["--dry-run", "--nic", "eth0", "--confirm"], env: [
-            "BARKVISOR_BRIDGE_BACKEND": "netplan",
-            "BARKVISOR_BRIDGE_SESSION_RISK": "0",
-        ])
-        #expect(dry.exitCode == 0)
-        #expect(dry.stdout.contains("barkvisor:allow-br0"))
-        #expect(dry.stdout.contains("netplan try"))
-
-        let staticDry = try Self.runScript(
-            script,
-            args: [
-                "--dry-run", "--nic", "eth0", "--static",
-                "--address", "192.168.1.10/24", "--gateway", "192.168.1.1",
-                "--dns", "1.1.1.1", "--confirm",
-            ],
-            env: [
-                "BARKVISOR_BRIDGE_BACKEND": "netplan",
-                "BARKVISOR_BRIDGE_SESSION_RISK": "0",
-            ],
-        )
-        #expect(staticDry.exitCode == 0)
-        #expect(staticDry.stdout.contains("addresses: [192.168.1.10/24]"))
-        #expect(staticDry.stdout.contains("via: 192.168.1.1"))
-        #expect(staticDry.stdout.contains("addresses: [1.1.1.1]"))
-        #expect(staticDry.stdout.contains("Device static address 192.168.1.10/24"))
-    }
-
-    @Test func `netplan multi address dhcp plus alias script dry-run`() throws {
-        let script = Self.scriptURL()
-        let dry = try Self.runScript(
-            script,
-            args: [
-                "--dry-run", "--nic", "eth0", "--dhcp",
-                "--address", "192.168.1.10/24", "--address", "10.0.0.2/24",
-                "--confirm",
-            ],
-            env: [
-                "BARKVISOR_BRIDGE_BACKEND": "netplan",
-                "BARKVISOR_BRIDGE_SESSION_RISK": "0",
-            ],
-        )
-        #expect(dry.exitCode == 0)
-        #expect(dry.stdout.contains("dhcp4: true"))
-        #expect(dry.stdout.contains("192.168.1.10/24"))
-        #expect(dry.stdout.contains("10.0.0.2/24"))
     }
 
     @Test func `check includes address diffs when addresses provided`() {
@@ -337,39 +276,5 @@ struct LinuxHostBridgeApplyTests {
         #if os(Linux)
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
         #endif
-    }
-
-    private static func scriptURL() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("scripts/linux-bridge-apply.sh")
-    }
-
-    private static func runScript(
-        _ url: URL,
-        args: [String],
-        env: [String: String],
-    ) throws -> (exitCode: Int32, stdout: String, stderr: String) {
-        let process = Process()
-        process.executableURL = url
-        process.arguments = args
-        var merged = ProcessInfo.processInfo.environment
-        for (key, value) in env {
-            merged[key] = value
-        }
-        process.environment = merged
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        try process.run()
-        process.waitUntilExit()
-        return (
-            process.terminationStatus,
-            String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-            String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-        )
     }
 }

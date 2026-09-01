@@ -573,14 +573,14 @@ struct APIDecodingTests {
           "backend": "netplan",
           "changes": ["Persist br0 via netplan"],
           "warnings": ["SSH looks active on the default-route NIC (eth0)."],
-          "commands": ["sudo linux-bridge-apply.sh --apply --nic eth0 --dhcp --confirm"]
+          "commands": ["POST /api/system/bridges (interface: eth0, action: apply, confirm: true)"]
         }
         """.data(using: .utf8)!
         let row = try decoder.decode(HostBridgeApplyResponse.self, from: json)
         #expect(row.success)
         #expect(row.backend == "netplan")
         #expect(row.changes == ["Persist br0 via netplan"])
-        #expect(row.commands?.joined().contains("linux-bridge-apply.sh") == true)
+        #expect(row.commands?.joined().contains("/api/system/bridges") == true)
         #expect(!(row.message ?? "").localizedCaseInsensitiveContains("cluster"))
         #expect(!(row.warnings ?? []).joined().localizedCaseInsensitiveContains("node"))
     }

@@ -52,6 +52,9 @@ import Testing
             defer { MacHostNetworkApply.removeMarker(device: device) }
             var calls: [[String]] = []
             let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+                }
                 #expect(path == MacHostNetworkApply.networksetupPath)
                 calls.append(args)
                 if args.first == "-getinfo" {
@@ -126,6 +129,55 @@ import Testing
             #expect(calls.contains { $0 == ["/sbin/ifconfig", device, "-alias", "10.0.0.2"] })
             #expect(calls.contains { $0 == [MacHostNetworkApply.networksetupPath, "-setdhcp", "Ethernet"] })
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
+        }
+
+        @Test func `dhcp apply skips stale alias removal when lease is unknown`() throws {
+            let device = "en0-dhcp-skip-stale"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            var ifconfigCalls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    ifconfigCalls.append(args)
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("inet 192.168.1.10 netmask 0xffffff00\n".utf8),
+                        stderr: Data(),
+                    )
+                }
+                if args.first == "-getinfo" {
+                    return CommandResult(exitCode: 0, stdout: Data("DHCP Configuration\n".utf8), stderr: Data())
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            try MacHostNetworkApply.apply(
+                device: device,
+                service: "Ethernet",
+                plan: HostInterfaceAddressApplyPlan(dhcpEnabled: true, dns: []),
+                run: run,
+            )
+            #expect(!ifconfigCalls.contains { $0.contains("-alias") })
+        }
+
+        @Test func `revert restores aliases removed as stale`() throws {
+            let device = "en0-stale-restore"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\n",
+                dnsServers: [],
+                removedAliasCIDRs: ["10.0.0.2/24"],
+            ))
+            var calls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                calls.append([path] + args)
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            let reverted = try MacHostNetworkApply.revert(device: device, run: run)
+            #expect(reverted)
+            #expect(calls.contains {
+                $0 == ["/sbin/ifconfig", device, "alias", "10.0.0.2", "netmask", "255.255.255.0"]
+            })
         }
 
         @Test func `failed revert keeps marker for retry`() throws {
@@ -218,6 +270,37 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.success)
             #expect(result.changes.contains(where: { $0.contains("DNS") }))
             #expect(result.commands.joined(separator: "\n").contains("-setdnsservers"))
+            #expect(!result.changes.joined(separator: "\n").localizedCaseInsensitiveContains("socket_vmnet"))
+            #expect(!result.commands.joined(separator: "\n").localizedCaseInsensitiveContains("socket_vmnet"))
+        }
+
+        @Test func `mac apply plan does not set up socket_vmnet`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(
+                    action: .apply,
+                    nic: "en0",
+                    addresses: [
+                        HostInterfaceAddressApplyEntry(kind: .dhcp),
+                        HostInterfaceAddressApplyEntry(kind: .alias, cidr: "10.0.0.2/24"),
+                    ],
+                ),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.message.contains("Device address"))
+            #expect(!result.message.localizedCaseInsensitiveContains("socket_vmnet"))
+            #expect(result.commands.joined(separator: "\n").contains("ifconfig en0 alias"))
         }
     #endif
 }
