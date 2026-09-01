@@ -13,8 +13,17 @@ public enum DirectoryBrowser {
 
     public static let volumeRoots: [String] = ["/Volumes", "/mnt", "/media"]
 
+    /// Homebrew LaunchDaemon runs as root (`/var/root`); expose login homes for folder pickers.
+    private static let rootDaemonHome = "/var/root"
+
     public static func staticRoots(home: String = NSHomeDirectory()) -> [String] {
-        [home] + volumeRoots
+        var roots = [home] + volumeRoots
+        #if os(macOS)
+            if home == rootDaemonHome, !roots.contains("/Users") {
+                roots.append("/Users")
+            }
+        #endif
+        return roots
     }
 
     public static func isAllowed(

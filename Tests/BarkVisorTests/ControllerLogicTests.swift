@@ -159,6 +159,13 @@ struct ControllerLogicTests {
     @Test func `directory browser path validation`() {
         #expect(DirectoryBrowser.isAllowed(NSHomeDirectory()))
         #expect(DirectoryBrowser.isAllowed(NSHomeDirectory() + "/Documents"))
+        #if os(macOS)
+            #expect(DirectoryBrowser.isAllowed("/Users", home: "/var/root"))
+            #expect(DirectoryBrowser.isAllowed("/Users/pascal/External", home: "/var/root"))
+        #else
+            #expect(!DirectoryBrowser.isAllowed("/Users", home: "/var/root"))
+            #expect(!DirectoryBrowser.isAllowed("/Users/pascal/External", home: "/var/root"))
+        #endif
         #expect(DirectoryBrowser.isAllowed("/Volumes"))
         #expect(DirectoryBrowser.isAllowed("/Volumes/External"))
         #expect(DirectoryBrowser.isAllowed("/mnt"))

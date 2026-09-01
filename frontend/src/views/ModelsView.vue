@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type {
@@ -260,6 +260,11 @@ const pullProgressLabel = computed(() => {
 })
 
 let pollTimer: number
+
+function onDocumentVisible() {
+  if (document.visibilityState === 'visible') void fetchRemoteAccess()
+}
+
 async function fetchRemoteAccess() {
   try {
     const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
@@ -274,10 +279,20 @@ onMounted(() => {
   void fetchRemoteAccess()
   void devices.fetchHealth()
   pollTimer = window.setInterval(() => { void store.fetchCatalog() }, 10_000)
+  document.addEventListener('visibilitychange', onDocumentVisible)
+})
+onActivated(() => {
+  void fetchRemoteAccess()
 })
 onUnmounted(() => {
   clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', onDocumentVisible)
 })
+
+watch(
+  () => devices.selfDevice?.hostId,
+  () => { void fetchRemoteAccess() },
+)
 
 watch(
   () => [store.models, store.devices, deviceScope.selectedHostId] as const,
