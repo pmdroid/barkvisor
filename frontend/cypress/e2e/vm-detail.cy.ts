@@ -67,6 +67,15 @@ describe('VM Detail (existing VMs)', () => {
     })
   })
 
+  it('puts Start when this Device boots next to Start, not in Hardware', () => {
+    withFirstVM((vm) => {
+      cy.visit(`/vms/${vm.id}`)
+      cy.get('.ops-actions [role="switch"]').should('exist')
+      cy.get('.ops-actions').contains('Start when this Device boots')
+      cy.get('.detail-label').contains('Start when this Device boots').should('not.exist')
+    })
+  })
+
   it('overview tab shows detail rows', () => {
     withFirstVM((vm) => {
       cy.visit(`/vms/${vm.id}`)

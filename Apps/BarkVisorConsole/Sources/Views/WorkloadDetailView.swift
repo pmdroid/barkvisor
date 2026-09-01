@@ -247,40 +247,38 @@ struct WorkloadDetailView: View {
                     Text(WorkloadStartOnBoot.label)
                 }
                 .disabled(busy || !device.isReachable)
+                if workload.canStart {
+                    Button("Start") {
+                        Task { await model.startWorkload(workload, on: device) }
+                    }
+                    .disabled(busy)
+                }
+                if workload.canStop {
+                    Button("Stop") {
+                        Task { await model.stopWorkload(workload, on: device) }
+                    }
+                    .disabled(busy)
+                    Button("Force Stop", role: .destructive) {
+                        pendingForceStop = true
+                    }
+                    .disabled(busy)
+                }
+                if workload.canRestart {
+                    Button("Restart") {
+                        Task {
+                            guest = nil
+                            await model.restartWorkload(workload, on: device)
+                            guest = await model.guestInfo(for: workload.id, on: device)
+                        }
+                    }
+                    .disabled(!WorkloadRestart.isEnabled(device: device, busy: busy))
+                }
             } footer: {
-                Text(workload.startOnBootFooter)
-            }
-
-            if workload.canStart || workload.canStop || workload.canRestart {
-                Section {
-                    if workload.canStart {
-                        Button("Start") {
-                            Task { await model.startWorkload(workload, on: device) }
-                        }
-                        .disabled(busy)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(workload.startOnBootFooter)
+                    if workload.canStop || workload.canRestart {
+                        Text("Stop and Restart send ACPI. Force Stop does not shut the guest down cleanly.")
                     }
-                    if workload.canStop {
-                        Button("Stop") {
-                            Task { await model.stopWorkload(workload, on: device) }
-                        }
-                        .disabled(busy)
-                        Button("Force Stop", role: .destructive) {
-                            pendingForceStop = true
-                        }
-                        .disabled(busy)
-                    }
-                    if workload.canRestart {
-                        Button("Restart") {
-                            Task {
-                                guest = nil
-                                await model.restartWorkload(workload, on: device)
-                                guest = await model.guestInfo(for: workload.id, on: device)
-                            }
-                        }
-                        .disabled(!WorkloadRestart.isEnabled(device: device, busy: busy))
-                    }
-                } footer: {
-                    Text("Stop and Restart send ACPI. Force Stop does not shut the guest down cleanly.")
                 }
             }
         }

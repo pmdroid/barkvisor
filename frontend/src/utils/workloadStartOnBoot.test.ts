@@ -40,12 +40,23 @@ describe('workloadStartOnBoot (PAS-258)', () => {
     ).toEqual({ startOnBoot: true })
   })
 
-  test('Workload detail exposes the Device-boot toggle', () => {
+  test('Workload detail puts the Device-boot toggle next to Start and still PATCHes startOnBoot', () => {
     const detail = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const actions = detail.match(/<div class="ops-actions">[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(actions).toContain('role="switch"')
+    expect(actions).toContain('startOnBootLabel()')
+    expect(actions).toContain('toggleStartOnBoot')
+    expect(actions).toContain('>Start</AppButton>')
+    expect(actions.indexOf('role="switch"')).toBeLessThan(actions.indexOf('>Start</AppButton>'))
+
+    const hardware = detail.slice(detail.indexOf('<h3>Hardware</h3>'), detail.indexOf('<h3>Network</h3>'))
+    expect(hardware).not.toContain('startOnBootLabel')
+    expect(hardware).not.toContain('toggleStartOnBoot')
+    expect(hardware).not.toContain('role="switch"')
+
     expect(detail).toContain("from '../utils/workloadStartOnBoot'")
     expect(detail).toContain('parseStartOnBoot')
-    expect(detail).toContain('startOnBootLabel')
-    expect(detail).toContain('toggleStartOnBoot')
+    expect(detail).toContain('await patchWorkload({ startOnBoot: checked })')
     expect(detail).not.toContain('node')
     expect(detail).not.toContain('cluster')
   })
