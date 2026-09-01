@@ -600,6 +600,43 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   align-items: center;
   gap: 8px;
 }
+.create-menu {
+  position: relative;
+}
+.create-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 140px;
+  background: var(--bg);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+.create-menu-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.create-menu-list button:hover {
+  background: var(--bg-hover);
+}
+.create-bridge-vm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+}
 .ops-actions .app-btn,
 .ops-actions .ops-search,
 .ops-actions .app-select,

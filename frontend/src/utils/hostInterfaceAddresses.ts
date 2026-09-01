@@ -155,6 +155,7 @@ export function buildAddressApplyEntries(rows: EditableHostAddress[]): HostBridg
 
 export function buildHostBridgeApplyBody(input: {
   nic?: string
+  bridge?: string
   confirm?: boolean
   action?: HostBridgeApplyRequest['action']
   rows: EditableHostAddress[]
@@ -169,6 +170,8 @@ export function buildHostBridgeApplyBody(input: {
     addresses,
   }
   const hasDHCP = input.rows.some((r) => r.kind === 'dhcp')
+  const bridge = input.bridge?.trim()
+  if (bridge) body.bridge = bridge
   const hasLegacyStaticOnly = addresses.length === 1
     && addresses[0]?.kind === 'static'
     && addresses[0]?.cidr

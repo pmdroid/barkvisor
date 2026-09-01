@@ -131,7 +131,7 @@ export function macosSocketVmnetSetupGroups(
       'networksetup -listallhardwareports',
       `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
       `  -H 'Content-Type: application/json' \\`,
-      `  -d '{"interface":"${iface}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
+      `  -d '{"interface":"${iface}","bridge":"${ready?.suggestedBridge || HOST_BRIDGE_SUGGESTED}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
     ].join('\n'),
   })
   return groups
@@ -161,7 +161,7 @@ export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
     `# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.`,
     `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
     `  -H 'Content-Type: application/json' \\`,
-    `  -d '{"interface":"${nic}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
+    `  -d '{"interface":"${nic}","bridge":"${br}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
     `# Revert: DELETE /api/system/bridges/${br} or Revert in the drawer.`,
   ]
 }

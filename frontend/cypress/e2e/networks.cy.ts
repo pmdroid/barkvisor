@@ -20,6 +20,7 @@ describe('Network Management', () => {
     cy.contains('button', 'Bridge setup').should('not.exist')
     cy.get('.iface-row').should('exist')
     cy.contains('button', 'Create Network').should('not.exist')
+    cy.contains('button', 'Create').should('be.visible')
   })
 
   it('VM networks tab shows Create Network and Workload network copy', () => {
@@ -199,6 +200,79 @@ describe('Network Management', () => {
     cy.get('.iface-drawer').contains('button', 'Revert').should('exist')
     cy.get('.iface-drawer').contains('button', 'Re-check').should('exist')
     cy.get('.iface-drawer').contains('VM network records').should('exist')
+  })
+
+  function stubCreateBridge(opts: { vmNetwork: boolean; bridge?: string }) {
+    const bridge = opts.bridge ?? 'br1'
+    cy.intercept('GET', '**/system/bridges/next', { bridge }).as('nextBridge')
+    cy.intercept('POST', '**/system/bridges', (req) => {
+      expect(req.body.bridge).to.eq(bridge)
+      expect(req.body.interface).to.be.a('string').and.not.be.empty
+      req.reply({
+        success: true,
+        applied: true,
+        pendingCommit: true,
+        commitDeadline: new Date(Date.now() + 30_000).toISOString(),
+        rollbackSeconds: 30,
+        target: bridge,
+        message: `Created Bridge ${bridge}.`,
+      })
+    }).as('createBridgeApply')
+    cy.intercept('POST', '**/networks', (req) => {
+      expect(req.body.mode).to.eq('bridged')
+      expect(req.body.bridge).to.eq(bridge)
+      req.reply({
+        id: 'cy-bridged',
+        name: req.body.name,
+        mode: 'bridged',
+        bridge,
+        isDefault: false,
+      })
+    }).as('createVmNetwork')
+  }
+
+  it('Create Bridge modal has next-free name, port, and VM network default on', () => {
+    stubCreateBridge({ vmNetwork: true })
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextBridge')
+    cy.get('.modal-overlay').should('be.visible')
+    cy.contains('h2', 'Create Bridge').should('be.visible')
+    cy.contains('.form-group', 'Name').find('input').should('have.value', 'br1').and('have.attr', 'readonly')
+    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').should('be.checked')
+    cy.get('.modal-overlay').contains('button', 'Apply').should('exist')
+    cy.get('.modal-overlay').contains('button', 'Cancel').click()
+  })
+
+  it('Create Bridge Apply with VM network posts bridge plus nic and creates Workload network', () => {
+    stubCreateBridge({ vmNetwork: true })
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextBridge')
+    cy.contains('.form-group', 'Port').find('select').then(($sel) => {
+      const values = [...$sel.find('option')].map((o) => o.value).filter((v) => v)
+      if (values[0]) cy.wrap($sel).select(values[0], { force: true })
+    })
+    cy.get('.modal-overlay').contains('button', 'Apply').click()
+    cy.wait('@createBridgeApply')
+    cy.wait('@createVmNetwork')
+    cy.get('.modal-overlay').should('not.exist')
+  })
+
+  it('Create Bridge Apply with VM network unchecked does not create Workload network', () => {
+    stubCreateBridge({ vmNetwork: false })
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextBridge')
+    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').uncheck()
+    cy.contains('.form-group', 'Port').find('select').then(($sel) => {
+      const values = [...$sel.find('option')].map((o) => o.value).filter((v) => v)
+      if (values[0]) cy.wrap($sel).select(values[0], { force: true })
+    })
+    cy.get('.modal-overlay').contains('button', 'Apply').click()
+    cy.wait('@createBridgeApply')
+    cy.get('@createVmNetwork.all').should('have.length', 0)
+    cy.get('.modal-overlay').should('not.exist')
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {

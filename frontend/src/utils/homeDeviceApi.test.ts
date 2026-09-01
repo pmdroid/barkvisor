@@ -4,6 +4,7 @@ import {
   canFetchDeviceWorkloads,
   deviceAboutPath,
   deviceDoctorPath,
+  deviceBridgesNextPath,
   deviceBridgesPath,
   deviceCapabilitiesPath,
   deviceDiskPath,
@@ -266,11 +267,13 @@ describe('homeDeviceApi (PAS-216)', () => {
     expect(deviceNetworkPath(self, 'net-1')).toBe('/networks/net-1')
     expect(deviceInterfacesPath(self)).toBe('/system/interfaces')
     expect(deviceBridgesPath(self)).toBe('/system/bridges')
+    expect(deviceBridgesNextPath(self)).toBe('/system/bridges/next')
 
     expect(deviceNetworksPath(member)).toBe('/home/devices/peer%2F1/v1/networks')
     expect(deviceNetworkPath(member, 'net/1')).toBe('/home/devices/peer%2F1/v1/networks/net%2F1')
     expect(deviceInterfacesPath(member)).toBe('/home/devices/peer%2F1/v1/system/interfaces')
     expect(deviceBridgesPath(member)).toBe('/home/devices/peer%2F1/v1/system/bridges')
+    expect(deviceBridgesNextPath(member)).toBe('/home/devices/peer%2F1/v1/system/bridges/next')
     expect(deviceNetworkPath(member, 'net-1')).not.toContain('targetHostId')
   })
 })

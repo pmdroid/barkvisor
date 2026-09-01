@@ -2,7 +2,7 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
-import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeApplyRequest, HostBridgeReadiness, HostInterface } from '../api/types'
+import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface, NextBridgeResponse } from '../api/types'
 import HostInterfaceAddressList from '../components/HostInterfaceAddressList.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -26,10 +26,18 @@ import { defaultCapabilities } from '../utils/capabilitiesParse'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
+  deviceBridgesNextPath,
   deviceBridgesPath,
   deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import {
+  defaultUnusedPort,
+  linuxRefusesWifiPort,
+  nextFreeBridgeName,
+  takenBridgeNames,
+  unusedBridgePorts,
+} from '../utils/createHostBridge'
 import {
   hostBridgeCanApply,
   hostBridgeSetupPending,
@@ -229,6 +237,40 @@ const bridges = computed(() => {
   return localBridges.value
 })
 
+const createBridgeDevice = computed(() => {
+  if (createBridgeHostId.value) return devicesStore.deviceByHostId(createBridgeHostId.value)
+  return devicesStore.selfDevice
+})
+
+const createBridgeCaps = computed(() => {
+  if (useHomeUnion.value && createBridgeHostId.value) return deviceCapsFor(createBridgeHostId.value)
+  return caps.currentHost
+})
+
+const createBridgeIfaces = computed(() => {
+  if (useHomeUnion.value && createBridgeHostId.value) return homeNets.interfacesFor(createBridgeHostId.value)
+  return localInterfaces.value
+})
+
+const createBridgeReadiness = computed(() => {
+  const hostId = createBridgeHostId.value || devicesStore.selfDevice?.hostId || ''
+  return hostId ? readinessByHost.value[hostId] ?? null : null
+})
+
+const createBridgePorts = computed(() =>
+  unusedBridgePorts(
+    createBridgeIfaces.value,
+    createBridgeReadiness.value,
+    createBridgeCaps.value.platform,
+  ),
+)
+
+const createBridgeAddressValidation = computed(() =>
+  validateAddressList(createBridgeRows.value, {
+    onlyUplink: createBridgeReadiness.value?.onlyUplink,
+  }),
+)
+
 function deviceBridgeGuideMode(device: HomeDeviceHealthSnapshot) {
   const c = deviceCapsFor(device.hostId)
   return bridgeManagementMode({
@@ -363,6 +405,18 @@ const readinessByHost = ref<Record<string, HostBridgeReadiness>>({})
 const linuxApplyLoading = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
 const linuxApplyConfirm = ref<'apply' | 'revert' | null>(null)
+const linuxApplySource = ref<'drawer' | 'create-bridge'>('drawer')
+
+const createMenuOpen = ref(false)
+const showCreateBridge = ref(false)
+const createBridgeHostId = ref('')
+const createBridgeName = ref('')
+const createBridgeNic = ref('')
+const createBridgeRows = ref<EditableHostAddress[]>([{ id: 'dhcp', kind: 'dhcp', cidr: '' }])
+const createBridgeGateway = ref('')
+const createBridgeDNS = ref('')
+const createBridgeVmNetwork = ref(true)
+const createBridgeError = ref('')
 
 type PendingCommitState = {
   hostId: string
@@ -688,6 +742,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
     toast.error(interfaceAddressValidation.value.errors[0] || 'Fix address list before applying.')
     return
   }
+  linuxApplySource.value = 'drawer'
   linuxApplyResult.value = null
   linuxApplyLoading.value = true
   try {
@@ -713,6 +768,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert', confirm = fals
       ).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
+        bridge: selectedInterfaceRole.value === 'bridge' ? nic : undefined,
         confirm,
         rows: payload.rows,
         gateway: payload.gateway,
@@ -1032,7 +1088,138 @@ async function confirmLinuxBridge() {
   const action = linuxApplyConfirm.value
   linuxApplyConfirm.value = null
   if (!action) return
+  if (linuxApplySource.value === 'create-bridge') {
+    await applyCreateBridge(true)
+    return
+  }
   await runInterfaceHostBridge(action, true)
+}
+
+function resetCreateBridgeForm() {
+  createBridgeHostId.value = defaultFormHostId()
+  createBridgeName.value = ''
+  createBridgeNic.value = ''
+  createBridgeRows.value = [{ id: 'dhcp', kind: 'dhcp', cidr: '' }]
+  createBridgeGateway.value = ''
+  createBridgeDNS.value = ''
+  createBridgeVmNetwork.value = true
+  createBridgeError.value = ''
+}
+
+async function fetchNextBridgeName(device: HomeDeviceHealthSnapshot | null) {
+  const fallback = nextFreeBridgeName(takenBridgeNames(
+    createBridgeIfaces.value,
+    createBridgeReadiness.value,
+  ))
+  try {
+    const path = device && useHomeUnion.value
+      ? deviceBridgesNextPath(device)
+      : '/system/bridges/next'
+    const { data } = await api.get<NextBridgeResponse>(path)
+    createBridgeName.value = data.bridge || fallback
+  } catch {
+    createBridgeName.value = fallback
+  }
+}
+
+async function openCreateBridge() {
+  createMenuOpen.value = false
+  resetCreateBridgeForm()
+  showCreateBridge.value = true
+  const device = createBridgeDevice.value
+  if (device && useHomeUnion.value) await homeNets.fetchContext(device)
+  else await fetchLocalInterfaces()
+  await fetchHostReadiness(device)
+  await fetchNextBridgeName(device)
+  if (!createBridgeNic.value) {
+    createBridgeNic.value = defaultUnusedPort(createBridgePorts.value, createBridgeReadiness.value)
+  }
+}
+
+watch(createBridgeHostId, async (id, prev) => {
+  if (!showCreateBridge.value || !id || id === prev) return
+  const device = devicesStore.deviceByHostId(id)
+  if (device && useHomeUnion.value) await homeNets.fetchContext(device)
+  await fetchHostReadiness(device)
+  await fetchNextBridgeName(device)
+  createBridgeNic.value = defaultUnusedPort(createBridgePorts.value, createBridgeReadiness.value)
+})
+
+async function applyCreateBridge(confirm = false) {
+  createBridgeError.value = ''
+  const nic = createBridgeNic.value
+  const bridge = createBridgeName.value.trim()
+  if (!bridge) {
+    createBridgeError.value = 'Bridge name required'
+    return
+  }
+  if (!nic) {
+    createBridgeError.value = 'Select one unused NIC'
+    return
+  }
+  if (!createBridgeAddressValidation.value.ok) {
+    createBridgeError.value = createBridgeAddressValidation.value.errors[0] || 'Fix address list before applying.'
+    return
+  }
+  const device = createBridgeDevice.value
+  if (homeUnionDeviceBlocked(device)) {
+    createBridgeError.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+    return
+  }
+  const platform = createBridgeCaps.value.platform
+  const port = createBridgeIfaces.value.find((iface) => iface.name === nic)
+  if (port && linuxRefusesWifiPort(port, platform)) {
+    createBridgeError.value = 'Refuse Wi-Fi as port. Bridge a wired NIC.'
+    return
+  }
+  linuxApplySource.value = 'create-bridge'
+  linuxApplyResult.value = null
+  linuxApplyLoading.value = true
+  try {
+    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const { data } = await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
+      nic,
+      bridge,
+      confirm,
+      rows: createBridgeRows.value,
+      gateway: createBridgeGateway.value,
+      dns: createBridgeDNS.value,
+    }))
+    linuxApplyResult.value = data
+    if (data.needsConfirm && !confirm) {
+      linuxApplyConfirm.value = 'apply'
+      return
+    }
+    if (data.pendingCommit && data.commitDeadline) {
+      const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
+      if (hostId) setPendingCommitFromResponse(hostId, nic, data)
+    }
+    if (data.success) {
+      if (createBridgeVmNetwork.value) {
+        const body: NetworkWriteBody = {
+          name: `Bridged (${bridge})`,
+          mode: 'bridged',
+          bridge,
+        }
+        if (useHomeUnion.value && device) await homeNets.create(device, body)
+        else await networkStore.create(body)
+      }
+      toast.success(data.message || `Created Bridge ${bridge}.`)
+      showCreateBridge.value = false
+      const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
+      if (hostId) {
+        selectedInterfaceKey.value = `${hostId}:${nic}`
+        await fetchHostReadiness(device)
+        await refreshInterfaceContext(hostId)
+      }
+    } else if (data.message) {
+      createBridgeError.value = data.message
+    }
+  } catch (e: unknown) {
+    createBridgeError.value = apiErrorMessage(e)
+  } finally {
+    linuxApplyLoading.value = false
+  }
 }
 
 function resetForm() {
@@ -1156,6 +1343,14 @@ async function doDeleteNetwork() {
           :aria-selected="activeTab === 'vm'"
           @click="activeTab = 'vm'"
         >VM networks</button>
+      </div>
+    </div>
+    <div v-if="activeTab === 'interfaces'" class="ops-actions">
+      <div class="create-menu">
+        <AppButton variant="primary" icon="plus" @click="createMenuOpen = !createMenuOpen">Create</AppButton>
+        <div v-if="createMenuOpen" class="create-menu-list">
+          <button type="button" @click="openCreateBridge">Bridge</button>
+        </div>
       </div>
     </div>
     <div v-if="activeTab === 'vm'" class="ops-actions">
@@ -1466,6 +1661,82 @@ async function doDeleteNetwork() {
   </template>
   </template>
   </div>
+
+  <AppModal
+    v-if="showCreateBridge"
+    title="Create Bridge"
+    subtitle="Create is the only path for a new switch. The server picks the next-free brN. One unused NIC is the port."
+    rail-title="Bridge"
+    @close="showCreateBridge = false"
+  >
+    <template #rail>
+      <div class="split-s on">
+        <span class="wizard-dot active">1</span>
+        <div><div class="t">Port</div><div class="d">One unused NIC</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">2</span>
+        <div><div class="t">Addressing</div><div class="d">On the new Bridge</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">3</span>
+        <div><div class="t">VM network</div><div class="d">Optional Workload record</div></div>
+      </div>
+    </template>
+    <div v-if="formDeviceOptions.length > 0" class="form-group">
+      <label>{{ DEVICE_LABEL }}</label>
+      <AppSelect v-model="createBridgeHostId" :options="formDeviceOptions" />
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input :value="createBridgeName" readonly />
+    </div>
+    <div class="form-group">
+      <label>Port</label>
+      <AppSelect v-model="createBridgeNic">
+        <option value="" disabled>Select one unused NIC…</option>
+        <option v-for="iface in createBridgePorts" :key="iface.name" :value="iface.name">
+          {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}
+        </option>
+      </AppSelect>
+      <p v-if="createBridgePorts.length === 0" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        No unused NIC on this Device. Linux refuses Wi-Fi as a port.
+      </p>
+    </div>
+    <HostInterfaceAddressList
+      v-model="createBridgeRows"
+      :only-uplink="createBridgeReadiness?.onlyUplink"
+      :disabled="linuxApplyLoading"
+    />
+    <div class="iface-fields-grid">
+      <div class="form-group">
+        <label>Gateway</label>
+        <input v-model="createBridgeGateway" placeholder="192.168.1.1" spellcheck="false" :disabled="linuxApplyLoading" />
+      </div>
+      <div class="form-group">
+        <label>DNS</label>
+        <input v-model="createBridgeDNS" placeholder="1.1.1.1, 8.8.8.8" spellcheck="false" :disabled="linuxApplyLoading" />
+      </div>
+    </div>
+    <label class="create-bridge-vm">
+      <input type="checkbox" v-model="createBridgeVmNetwork">
+      <span>Create VM network</span>
+    </label>
+    <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+      Default on. Adds a bridged Workload network with network.bridge set to this brN.
+    </p>
+    <FormError v-if="createBridgeError" :message="createBridgeError" />
+    <template #actions>
+      <AppButton @click="showCreateBridge = false">Cancel</AppButton>
+      <AppButton
+        variant="primary"
+        :loading="linuxApplyLoading"
+        :disabled="!createBridgeNic || !createBridgeAddressValidation.ok"
+        :loading-text="'Applying...'"
+        @click="applyCreateBridge()"
+      >Apply</AppButton>
+    </template>
+  </AppModal>
 
   <!-- Create/Edit Network Modal -->
   <AppModal
