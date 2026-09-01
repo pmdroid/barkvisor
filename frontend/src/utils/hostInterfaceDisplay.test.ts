@@ -4,6 +4,7 @@ import {
   bridgeSetupInterfaceKey,
   formatInterfaceAddressSummary,
   formatInterfaceLinkSummary,
+  hostBridgeActionPath,
   inferInterfaceRole,
   interfaceAddressFieldsReadOnly,
   interfaceBridgeColumn,
@@ -13,6 +14,7 @@ import {
   interfaceOwnsBridgeSetupApply,
   interfaceRouteColumn,
   interfaceRoleLabel,
+  pendingCommitMatchesInterface,
   resolveBridgeApplyNic,
 } from './hostInterfaceDisplay'
 
@@ -300,5 +302,19 @@ describe('hostInterfaceDisplay', () => {
     expect(bridgeSetupInterfaceKey('host-1', ready, 'linux-guide')).toBe('host-1:br0')
     expect(bridgeSetupInterfaceKey('host-1', ready, 'macos-guide')).toBe('host-1:eth0')
     expect(bridgeSetupInterfaceKey('host-1', { ...ready, bridges: [] }, 'linux-guide')).toBe('host-1:eth0')
+  })
+
+  test('Keep match and DELETE path use pending.target not br0', () => {
+    const pending = { target: 'br1', nic: 'eth1' }
+    expect(pendingCommitMatchesInterface(pending, 'eth1', 'linux-guide')).toBe(true)
+    expect(pendingCommitMatchesInterface(pending, 'br1', 'linux-guide')).toBe(true)
+    expect(pendingCommitMatchesInterface(pending, 'eth0', 'linux-guide')).toBe(false)
+    expect(pendingCommitMatchesInterface({ target: 'en0', nic: 'en0' }, 'en0', 'macos-guide')).toBe(true)
+    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br1'))
+      .toBe('/system/bridges/br1')
+    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br0'))
+      .not.toBe('/system/bridges/br1')
+    expect(hostBridgeActionPath('/system/bridges', 'en0', 'macos-guide', 'br1'))
+      .toBe('/system/bridges/en0')
   })
 })

@@ -8,6 +8,7 @@ set -e
 # defaults it. Appliance data stays at /var/lib/barkvisor.
 
 BARKVISOR_ACL_MARKER="# barkvisor:allow-br0"
+BARKVISOR_ACL_MARKER_PREFIX="# barkvisor:allow-"
 BARKVISOR_MANAGED_MARKER="# managed-by: barkvisor"
 
 barkvisor_bridge_name() { printf '%s' "${BARKVISOR_BRIDGE:-br0}"; }
@@ -67,12 +68,11 @@ barkvisor_name_is_ours() {
 
 barkvisor_strip_tagged_acl() {
   acl="$(barkvisor_acl_path)"
-  bridge="$(barkvisor_bridge_name)"
   [ -f "$acl" ] || return 0
   tmp="${acl}.barkvisor-strip.$$"
-  awk -v marker="$BARKVISOR_ACL_MARKER" -v allow="allow ${bridge}" '
-    $0==marker { skip=1; next }
-    skip==1 && $0==allow { skip=0; next }
+  awk -v prefix="$BARKVISOR_ACL_MARKER_PREFIX" '
+    index($0, prefix)==1 { skip=1; next }
+    skip==1 && $0 ~ /^allow / { skip=0; next }
     { skip=0; print }
   ' "$acl" >"$tmp" || { rm -f "$tmp"; return 1; }
   mv "$tmp" "$acl"
@@ -90,10 +90,27 @@ barkvisor_remove_tagged_in_dir() {
 }
 
 barkvisor_remove_tagged_host_files() {
-  bridge="$(barkvisor_bridge_name)"
   barkvisor_remove_tagged_in_dir "$(barkvisor_netplan_dir)"
   barkvisor_remove_tagged_in_dir "$(barkvisor_networkd_dir)"
   barkvisor_remove_tagged_in_dir "$(barkvisor_nm_dir)"
+  data="$(barkvisor_data_dir)"
+  if [ -d "$data" ]; then
+    for marker in "$data"/host-bridge-*.json; do
+      [ -f "$marker" ] || continue
+      base="$(basename "$marker")"
+      name="${base#host-bridge-}"
+      name="${name%.json}"
+      [ -n "$name" ] || continue
+      rm -f "$(barkvisor_netplan_dir)/90-barkvisor-${name}.yaml"
+      rm -f "$(barkvisor_networkd_dir)/90-barkvisor-${name}.netdev"
+      rm -f "$(barkvisor_networkd_dir)/90-barkvisor-${name}.network"
+      if command -v nmcli >/dev/null 2>&1 && [ -z "${BARKVISOR_SKIP_NMCLI:-}" ]; then
+        nmcli connection delete "barkvisor-${name}" >/dev/null 2>&1 || true
+      fi
+      rm -f "$marker"
+    done
+  fi
+  bridge="$(barkvisor_bridge_name)"
   rm -f "$(barkvisor_netplan_dir)/90-barkvisor-${bridge}.yaml"
   rm -f "$(barkvisor_networkd_dir)/90-barkvisor-${bridge}.netdev"
   rm -f "$(barkvisor_networkd_dir)/90-barkvisor-${bridge}.network"

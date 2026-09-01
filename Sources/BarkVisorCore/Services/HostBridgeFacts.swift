@@ -203,12 +203,13 @@ public enum HostBridgeFactsService {
             ))
         }
         if inputs.aclAllowsSuggested != true {
+            let marker = LinuxHostBridgeApply.aclMarker(for: br)
             groups.append(HostBridgeRemediation(
                 id: "allow-acl",
                 label: "Allow \(br) in qemu-bridge.conf",
                 commands: [
-                    "# \(LinuxHostBridgeApply.aclMarker)",
-                    "printf '%s\\n%s\\n' '\(LinuxHostBridgeApply.aclMarker)' 'allow \(br)' | sudo tee -a \(defaultACLPath)",
+                    "# \(marker)",
+                    "printf '%s\\n%s\\n' '\(marker)' 'allow \(br)' | sudo tee -a \(defaultACLPath)",
                 ].joined(separator: "\n"),
             ))
         }

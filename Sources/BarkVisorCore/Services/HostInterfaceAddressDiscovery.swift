@@ -509,7 +509,7 @@ extension String {
                 try PlatformProcess.run(path: path, arguments: args, timeout: 15)
             },
         ) -> HostInterfaceAddressing {
-            if let netplan = readFile(LinuxHostBridgeApply.netplanPath),
+            if let netplan = readFile(LinuxHostBridgeApply.netplanPath(bridge: interface)),
                LinuxHostInterfaceAddressRead.isBarkvisorManaged(netplan),
                let parsed = LinuxHostInterfaceAddressRead.parseNetplan(netplan, interface: interface) {
                 return mergeLiveAddresses(config: parsed, liveIPv4: liveIPv4)
