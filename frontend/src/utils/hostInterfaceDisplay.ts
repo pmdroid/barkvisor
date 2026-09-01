@@ -210,26 +210,15 @@ export function interfaceOwnsBridgeSetupApply(
   return false
 }
 
-/** Apply/Revert for L3 addresses (Linux enslaved/standalone ports; Mac uplink). */
 export function interfaceOwnsAddressApply(
   role: HostInterfaceRole,
-  iface: HostInterface,
-  readiness: HostBridgeReadiness | null | undefined,
-  mode: string,
+  _iface: HostInterface,
+  _readiness: HostBridgeReadiness | null | undefined,
+  _mode: string,
 ): boolean {
-  if (role === 'external' || role === 'loopback' || role === 'tailscale') return false
-  if (mode === 'macos-guide') {
-    return role === 'uplink' && !interfaceEnslavedToBridge(iface, readiness)
-  }
-  if (mode === 'linux-guide') {
-    if (role === 'bridge') return false
-    return role === 'uplink'
-  }
-  if (role === 'bridge') return false
-  return role === 'uplink' && !interfaceEnslavedToBridge(iface, readiness)
+  return role === 'bridge'
 }
 
-/** @deprecated Use interfaceOwnsBridgeSetupApply / interfaceOwnsAddressApply. */
 export function interfaceOwnsBridgeApply(
   role: HostInterfaceRole,
   iface: HostInterface,
@@ -238,6 +227,46 @@ export function interfaceOwnsBridgeApply(
 ): boolean {
   return interfaceOwnsBridgeSetupApply(role, iface, readiness, mode)
     || interfaceOwnsAddressApply(role, iface, readiness, mode)
+}
+
+export function addressApplyTargets(
+  iface: HostInterface,
+  readiness: HostBridgeReadiness | null | undefined,
+  _mode: string,
+): { nic: string; bridge: string } {
+  const mapped = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
+  if (mapped) return { nic: mapped, bridge: iface.name }
+  return { nic: iface.name, bridge: iface.name }
+}
+
+export function overlayBridgeAddresses(
+  iface: HostInterface,
+  peers: HostInterface[],
+  readiness?: HostBridgeReadiness | null,
+): HostInterface {
+  if (inferInterfaceRole(iface, readiness) !== 'bridge') return iface
+  if (iface.dhcpEnabled || iface.ipAddress || (iface.addresses?.length ?? 0) > 0) return iface
+  const uplinkName = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
+  if (!uplinkName) return iface
+  const uplink = peers.find((peer) => peer.name === uplinkName)
+  if (!uplink) return iface
+  return {
+    ...iface,
+    ipAddress: uplink.ipAddress,
+    addresses: uplink.addresses,
+    dhcpEnabled: uplink.dhcpEnabled,
+    gateway: uplink.gateway,
+    dns: uplink.dns,
+  }
+}
+
+export function interfaceAddressColumn(
+  iface: HostInterface,
+  peers: HostInterface[],
+  readiness?: HostBridgeReadiness | null,
+): string {
+  if (readiness?.bridges.some((bridge) => bridge.enslaved.includes(iface.name))) return '—'
+  return formatInterfaceAddressSummary(overlayBridgeAddresses(iface, peers, readiness))
 }
 
 export function interfaceBridgeFieldsReadOnly(role: HostInterfaceRole): boolean {
@@ -345,13 +374,33 @@ export function bridgedPickerInterfaces(
   return bridges
 }
 
+export function pendingCommitBridgeName(
+  pending: { target: string; nic: string },
+  readiness?: HostBridgeReadiness | null,
+): string {
+  const parent = readiness?.bridges.find(
+    (bridge) =>
+      bridge.name === pending.target
+      || bridge.enslaved.includes(pending.target)
+      || bridge.enslaved.includes(pending.nic),
+  )
+  return parent?.name ?? pending.target
+}
+
 export function pendingCommitMatchesInterface(
   pending: { target: string; nic: string },
   ifaceName: string,
   mode: string,
+  readiness?: HostBridgeReadiness | null,
 ): boolean {
-  if (mode === 'macos-guide') return pending.target === ifaceName
-  return pending.target === ifaceName || pending.nic === ifaceName
+  if (
+    mode === 'macos-guide'
+    && readiness?.bridges.some((bridge) => bridge.enslaved.includes(ifaceName))
+  ) {
+    return false
+  }
+  if (pending.target === ifaceName || pending.nic === ifaceName) return true
+  return pendingCommitBridgeName(pending, readiness) === ifaceName
 }
 
 export function hostBridgeActionPath(

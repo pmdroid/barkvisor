@@ -278,11 +278,78 @@ describe('Network Management', () => {
   it('Host interfaces drawer shows multi-address editor', () => {
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
-      cy.contains('DHCP (primary)').should('exist')
+      cy.contains('Use DHCP for primary address').should('exist')
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('Bridge role').should('exist')
       cy.contains('button', 'Add address').should('exist')
     })
+  })
+
+  it('Bridge drawer edits L3; enslaved NIC is L2-only', () => {
+    const readiness = {
+      helperPath: null,
+      helperSetuid: true,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+      bridges: [{ name: 'br0', enslaved: ['eth0'] }],
+      defaultRouteInterface: 'eth0',
+      onlyUplink: false,
+      ready: true,
+    }
+    cy.intercept('GET', '**/system/interfaces', [
+      {
+        name: 'eth0',
+        displayName: 'eth0',
+        ipAddress: '192.168.1.10',
+        dhcpEnabled: true,
+        addresses: [{ cidr: '192.168.1.10/24', source: 'dhcp', primary: true }],
+        gateway: '192.168.1.1',
+        dns: ['1.1.1.1'],
+      },
+      { name: 'br0', displayName: 'br0', ipAddress: '' },
+    ]).as('ifaces')
+    cy.intercept('GET', '**/system/host-bridge-readiness', readiness).as('ready')
+    cy.visit('/networks')
+    cy.wait('@ifaces')
+    cy.contains('.iface-row', 'br0').click()
+    cy.get('.iface-drawer').within(() => {
+      cy.contains('Use DHCP for primary address').should('exist')
+      cy.get('input[type="checkbox"]').first().should('not.be.disabled')
+      cy.contains('L2 only').should('not.exist')
+    })
+    cy.contains('.iface-row', 'eth0').click()
+    cy.get('.iface-drawer').within(() => {
+      cy.contains('L2 only · addresses live on the Bridge').should('be.visible')
+      cy.get('input[type="checkbox"]').first().should('be.disabled')
+    })
+  })
+
+  it('Keep banner shows on the Bridge row when pending target is the uplink', () => {
+    const readiness = {
+      helperPath: null,
+      helperSetuid: true,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: true,
+      bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      defaultRouteInterface: 'en0',
+      onlyUplink: false,
+      ready: true,
+      pendingCommit: {
+        target: 'en0',
+        commitDeadline: new Date(Date.now() + 30_000).toISOString(),
+        rollbackSeconds: 30,
+      },
+    }
+    cy.intercept('GET', '**/system/interfaces', [
+      { name: 'en0', displayName: 'en0', ipAddress: '192.168.1.10' },
+      { name: 'br0', displayName: 'br0', ipAddress: '' },
+    ]).as('ifaces')
+    cy.intercept('GET', '**/system/host-bridge-readiness', readiness).as('ready')
+    cy.visit('/networks')
+    cy.wait('@ifaces')
+    cy.wait('@ready')
+    cy.contains('.iface-row', 'br0').click()
+    cy.get('.iface-drawer').contains('Keep changes').should('be.visible')
   })
 })

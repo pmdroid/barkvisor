@@ -200,7 +200,8 @@ struct SystemBridgeController: RouteCollection {
                     req: req,
                 )
             }
-            return Self.bridgeActionResponse(from: result)
+            let target = request.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Self.bridgeActionResponse(from: result, target: target.isEmpty ? nil : target)
         #else
             throw BarkVisorError.forbidden("macOS host network apply runs on a macOS Device.")
         #endif
