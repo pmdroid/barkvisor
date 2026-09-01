@@ -270,6 +270,7 @@ import Foundation
                 warnings: [],
                 commands: [
                     "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
+                    "launchctl bootout system/com.barkvisor.socket-vmnet.\(device)",
                 ],
                 message:
                 "Ready to delete owned socket_vmnet. Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or they auto-revert.",
