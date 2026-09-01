@@ -52,6 +52,9 @@ import Testing
             defer { MacHostNetworkApply.removeMarker(device: device) }
             var calls: [[String]] = []
             let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+                }
                 #expect(path == MacHostNetworkApply.networksetupPath)
                 calls.append(args)
                 if args.first == "-getinfo" {
