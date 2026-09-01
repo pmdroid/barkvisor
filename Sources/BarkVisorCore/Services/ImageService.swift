@@ -74,10 +74,15 @@ public enum ImageService {
 
     static func removeLeftoverDownloadFiles(imageId: String, db: DatabasePool) async {
         guard !imageId.isEmpty else { return }
-        let dirs = (try? await db.read { db in
-            try [LibrarySettings.resolvedDirectory(from: db)]
-                + LibrarySettings.previousDirectories(from: db)
-        }) ?? []
+        let dirs: [URL]
+        do {
+            dirs = try await db.read { db in
+                try [LibrarySettings.resolvedDirectory(from: db)]
+                    + LibrarySettings.previousDirectories(from: db)
+            }
+        } catch {
+            return
+        }
         let fm = FileManager.default
         for dir in dirs {
             guard let entries = try? fm.contentsOfDirectory(atPath: dir.path) else { continue }
