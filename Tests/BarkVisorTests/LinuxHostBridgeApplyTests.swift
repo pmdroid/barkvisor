@@ -23,6 +23,7 @@ struct LinuxHostBridgeApplyTests {
         session: Set<String> = [],
         warnings: [String] = [],
         owned: Bool = false,
+        createdBridge: Bool = false,
         nic: String = "eth0",
         ready: Bool = false,
         onlyUplink: Bool = false,
@@ -34,6 +35,7 @@ struct LinuxHostBridgeApplyTests {
             sessionRiskNics: session,
             sessionWarnings: warnings,
             owned: owned,
+            createdBridge: createdBridge,
             existingInterfaces: ready ? [nic, "lo", "br0"] : [nic, "lo"],
         )
     }
@@ -435,5 +437,79 @@ struct LinuxHostBridgeApplyTests {
         #expect(script.contains("host-bridge-br1.json"))
         #expect(script.contains("/run/barkvisor/br1-pending.json"))
         #expect(!script.contains("90-barkvisor-br0.yaml"))
+    }
+
+    @Test func `owned delete detaches ports and ip link dels`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+        )
+        #expect(result.success)
+        #expect(!result.refused)
+        #expect(result.changes.contains { $0.contains("Detach eth0") })
+        #expect(result.changes.contains { $0.contains("Restore L3") })
+        #expect(result.commands.contains { $0.contains("ip link del br0") })
+        #expect(result.message.contains("Keep changes"))
+    }
+
+    @Test func `foreign revert never ip link dels`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .revert, confirm: true),
+            probe: probe(owned: true, createdBridge: false),
+        )
+        #expect(result.success)
+        #expect(!result.commands.contains { $0.contains("ip link del") })
+        #expect(result.changes.contains { $0.contains("Leave br0") || $0.contains("never default-deleted") })
+        let denied = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, confirm: true),
+            probe: probe(owned: true, createdBridge: false),
+        )
+        #expect(denied.refused)
+        #expect(denied.message.contains("foreign"))
+        #expect(!denied.commands.contains { $0.contains("ip link del") })
+    }
+
+    @Test func `delete refuses when Workloads still reference the bridge`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .delete,
+                bridge: "br1",
+                nic: "eth1",
+                confirm: true,
+                attachedWorkloadCount: 2,
+            ),
+            probe: probe(owned: true, createdBridge: true, nic: "eth1"),
+        )
+        #expect(result.refused)
+        #expect(result.conflict)
+        #expect(result.message.contains("Workload"))
+        #expect(!result.commands.contains { $0.contains("ip link del") })
+    }
+
+    @Test func `createdBridgeForUplink reads marker uplink`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try LinuxHostBridgeApply.writeOwnerMarker(
+            bridge: "br1",
+            uplink: "en0",
+            createdBridge: true,
+            dataDir: dir,
+        )
+        #expect(LinuxHostBridgeApply.createdBridgeForUplink("en0", dataDir: dir))
+        #expect(!LinuxHostBridgeApply.createdBridgeForUplink("eth0", dataDir: dir))
+    }
+
+    @Test func `live delete records keep window without touching the host`() throws {
+        let recorder = RecordingLinuxHostBridgeMutator()
+        let result = try LinuxHostBridgeApplyLive.run(
+            request: LinuxHostBridgeApplyRequest(action: .delete, nic: "eth0", confirm: true),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+            mutator: recorder,
+        )
+        #expect(result.applied)
+        #expect(result.pendingCommit)
+        #expect(recorder.steps.contains { $0.contains("action=delete") })
+        #expect(recorder.steps.contains { $0.contains("ip link del") || $0.contains("Delete br0") })
     }
 }

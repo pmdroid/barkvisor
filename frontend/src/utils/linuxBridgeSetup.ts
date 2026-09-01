@@ -162,7 +162,7 @@ export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
     `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
     `  -H 'Content-Type: application/json' \\`,
     `  -d '{"interface":"${nic}","bridge":"${br}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
-    `# Revert: DELETE /api/system/bridges/${br} or Revert in the drawer.`,
+    `# Revert foreign: DELETE /api/system/bridges/${br}. Delete owned: POST action delete.`,
   ]
 }
 

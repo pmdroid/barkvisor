@@ -7,6 +7,7 @@ import {
   hostBridgeActionPath,
   inferInterfaceRole,
   interfaceAddressFieldsReadOnly,
+  interfaceShowsDelete,
   interfaceBridgeColumn,
   interfaceBridgeRoleDetail,
   interfaceOwnsAddressApply,
@@ -316,5 +317,26 @@ describe('hostInterfaceDisplay', () => {
       .not.toBe('/system/bridges/br1')
     expect(hostBridgeActionPath('/system/bridges', 'en0', 'macos-guide', 'br1'))
       .toBe('/system/bridges/en0')
+  })
+
+  test('Delete vs Revert follows createdBridge on the marker snapshot', () => {
+    const owned = {
+      defaultRouteInterface: 'eth0',
+      bridges: [{ name: 'br1', enslaved: ['eth0'], createdBridge: true }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br1',
+      aclAllowsSuggested: true,
+    }
+    const foreign = {
+      ...owned,
+      bridges: [{ name: 'br0', enslaved: ['eth0'], createdBridge: false }],
+    }
+    expect(interfaceShowsDelete(iface({ name: 'br1' }), owned)).toBe(true)
+    expect(interfaceShowsDelete(iface({ name: 'eth0' }), owned)).toBe(true)
+    expect(interfaceShowsDelete(iface({ name: 'br0' }), foreign)).toBe(false)
+    expect(interfaceShowsDelete(iface({ name: 'eth0' }), foreign)).toBe(false)
   })
 })

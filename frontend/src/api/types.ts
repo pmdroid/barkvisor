@@ -559,7 +559,7 @@ export interface NextBridgeResponse {
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string
-  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'commit' | 'setup' | 'start' | 'stop'
+  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'commit' | 'delete' | 'setup' | 'start' | 'stop'
   addressing?: 'dhcp' | 'static'
   address?: string
   gateway?: string
@@ -1012,6 +1012,7 @@ export interface SystemCapabilities {
 export type HostBridgeSnapshot = {
   name: string
   enslaved: string[]
+  createdBridge?: boolean
 }
 
 export type HostBridgeRemediation = {

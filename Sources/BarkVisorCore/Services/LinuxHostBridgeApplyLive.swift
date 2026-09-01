@@ -58,6 +58,15 @@ public enum LinuxHostBridgeApplyLive {
             plan.applied = true
             plan.pendingCommit = false
             plan.message = "Reverted BarkVisor \(request.bridge) files. \(request.bridge) was not deleted."
+        case .delete:
+            try writer.apply(request: request, probe: resolved, plan: plan)
+            plan.applied = true
+            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
+            plan.pendingCommit = true
+            plan.commitDeadline = pending.commitDeadline
+            plan.rollbackSeconds = pending.rollbackSeconds
+            plan.message =
+                "Deleted \(request.bridge). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .check, .dryRun:
             break
         }
@@ -113,6 +122,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         ) throws {
             if request.action == .revert {
                 try revert(request: request, probe: probe)
+                return
+            }
+            if request.action == .delete {
+                try deleteOwned(request: request, probe: probe)
                 return
             }
             try persist(request: request, probe: probe)
@@ -181,7 +194,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             try writeACL(bridge: request.bridge, existing: probe.aclContents)
             // Marker before setuid so Revert can clean up if chmod hits EROFS.
-            try writeOwnerMarker(
+            try LinuxHostBridgeApply.writeOwnerMarker(
                 bridge: request.bridge,
                 uplink: nic,
                 createdBridge: LinuxHostBridgeApply.createdBridgeForApply(request: request, probe: probe),
@@ -195,6 +208,35 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             if probe.backend == .netplan {
                 try startRollbackTimer(bridge: request.bridge)
             }
+        }
+
+        private func deleteOwned(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+        ) throws {
+            let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
+            for port in members {
+                _ = try? PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["link", "set", port, "nomaster"],
+                    timeout: 15,
+                )
+            }
+            try revert(request: request, probe: probe)
+            _ = try? PlatformProcess.run(
+                path: Self.ipPath,
+                arguments: ["link", "del", request.bridge],
+                timeout: 15,
+            )
+            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
+            try HostNetworkPendingCommitService.writeLinux(pending)
+            try startRollbackTimer(bridge: request.bridge)
+        }
+
+        private static var ipPath: String {
+            ["/usr/sbin/ip", "/sbin/ip", "/usr/bin/ip"].first {
+                FileManager.default.isExecutableFile(atPath: $0)
+            } ?? "/sbin/ip"
         }
 
         private func revert(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
@@ -260,21 +302,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 attrs[.posixPermissions] = NSNumber(value: current | 0o4000 | 0o111)
                 try FileManager.default.setAttributes(attrs, ofItemAtPath: path)
             }
-        }
-
-        private func writeOwnerMarker(bridge: String, uplink: String, createdBridge: Bool) throws {
-            let url = LinuxHostBridgeApply.ownerMarkerURL(bridge: bridge)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-            )
-            let payload: [String: Any] = [
-                "bridge": bridge,
-                "uplink": uplink,
-                "createdBridge": createdBridge,
-            ]
-            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-            try data.write(to: url, options: .atomic)
         }
 
         private func writeNetworkd(
