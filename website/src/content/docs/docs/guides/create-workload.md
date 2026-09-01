@@ -23,7 +23,7 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 
 ## Disks
 
-- New disks use the Device’s default VM disk directory (**Settings → Disks**).
+- New disks use the Device’s default VM disk directory (Device page).
 - On **Linux**, Create Disk can attach a host block device as raw. Mounts, swaps, and devices the host already uses stay blocked. The Device’s `barkvisor` user needs the **disk** group (`barkvisor.service.d/disk.conf`). **macOS** has no block-device option.
 
 ## GPU and PCI (Linux)

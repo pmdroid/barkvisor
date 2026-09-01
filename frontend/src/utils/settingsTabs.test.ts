@@ -4,8 +4,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_SETTINGS_TAB,
+  isLegacyDisksSettingsTab,
   isPairingTab,
   SETTINGS_TABS,
+  settingsQueryTab,
   settingsTabFromQuery,
   shouldRunPairingTick,
   SSH_KEYS_SETTINGS_HREF,
@@ -18,7 +20,7 @@ describe('settings tab query', () => {
   test('maps query tab values including pairing', () => {
     expect(SETTINGS_TABS).toContain('pairing')
     expect(SETTINGS_TABS).toContain('home')
-    expect(SETTINGS_TABS).toContain('disks')
+    expect(SETTINGS_TABS).not.toContain('disks')
     expect(SETTINGS_TABS).toContain('repositories')
     expect(DEFAULT_SETTINGS_TAB).toBe('apikeys')
 
@@ -26,7 +28,10 @@ describe('settings tab query', () => {
     expect(settingsTabFromQuery('home')).toBe('home')
     expect(settingsTabFromQuery('library')).toBe('library')
     expect(settingsTabFromQuery('repositories')).toBe('repositories')
-    expect(settingsTabFromQuery('disks')).toBe('disks')
+    expect(settingsTabFromQuery('disks')).toBeUndefined()
+    expect(settingsQueryTab({ tab: 'disks' })).toBe('disks')
+    expect(isLegacyDisksSettingsTab('disks')).toBe(true)
+    expect(isLegacyDisksSettingsTab('apikeys')).toBe(false)
     expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
     expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
     expect(SSH_KEYS_SETTINGS_HREF).toBe('/settings?tab=sshkeys')
@@ -121,10 +126,8 @@ describe('settings tab query', () => {
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
     const libraryStart = settings.indexOf('v-if="tab === \'library\'"')
     const reposStart = settings.indexOf('v-if="tab === \'repositories\'"')
-    const disksStart = settings.indexOf('v-if="tab === \'disks\'"')
     expect(libraryStart).toBeGreaterThan(-1)
     expect(reposStart).toBeGreaterThan(libraryStart)
-    expect(disksStart).toBeGreaterThan(reposStart)
     const libraryBlock = settings.slice(libraryStart, reposStart)
     expect(libraryBlock).toContain('Catalog Download')
     expect(libraryBlock).not.toContain('Save Library depot')
@@ -170,21 +173,26 @@ describe('settings tab query', () => {
     expect(configure).toContain('This VM needs an SSH key for first login')
   })
 
-  test('Default VM disk directory lives on Settings Disks, not the Disks list', () => {
+  test('Default VM disk directory lives on the Device page, not Settings Disks', () => {
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    const detail = readFileSync(join(here, '../views/DeviceDetailView.vue'), 'utf8')
     const disks = readFileSync(join(here, '../views/DiskView.vue'), 'utf8')
-    expect(settings).toContain("tab === 'disks'")
-    expect(settings).toContain('openDisksTab')
-    expect(settings).toContain('Default VM disk directory')
-    expect(settings).toContain('deviceDiskSettingsPath')
-    expect(settings).toContain('diskSettingsDevice')
-    expect(settings).toContain('diskDeviceOptions')
-    expect(settings).toContain(':device="diskSettingsDevice"')
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    expect(settings).not.toContain("tab === 'disks'")
+    expect(settings).not.toContain('openDisksTab')
+    expect(settings).not.toContain('Default VM disk directory')
+    expect(settings).not.toContain('deviceDiskSettingsPath')
+    expect(detail).toContain('Default VM disk directory')
+    expect(detail).toContain('deviceDiskSettingsPath')
+    expect(detail).toContain(':device="device"')
     expect(disks).not.toContain('Default VM disk directory')
-    expect(disks).toContain('/settings?tab=disks')
+    expect(disks).not.toContain('/settings?tab=disks')
+    expect(disks).toContain('diskDirectoryHref')
     expect(disks).toContain('Create Disk')
     expect(disks).not.toContain('<label>Location</label>')
     expect(disks).not.toContain('showCreatePicker')
+    expect(router).toContain('isLegacyDisksSettingsTab')
+    expect(router).toContain("name: 'devices'")
   })
 
   test('Updates tab is Settings → Updates and polls /api/health after apply', () => {

@@ -37,9 +37,9 @@ Linux block-device notes:
 | Resize | Grow in place |
 | Delete | Remove after confirmation |
 
-New Workloads get their disks here by default; change the default under [Settings → Disks](settings-disks.md).
+New Workloads get their disks here by default; change the default on the [Device](using-devices.md) page.
 
 ## Related
 
-- [Settings: Disks](settings-disks.md)
+- [Devices](using-devices.md)
 - [Workload details](using-vm-details.md)

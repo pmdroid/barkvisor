@@ -26,6 +26,10 @@ struct DeviceDetailView: View {
                 }
             }
 
+            if device.isSelf || device.isReachable {
+                DiskDirectorySection(device: device)
+            }
+
             #if os(iOS)
                 Section {
                     NavigationLink {
@@ -311,5 +315,73 @@ struct DeviceDetailView: View {
         renaming = true
         defer { renaming = false }
         _ = await model.saveDeviceName(name, on: device)
+    }
+}
+
+private struct DiskDirectorySection: View {
+    @Environment(AppModel.self) private var model
+    var device: HomeDeviceHealthSnapshot
+    @State private var draft = ""
+    @State private var saving = false
+    #if os(iOS)
+        @State private var showFolderPicker = false
+    #endif
+
+    var body: some View {
+        Section {
+            Text("New disks on this \(Copy.device) go here unless Create Disk picks another folder.")
+                .foregroundStyle(.secondary)
+            TextField("Default VM disk directory", text: $draft)
+                .disabled(saving || !canEdit)
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            #endif
+            #if os(iOS)
+            Button("Browse") {
+                showFolderPicker = true
+            }
+            .disabled(saving || !canEdit)
+            #endif
+            if let settings = model.diskSettings {
+                Text(settings.isDefault ? "Using the default path on this Device." : "Using a custom disk directory.")
+                    .foregroundStyle(.secondary)
+            }
+            Button("Save") {
+                Task {
+                    saving = true
+                    _ = await model.saveDiskSettings(draft, on: device)
+                    if let settings = model.diskSettings { draft = settings.diskDirectory }
+                    saving = false
+                }
+            }
+            .disabled(saving || !canEdit)
+            Button("Reset to default") {
+                Task {
+                    saving = true
+                    _ = await model.saveDiskSettings("", on: device)
+                    if let settings = model.diskSettings { draft = settings.diskDirectory }
+                    saving = false
+                }
+            }
+            .disabled(saving || !canEdit || model.diskSettings?.isDefault != false)
+        } header: {
+            Text("Disk directory")
+        }
+        .task(id: device.hostId) {
+            await model.refreshDiskSettings(on: device)
+            draft = model.diskSettings?.diskDirectory ?? ""
+        }
+        #if os(iOS)
+            .sheet(isPresented: $showFolderPicker) {
+                FolderPickerView(device: device) { path in
+                    draft = path
+                }
+            }
+        #endif
+    }
+
+    private var canEdit: Bool {
+        device.isSelf || device.isReachable
     }
 }

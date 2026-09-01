@@ -17,12 +17,22 @@ struct APIDecodingTests {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/DeviceDetailView.swift"),
+            encoding: .utf8,
+        )
+        let settings = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
                 .appendingPathComponent("Sources/Views/SettingsView.swift"),
             encoding: .utf8,
         )
         #expect(source.contains("Default VM disk directory"))
         #expect(source.contains("DiskDirectorySection"))
         #expect(source.contains("refreshDiskSettings"))
+        #expect(source.contains("saveDiskSettings"))
+        #expect(!settings.contains("DiskDirectorySection"))
+        #expect(!settings.contains("Default VM disk directory"))
     }
 
     @Test func `remote access status decodes advertised hosts`() throws {

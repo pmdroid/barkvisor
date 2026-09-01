@@ -139,6 +139,11 @@ const formDeviceOptions = computed(() =>
   })),
 )
 
+const diskDirectoryHref = computed(() => {
+  const hostId = deviceScope.selectedHostId || devicesStore.selfDevice?.hostId
+  return hostId ? `/devices/${encodeURIComponent(hostId)}` : '/devices'
+})
+
 function rowKey(row: HomeDiskRow): string {
   return `${row.hostId}:${row.disk.id}`
 }
@@ -465,7 +470,7 @@ async function resizeDisk() {
   <div class="sheet-head">
     <h3>Disks</h3>
     <span class="n">{{ homeRows.length }}</span>
-    <router-link class="hint-link" to="/settings?tab=disks">Settings → Disks</router-link>
+    <router-link class="hint-link" :to="diskDirectoryHref">Device disk directory</router-link>
   </div>
   <table>
     <thead>
@@ -514,7 +519,7 @@ async function resizeDisk() {
       <section class="split-stage">
         <div class="split-head">
           <h2>Create Disk</h2>
-          <p>Saved in Settings → Disks. qcow2 is sparse. Raw is fully allocated.</p>
+          <p>Saved on this Device. qcow2 is sparse. Raw is fully allocated.</p>
         </div>
         <div class="split-body">
       <div v-if="formDeviceOptions.length > 0" class="form-group">

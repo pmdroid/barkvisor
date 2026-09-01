@@ -484,9 +484,9 @@ final class AppModel {
         }
     }
 
-    func refreshDiskSettings() async {
+    func refreshDiskSettings(on device: HomeDeviceHealthSnapshot) async {
         do {
-            diskSettings = try await requireClient().diskSettings()
+            diskSettings = try await requireClient().diskSettings(on: device)
         } catch {
             diskSettings = nil
             handle(error)
@@ -579,10 +579,11 @@ final class AppModel {
     }
 
     @discardableResult
-    func saveDiskSettings(_ directory: String) async -> Bool {
+    func saveDiskSettings(_ directory: String, on device: HomeDeviceHealthSnapshot) async -> Bool {
         do {
             diskSettings = try await requireClient().saveDiskSettings(
                 DiskSettingsUpdate(diskDirectory: directory),
+                on: device,
             )
             return true
         } catch {

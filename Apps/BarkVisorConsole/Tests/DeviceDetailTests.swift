@@ -120,6 +120,10 @@ struct DeviceDetailTests {
         #expect(!source.contains("Guest Ollama"))
         #expect(!source.contains("127.0.0.1:11434"))
         #expect(!source.contains("guestOllamaPath"))
+        #expect(source.contains("DiskDirectorySection"))
+        #expect(source.contains("Default VM disk directory"))
+        #expect(source.contains("saveDiskSettings"))
+        #expect(source.contains("FolderPickerView(device: device)"))
     }
 
     @Test func `history path uses local api or home proxy`() throws {
@@ -137,6 +141,8 @@ struct DeviceDetailTests {
         #expect(client.scoped("/system/about", on: studio) == "/api/system/about")
         #expect(client.scoped("/system/about", on: living) == "/api/home/devices/peer/v1/system/about")
         #expect(client.scoped("/system/capabilities", on: living) == "/api/home/devices/peer/v1/system/capabilities")
+        #expect(client.scoped("/system/disk/settings", on: studio) == "/api/system/disk/settings")
+        #expect(client.scoped("/system/disk/settings", on: living) == "/api/home/devices/peer/v1/system/disk/settings")
         let slashMember = snapshot(hostId: "peer/1", role: "member", title: "Slash")
         #expect(client.scoped("/system/about", on: slashMember) == "/api/home/devices/peer%2F1/v1/system/about")
         #expect(

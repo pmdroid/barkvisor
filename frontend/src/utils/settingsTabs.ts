@@ -4,7 +4,6 @@ export const SETTINGS_TABS = [
   'pairing',
   'library',
   'repositories',
-  'disks',
   'apikeys',
   'sshkeys',
   'passkeys',
@@ -44,12 +43,18 @@ function firstQueryString(value: QueryTabValue): string | undefined {
   return typeof raw === 'string' ? raw : undefined
 }
 
-/** Map `?tab=` (including `pairing`) to a Settings tab id. Unknown values are ignored. */
+export function settingsQueryTab(q: SettingsTabQuery): string | undefined {
+  return q != null && typeof q === 'object' && !Array.isArray(q) && 'tab' in q
+    ? firstQueryString(q.tab)
+    : firstQueryString(q as QueryTabValue)
+}
+
+export function isLegacyDisksSettingsTab(value: string | undefined): boolean {
+  return value === 'disks'
+}
+
 export function settingsTabFromQuery(q: SettingsTabQuery): SettingsTab | undefined {
-  const raw =
-    q != null && typeof q === 'object' && !Array.isArray(q) && 'tab' in q
-      ? firstQueryString(q.tab)
-      : firstQueryString(q as QueryTabValue)
+  const raw = settingsQueryTab(q)
   if (!raw) return undefined
   return isSettingsTab(raw) ? raw : undefined
 }
