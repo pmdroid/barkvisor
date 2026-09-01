@@ -65,10 +65,13 @@ struct VFIOBinderTests {
         if case let .forbidden(message) = err {
             #expect(message.contains("/sys/bus/pci/drivers/vfio-pci/bind"))
             #expect(message.contains("does not exist"))
+            #expect(message.contains("bind node is missing from sysfs"))
+            #expect(!message.contains("kernel module is not loaded"))
         } else {
             Issue.record("expected forbidden, got \(String(describing: err))")
         }
-        #expect(fake.driver[address] != "vfio-pci")
+        #expect(fake.writes.isEmpty)
+        #expect(fake.driver[address] == "nvidia")
     }
 
     @Test func `vfio bind without an iommu group names the group path`() throws {
@@ -231,7 +234,7 @@ private final class FakeVFIOSysfs: @unchecked Sendable {
                     if self.skipBind.contains(addr) { return }
                     self.driver[addr] = "vfio-pci"
                 }
-                if path.hasSuffix("/unbind"), path.contains("vfio-pci") {
+                if path.hasSuffix("/unbind") {
                     self.driver[addr] = nil
                 }
                 if path.hasSuffix("drivers_probe") {

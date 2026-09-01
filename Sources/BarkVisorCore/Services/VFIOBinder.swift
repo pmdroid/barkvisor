@@ -127,6 +127,15 @@ public enum VFIOBinder {
             cause: "the vfio-pci kernel module is not loaded",
             sysfs: sysfs,
         )
+        let bind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
+            .appendingPathComponent("bind")
+            .path
+        try requireSysfsNode(
+            bind,
+            operation: "bind",
+            cause: "the vfio-pci bind node is missing from sysfs",
+            sysfs: sysfs,
+        )
 
         let override = deviceDir.appendingPathComponent("driver_override").path
         try requireSysfsNode(
@@ -148,15 +157,6 @@ public enum VFIOBinder {
             try write("\(address)\n", to: unbind, sysfs: sysfs)
         }
 
-        let bind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
-            .appendingPathComponent("bind")
-            .path
-        try requireSysfsNode(
-            bind,
-            operation: "bind",
-            cause: "the vfio-pci kernel module is not loaded",
-            sysfs: sysfs,
-        )
         try write("\(address)\n", to: bind, sysfs: sysfs)
 
         guard sysfs.currentDriver(address) == "vfio-pci" else {
@@ -172,13 +172,19 @@ public enum VFIOBinder {
         guard sysfs.fileExists(deviceDir.path) else { return }
         guard sysfs.currentDriver(address) == "vfio-pci" else { return }
 
+        try requireSysfsNode(
+            paths.vfioPciDriver,
+            operation: "unbind",
+            cause: "the vfio-pci kernel module is not loaded",
+            sysfs: sysfs,
+        )
         let unbind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
             .appendingPathComponent("unbind")
             .path
         try requireSysfsNode(
             unbind,
             operation: "unbind",
-            cause: "the vfio-pci kernel module is not loaded",
+            cause: "the vfio-pci unbind node is missing from sysfs",
             sysfs: sysfs,
         )
         try write("\(address)\n", to: unbind, sysfs: sysfs)
