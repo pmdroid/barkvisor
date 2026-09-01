@@ -121,6 +121,23 @@ struct HostInfoServiceTests {
         }
     }
 
+    @Test func `listInterfaceSnapshots does not invent br0 without a synthetic row`() {
+        let snaps = HostInfoService.listInterfaceSnapshots(
+            addressingByInterface: [
+                Self.loopbackName: HostInterfaceAddressing(
+                    addresses: [
+                        HostInterfaceAddressEntry(cidr: "127.0.0.1/8", source: .static, primary: true),
+                    ],
+                ),
+            ],
+            syntheticBridges: [],
+        )
+        #expect(snaps.contains(where: { $0.name == Self.loopbackName }))
+        if !HostInfoService.interfaceExists("br0") {
+            #expect(!snaps.contains(where: { $0.name == "br0" }))
+        }
+    }
+
     @Test func `listInterfaceSnapshots includes display names`() {
         let snaps = HostInfoService.listInterfaceSnapshots()
         #expect(!snaps.isEmpty)

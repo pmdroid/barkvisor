@@ -286,7 +286,16 @@ public enum HostInfoService {
             }
         #endif
 
-        let extras = syntheticBridges ?? HostBridgeFactsService.probe().bridges
+        let extras: [HostBridgeSnapshot]
+        if let syntheticBridges {
+            extras = syntheticBridges
+        } else {
+            #if os(macOS)
+                extras = HostBridgeFactsService.probe().bridges
+            #else
+                extras = []
+            #endif
+        }
         for snap in extras {
             if byName[snap.name] != nil { continue }
             let overlayUplink = !interfaceExists(snap.name)

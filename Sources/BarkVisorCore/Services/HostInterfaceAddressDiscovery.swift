@@ -116,6 +116,12 @@ public enum HostInterfaceAddressDiscovery {
         if merged.addresses.contains(where: \.primary) == false, !merged.addresses.isEmpty {
             merged.addresses[0].primary = true
         }
+        if merged.dhcpEnabled {
+            for index in merged.addresses.indices where !merged.addresses[index].primary
+                && merged.addresses[index].source == .static {
+                merged.addresses[index].source = .alias
+            }
+        }
         return merged
     }
 

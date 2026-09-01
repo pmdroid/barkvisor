@@ -65,6 +65,7 @@ jobs:
 
       - name: Install system deps
         run: |
+          sudo find /etc/apt/sources.list.d -maxdepth 1 \( -iname '*microsoft*' -o -iname '*azure-cli*' \) -delete || true
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             curl ca-certificates binutils \

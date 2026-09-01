@@ -149,7 +149,7 @@ struct HostInterfaceAddressDiscoveryTests {
         }
     #endif
 
-    @Test func `parse netplan multi address dhcp fixture`() {
+    @Test func `parse netplan multi address dhcp fixture`() throws {
         let yaml = """
         # managed-by: barkvisor
         network:
@@ -169,15 +169,38 @@ struct HostInterfaceAddressDiscoveryTests {
               nameservers:
                 addresses: [1.1.1.1]
         """
-        let parsed = LinuxHostInterfaceAddressRead.parseNetplan(yaml, interface: "br0")
-        #expect(parsed != nil)
-        #expect(parsed?.dhcpEnabled == true)
-        #expect(parsed?.gateway == "192.168.1.1")
-        #expect(parsed?.dns == ["1.1.1.1"])
-        #expect(parsed?.managedByBarkvisor == true)
-        #expect(parsed?.addresses.count == 2)
-        #expect(parsed?.addresses.map(\.cidr) == ["192.168.1.10/24", "10.0.0.2/24"])
-        #expect(parsed?.addresses.map(\.source) == [.alias, .alias])
+        let parsed = try #require(LinuxHostInterfaceAddressRead.parseNetplan(yaml, interface: "br0"))
+        #expect(parsed.dhcpEnabled == true)
+        #expect(parsed.gateway == "192.168.1.1")
+        #expect(parsed.dns == ["1.1.1.1"])
+        #expect(parsed.managedByBarkvisor == true)
+        #expect(parsed.addresses.count == 2)
+        #expect(parsed.addresses.map(\.cidr) == ["192.168.1.10/24", "10.0.0.2/24"])
+        #expect(parsed.addresses.map(\.source) == [.alias, .alias])
+        let merged = HostInterfaceAddressDiscovery.mergeLiveAddresses(
+            config: parsed,
+            liveIPv4: ["192.168.1.10", "10.0.0.2"],
+        )
+        #expect(merged.addresses.count == 2)
+        #expect(merged.addresses[0].source == .dhcp)
+        #expect(merged.addresses[1].source == .alias)
+    }
+
+    @Test func `merge dhcp extras retag leftover static as alias`() {
+        let config = HostInterfaceAddressing(
+            addresses: [
+                HostInterfaceAddressEntry(cidr: "192.168.1.10/24", source: .static, primary: true),
+                HostInterfaceAddressEntry(cidr: "10.0.0.2/24", source: .static, primary: false),
+            ],
+            dhcpEnabled: true,
+        )
+        let merged = HostInterfaceAddressDiscovery.mergeLiveAddresses(
+            config: config,
+            liveIPv4: ["192.168.1.10", "10.0.0.2"],
+        )
+        #expect(merged.addresses.count == 2)
+        #expect(merged.addresses[0].source == .dhcp)
+        #expect(merged.addresses[1].source == .alias)
     }
 
     @Test func `parse netplan unknown interface is not managed`() {
