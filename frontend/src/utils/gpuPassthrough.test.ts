@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { defaultCapabilities } from './capabilitiesParse'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
-  GUEST_OLLAMA_PATH,
-  GPU_IOMMU_NOT_READY,
   GPU_PASSTHROUGH_DOCS_HREF,
   GPU_SINGLE_DISPLAY_WARNING,
   gpuDetachAllowed,
@@ -15,6 +16,8 @@ import {
   gpuVendorLabel,
   groupGpusByVendor,
 } from './gpuPassthrough'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 describe('gpuPassthrough copy (PAS-275)', () => {
   test('macos uses os remediation and is unsupported', () => {
@@ -36,7 +39,7 @@ describe('gpuPassthrough copy (PAS-275)', () => {
     expect(gpuPassthroughExplanation(caps)).not.toMatch(/node|cluster/i)
   })
 
-  test('ready host explains attach and guest Ollama', () => {
+  test('ready host explains attach without Guest Ollama', () => {
     const caps = {
       ...defaultCapabilities,
       platform: 'Linux',
@@ -45,9 +48,28 @@ describe('gpuPassthrough copy (PAS-275)', () => {
       details: [{ code: 'gpuPassthrough', supported: true }],
     }
     expect(gpuPassthroughSupported(caps)).toBe(true)
-    expect(gpuPassthroughExplanation(caps)).toContain(GUEST_OLLAMA_PATH)
     expect(gpuPassthroughExplanation(caps)).toContain('same card cannot be host and guest')
+    expect(gpuPassthroughExplanation(caps)).not.toContain('Guest Ollama')
+    expect(gpuPassthroughExplanation(caps)).not.toContain('11434')
     expect(gpuPassthroughExplanation(caps)).not.toContain('not attach')
+  })
+
+  test('web GPU surfaces have no Guest Ollama 11434 hint', () => {
+    const copy = readFileSync(join(here, 'gpuPassthrough.ts'), 'utf8')
+    const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const device = readFileSync(join(here, '../views/DeviceDetailView.vue'), 'utf8')
+    for (const source of [copy, view, device]) {
+      expect(source).not.toContain('Guest Ollama')
+      expect(source).not.toContain('127.0.0.1:11434')
+      expect(source).not.toContain('GUEST_OLLAMA_PATH')
+    }
+  })
+
+  test('Models how-to still documents host inference', () => {
+    const howTo = readFileSync(join(here, 'inferenceApiHowTo.ts'), 'utf8')
+    expect(howTo).toContain('OPENAI_BASE_URL')
+    expect(howTo).toContain('HOME_LISTEN_PORT = 7777')
+    expect(howTo).toContain('CAGE_OPENAI_BASE_URL')
   })
 
   test('linux missing kvm uses actionable server remediation', () => {

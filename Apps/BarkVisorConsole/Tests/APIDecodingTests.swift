@@ -558,8 +558,9 @@ struct APIDecodingTests {
         #expect(ready.gpuPassthroughSupported)
         #expect(ready.linuxHostBridgeApplySupported)
         #expect(!ready.macosSocketVmnetSupported)
-        #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
         #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
+        #expect(!ready.gpuPassthroughExplanation.contains("Guest Ollama"))
+        #expect(!ready.gpuPassthroughExplanation.contains("11434"))
         #expect(GPUPassthroughCopy.docsURL.absoluteString == "https://barkvisor.dev/docs/guides/gpu-passthrough/")
     }
 
@@ -636,7 +637,7 @@ struct APIDecodingTests {
         #expect(gpu.pciAddress == "0000:01:00.0")
         #expect(gpu.iommuGroup == "14")
         #expect(gpu.canAttach)
-        #expect(gpu.guestOllamaPath == GPUPassthroughCopy.guestOllamaPath)
+        #expect(gpu.guestOllamaPath == "http://127.0.0.1:11434/v1")
         #expect(gpu.occupancyCopy == nil)
         #expect(
             GPUPassthroughCopy.groupMatesLabel(

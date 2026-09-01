@@ -378,6 +378,19 @@ struct WorkloadDetailTests {
         #expect(!client.contains("/events"))
     }
 
+    @Test func `detail has no Guest Ollama 11434 hint`() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/WorkloadDetailView.swift"),
+            encoding: .utf8,
+        )
+        #expect(!source.contains("Guest Ollama"))
+        #expect(!source.contains("127.0.0.1:11434"))
+        #expect(!source.contains("guestOllamaPath"))
+    }
+
     @Test func `workload decodes isoIds and falls back to isoId`() throws {
         let many = """
         {

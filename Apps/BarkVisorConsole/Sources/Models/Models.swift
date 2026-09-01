@@ -852,9 +852,8 @@ enum DeviceDoctor {
 }
 
 enum GPUPassthroughCopy {
-    static let guestOllamaPath = "http://127.0.0.1:11434/v1"
     static let attachReady =
-        "This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is \(guestOllamaPath). The same card cannot be host and guest."
+        "This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. The same card cannot be host and guest."
     static let iommuNotReady =
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready."
     static let singleDisplayWarning =

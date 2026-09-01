@@ -52,9 +52,6 @@ export function groupGpusByVendor<T extends { vendorId: string }>(
   })
 }
 
-/** Guest-local Ollama when a GPU is attached. Host Ollama is not used for that card. */
-export const GUEST_OLLAMA_PATH = 'http://127.0.0.1:11434/v1'
-
 export const GPU_IOMMU_NOT_READY =
   'GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready.'
 
@@ -91,7 +88,7 @@ export function gpuPassthroughExplanation(
 ): string {
   const row = gpuPassthroughDetail(caps)
   if (row?.supported) {
-    return `This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is ${GUEST_OLLAMA_PATH}. The same card cannot be host and guest.`
+    return 'This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. The same card cannot be host and guest.'
   }
   if (row?.remediation) return row.remediation
   const platform = caps?.platform ?? ''
