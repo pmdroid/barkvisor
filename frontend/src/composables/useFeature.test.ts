@@ -159,7 +159,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('deleteSelectedInterface')
     expect(src).toContain('selectedInterfaceShowsDelete')
     expect(src).toContain('action: \'delete\'')
-    expect(src).toContain('interfaceOwnsBridgeApply')
+    expect(src).toContain('interfaceShowsDelete')
     expect(src).toContain('interfaceBridgeRoleDetail')
     expect(src).toContain('openBridgeSetupForPending')
     expect(src).toContain('bridgeSetupInterfaceKey')
