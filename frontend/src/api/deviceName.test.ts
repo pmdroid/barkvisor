@@ -52,6 +52,7 @@ describe('device name client (#388)', () => {
     expect(homeStart).toBeGreaterThan(-1)
     expect(homeBlock).toContain('Device URL')
     expect(homeBlock).toContain('Advertised hosts')
+    expect(homeBlock).not.toContain('What you can do on this Home')
     expect(homeBlock).not.toContain('Device name')
     expect(homeBlock).not.toContain('deviceNameDraft')
     expect(settings).not.toContain('getDeviceName')
