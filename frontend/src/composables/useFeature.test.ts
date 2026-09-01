@@ -164,6 +164,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('gateway: createBridgeGateway.value')
     expect(src).toContain(':gateway="createBridgeGateway"')
     expect(src).not.toContain("selectedInterfaceRole.value === 'bridge' ? nic : undefined")
+    expect(src).toContain('addressApplyTargets')
+    expect(src).toContain('overlayBridgeAddresses')
     expect(src).toContain('interfaceBridgeRoleDetail')
     expect(src).toContain('openBridgeSetupForPending')
     expect(src).toContain('bridgeSetupInterfaceKey')
@@ -184,7 +186,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).not.toContain('recheckPending')
     expect(src).not.toContain('Device address on')
     expect(src).toContain('hostBridgeSetupPending')
-    expect(src).toContain('formatInterfaceAddressSummary')
+    expect(src).toContain('interfaceAddressColumn')
     expect(src).toContain('recheckSelectedInterface')
   })
 
