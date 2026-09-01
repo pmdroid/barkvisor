@@ -54,6 +54,7 @@ import {
 } from '../utils/hostInterfaceAddresses'
 import {
   addressApplyTargets,
+  bridgedPickerInterfaces,
   bridgeSetupInterfaceKey,
   inferInterfaceRole,
   interfaceAddressColumn,
@@ -379,6 +380,16 @@ const interfaceBridgeStatusSummary = computed(() => {
 
 const linuxReadinessLoading = ref(false)
 const readinessByHost = ref<Record<string, HostBridgeReadiness>>({})
+
+const formReadiness = computed(() => {
+  const hostId = formHostId.value
+  if (hostId && readinessByHost.value[hostId]) return readinessByHost.value[hostId]
+  return Object.values(readinessByHost.value)[0] ?? null
+})
+
+const formBridgePickerInterfaces = computed(() =>
+  bridgedPickerInterfaces(formHostInterfaces.value, formReadiness.value, newBridge.value),
+)
 
 const linuxApplyLoading = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
@@ -911,7 +922,7 @@ const selectedModeRow = computed(() => formNetworkModes.value.find((m) => m.mode
 
 const typedBridgeMissing = computed(() => {
   if (newMode.value !== 'bridged' || !newBridge.value) return false
-  return !formHostInterfaces.value.some((i) => i.name === newBridge.value)
+  return !formBridgePickerInterfaces.value.some((i) => i.name === newBridge.value)
 })
 
 const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !formBridgedAvailable.value)
@@ -1032,7 +1043,7 @@ watch(formHostId, async (id, prev) => {
     newMode.value = 'nat'
     newBridge.value = ''
   }
-  if (newBridge.value && !formHostInterfaces.value.some((iface) => iface.name === newBridge.value)) {
+  if (newBridge.value && !formBridgePickerInterfaces.value.some((iface) => iface.name === newBridge.value)) {
     newBridge.value = ''
   }
 })
@@ -1723,7 +1734,7 @@ async function doDeleteNetwork() {
       <label>Host bridge interface</label>
       <AppSelect v-model="newBridge">
         <option value="" disabled>Select from Host interfaces…</option>
-        <option v-for="iface in formHostInterfaces" :key="iface.name" :value="iface.name"
+        <option v-for="iface in formBridgePickerInterfaces" :key="iface.name" :value="iface.name"
           :disabled="usedBridgeInterfaces.has(iface.name)">
           {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}{{ usedBridgeInterfaces.has(iface.name) ? ` — used by "${usedBridgeInterfaces.get(iface.name)}"` : iface.bridgeStatus === 'active' ? ' — active' : iface.bridgeStatus === 'installed' ? ' — installed' : '' }}
         </option>

@@ -214,11 +214,11 @@ public enum HostInfoService {
             }
             return name
         #else
+            if name.hasPrefix("br") || name.hasPrefix("bridge") {
+                return "\(name) (Bridge)"
+            }
             if name.hasPrefix("en") {
                 return "\(name) (Ethernet/Wi-Fi)"
-            }
-            if name.hasPrefix("bridge") {
-                return "\(name) (Bridge)"
             }
             if name == "lo0" {
                 return "lo0 (Loopback)"
@@ -242,6 +242,7 @@ public enum HostInfoService {
     public static func listInterfaceSnapshots(
         bridgeStatusByInterface: [String: String] = [:],
         addressingByInterface: [String: HostInterfaceAddressing]? = nil,
+        syntheticBridges: [HostBridgeSnapshot]? = nil,
     ) -> [HostInterfaceSnapshot] {
         var byName: [String: HostInterfaceSnapshot] = [:]
         let addressing = addressingByInterface ?? HostInterfaceAddressDiscovery.discoverByInterface()
@@ -261,24 +262,27 @@ public enum HostInfoService {
             )
         }
 
-        #if os(Linux)
-            // Merge bridge-class devices that have no AF_INET address (down / L2-only).
-            for name in HostBridgeFactsService.probe().bridges.map(\.name) {
-                if byName[name] != nil { continue }
-                let config = addressing[name] ?? HostInterfaceAddressing()
-                byName[name] = HostInterfaceSnapshot(
-                    name: name,
-                    displayName: displayName(for: name),
-                    ipAddress: primaryIPv4(from: config) ?? "",
-                    bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
-                    addresses: config.addresses,
-                    dhcpEnabled: config.dhcpEnabled,
-                    gateway: config.gateway,
-                    dns: config.dns,
-                    managedByBarkvisor: config.managedByBarkvisor,
-                )
+        let extras = syntheticBridges ?? HostBridgeFactsService.probe().bridges
+        for snap in extras {
+            if byName[snap.name] != nil { continue }
+            let overlayUplink = !interfaceExists(snap.name)
+            let config: HostInterfaceAddressing = if overlayUplink, let uplink = snap.enslaved.first, let fromUplink = addressing[uplink] {
+                fromUplink
+            } else {
+                addressing[snap.name] ?? HostInterfaceAddressing()
             }
-        #endif
+            byName[snap.name] = HostInterfaceSnapshot(
+                name: snap.name,
+                displayName: displayName(for: snap.name),
+                ipAddress: primaryIPv4(from: config) ?? "",
+                bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[snap.name]),
+                addresses: config.addresses,
+                dhcpEnabled: config.dhcpEnabled,
+                gateway: config.gateway,
+                dns: config.dns,
+                managedByBarkvisor: config.managedByBarkvisor,
+            )
+        }
 
         return byName.values.sorted { $0.name < $1.name }
     }

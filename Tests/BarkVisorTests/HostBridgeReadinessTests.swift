@@ -46,6 +46,33 @@ struct HostBridgeReadinessTests {
         #expect(facts.remediations[0].commands.contains("Device starts socket_vmnet"))
     }
 
+    @Test func `mac synthetic brN row maps uplink from marker`() {
+        let snaps = HostBridgeFactsService.macSyntheticBridges(
+            markers: [
+                LinuxHostBridgeApply.OwnerMarker(bridge: "br0", uplink: "en0", createdBridge: true),
+            ],
+            sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
+        )
+        #expect(snaps == [HostBridgeSnapshot(name: "br0", enslaved: ["en0"])])
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+            bridges: snaps,
+            defaultRouteInterface: "en0",
+            macSocketVmnet: true,
+        ))
+        #expect(facts.ready)
+        #expect(facts.bridges.map(\.name) == ["br0"])
+        #expect(facts.bridges[0].enslaved == ["en0"])
+        #expect(!facts.onlyUplink)
+    }
+
+    @Test func `mac synthetic falls back to socket uplink when no marker`() {
+        let snaps = HostBridgeFactsService.macSyntheticBridges(
+            markers: [],
+            sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
+        )
+        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [])])
+    }
+
     @Test func `mac socket_vmnet present is ready without linux remediations`() {
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
             bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],

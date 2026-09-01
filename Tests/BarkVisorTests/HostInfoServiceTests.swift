@@ -80,6 +80,7 @@ struct HostInfoServiceTests {
         #else
             #expect(HostInfoService.displayName(for: "lo0") == "lo0 (Loopback)")
             #expect(HostInfoService.displayName(for: "en0") == "en0 (Ethernet/Wi-Fi)")
+            #expect(HostInfoService.displayName(for: "br0") == "br0 (Bridge)")
             #expect(HostInfoService.displayName(for: "bridge0") == "bridge0 (Bridge)")
         #endif
     }
@@ -89,6 +90,35 @@ struct HostInfoServiceTests {
         #expect(HostInfoService.apiBridgeStatus("not_configured") == nil)
         #expect(HostInfoService.apiBridgeStatus("active") == "active")
         #expect(HostInfoService.apiBridgeStatus("installed") == "installed")
+    }
+
+    @Test func `listInterfaceSnapshots shows uplink L3 on synthetic brN`() {
+        let addressing: [String: HostInterfaceAddressing] = [
+            "en0": HostInterfaceAddressing(
+                addresses: [
+                    HostInterfaceAddressEntry(cidr: "192.168.1.10/24", source: .dhcp, primary: true),
+                ],
+                dhcpEnabled: true,
+                gateway: "192.168.1.1",
+                dns: ["1.1.1.1"],
+            ),
+        ]
+        let snaps = HostInfoService.listInterfaceSnapshots(
+            addressingByInterface: addressing,
+            syntheticBridges: [HostBridgeSnapshot(name: "br9", enslaved: ["en0"])],
+        )
+        let br9 = snaps.first(where: { $0.name == "br9" })
+        #expect(br9 != nil)
+        #expect(br9?.displayName == "br9 (Bridge)")
+        #expect(br9?.ipAddress == "192.168.1.10")
+        #expect(br9?.dhcpEnabled == true)
+        #expect(br9?.gateway == "192.168.1.1")
+        #expect(br9?.dns == ["1.1.1.1"])
+        #expect(br9?.addresses.first?.cidr == "192.168.1.10/24")
+        let en0 = snaps.first(where: { $0.name == "en0" })
+        if en0 != nil {
+            #expect(en0?.ipAddress == "192.168.1.10")
+        }
     }
 
     @Test func `listInterfaceSnapshots includes display names`() {

@@ -83,6 +83,26 @@ struct NetworkCapabilityTests {
         #expect(err?.httpStatus == 400)
     }
 
+    @Test func `requireBridgedInterface accepts mac marker brN`() throws {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("bv-446-cap-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try LinuxHostBridgeApply.writeOwnerMarker(
+            bridge: "br0", uplink: "en0", createdBridge: true, dataDir: dir,
+        )
+        #if os(macOS)
+            try NetworkCapability.requireBridgedInterface("br0", dataDir: dir)
+            try NetworkCapability.requireBridgedInterface("lo0", dataDir: dir)
+        #else
+            let err = #expect(throws: BarkVisorError.self) {
+                try NetworkCapability.requireBridgedInterface("br0", dataDir: dir)
+            }
+            #expect(err?.code == "interface_missing" || err?.code == "bridge_acl")
+        #endif
+    }
+
     @Test func `requireBridgedInterface existing loopback when advertised`() throws {
         let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
         guard advertised else { return }
