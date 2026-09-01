@@ -17,6 +17,8 @@ build/
 *.swiftmodule
 .env
 .claude/
+__pycache__/
+*.pyc
 Sources/BarkVisor/Resources/frontend/dist
 
 # Unified Astro site (landing + docs)
