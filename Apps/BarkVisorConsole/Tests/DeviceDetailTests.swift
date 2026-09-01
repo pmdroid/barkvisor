@@ -117,6 +117,9 @@ struct DeviceDetailTests {
         #expect(source.contains("saveDeviceName"))
         #expect(source.contains("Device name"))
         #expect(source.contains("DeviceRename.canRename(device)"))
+        #expect(!source.contains("Guest Ollama"))
+        #expect(!source.contains("127.0.0.1:11434"))
+        #expect(!source.contains("guestOllamaPath"))
     }
 
     @Test func `history path uses local api or home proxy`() throws {

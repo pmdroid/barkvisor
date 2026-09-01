@@ -84,7 +84,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, GPU_PASSTHROUGH_DOCS_HREF, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
+import { GPU_PASSTHROUGH_DOCS_HREF, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
 import { isAgentWorkload } from '../utils/workloadClass'
 import {
@@ -827,7 +827,7 @@ async function gpuAttach(dev: HostGPUDevice) {
     if (vm.value?.state === 'running') {
       toast.show(`GPU "${label}" added — restart the VM to apply.`, { type: 'info' })
     } else {
-      toast.success(`GPU "${label}" attached. Guest Ollama is ${GUEST_OLLAMA_PATH}.`)
+      toast.success(`GPU "${label}" attached.`)
     }
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { gpuLoading.value = false }
@@ -1792,7 +1792,7 @@ const healthBanner = computed(() => {
           <template v-else>
             <p v-if="singleGPUDisplay" role="alert" class="item none" style="color:var(--red);font-weight:700">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
             <div v-if="!attachedDisplayGPUs.length" class="item none">
-              <span>None<span class="note">Pass through a PCI GPU. Guest Ollama uses the card at {{ GUEST_OLLAMA_PATH }}.</span></span>
+              <span>None<span class="note">Pass through a PCI GPU.</span></span>
             </div>
             <template v-for="group in attachedGPUGroups" :key="group.key">
               <div class="item none" style="font-weight:600;color:var(--text)">{{ group.label }}</div>
@@ -1936,7 +1936,7 @@ const healthBanner = computed(() => {
             </tr>
           </template>
         </DataTable>
-        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. Guest Ollama is {{ GUEST_OLLAMA_PATH }}. <a :href="GPU_PASSTHROUGH_DOCS_HREF" target="_blank" rel="noreferrer">IOMMU setup</a></p>
+        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. <a :href="GPU_PASSTHROUGH_DOCS_HREF" target="_blank" rel="noreferrer">IOMMU setup</a></p>
         <div class="modal-actions">
           <AppButton @click="showAttachGPU = false">Close</AppButton>
         </div>
