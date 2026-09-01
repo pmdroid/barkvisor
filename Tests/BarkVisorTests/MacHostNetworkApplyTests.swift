@@ -344,7 +344,12 @@ struct MacHostBridgeApplyPlannerTests {
             )
             #expect(revert.success)
             #expect(!revert.changes.contains { $0.lowercased().contains("stop") })
+            #expect(revert.commands.contains { $0.contains("networksetup") })
             #expect(revert.commands.contains { $0.contains("never ip link del") })
+            #expect(
+                revert.changes.contains { $0.contains("Restore saved") }
+                    || revert.changes.contains { $0.contains("DHCP") },
+            )
             let denied = MacHostBridgeApply.evaluate(
                 request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0", confirm: true),
                 probe: probe,
@@ -377,6 +382,35 @@ struct MacHostBridgeApplyPlannerTests {
             )
             #expect(result.conflict)
             #expect(result.message.contains("Workload"))
+        }
+
+        @Test func `mac live delete throws 409 when Workloads attached`() throws {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                createdBridge: true,
+            )
+            do {
+                _ = try MacHostBridgeApplyLive.run(
+                    request: LinuxHostBridgeApplyRequest(
+                        action: .delete,
+                        nic: "en0",
+                        confirm: true,
+                        attachedWorkloadCount: 1,
+                    ),
+                    probe: probe,
+                )
+                Issue.record("expected conflict")
+            } catch let error as BarkVisorError {
+                #expect(error.httpStatus == 409)
+            }
         }
     #endif
 }

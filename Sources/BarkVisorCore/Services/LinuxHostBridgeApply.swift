@@ -192,6 +192,14 @@ public enum LinuxHostBridgeApply {
         "/etc/systemd/network/90-barkvisor-\(bridge).network"
     }
 
+    public static func networkdPortPath(nic: String) -> String {
+        "/etc/systemd/network/90-barkvisor-\(nic).network"
+    }
+
+    public static func nmSlaveConnectionName(bridge: String, nic: String) -> String {
+        "barkvisor-\(bridge)-\(nic)"
+    }
+
     public static func commitStampPath(bridge: String) -> String {
         "/run/barkvisor/\(bridge)-commit"
     }
@@ -268,7 +276,16 @@ public enum LinuxHostBridgeApply {
         rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
+        /usr/bin/nmcli -t -f NAME connection show 2>/dev/null | grep "^barkvisor-\(bridge)-" | while read -r n; do
+          /usr/bin/nmcli connection delete "$n" >/dev/null 2>&1 || true
+        done
         rm -f \(networkdNetdevPath(bridge: bridge)) \(networkdNetworkPath(bridge: bridge)) || true
+        uplink=$(sed -n 's/.*"uplink"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' \(marker) 2>/dev/null | head -1)
+        if [ -n "$uplink" ]; then
+          rm -f /etc/systemd/network/90-barkvisor-"$uplink".network || true
+          /usr/bin/nmcli device reapply "$uplink" >/dev/null 2>&1 || true
+          /usr/bin/networkctl reapply "$uplink" >/dev/null 2>&1 || true
+        fi
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
         rm -f \(marker) \(pending) || true
         """
@@ -542,16 +559,37 @@ public enum LinuxHostBridgeApply {
                 command: "sudo rm -f \(netplanPath(bridge: request.bridge)) && sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
+            let nic = resolvedNic(request: request, probe: probe)
             changes.append(LinuxHostBridgeChange(
                 description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
                 command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
             ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                ))
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo nmcli device reapply \(nic)",
+                ))
+            }
         case .systemdNetworkd:
+            let nic = resolvedNic(request: request, probe: probe)
+            var units = "\(networkdNetdevPath(bridge: request.bridge)) \(networkdNetworkPath(bridge: request.bridge))"
+            if !nic.isEmpty {
+                units += " \(networkdPortPath(nic: nic))"
+            }
             changes.append(LinuxHostBridgeChange(
                 description: "Remove systemd-networkd barkvisor units",
-                command: "sudo rm -f \(networkdNetdevPath(bridge: request.bridge)) "
-                    + "\(networkdNetworkPath(bridge: request.bridge)) && sudo networkctl reload",
+                command: "sudo rm -f \(units) && sudo networkctl reload",
             ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo networkctl reapply \(nic)",
+                ))
+            }
         case .ifupdown, .unknown:
             return refuse(
                 backend: probe.backend,
@@ -914,7 +952,7 @@ extension LinuxHostBridgeApply {
             case .networkManager:
                 "sudo nmcli device reapply \(nic)"
             case .systemdNetworkd:
-                "sudo networkctl reload"
+                "sudo networkctl reapply \(nic)"
             case .ifupdown, .unknown:
                 "sudo ip addr flush \(request.bridge)"
             }
@@ -938,11 +976,20 @@ extension LinuxHostBridgeApply {
                 description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
                 command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
             ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                ))
+            }
         case .systemdNetworkd:
+            var units = "\(networkdNetdevPath(bridge: request.bridge)) \(networkdNetworkPath(bridge: request.bridge))"
+            if !nic.isEmpty {
+                units += " \(networkdPortPath(nic: nic))"
+            }
             changes.append(LinuxHostBridgeChange(
                 description: "Remove systemd-networkd barkvisor units",
-                command: "sudo rm -f \(networkdNetdevPath(bridge: request.bridge)) "
-                    + "\(networkdNetworkPath(bridge: request.bridge)) && sudo networkctl reload",
+                command: "sudo rm -f \(units) && sudo networkctl reload",
             ))
         case .ifupdown, .unknown:
             break

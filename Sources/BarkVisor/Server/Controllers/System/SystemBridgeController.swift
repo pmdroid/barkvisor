@@ -182,6 +182,9 @@ struct SystemBridgeController: RouteCollection {
                 )
             }
             let result = try MacHostBridgeApplyLive.run(request: request)
+            if result.conflict {
+                throw BarkVisorError.conflict(result.message)
+            }
             if result.applied {
                 let auditAction = switch request.action {
                 case .revert: "host-bridge.revert"

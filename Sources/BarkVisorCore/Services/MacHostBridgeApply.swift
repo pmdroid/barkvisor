@@ -207,19 +207,25 @@ import Foundation
             if device.isEmpty {
                 return refuse("No interface to revert.")
             }
+            var changes: [String] = []
+            if MacHostNetworkApply.readMarker(device: device) != nil {
+                changes.append("Restore saved networksetup profile for \(device)")
+            } else {
+                changes.append("Set \(device) back to DHCP (no saved profile)")
+            }
+            changes.append("Strip BarkVisor markers for \(device)")
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
                 needsConfirm: false,
                 backend: "networksetup",
-                changes: [
-                    "Strip BarkVisor markers for \(device)",
-                ],
+                changes: changes,
                 warnings: [],
                 commands: [
+                    "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
                     "# strip host-bridge marker; never ip link del",
                 ],
-                message: "Revert strips BarkVisor files only. socket_vmnet stays.",
+                message: "Revert restores the saved Device address. socket_vmnet stays.",
             )
         }
 
@@ -309,6 +315,9 @@ import Foundation
             try PlatformCapabilities.requireManagedBridgeDaemon()
             let resolved = try probe ?? MacHostBridgeApply.liveProbe(nic: request.nic)
             var plan = MacHostBridgeApply.evaluate(request: request, probe: resolved)
+            if plan.conflict {
+                throw BarkVisorError.conflict(plan.message)
+            }
             guard plan.success, !plan.needsConfirm else { return plan }
             if request.action == .check || request.action == .dryRun {
                 return plan
@@ -357,8 +366,16 @@ import Foundation
                 plan.message = "Kept host network changes for \(resolved.device)."
             case .revert:
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                if try MacHostNetworkApply.revert(device: resolved.device) {
+                    plan.changes.insert("Restored saved networksetup profile.", at: 0)
+                } else if let service = resolved.serviceName {
+                    _ = try PlatformProcess.run(
+                        path: MacHostNetworkApply.networksetupPath,
+                        arguments: ["-setdhcp", service],
+                    )
+                    plan.changes.insert("Set \(service) to DHCP.", at: 0)
+                }
                 let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
-                MacHostNetworkApply.removeMarker(device: resolved.device)
                 try? FileManager.default.removeItem(
                     at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
                 )

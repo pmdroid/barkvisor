@@ -246,6 +246,13 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             stopRollbackTimer(bridge: request.bridge)
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
+            var nic = request.nic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if nic.isEmpty {
+                nic = probe.facts.defaultRouteInterface ?? ""
+            }
+            if nic.isEmpty {
+                nic = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink ?? ""
+            }
             switch probe.backend {
             case .netplan:
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath(bridge: request.bridge))
@@ -256,14 +263,39 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     arguments: ["connection", "delete", "barkvisor-\(request.bridge)"],
                     timeout: 30,
                 )
+                if !nic.isEmpty {
+                    _ = try? PlatformProcess.run(
+                        path: "/usr/bin/nmcli",
+                        arguments: [
+                            "connection", "delete",
+                            LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic),
+                        ],
+                        timeout: 30,
+                    )
+                    _ = try? PlatformProcess.run(
+                        path: "/usr/bin/nmcli",
+                        arguments: ["device", "reapply", nic],
+                        timeout: 30,
+                    )
+                }
             case .systemdNetworkd:
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetdevPath(bridge: request.bridge))
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdNetworkPath(bridge: request.bridge))
+                if !nic.isEmpty {
+                    try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.networkdPortPath(nic: nic))
+                }
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
                     arguments: ["reload"],
                     timeout: 30,
                 )
+                if !nic.isEmpty {
+                    _ = try? PlatformProcess.run(
+                        path: "/usr/bin/networkctl",
+                        arguments: ["reapply", nic],
+                        timeout: 30,
+                    )
+                }
             case .ifupdown, .unknown:
                 throw BarkVisorError.badRequest(
                     "Refuse \(probe.backend.rawValue). Cannot revert a manager we do not own.",
@@ -335,7 +367,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 network += "DNS=\(dns)\n"
             }
             network += "\n[Bridge]\n"
-            _ = nic
             try writeAtomically(LinuxHostBridgeApply.networkdNetdevPath(bridge: request.bridge), netdev)
             try writeAtomically(LinuxHostBridgeApply.networkdNetworkPath(bridge: request.bridge), network)
             let portNetwork = """
@@ -347,7 +378,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             Bridge=\(request.bridge)
             """
             try writeAtomically(
-                "/etc/systemd/network/90-barkvisor-\(nic).network",
+                LinuxHostBridgeApply.networkdPortPath(nic: nic),
                 portNetwork,
             )
         }
@@ -391,7 +422,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 path: "/usr/bin/nmcli",
                 arguments: [
                     "connection", "add", "type", "bridge-slave", "ifname", nic,
-                    "master", request.bridge, "con-name", "\(name)-\(nic)",
+                    "master", request.bridge, "con-name",
+                    LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic),
                 ],
                 timeout: 30,
             )
