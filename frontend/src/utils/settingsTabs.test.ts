@@ -223,6 +223,18 @@ describe('settings tab query', () => {
     expect(saveBody).toContain('diskDirectory: directory')
     expect(detail).toContain("diskDirectoryDraft === ''")
     expect(detail).not.toContain("if (loadDisk) await fetchDiskSettings(row)")
+    const refreshStart = detail.indexOf('async function refresh(loadDisk = false)')
+    const refreshEnd = detail.indexOf('let pollTimer')
+    expect(refreshStart).toBeGreaterThan(-1)
+    expect(refreshEnd).toBeGreaterThan(refreshStart)
+    const refreshBody = detail.slice(refreshStart, refreshEnd)
+    const canFetchFailStart = refreshBody.indexOf('if (!canFetch) {')
+    const diskPromiseStart = refreshBody.indexOf('const diskPromise')
+    expect(canFetchFailStart).toBeGreaterThan(-1)
+    expect(diskPromiseStart).toBeGreaterThan(canFetchFailStart)
+    const canFetchFail = refreshBody.slice(canFetchFailStart, diskPromiseStart)
+    expect(canFetchFail).toContain("diskSettingsHost = ''")
+    expect(canFetchFail).toContain('diskLoadSeq += 1')
   })
 
   test('Updates tab is Settings → Updates and polls /api/health after apply', () => {

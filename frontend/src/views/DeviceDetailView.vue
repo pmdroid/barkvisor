@@ -440,6 +440,7 @@ async function refresh(loadDisk = false) {
   const canFetch = Boolean(row && canFetchDeviceWorkloads(row))
   if (!canFetch) {
     diskSettingsHost = ''
+    diskLoadSeq += 1
     diskDirLoading.value = false
     await refreshDevice(row)
     return
