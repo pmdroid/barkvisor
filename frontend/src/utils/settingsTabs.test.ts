@@ -195,6 +195,27 @@ describe('settings tab query', () => {
     expect(router).toContain("name: 'devices'")
   })
 
+  test('Device disk directory reloads when reachable and ignores stale PUTs', () => {
+    const detail = readFileSync(join(here, '../views/DeviceDetailView.vue'), 'utf8')
+    expect(detail).toContain('diskDirDirty')
+    expect(detail).toContain('diskSettingsHost')
+    expect(detail).toContain('if (loadDisk || diskSettingsHost !== hostId.value) await fetchDiskSettings(row)')
+    expect(detail).toContain('if (!diskDirDirty.value) diskDirectoryDraft.value = data.diskDirectory')
+    expect(detail).toContain("if (!opts?.allowEmpty && directory === '') return")
+    expect(detail).toContain('await saveDiskSettings({ allowEmpty: true })')
+    expect(detail).toContain('const host = row.hostId')
+    const saveStart = detail.indexOf('async function saveDiskSettings')
+    const resetStart = detail.indexOf('async function resetDiskSettings')
+    expect(saveStart).toBeGreaterThan(-1)
+    expect(resetStart).toBeGreaterThan(saveStart)
+    const saveBody = detail.slice(saveStart, resetStart)
+    expect(saveBody).toContain('const host = row.hostId')
+    expect(saveBody).toContain('if (hostId.value !== host) return')
+    expect(saveBody).toContain('diskDirectory: directory')
+    expect(detail).toContain("diskDirectoryDraft === ''")
+    expect(detail).not.toContain("if (loadDisk) await fetchDiskSettings(row)")
+  })
+
   test('Updates tab is Settings → Updates and polls /api/health after apply', () => {
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
     const tab = readFileSync(join(here, '../components/SettingsUpdatesTab.vue'), 'utf8')

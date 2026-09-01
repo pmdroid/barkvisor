@@ -31,6 +31,8 @@ struct APIDecodingTests {
         #expect(source.contains("DiskDirectorySection"))
         #expect(source.contains("refreshDiskSettings"))
         #expect(source.contains("saveDiskSettings"))
+        #expect(source.contains("guard !directory.isEmpty else { return }"))
+        #expect(source.contains("guard device.hostId == host else { return }"))
         #expect(!settings.contains("DiskDirectorySection"))
         #expect(!settings.contains("Default VM disk directory"))
     }

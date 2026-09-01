@@ -86,9 +86,11 @@ const nameDraft = ref('')
 const nameSaving = ref(false)
 const diskSettings = ref<DiskSettings | null>(null)
 const diskDirectoryDraft = ref('')
+const diskDirDirty = ref(false)
 const diskDirLoading = ref(false)
 const diskDirSaving = ref(false)
 const showDiskDirPicker = ref(false)
+let diskSettingsHost = ''
 const canRename = computed(() => {
   const row = device.value
   if (!row) return false
@@ -306,9 +308,11 @@ function clearHostTransientState() {
   nameSaving.value = false
   diskSettings.value = null
   diskDirectoryDraft.value = ''
+  diskDirDirty.value = false
   diskDirLoading.value = false
   diskDirSaving.value = false
   showDiskDirPicker.value = false
+  diskSettingsHost = ''
   for (const id of Object.keys(restartLoading)) {
     delete restartLoading[id]
   }
@@ -348,47 +352,52 @@ async function saveRename() {
 }
 
 async function fetchDiskSettings(row: HomeDeviceHealthSnapshot | null = device.value) {
-  if (!row || !canFetchDeviceWorkloads(row)) {
-    diskSettings.value = null
-    diskDirectoryDraft.value = ''
-    return
-  }
+  if (!row || !canFetchDeviceWorkloads(row)) return
   const host = row.hostId
   diskDirLoading.value = true
   try {
     const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(row))
     if (hostId.value !== host) return
     diskSettings.value = data
-    diskDirectoryDraft.value = data.diskDirectory
+    if (!diskDirDirty.value) diskDirectoryDraft.value = data.diskDirectory
   } catch (e: unknown) {
     if (hostId.value !== host) return
     toast.error(apiErrorMessage(e, 'Could not load disk directory'))
   } finally {
-    if (hostId.value === host) diskDirLoading.value = false
+    if (hostId.value === host) {
+      diskDirLoading.value = false
+      diskSettingsHost = host
+    }
   }
 }
 
-async function saveDiskSettings() {
+async function saveDiskSettings(opts?: { allowEmpty?: boolean }) {
   const row = device.value
   if (!row || !diskDirCanEdit.value || diskDirSaving.value) return
+  const host = row.hostId
+  const directory = diskDirectoryDraft.value
+  if (!opts?.allowEmpty && directory === '') return
   diskDirSaving.value = true
   try {
     const { data } = await api.put<DiskSettings>(deviceDiskSettingsPath(row), {
-      diskDirectory: diskDirectoryDraft.value,
+      diskDirectory: directory,
     })
+    if (hostId.value !== host) return
     diskSettings.value = data
     diskDirectoryDraft.value = data.diskDirectory
+    diskDirDirty.value = false
     toast.success('Disk directory saved')
   } catch (e: unknown) {
+    if (hostId.value !== host) return
     toast.error(apiErrorMessage(e, 'Could not save disk directory'))
   } finally {
-    diskDirSaving.value = false
+    if (hostId.value === host) diskDirSaving.value = false
   }
 }
 
 async function resetDiskSettings() {
   diskDirectoryDraft.value = ''
-  await saveDiskSettings()
+  await saveDiskSettings({ allowEmpty: true })
 }
 
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
@@ -409,7 +418,12 @@ async function refresh(loadDisk = false) {
   if (seq !== refreshSeq) return
   const row = devices.deviceByHostId(hostId.value)
   await refreshDevice(row)
-  if (loadDisk) await fetchDiskSettings(row)
+  const canFetch = Boolean(row && canFetchDeviceWorkloads(row))
+  if (!canFetch) {
+    diskSettingsHost = ''
+    return
+  }
+  if (loadDisk || diskSettingsHost !== hostId.value) await fetchDiskSettings(row)
 }
 
 let pollTimer: number
@@ -427,6 +441,13 @@ watch(hostId, () => {
   deviceAbout.value = null
   deviceStats.value = null
   void refresh(true)
+})
+watch(diskDirectoryDraft, (next) => {
+  if (diskSettings.value == null) {
+    diskDirDirty.value = next !== ''
+    return
+  }
+  diskDirDirty.value = next !== diskSettings.value.diskDirectory
 })
 
 async function doStart(id: string) {
@@ -700,7 +721,7 @@ async function doStop() {
               variant="primary"
               :loading="diskDirSaving"
               loading-text="Saving..."
-              :disabled="diskDirLoading || !diskDirCanEdit"
+              :disabled="diskDirLoading || !diskDirCanEdit || diskDirectoryDraft === ''"
               @click="saveDiskSettings"
             >
               Save

@@ -124,6 +124,20 @@ struct DeviceDetailTests {
         #expect(source.contains("Default VM disk directory"))
         #expect(source.contains("saveDiskSettings"))
         #expect(source.contains("FolderPickerView(device: device)"))
+        #expect(source.contains("guard !directory.isEmpty else { return }"))
+        #expect(source.contains("guard device.hostId == host else { return }"))
+        #expect(source.contains(".id(device.hostId)"))
+        #expect(source.contains(#"task(id: "\(device.hostId)-\(device.isReachable)")"#))
+        #expect(source.contains("if !draft.isEmpty, draft != (model.diskSettings?.diskDirectory ?? \"\") { return }"))
+        #expect(source.contains("saveDiskSettings(\"\", on: device)"))
+        let modelSource = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Services/AppModel.swift"),
+            encoding: .utf8,
+        )
+        #expect(modelSource.contains("diskSettingsHostId"))
+        #expect(modelSource.contains("guard diskSettingsHostId == host else { return }"))
+        #expect(modelSource.contains("guard diskSettingsHostId == nil || diskSettingsHostId == host else { return true }"))
     }
 
     @Test func `history path uses local api or home proxy`() throws {

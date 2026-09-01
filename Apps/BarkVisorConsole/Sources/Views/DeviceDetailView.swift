@@ -28,6 +28,7 @@ struct DeviceDetailView: View {
 
             if device.isSelf || device.isReachable {
                 DiskDirectorySection(device: device)
+                    .id(device.hostId)
             }
 
             #if os(iOS)
@@ -349,27 +350,34 @@ private struct DiskDirectorySection: View {
             }
             Button("Save") {
                 Task {
+                    let host = device.hostId
+                    let directory = draft
+                    guard !directory.isEmpty else { return }
                     saving = true
-                    _ = await model.saveDiskSettings(draft, on: device)
+                    defer { if device.hostId == host { saving = false } }
+                    _ = await model.saveDiskSettings(directory, on: device)
+                    guard device.hostId == host else { return }
                     if let settings = model.diskSettings { draft = settings.diskDirectory }
-                    saving = false
                 }
             }
-            .disabled(saving || !canEdit)
+            .disabled(saving || !canEdit || draft.isEmpty)
             Button("Reset to default") {
                 Task {
+                    let host = device.hostId
                     saving = true
+                    defer { if device.hostId == host { saving = false } }
                     _ = await model.saveDiskSettings("", on: device)
+                    guard device.hostId == host else { return }
                     if let settings = model.diskSettings { draft = settings.diskDirectory }
-                    saving = false
                 }
             }
             .disabled(saving || !canEdit || model.diskSettings?.isDefault != false)
         } header: {
             Text("Disk directory")
         }
-        .task(id: device.hostId) {
+        .task(id: "\(device.hostId)-\(device.isReachable)") {
             await model.refreshDiskSettings(on: device)
+            if !draft.isEmpty, draft != (model.diskSettings?.diskDirectory ?? "") { return }
             draft = model.diskSettings?.diskDirectory ?? ""
         }
         #if os(iOS)
