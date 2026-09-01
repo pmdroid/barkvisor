@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
@@ -45,6 +48,7 @@ import {
   usesLocalDeviceInventory,
 } from './homeDeviceApi'
 
+const here = dirname(fileURLToPath(import.meta.url))
 const self = { hostId: 'desk-1', role: 'self', reachability: 'ok' }
 const member = { hostId: 'peer/1', role: 'member', reachability: 'ok' }
 const down = { hostId: 'peer-2', role: 'member', reachability: 'unreachable' }
@@ -257,6 +261,16 @@ describe('homeDeviceApi (GH-459)', () => {
     expect(owningMemberDevice('gone', byId)).toBeNull()
     expect(deviceImagePath(member, 'img/1')).toBe('/home/devices/peer%2F1/v1/images/img%2F1')
     expect(deviceImagePath(self, 'img-1')).toBe('/images/img-1')
+  })
+
+  test('Images list delete keeps error rows and routes hostId to the owner', () => {
+    const src = readFileSync(join(here, '../views/ImageLibraryView.vue'), 'utf8')
+    expect(src).toContain('owningMemberDevice')
+    expect(src).toContain('deviceImagePath(owner, id)')
+    expect(src).toContain("'hostId' in img ? img.hostId")
+    expect(src).toContain('aria-label="Delete"')
+    expect(src).not.toContain("v-if=\"img.status === 'ready'\"")
+    expect(src).not.toContain("img.status !== 'error'")
   })
 })
 

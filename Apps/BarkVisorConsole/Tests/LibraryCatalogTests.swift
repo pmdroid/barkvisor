@@ -40,6 +40,17 @@ struct LibraryCatalogTests {
         )
     }
 
+    @Test func imageDeletePathsStayOnTheOwningDevice() throws {
+        let client = APIClient(baseURL: try DeviceURL.normalize("http://192.168.30.1:7777"), token: "t")
+        let selfDevice = snapshot(hostId: "self", role: "self")
+        let member = snapshot(hostId: "peer", role: "member")
+        #expect(client.scoped("/images/img-1", on: selfDevice) == "/api/images/img-1")
+        #expect(client.scoped("/images/img-1", on: member) == "/api/home/devices/peer/v1/images/img-1")
+        #expect(
+            client.scoped("/images/img%2F1", on: member) == "/api/home/devices/peer/v1/images/img%2F1"
+        )
+    }
+
     @Test func catalogDownloadPathsStayOnThePickedDevice() throws {
         let client = APIClient(baseURL: try DeviceURL.normalize("http://192.168.30.1:7777"), token: "t")
         let selfDevice = snapshot(hostId: "self", role: "self")

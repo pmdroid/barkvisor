@@ -310,6 +310,59 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.resolveImageForCreate(key, self, row ?? null)?.id).toBe('local-iso')
   })
 
+  test('failed download copies stay in the Home union so they can be deleted', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [
+            img({
+              id: 'local-fail',
+              name: 'broken.iso',
+              status: 'error',
+              sizeBytes: null,
+              sourceUrl: 'https://example.test/broken.iso',
+              error: 'Download failed',
+            }),
+          ],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [
+            img({
+              id: 'peer-fail',
+              name: 'member-broken.iso',
+              status: 'error',
+              sizeBytes: null,
+              sourceUrl: 'https://example.test/member-broken.iso',
+              error: 'Download interrupted',
+            }),
+          ],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer])
+    const names = store.images.map((row) => row.name).sort()
+    expect(names).toEqual(['broken.iso', 'member-broken.iso'])
+    const local = store.images.find((row) => row.id === 'local-fail')
+    const member = store.images.find((row) => row.id === 'peer-fail')
+    expect(local?.status).toBe('error')
+    expect(local?.copies).toEqual([
+      { hostId: 'desk', imageId: 'local-fail', status: 'error', path: undefined },
+    ])
+    expect(member?.copies).toEqual([
+      { hostId: 'studio', imageId: 'peer-fail', status: 'error', path: undefined },
+    ])
+    expect(store.deviceHasImage(homeImageKey(local!), 'desk')).toBe(false)
+    expect(member?.sourceHostIds).toEqual([])
+  })
+
   test('partial image refresh keeps last-good copies from a failed Device', async () => {
     const self = snapshot({ hostId: 'desk', role: 'self' })
     const peer = snapshot({ hostId: 'studio', role: 'member' })
