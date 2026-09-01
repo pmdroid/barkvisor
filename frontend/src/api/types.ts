@@ -516,6 +516,9 @@ export interface HostInterface {
   gateway?: string | null
   dns?: string[]
   managedByBarkvisor?: boolean
+  operState?: string | null
+  carrier?: boolean | null
+  bridgeMaster?: string | null
 }
 
 export interface BridgeInfo {
