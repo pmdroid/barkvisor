@@ -19,6 +19,16 @@ describe('Settings', () => {
     cy.contains('.tabs button', 'Disks').should('not.exist')
   })
 
+  it('Home tab has no Role fact', () => {
+    cy.visit('/settings?tab=home')
+    cy.get('.tabs button.active').should('contain', 'Home')
+    cy.contains('What you can do on this Home').should('not.exist')
+    cy.contains('Full control on this Home').should('not.exist')
+    cy.contains('Standard access on this Home').should('not.exist')
+    cy.get('.fact .k').should('not.contain', 'Role')
+    cy.contains('.tabs button', 'Pairing').should('be.visible')
+  })
+
   it('Library tab has Catalog Download', () => {
     cy.contains('.tabs button', 'Library').click()
     cy.contains('Catalog Download').should('be.visible')

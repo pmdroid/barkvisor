@@ -804,6 +804,21 @@ struct APIDecodingTests {
         )
     }
 
+    @Test func `settings view has no Home Role fact`() throws {
+        let settingsSource = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/SettingsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(!settingsSource.contains("What you can do on this Home"))
+        #expect(!settingsSource.contains("roleTag"))
+        #expect(!settingsSource.contains("roleNote"))
+        #expect(!settingsSource.contains("Full control on this Home"))
+        #expect(!settingsSource.contains("Standard access on this Home"))
+    }
+
     private func workload(id: String, name: String, state: String = "running") -> Workload {
         Workload(
             id: id,
