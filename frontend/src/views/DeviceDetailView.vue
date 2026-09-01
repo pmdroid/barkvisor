@@ -87,10 +87,11 @@ const nameSaving = ref(false)
 const diskSettings = ref<DiskSettings | null>(null)
 const diskDirectoryDraft = ref('')
 const diskDirDirty = ref(false)
-const diskDirLoading = ref(false)
+const diskDirLoading = ref(true)
 const diskDirSaving = ref(false)
 const showDiskDirPicker = ref(false)
 let diskSettingsHost = ''
+let diskLoadSeq = 0
 const canRename = computed(() => {
   const row = device.value
   if (!row) return false
@@ -309,10 +310,11 @@ function clearHostTransientState() {
   diskSettings.value = null
   diskDirectoryDraft.value = ''
   diskDirDirty.value = false
-  diskDirLoading.value = false
+  diskDirLoading.value = true
   diskDirSaving.value = false
   showDiskDirPicker.value = false
   diskSettingsHost = ''
+  diskLoadSeq += 1
   for (const id of Object.keys(restartLoading)) {
     delete restartLoading[id]
   }
@@ -352,19 +354,25 @@ async function saveRename() {
 }
 
 async function fetchDiskSettings(row: HomeDeviceHealthSnapshot | null = device.value) {
-  if (!row || !canFetchDeviceWorkloads(row)) return
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    diskDirLoading.value = false
+    return
+  }
   const host = row.hostId
+  const seq = ++diskLoadSeq
+  diskSettingsHost = host
   diskDirLoading.value = true
   try {
     const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(row))
-    if (hostId.value !== host) return
+    if (hostId.value !== host || seq !== diskLoadSeq) return
+    if (diskDirDirty.value || diskDirSaving.value) return
     diskSettings.value = data
-    if (!diskDirDirty.value) diskDirectoryDraft.value = data.diskDirectory
+    diskDirectoryDraft.value = data.diskDirectory
   } catch (e: unknown) {
-    if (hostId.value !== host) return
+    if (hostId.value !== host || seq !== diskLoadSeq) return
     toast.error(apiErrorMessage(e, 'Could not load disk directory'))
   } finally {
-    if (hostId.value === host) {
+    if (hostId.value === host && seq === diskLoadSeq) {
       diskDirLoading.value = false
       diskSettingsHost = host
     }
@@ -377,6 +385,7 @@ async function saveDiskSettings(opts?: { allowEmpty?: boolean }) {
   const host = row.hostId
   const directory = diskDirectoryDraft.value
   if (!opts?.allowEmpty && directory === '') return
+  diskLoadSeq += 1
   diskDirSaving.value = true
   try {
     const { data } = await api.put<DiskSettings>(deviceDiskSettingsPath(row), {
@@ -391,12 +400,16 @@ async function saveDiskSettings(opts?: { allowEmpty?: boolean }) {
     if (hostId.value !== host) return
     toast.error(apiErrorMessage(e, 'Could not save disk directory'))
   } finally {
-    if (hostId.value === host) diskDirSaving.value = false
+    if (hostId.value === host) {
+      diskDirSaving.value = false
+      diskDirLoading.value = false
+    }
   }
 }
 
 async function resetDiskSettings() {
   diskDirectoryDraft.value = ''
+  diskDirDirty.value = true
   await saveDiskSettings({ allowEmpty: true })
 }
 
@@ -414,16 +427,27 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
 let refreshSeq = 0
 async function refresh(loadDisk = false) {
   const seq = ++refreshSeq
+  const needsDisk = loadDisk || diskSettingsHost !== hostId.value
+  if (needsDisk) diskDirLoading.value = true
+  const rowNow = devices.deviceByHostId(hostId.value)
+  const earlyDisk =
+    needsDisk && rowNow && canFetchDeviceWorkloads(rowNow)
+      ? fetchDiskSettings(rowNow)
+      : null
   await devices.fetchHealth()
   if (seq !== refreshSeq) return
   const row = devices.deviceByHostId(hostId.value)
-  await refreshDevice(row)
   const canFetch = Boolean(row && canFetchDeviceWorkloads(row))
   if (!canFetch) {
     diskSettingsHost = ''
+    diskDirLoading.value = false
+    await refreshDevice(row)
     return
   }
-  if (loadDisk || diskSettingsHost !== hostId.value) await fetchDiskSettings(row)
+  const diskPromise = earlyDisk ?? (needsDisk ? fetchDiskSettings(row) : Promise.resolve())
+  await refreshDevice(row)
+  if (seq !== refreshSeq) return
+  await diskPromise
 }
 
 let pollTimer: number
@@ -444,11 +468,11 @@ watch(hostId, () => {
 })
 watch(diskDirectoryDraft, (next) => {
   if (diskSettings.value == null) {
-    diskDirDirty.value = next !== ''
+    diskDirDirty.value = true
     return
   }
   diskDirDirty.value = next !== diskSettings.value.diskDirectory
-})
+}, { flush: 'sync' })
 
 async function doStart(id: string) {
   const row = device.value
@@ -727,7 +751,7 @@ async function doStop() {
               Save
             </AppButton>
             <AppButton
-              :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit || diskSettings?.isDefault"
+              :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit || diskSettings?.isDefault !== false"
               @click="resetDiskSettings"
             >
               Reset to default

@@ -128,7 +128,9 @@ struct DeviceDetailTests {
         #expect(source.contains("guard device.hostId == host else { return }"))
         #expect(source.contains(".id(device.hostId)"))
         #expect(source.contains(#"task(id: "\(device.hostId)-\(device.isReachable)")"#))
-        #expect(source.contains("if !draft.isEmpty, draft != (model.diskSettings?.diskDirectory ?? \"\") { return }"))
+        #expect(source.contains("model.clearDiskSettings(for: device)"))
+        #expect(source.contains("model.diskSettings(for: device)?.isDefault != false"))
+        #expect(source.contains("if !draft.isEmpty, draft != (model.diskSettings(for: device)?.diskDirectory ?? \"\") { return }"))
         #expect(source.contains("saveDiskSettings(\"\", on: device)"))
         let modelSource = try String(
             contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
@@ -136,6 +138,9 @@ struct DeviceDetailTests {
             encoding: .utf8,
         )
         #expect(modelSource.contains("diskSettingsHostId"))
+        #expect(modelSource.contains("func clearDiskSettings(for device: HomeDeviceHealthSnapshot)"))
+        #expect(modelSource.contains("func diskSettings(for device: HomeDeviceHealthSnapshot)"))
+        #expect(modelSource.contains("diskSettings = nil\n        diskSettingsHostId = host"))
         #expect(modelSource.contains("guard diskSettingsHostId == host else { return }"))
         #expect(modelSource.contains("guard diskSettingsHostId == nil || diskSettingsHostId == host else { return true }"))
     }

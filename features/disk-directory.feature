@@ -7,6 +7,8 @@ Feature: Per-Device VM disk directory
     And GET and PUT use that Device's /system/disk/settings path
     And Settings has no Disks tab
     And /settings?tab=disks redirects to Devices
+    And Reset to default stays disabled until that Device's disk settings have loaded
+    And switching Device clears the previous Device's disk settings before GET
 
   Scenario: Folder picker lists places on the selected Device
     Given a Device page is open for a reachable Device

@@ -485,8 +485,19 @@ final class AppModel {
         }
     }
 
+    func diskSettings(for device: HomeDeviceHealthSnapshot) -> DiskSettingsSnapshot? {
+        guard diskSettingsHostId == device.hostId else { return nil }
+        return diskSettings
+    }
+
+    func clearDiskSettings(for device: HomeDeviceHealthSnapshot) {
+        diskSettings = nil
+        diskSettingsHostId = device.hostId
+    }
+
     func refreshDiskSettings(on device: HomeDeviceHealthSnapshot) async {
         let host = device.hostId
+        diskSettings = nil
         diskSettingsHostId = host
         do {
             let settings = try await requireClient().diskSettings(on: device)
