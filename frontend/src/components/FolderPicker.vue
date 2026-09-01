@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import api from '../api/client'
 import { setupApi } from '../api/setup'
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorCode, apiErrorMessage } from '../api/errors'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 import {
   asFolderEntries,
@@ -55,6 +55,9 @@ async function browse(path: string) {
     if (path) pendingSelect.value = path
   } catch (err) {
     error.value = apiErrorMessage(err, 'Unable to list folders')
+    if (apiErrorCode(err) === 'permission_denied' && path) {
+      return
+    }
     if (path) {
       try {
         const { data } = await browseClient().get(folderBrowseRequestPath(props.device, props.source), {

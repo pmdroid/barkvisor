@@ -99,6 +99,9 @@ struct FolderPickerView: View {
             if !path.isEmpty { pendingPath = path }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if let api = error as? APIError, case .permissionDenied = api, !path.isEmpty {
+                return
+            }
             if !path.isEmpty {
                 do {
                     entries = try await model.browseFolders(path: "", on: device)

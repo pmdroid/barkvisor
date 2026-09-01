@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { apiErrorMessage, isNotFoundError } from './errors'
+import { apiErrorCode, apiErrorMessage, isNotFoundError } from './errors'
 
-function axiosResponse(status: number, reason?: string) {
+function axiosResponse(status: number, reason?: string, code?: string) {
   return {
     isAxiosError: true,
     message: reason ?? `Request failed with status code ${status}`,
     response: {
       status,
-      data: reason ? { reason } : {},
+      data: { ...(reason ? { reason } : {}), ...(code ? { code } : {}) },
     },
   }
 }
@@ -27,5 +27,21 @@ describe('isNotFoundError (PAS-202)', () => {
   test('apiErrorMessage still prefers the Abort reason', () => {
     expect(apiErrorMessage(axiosResponse(502, 'Device is unreachable'))).toBe('Device is unreachable')
     expect(apiErrorMessage(axiosResponse(404, 'Workload not found'))).toBe('Workload not found')
+  })
+})
+
+describe('apiErrorCode (GH-461)', () => {
+  test('returns the typed code from the error envelope', () => {
+    expect(apiErrorCode(axiosResponse(403, 'Grant Full Disk Access', 'permission_denied'))).toBe(
+      'permission_denied',
+    )
+    expect(apiErrorCode(axiosResponse(403, 'Access denied', 'forbidden'))).toBe('forbidden')
+  })
+
+  test('returns null without an envelope code', () => {
+    expect(apiErrorCode(axiosResponse(500))).toBe(null)
+    expect(apiErrorCode({ isAxiosError: true, message: 'Network Error' })).toBe(null)
+    expect(apiErrorCode(new Error('boom'))).toBe(null)
+    expect(apiErrorCode('boom')).toBe(null)
   })
 })

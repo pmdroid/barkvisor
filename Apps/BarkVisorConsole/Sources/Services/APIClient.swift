@@ -5,6 +5,7 @@ enum APIError: LocalizedError, Equatable {
     case unauthorized
     case setupRequired
     case http(status: Int, reason: String)
+    case permissionDenied(String)
     case decoding(String)
     case transport(String)
 
@@ -14,9 +15,20 @@ enum APIError: LocalizedError, Equatable {
         case .unauthorized: "Sign in required"
         case .setupRequired: "Finish setup in the web UI"
         case let .http(_, reason): reason
+        case let .permissionDenied(reason): reason
         case let .decoding(message): message
         case let .transport(message): message
         }
+    }
+
+    static func from(status: Int, code: String?, reason: String?) -> APIError {
+        if status == 403, code == "permission_denied" {
+            return .permissionDenied(reason ?? "Permission denied")
+        }
+        return .http(
+            status: status,
+            reason: reason ?? HTTPURLResponse.localizedString(forStatusCode: status),
+        )
     }
 }
 
@@ -639,10 +651,8 @@ struct APIClient {
             throw APIError.setupRequired
         }
         guard (200 ..< 300).contains(http.statusCode) else {
-            throw APIError.http(
-                status: http.statusCode,
-                reason: reason(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
-            )
+            let body = errorBody(from: data)
+            throw APIError.from(status: http.statusCode, code: body?.code, reason: body?.reason)
         }
         return (data, http)
     }
@@ -704,7 +714,11 @@ struct APIClient {
     }
 
     private func reason(from data: Data) -> String? {
-        (try? Self.decoder.decode(APIErrorBody.self, from: data))?.reason
+        errorBody(from: data)?.reason
+    }
+
+    private func errorBody(from data: Data) -> APIErrorBody? {
+        try? Self.decoder.decode(APIErrorBody.self, from: data)
     }
 
     /// Map a refresh outcome after an API 401. Transport/5xx keep the Keychain refresh token.
