@@ -104,4 +104,12 @@ describe('member detail role (PAS-202)', () => {
     expect(view).toContain('watch(showMemberConnect')
     expect(view).toContain('!memberDevice.value')
   })
+
+  test('VMDetailView has no Recent events sheet or events fetch', () => {
+    const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    expect(view).not.toContain('Recent events')
+    expect(view).not.toContain('fetchVMEvents')
+    expect(view).not.toContain('recentEvents')
+    expect(view).not.toContain('/vms/${vmId.value}/events')
+  })
 })

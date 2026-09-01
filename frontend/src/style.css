@@ -1883,13 +1883,6 @@ tr.pending td:first-child { box-shadow: none; }
 }
 .icon-btn:hover { color: var(--red); border-color: rgba(248,113,113,0.45); background: rgba(248,113,113,0.08); }
 
-.events { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
-.ev { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
-.ev:last-child { border-bottom: none; }
-.ev .when { width: 160px; flex-shrink: 0; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.ev .what { display: flex; align-items: center; gap: 8px; }
-.ev .what.bad { color: var(--red); font-weight: 600; }
-
 .prog { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
 .prog .track { width: 120px; height: 4px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; }
 .prog .pf { height: 100%; background: var(--amber); border-radius: 2px; }
