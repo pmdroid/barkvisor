@@ -32,6 +32,7 @@ struct HostNetworkFixtureTests {
         #expect(parsed?.dns == ["1.1.1.1"])
         #expect(parsed?.managedByBarkvisor == true)
         #expect(parsed?.addresses.map(\.cidr) == ["192.168.1.10/24", "10.0.0.2/24"])
+        #expect(parsed?.addresses.map(\.source) == [.alias, .alias])
     }
 
     @Test func `linux nmcli golden fixtures parse dhcp and alias rows`() throws {
