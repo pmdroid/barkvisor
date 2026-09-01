@@ -8,17 +8,20 @@ import Foundation
         public var device: String
         public var serviceName: String?
         public var socketProbe: SocketVmnetApplyProbe
+        public var createdBridge: Bool
 
         public init(
             facts: HostBridgeFacts,
             device: String,
             serviceName: String?,
             socketProbe: SocketVmnetApplyProbe,
+            createdBridge: Bool = false,
         ) {
             self.facts = facts
             self.device = device
             self.serviceName = serviceName
             self.socketProbe = socketProbe
+            self.createdBridge = createdBridge
         }
     }
 
@@ -30,11 +33,13 @@ import Foundation
             let device = resolvedDevice(nic: nic, facts: facts)
             let service = try device.flatMap { try MacHostNetworkApply.serviceName(forDevice: $0) }
             let socketProbe = SocketVmnetApply.liveProbe(interface: device)
+            let created = device.map { LinuxHostBridgeApply.createdBridgeForUplink($0) } ?? false
             return MacHostBridgeApplyProbe(
                 facts: facts,
                 device: device ?? "",
                 serviceName: service,
                 socketProbe: socketProbe,
+                createdBridge: created,
             )
         }
 
@@ -45,6 +50,8 @@ import Foundation
             switch request.action {
             case .revert:
                 return revertPlan(request: request, probe: probe)
+            case .delete:
+                return deletePlan(request: request, probe: probe)
             case .check:
                 return check(request: request, probe: probe)
             case .dryRun:
@@ -218,9 +225,57 @@ import Foundation
             request: LinuxHostBridgeApplyRequest,
             probe: MacHostBridgeApplyProbe,
         ) -> LinuxHostBridgeApplyResult {
-            let device = probe.device
+            let device = resolvedDevice(nic: request.nic, facts: probe.facts)
+                ?? markerUplink(request: request)
+                ?? probe.device
             if device.isEmpty {
                 return refuse("No interface to revert.")
+            }
+            return LinuxHostBridgeApplyResult(
+                success: true,
+                applied: false,
+                needsConfirm: false,
+                backend: "networksetup",
+                changes: [
+                    "Strip BarkVisor markers for \(device)",
+                ],
+                warnings: [],
+                commands: [
+                    "# strip host-bridge marker; never ip link del",
+                ],
+                message: "Revert strips BarkVisor files only. socket_vmnet stays.",
+            )
+        }
+
+        private static func deletePlan(
+            request: LinuxHostBridgeApplyRequest,
+            probe: MacHostBridgeApplyProbe,
+        ) -> LinuxHostBridgeApplyResult {
+            let created = probe.createdBridge
+                || LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+            if !created {
+                return refuse("Refuse delete of foreign \(request.bridge). Revert strips BarkVisor files only.")
+            }
+            if request.attachedWorkloadCount > 0 {
+                let n = request.attachedWorkloadCount
+                return LinuxHostBridgeApplyResult(
+                    success: false,
+                    applied: false,
+                    needsConfirm: false,
+                    backend: "networksetup",
+                    changes: [],
+                    warnings: [],
+                    commands: [],
+                    message: "Cannot delete \(request.bridge): \(n) Workload\(n == 1 ? "" : "s") still reference it.",
+                    refused: true,
+                    conflict: true,
+                )
+            }
+            let device = resolvedDevice(nic: request.nic, facts: probe.facts)
+                ?? markerUplink(request: request)
+                ?? probe.device
+            if device.isEmpty {
+                return refuse("No interface to delete.")
             }
             var changes: [String] = []
             if MacHostNetworkApply.readMarker(device: device) != nil {
@@ -228,7 +283,8 @@ import Foundation
             } else {
                 changes.append("Set \(device) back to DHCP (no saved profile)")
             }
-            changes.append("Stop BarkVisor-managed socket_vmnet when loaded")
+            changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
+            changes.append("Strip BarkVisor markers")
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -240,8 +296,13 @@ import Foundation
                     "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
                     "launchctl bootout system/com.barkvisor.socket-vmnet.\(device)",
                 ],
-                message: "Revert BarkVisor host network changes.",
+                message:
+                "Ready to delete owned socket_vmnet. Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or they auto-revert.",
             )
+        }
+
+        private static func markerUplink(request: LinuxHostBridgeApplyRequest) -> String? {
+            LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
         }
 
         private static func refuse(_ message: String) -> LinuxHostBridgeApplyResult {
@@ -302,6 +363,11 @@ import Foundation
                         return plan
                     }(),
                 )
+                try LinuxHostBridgeApply.writeOwnerMarker(
+                    bridge: request.bridge,
+                    uplink: resolved.device,
+                    createdBridge: true,
+                )
                 let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
                 try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
@@ -325,6 +391,21 @@ import Foundation
                 plan.message = "Kept host network changes for \(resolved.device)."
             case .revert:
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
+                MacHostNetworkApply.removeMarker(device: resolved.device)
+                try? FileManager.default.removeItem(
+                    at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
+                )
+                if let uplink {
+                    try? FileManager.default.removeItem(
+                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                    )
+                }
+                plan.applied = true
+                plan.pendingCommit = false
+                plan.message = "Reverted BarkVisor host network files. socket_vmnet was not stopped."
+            case .delete:
+                HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
                     plan.changes.insert("Restored saved networksetup profile.", at: 0)
                 } else if let service = resolved.serviceName {
@@ -338,9 +419,18 @@ import Foundation
                     request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
                     probe: resolved.socketProbe,
                 )
+                MacHostNetworkApply.removeMarker(device: resolved.device)
+                try? FileManager.default.removeItem(
+                    at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
+                )
+                let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
+                try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
-                plan.pendingCommit = false
-                plan.message = "Reverted BarkVisor host network changes."
+                plan.pendingCommit = true
+                plan.commitDeadline = pending.commitDeadline
+                plan.rollbackSeconds = pending.rollbackSeconds
+                plan.message =
+                    "Deleted owned socket_vmnet on \(resolved.device). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
             case .check, .dryRun:
                 break
             }

@@ -18,6 +18,7 @@ public enum LinuxHostBridgeApplyAction: String, Sendable, Codable, Equatable {
     case commit
     case dryRun = "dry-run"
     case revert
+    case delete
 }
 
 public enum LinuxHostBridgeAddressing: String, Sendable, Codable, Equatable {
@@ -81,6 +82,7 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
     public var addresses: [HostInterfaceAddressApplyEntry]
     public var confirm: Bool
     public var deleteBridge: Bool
+    public var attachedWorkloadCount: Int
 
     public init(
         action: LinuxHostBridgeApplyAction,
@@ -93,6 +95,7 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         addresses: [HostInterfaceAddressApplyEntry] = [],
         confirm: Bool = false,
         deleteBridge: Bool = false,
+        attachedWorkloadCount: Int = 0,
     ) {
         self.action = action
         self.bridge = bridge
@@ -104,6 +107,7 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         self.addresses = addresses
         self.confirm = confirm
         self.deleteBridge = deleteBridge
+        self.attachedWorkloadCount = attachedWorkloadCount
     }
 }
 
@@ -279,6 +283,8 @@ public enum LinuxHostBridgeApply {
             return check(request: request, probe: probe)
         case .revert:
             return revertPlan(request: request, probe: probe)
+        case .delete:
+            return deletePlan(request: request, probe: probe)
         case .commit:
             return commitPlan(request: request, probe: probe)
         case .apply, .dryRun:
@@ -855,5 +861,152 @@ public enum LinuxHostBridgeApply {
             existingInterfaces: probe.existingInterfaces,
             factsBridges: probe.facts.bridges,
         )
+    }
+}
+
+extension LinuxHostBridgeApply {
+    fileprivate static func deletePlan(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> LinuxHostBridgeApplyResult {
+        if !probe.owned {
+            return refuse(
+                backend: probe.backend,
+                message: "No BarkVisor marker for \(request.bridge). Will not delete a shared bridge.",
+            )
+        }
+        if !probe.createdBridge {
+            return refuse(
+                backend: probe.backend,
+                message: "Refuse delete of foreign \(request.bridge). Revert strips BarkVisor files only.",
+            )
+        }
+        if request.attachedWorkloadCount > 0 {
+            let n = request.attachedWorkloadCount
+            return LinuxHostBridgeApplyResult(
+                success: false,
+                applied: false,
+                backend: probe.backend.rawValue,
+                message: "Cannot delete \(request.bridge): \(n) Workload\(n == 1 ? "" : "s") still reference it.",
+                refused: true,
+                conflict: true,
+            )
+        }
+        if probe.backend == .ifupdown || probe.backend == .unknown {
+            return refuse(
+                backend: probe.backend,
+                message: "Refuse \(probe.backend.rawValue). Cannot delete a manager we do not own.",
+            )
+        }
+        let nic = resolvedNic(request: request, probe: probe)
+        let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
+        var changes: [LinuxHostBridgeChange] = []
+        for port in members {
+            changes.append(LinuxHostBridgeChange(
+                description: "Detach \(port) from \(request.bridge)",
+                command: "sudo ip link set \(port) nomaster",
+            ))
+        }
+        if !nic.isEmpty {
+            let restore = switch probe.backend {
+            case .netplan:
+                "sudo netplan try --timeout \(rollbackSeconds)"
+            case .networkManager:
+                "sudo nmcli device reapply \(nic)"
+            case .systemdNetworkd:
+                "sudo networkctl reload"
+            case .ifupdown, .unknown:
+                "sudo ip addr flush \(request.bridge)"
+            }
+            changes.append(LinuxHostBridgeChange(
+                description: "Restore L3 on \(nic)",
+                command: restore,
+            ))
+        }
+        changes.append(LinuxHostBridgeChange(
+            description: "Delete \(request.bridge)",
+            command: "sudo ip link del \(request.bridge)",
+        ))
+        switch probe.backend {
+        case .netplan:
+            changes.append(LinuxHostBridgeChange(
+                description: "Remove \(netplanPath(bridge: request.bridge))",
+                command: "sudo rm -f \(netplanPath(bridge: request.bridge)) && sudo netplan try --timeout \(rollbackSeconds)",
+            ))
+        case .networkManager:
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
+                command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
+            ))
+        case .systemdNetworkd:
+            changes.append(LinuxHostBridgeChange(
+                description: "Remove systemd-networkd barkvisor units",
+                command: "sudo rm -f \(networkdNetdevPath(bridge: request.bridge)) "
+                    + "\(networkdNetworkPath(bridge: request.bridge)) && sudo networkctl reload",
+            ))
+        case .ifupdown, .unknown:
+            break
+        }
+        changes.append(LinuxHostBridgeChange(
+            description: "Remove marker-tagged allow \(request.bridge) from \(HostBridgeFactsService.defaultACLPath)",
+            command: "# strip \(aclMarker(for: request.bridge)) + allow \(request.bridge)",
+        ))
+        if probe.facts.onlyUplink || !probe.sessionRiskNics.isEmpty, !request.confirm {
+            return LinuxHostBridgeApplyResult(
+                success: false,
+                applied: false,
+                needsConfirm: true,
+                backend: probe.backend.rawValue,
+                changes: changes.map(\.description),
+                warnings: probe.sessionWarnings + [
+                    "Delete moves the Device address off \(request.bridge). Confirm before applying.",
+                ],
+                commands: changes.map(\.command),
+                message: "Confirm required before delete.",
+            )
+        }
+        return LinuxHostBridgeApplyResult(
+            success: true,
+            applied: false,
+            needsConfirm: false,
+            backend: probe.backend.rawValue,
+            changes: changes.map(\.description),
+            warnings: probe.sessionWarnings,
+            commands: changes.map(\.command),
+            message: "Ready to delete owned \(request.bridge). Keep changes within \(rollbackSeconds)s or they auto-revert.",
+        )
+    }
+
+    public static func writeOwnerMarker(
+        bridge: String,
+        uplink: String,
+        createdBridge: Bool,
+        dataDir: URL = Config.dataDir,
+    ) throws {
+        let url = ownerMarkerURL(bridge: bridge, dataDir: dataDir)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let payload: [String: Any] = [
+            "bridge": bridge,
+            "uplink": uplink,
+            "createdBridge": createdBridge,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
+        try data.write(to: url, options: .atomic)
+    }
+
+    public static func createdBridgeForUplink(_ uplink: String, dataDir: URL = Config.dataDir) -> Bool {
+        if readOwnerMarker(bridge: uplink, dataDir: dataDir)?.createdBridge == true {
+            return true
+        }
+        for name in listedMarkerBridges(dataDir: dataDir) {
+            if let marker = readOwnerMarker(bridge: name, dataDir: dataDir),
+               marker.uplink == uplink {
+                return marker.createdBridge
+            }
+        }
+        return false
     }
 }
