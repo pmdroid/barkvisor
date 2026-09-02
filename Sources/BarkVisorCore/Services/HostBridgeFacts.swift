@@ -181,6 +181,7 @@ public enum HostBridgeFactsService {
             return fromMarkers
         }
         return sockets.compactMap { item -> HostBridgeSnapshot? in
+            if SocketVmnetDiscovery.isSharedSocketPath(item.path) { return nil }
             let name = syntheticMacBridgeName(uplink: item.interface)
             guard !name.isEmpty else { return nil }
             return HostBridgeSnapshot(name: name, enslaved: [item.interface], createdBridge: true)

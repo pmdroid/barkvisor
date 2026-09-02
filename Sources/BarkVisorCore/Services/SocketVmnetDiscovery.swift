@@ -151,6 +151,7 @@ public enum SocketVmnetDiscovery {
             }
         }
         return sockets.compactMap { item in
+            if isSharedSocketPath(item.path) { return nil }
             let name = HostBridgeFactsService.syntheticMacBridgeName(uplink: item.interface)
             guard !name.isEmpty else { return nil }
             return BridgeStateDTO(

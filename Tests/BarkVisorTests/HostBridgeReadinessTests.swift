@@ -73,6 +73,10 @@ struct HostBridgeReadinessTests {
         #expect(snaps == [HostBridgeSnapshot(name: "en0-bridge", enslaved: ["en0"], createdBridge: true)])
         #expect(HostBridgeFactsService.syntheticMacBridgeName(uplink: "en0") == "en0-bridge")
         #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "en0-bridge") == "en0")
+        #expect(HostBridgeFactsService.macSyntheticBridges(
+            markers: [],
+            sockets: [(interface: "en0", path: "/opt/homebrew/var/run/socket_vmnet")],
+        ).isEmpty)
     }
 
     @Test func `mac synthetic skips empty bridge names`() {
