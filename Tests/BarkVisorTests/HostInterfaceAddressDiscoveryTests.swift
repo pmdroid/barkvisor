@@ -60,6 +60,44 @@ struct HostInterfaceAddressDiscoveryTests {
         #expect(HostInterfaceAddressDiscovery.prefixLength(fromMask: "255.255.0.0") == 16)
     }
 
+    @Test func `discover uses live prefix length`() {
+        let rows = [
+            HostInterfaceInfo(name: "enx-prefix", ipAddress: "192.168.8.224", prefixLength: 16),
+            HostInterfaceInfo(name: "enx-prefix", ipAddress: "192.168.10.45", prefixLength: 16),
+        ]
+        let discovered = HostInterfaceAddressDiscovery.discoverByInterface(
+            liveAddresses: rows,
+            interfaceNames: ["enx-prefix"],
+        )
+        let cidrs = discovered["enx-prefix"]?.addresses.map(\.cidr) ?? []
+        #expect(cidrs.contains("192.168.10.45/16"))
+        #expect(!cidrs.contains("192.168.10.45/32"))
+    }
+
+    @Test func `merge live cidr keeps non slash 32 prefix`() {
+        let merged = HostInterfaceAddressDiscovery.mergeLiveAddresses(
+            config: HostInterfaceAddressing(dhcpEnabled: true),
+            liveIPv4: ["192.168.8.224/16", "192.168.10.45/16"],
+        )
+        #expect(merged.addresses.map(\.cidr) == ["192.168.8.224/16", "192.168.10.45/16"])
+        #expect(merged.addresses[1].source == .alias)
+    }
+
+    @Test func `merge live cidr upgrades inferred slash 32`() {
+        let config = HostInterfaceAddressing(
+            addresses: [
+                HostInterfaceAddressEntry(cidr: "192.168.10.45/32", source: .alias, primary: false),
+            ],
+            dhcpEnabled: true,
+        )
+        let merged = HostInterfaceAddressDiscovery.mergeLiveAddresses(
+            config: config,
+            liveIPv4: ["192.168.8.224/16", "192.168.10.45/16"],
+        )
+        #expect(merged.addresses.contains(where: { $0.cidr == "192.168.10.45/16" }))
+        #expect(!merged.addresses.contains(where: { $0.cidr == "192.168.10.45/32" }))
+    }
+
     #if os(macOS)
         @Test func `parse macOS getinfo dhcp fixture`() {
             let text = """

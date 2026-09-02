@@ -3,10 +3,12 @@ import Foundation
 public struct HostInterfaceInfo: Sendable {
     public let name: String
     public let ipAddress: String
+    public let prefixLength: Int?
 
-    public init(name: String, ipAddress: String) {
+    public init(name: String, ipAddress: String, prefixLength: Int? = nil) {
         self.name = name
         self.ipAddress = ipAddress
+        self.prefixLength = prefixLength
     }
 }
 
@@ -124,13 +126,25 @@ public enum HostInfoService {
                    let ip = numericHost(ifaAddr) {
                     let key = "\(name)\0\(ip)"
                     if seen.insert(key).inserted {
-                        interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip))
+                        interfaces.append(HostInterfaceInfo(
+                            name: name,
+                            ipAddress: ip,
+                            prefixLength: family == AF_INET ? ipv4PrefixLength(addr.pointee) : nil,
+                        ))
                     }
                 }
             }
             current = addr.pointee.ifa_next
         }
         return interfaces
+    }
+
+    private static func ipv4PrefixLength(_ ifa: ifaddrs) -> Int? {
+        guard let maskPtr = ifa.ifa_netmask else { return nil }
+        guard Int32(maskPtr.pointee.sa_family) == AF_INET else { return nil }
+        return maskPtr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ptr in
+            Int(UInt32(bigEndian: ptr.pointee.sin_addr.s_addr).nonzeroBitCount)
+        }
     }
 
     private static func numericHost(_ ifaAddr: UnsafePointer<sockaddr>) -> String? {

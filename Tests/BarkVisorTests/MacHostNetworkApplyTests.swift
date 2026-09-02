@@ -9,6 +9,10 @@ import Testing
             #expect(parsed.ip == "192.168.1.10")
             #expect(parsed.mask == "255.255.255.0")
             #expect(MacHostNetworkApply.subnetMask(prefixLength: 24) == "255.255.255.0")
+            let slash16 = try MacHostNetworkApply.parseStaticAddress("192.168.10.45/16")
+            #expect(slash16.ip == "192.168.10.45")
+            #expect(slash16.mask == "255.255.0.0")
+            #expect(MacHostNetworkApply.subnetMask(prefixLength: 16) == "255.255.0.0")
         }
 
         @Test func `parse hardware ports from networksetup sample`() throws {
@@ -82,6 +86,42 @@ import Testing
 
             #expect(calls.contains(["-setmanual", "Ethernet", "192.168.1.10", "255.255.255.0", "192.168.1.1"]))
             #expect(calls.contains(["-setdnsservers", "Ethernet", "1.1.1.1", "8.8.8.8"]))
+        }
+
+        @Test func `alias apply uses cidr netmask not slash 32`() throws {
+            let device = "en0-alias-slash16"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            var ifconfigCalls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    ifconfigCalls.append(args)
+                    return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+                }
+                if args.first == "-getinfo" {
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("DHCP Configuration\nIP address: 192.168.8.224\nSubnet mask: 255.255.0.0\n".utf8),
+                        stderr: Data(),
+                    )
+                }
+                if args.first == "-getdnsservers" {
+                    return CommandResult(exitCode: 0, stdout: Data("There aren't any DNS Servers set on Ethernet.".utf8), stderr: Data())
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            try MacHostNetworkApply.apply(
+                device: device,
+                service: "Ethernet",
+                plan: HostInterfaceAddressApplyPlan(
+                    dhcpEnabled: true,
+                    staticCIDRs: ["192.168.10.45/16"],
+                    dns: [],
+                ),
+                run: run,
+            )
+            #expect(ifconfigCalls.contains {
+                $0 == [device, "alias", "192.168.10.45", "netmask", "255.255.0.0"]
+            })
         }
 
         @Test func `revert restores saved dns servers`() throws {
