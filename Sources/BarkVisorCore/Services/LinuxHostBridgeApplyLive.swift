@@ -754,20 +754,40 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     "nmcli failed: \(added.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
                 )
             }
+            let slave = LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic)
             _ = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: [
                     "connection", "add", "type", "bridge-slave", "ifname", nic,
-                    "master", request.bridge, "con-name",
-                    LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic),
+                    "master", request.bridge, "con-name", slave,
                 ],
                 timeout: 30,
             )
             _ = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
+                arguments: ["connection", "modify", name, "connection.autoconnect-ports", "1"],
+                timeout: 15,
+            )
+            let upBridge = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
                 arguments: ["connection", "up", name],
                 timeout: 30,
             )
+            if !upBridge.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli connection up \(name) failed: \(upBridge.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
+            let upSlave = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "up", slave],
+                timeout: 30,
+            )
+            if !upSlave.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli connection up \(slave) failed: \(upSlave.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
         }
 
         /// Start `netplan try` without waiting. Persist needs SIGUSR1 (netplan-try(8));

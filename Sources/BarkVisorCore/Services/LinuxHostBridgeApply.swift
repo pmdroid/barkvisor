@@ -847,9 +847,18 @@ public enum LinuxHostBridgeApply {
                 command: "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
+            let slave = nmSlaveConnectionName(bridge: request.bridge, nic: nic)
             changes.append(LinuxHostBridgeChange(
                 description: "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo nmcli connection add type bridge ifname \(request.bridge) con-name barkvisor-\(request.bridge)",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Attach \(nic) as bridge port",
+                command: "sudo nmcli connection add type bridge-slave ifname \(nic) master \(request.bridge) con-name \(slave)",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Bring up \(request.bridge) and \(nic)",
+                command: "sudo nmcli connection up barkvisor-\(request.bridge) && sudo nmcli connection up \(slave)",
             ))
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
