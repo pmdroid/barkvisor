@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
 import api, {
+  HOME_MEMBER_PROXY_TIMEOUT_MS,
   isAuthBootstrapRequest,
   isHomeMemberProxyRequest,
   setUnauthorizedHandler,
@@ -223,6 +224,38 @@ describe('auth store (PAS-242)', () => {
     const main = readFileSync(join(here, '../main.ts'), 'utf8')
     expect(main).toContain('clearSetupCache()')
     expect(main).not.toContain('markSetupRequired')
+  })
+
+  test('member proxy requests get a 4000ms hop timeout and local /vms does not', async () => {
+    expect(HOME_MEMBER_PROXY_TIMEOUT_MS).toBe(4000)
+    const source = readFileSync(join(here, '../api/client.ts'), 'utf8')
+    expect(source).toContain('HOME_MEMBER_PROXY_TIMEOUT_MS')
+    expect(source).toContain('isHomeMemberProxyRequest(config) && !config.timeout')
+    const ok = {
+      data: {},
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+    }
+    let hopTimeout: number | undefined
+    await api.request({
+      url: '/home/devices/peer-1/v1/vms',
+      adapter: async (config) => {
+        hopTimeout = config.timeout
+        return { ...ok, config }
+      },
+    })
+    expect(hopTimeout).toBe(HOME_MEMBER_PROXY_TIMEOUT_MS)
+    let localTimeout: number | undefined
+    await api.request({
+      url: '/vms',
+      adapter: async (config) => {
+        localTimeout = config.timeout
+        return { ...ok, config }
+      },
+    })
+    expect(localTimeout === undefined || localTimeout === 0).toBe(true)
+    expect(localTimeout).not.toBe(HOME_MEMBER_PROXY_TIMEOUT_MS)
   })
 
   test('expired JWT guard and 401 interceptor revoke through logout', () => {

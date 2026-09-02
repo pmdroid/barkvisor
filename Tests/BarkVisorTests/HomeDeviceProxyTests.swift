@@ -263,6 +263,16 @@ struct HomeDeviceProxyTests {
         }
     }
 
+    @Test func `mtls client hop timeout defaults to two seconds`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let material = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let client = AgentMTLSClient(material: material)
+        #expect(client.timeoutSeconds == HomeDeviceProxy.hopTimeoutSeconds)
+        #expect(client.timeoutSeconds == 2)
+        #expect(client.timeoutSeconds != 10)
+    }
+
     @Test func `mtls client reaches agent whoami`() async throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -38,7 +38,7 @@ onMounted(() => {
   void fetchStats()
   void diskStore.fetchSummary().catch(() => {})
   pollTimer = window.setInterval(() => {
-    devices.fetchHealth()
+    if (!devices.loading) devices.fetchHealth()
     void fetchStats()
   }, 5000)
 })
