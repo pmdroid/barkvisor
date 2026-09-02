@@ -590,6 +590,34 @@ struct MacHostBridgeApplyPlannerTests {
             }
         }
 
+        @Test func `mac apply plan maps chosen name to uplink`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(
+                    facts: facts,
+                    interface: "en0",
+                    brewFormulaInstalled: true,
+                    brewServiceLoaded: true,
+                ),
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "en0-bridge", nic: "en0"),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.changes.contains(where: {
+                $0.contains("host-bridge-en0-bridge.json") && $0.contains("en0")
+            }))
+            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
+        }
+
         @Test func `mac apply plan persists brN to uplink map`() {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
                 bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["en0"])],

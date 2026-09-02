@@ -55,11 +55,20 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
         #if os(Linux)
             let helper = LinuxHostNetwork.resolvedQemuBridgeHelperPath()
             let setuid = helper.map { LinuxHostNetwork.isSetuidExecutable(at: $0) } ?? false
+            let acl = try? String(
+                contentsOfFile: HostBridgeFactsService.defaultACLPath,
+                encoding: .utf8,
+            )
             let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name in
+                let marker = LinuxHostBridgeApply.readOwnerMarker(bridge: name)
                 HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
-                    createdBridge: LinuxHostBridgeApply.readOwnerMarker(bridge: name)?.createdBridge == true,
+                    createdBridge: LinuxHostBridgeApply.ownership(
+                        bridge: name,
+                        marker: marker,
+                        acl: acl,
+                    ).createdBridge,
                 )
             }
             return HostBridgeFactInputs(

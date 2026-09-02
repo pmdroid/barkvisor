@@ -1,6 +1,19 @@
 import type { HostBridgeReadiness, HostInterface } from '../api/types'
 import { inferInterfaceRole } from './hostInterfaceDisplay'
 
+export function defaultMacBridgeName(nic: string, taken: Iterable<string> = []): string {
+  const port = nic.trim()
+  if (!port) return ''
+  const base = `${port}-bridge`
+  const set = new Set(taken)
+  if (!set.has(base) && base.length < 16) return base
+  for (let n = 2; n < 100; n++) {
+    const name = `${base}-${n}`
+    if (!set.has(name) && name.length < 16) return name
+  }
+  return base.slice(0, 15)
+}
+
 export function nextFreeBridgeName(taken: Iterable<string>): string {
   const set = new Set(taken)
   for (let n = 0; n < 1_024; n++) {

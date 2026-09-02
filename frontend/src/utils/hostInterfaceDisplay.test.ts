@@ -452,6 +452,11 @@ describe('hostInterfaceDisplay', () => {
     }
     expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'macos-guide').map((row) => row.name))
       .toEqual(['br0'])
+    expect(syntheticMacBridgeIfaces(
+      [iface({ name: 'en0' })],
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    ).map((row) => row.name)).toEqual(['en0-bridge'])
     expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'linux-guide')).toEqual([])
     expect(syntheticMacBridgeIfaces(
       [iface({ name: 'en0' })],

@@ -180,6 +180,24 @@ public enum LinuxHostBridgeApply {
         "# barkvisor:allow-\(bridge)"
     }
 
+    public static func aclTagged(bridge: String, acl: String?) -> Bool {
+        let name = bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let acl, !name.isEmpty else { return false }
+        return acl.contains(aclMarker(for: name))
+    }
+
+    public static func ownership(
+        bridge: String,
+        marker: OwnerMarker?,
+        acl: String?,
+    ) -> (owned: Bool, createdBridge: Bool) {
+        let tagged = aclTagged(bridge: bridge, acl: acl)
+        return (
+            owned: marker != nil || tagged,
+            createdBridge: marker?.createdBridge == true || (marker == nil && tagged),
+        )
+    }
+
     public static func netplanPath(bridge: String) -> String {
         "/etc/netplan/90-barkvisor-\(bridge).yaml"
     }
@@ -332,14 +350,15 @@ public enum LinuxHostBridgeApply {
             encoding: .utf8,
         )
         let marker = readOwnerMarker(bridge: bridge)
+        let claim = ownership(bridge: bridge, marker: marker, acl: acl)
         return LinuxHostBridgeApplyProbe(
             facts: facts,
             backend: backend,
             wirelessNics: wireless,
             sessionRiskNics: session.nics,
             sessionWarnings: session.warnings,
-            owned: marker != nil,
-            createdBridge: marker?.createdBridge == true,
+            owned: claim.owned,
+            createdBridge: claim.createdBridge,
             existingInterfaces: Set(existingInterfaceNames()),
             helperPaths: helperPaths.isEmpty
                 ? HostBridgeFactsService.qemuBridgeHelperCandidates

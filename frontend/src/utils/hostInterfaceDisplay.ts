@@ -439,7 +439,6 @@ export function syntheticMacBridgeIfaces(
   const extra: HostInterface[] = []
   for (const bridge of readiness.bridges) {
     if (!bridge.name || seen.has(bridge.name)) continue
-    if (!/^br\d+$/.test(bridge.name)) continue
     seen.add(bridge.name)
     extra.push({
       name: bridge.name,

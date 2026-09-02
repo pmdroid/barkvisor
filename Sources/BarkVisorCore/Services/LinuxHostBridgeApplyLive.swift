@@ -313,6 +313,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
             let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
+            let nic = request.nic ?? members.first ?? probe.facts.defaultRouteInterface ?? ""
+            let cidrs = (try? ipv4CIDRs(on: request.bridge)) ?? []
             for port in members {
                 _ = try? PlatformProcess.run(
                     path: Self.ipPath,
@@ -320,13 +322,47 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     timeout: 15,
                 )
             }
+            if !nic.isEmpty {
+                for cidr in cidrs {
+                    _ = try? PlatformProcess.run(
+                        path: Self.ipPath,
+                        arguments: ["addr", "add", cidr, "dev", nic],
+                        timeout: 15,
+                    )
+                }
+            }
             try revert(request: request, probe: probe)
+            if probe.backend == .networkManager {
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "delete", request.bridge],
+                    timeout: 15,
+                )
+            }
             _ = try? PlatformProcess.run(
                 path: Self.ipPath,
                 arguments: ["link", "del", request.bridge],
                 timeout: 15,
             )
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
+        }
+
+        private func ipv4CIDRs(on device: String) throws -> [String] {
+            let result = try PlatformProcess.run(
+                path: Self.ipPath,
+                arguments: ["-4", "-o", "addr", "show", "dev", device],
+                timeout: 10,
+            )
+            guard result.succeeded else { return [] }
+            var cidrs: [String] = []
+            for raw in result.stdoutString.split(whereSeparator: \.isNewline) {
+                let parts = String(raw).split(whereSeparator: \.isWhitespace).map(String.init)
+                guard let inet = parts.firstIndex(of: "inet"), inet + 1 < parts.count else { continue }
+                let cidr = parts[inet + 1]
+                if cidr.hasPrefix("127.") { continue }
+                cidrs.append(cidr)
+            }
+            return cidrs
         }
 
         private static var ipPath: String {

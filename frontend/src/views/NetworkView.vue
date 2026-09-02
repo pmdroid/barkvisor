@@ -31,6 +31,7 @@ import {
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import {
+  defaultMacBridgeName,
   defaultUnusedPort,
   linuxRefusesWifiPort,
   nextFreeBridgeName,
@@ -1222,13 +1223,24 @@ function takenVmBridgeNames(hostId: string): string[] {
     .map((row) => row.network.bridge as string)
 }
 
+const createBridgeIsMac = computed(() => {
+  const os = (createBridgeCaps.value.platform || '').toLowerCase()
+  return os === 'macos' || os === 'darwin'
+})
+
 async function fetchNextBridgeName(device: HomeDeviceHealthSnapshot | null) {
   const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
-  const fallback = nextFreeBridgeName(takenBridgeNames(
+  const taken = takenBridgeNames(
     createBridgeIfaces.value,
     createBridgeReadiness.value,
     takenVmBridgeNames(hostId),
-  ))
+  )
+  if (createBridgeIsMac.value) {
+    const nic = createBridgeNic.value || defaultUnusedPort(createBridgePorts.value, createBridgeReadiness.value)
+    createBridgeName.value = defaultMacBridgeName(nic, taken)
+    return
+  }
+  const fallback = nextFreeBridgeName(taken)
   try {
     const path = device && useHomeUnion.value
       ? deviceBridgesNextPath(device)
@@ -1248,10 +1260,10 @@ async function openCreateBridge() {
   if (device && useHomeUnion.value) await homeNets.fetchContext(device)
   else await fetchLocalInterfaces()
   await fetchHostReadiness(device)
-  await fetchNextBridgeName(device)
   if (!createBridgeNic.value) {
     createBridgeNic.value = defaultUnusedPort(createBridgePorts.value, createBridgeReadiness.value)
   }
+  await fetchNextBridgeName(device)
 }
 
 watch(createBridgeHostId, async (id, prev) => {
@@ -1259,8 +1271,21 @@ watch(createBridgeHostId, async (id, prev) => {
   const device = devicesStore.deviceByHostId(id)
   if (device && useHomeUnion.value) await homeNets.fetchContext(device)
   await fetchHostReadiness(device)
-  await fetchNextBridgeName(device)
   createBridgeNic.value = defaultUnusedPort(createBridgePorts.value, createBridgeReadiness.value)
+  await fetchNextBridgeName(device)
+})
+
+watch(createBridgeNic, (nic) => {
+  if (!showCreateBridge.value || !createBridgeIsMac.value || !nic) return
+  const hostId = createBridgeHostId.value || devicesStore.selfDevice?.hostId || ''
+  createBridgeName.value = defaultMacBridgeName(
+    nic,
+    takenBridgeNames(
+      createBridgeIfaces.value,
+      createBridgeReadiness.value,
+      takenVmBridgeNames(hostId),
+    ),
+  )
 })
 
 async function applyCreateBridge(confirm = false) {
@@ -1747,7 +1772,9 @@ async function doDeleteNetwork() {
   <AppModal
     v-if="showCreateBridge"
     title="Create Bridge"
-    subtitle="Create is the only path for a new switch. The server picks the next-free brN. One unused NIC is the port. Always adds a bridged Workload network."
+    :subtitle="createBridgeIsMac
+      ? 'Name is a label for the Workload network. Default is the port plus -bridge. One unused NIC is the port.'
+      : 'Linux uses the next-free brN. You can edit the name. One unused NIC is the port.'"
     rail-title="Bridge"
     @close="showCreateBridge = false"
   >
@@ -1767,7 +1794,7 @@ async function doDeleteNetwork() {
     </div>
     <div class="form-group">
       <label>Name</label>
-      <input :value="createBridgeName" readonly />
+      <input v-model="createBridgeName" maxlength="15" />
     </div>
     <div class="form-group">
       <label>Port</label>

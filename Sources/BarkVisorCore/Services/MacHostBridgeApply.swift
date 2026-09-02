@@ -323,7 +323,7 @@ import Foundation
         }
 
         fileprivate static func isSyntheticBridgeName(_ name: String) -> Bool {
-            name.range(of: #"^br\d+$"#, options: .regularExpression) != nil
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
 
         private static func refuse(_ message: String) -> LinuxHostBridgeApplyResult {

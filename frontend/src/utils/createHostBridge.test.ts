@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { HostBridgeReadiness, HostInterface } from '../api/types'
 import {
+  defaultMacBridgeName,
   defaultUnusedPort,
   linuxRefusesWifiPort,
   nextFreeBridgeName,
@@ -31,6 +32,12 @@ function ready(over: Partial<HostBridgeReadiness> = {}): HostBridgeReadiness {
 }
 
 describe('createHostBridge', () => {
+  test('mac default name is port-bridge', () => {
+    expect(defaultMacBridgeName('en0')).toBe('en0-bridge')
+    expect(defaultMacBridgeName('en0', ['en0-bridge'])).toBe('en0-bridge-2')
+    expect(defaultMacBridgeName('')).toBe('')
+  })
+
   test('next-free skips kernel and marked names', () => {
     expect(nextFreeBridgeName([])).toBe('br0')
     expect(nextFreeBridgeName(['br0', 'eth0'])).toBe('br1')

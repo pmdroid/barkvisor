@@ -337,6 +337,30 @@ struct LinuxHostBridgeApplyTests {
         #expect(!probe.facts.bridges.isEmpty)
     }
 
+    @Test func `acl tag without marker is leftover we can delete`() {
+        let tagged = LinuxHostBridgeApply.ownership(
+            bridge: "br0",
+            marker: nil,
+            acl: "# barkvisor:allow-br0\nallow br0\n",
+        )
+        #expect(tagged.owned)
+        #expect(tagged.createdBridge)
+        let foreign = LinuxHostBridgeApply.ownership(
+            bridge: "br0",
+            marker: nil,
+            acl: "allow br0\n",
+        )
+        #expect(!foreign.owned)
+        #expect(!foreign.createdBridge)
+        let attached = LinuxHostBridgeApply.ownership(
+            bridge: "br0",
+            marker: LinuxHostBridgeApply.OwnerMarker(bridge: "br0", uplink: "eth0", createdBridge: false),
+            acl: "# barkvisor:allow-br0\nallow br0\n",
+        )
+        #expect(attached.owned)
+        #expect(!attached.createdBridge)
+    }
+
     @Test func `apply create-equivalent 409 when name exists`() throws {
         let taken = LinuxHostBridgeApplyProbe(
             facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
