@@ -59,9 +59,9 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                 contentsOfFile: HostBridgeFactsService.defaultACLPath,
                 encoding: .utf8,
             )
-            let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name in
+            let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name -> HostBridgeSnapshot in
                 let marker = LinuxHostBridgeApply.readOwnerMarker(bridge: name)
-                HostBridgeSnapshot(
+                return HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
                     createdBridge: LinuxHostBridgeApply.ownership(
