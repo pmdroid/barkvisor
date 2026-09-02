@@ -224,19 +224,28 @@ import Foundation
                 return refuse("No interface to revert.")
             }
             var changes: [String] = []
-            if MacHostNetworkApply.readMarker(device: device) != nil {
-                changes.append("Restore saved networksetup profile for \(device)")
+            var commands: [String] = []
+            if let marker = MacHostNetworkApply.readMarker(device: device) {
+                changes.append("Restore BarkVisor-owned addresses on \(device)")
+                commands.append(contentsOf: MacHostNetworkApply.equivalentCommands(
+                    service: marker.service,
+                    device: device,
+                    delta: MacHostNetworkApply.revertDelta(marker: marker),
+                ))
             } else {
-                changes.append("Set \(device) back to DHCP (no saved profile)")
+                changes.append("No BarkVisor-owned address changes for \(device)")
             }
             changes.append("Strip BarkVisor markers for \(device)")
             let undoCreate = probe.createdBridge
                 || (
                     MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
-                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+                        && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
                 )
             if undoCreate {
                 changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
+                commands.append("launchctl bootout system/\(SocketVmnetLaunchd.label(interface: device))")
+            } else {
+                commands.append("# strip host-bridge marker; never ip link del")
             }
             return LinuxHostBridgeApplyResult(
                 success: true,
@@ -245,15 +254,10 @@ import Foundation
                 backend: "networksetup",
                 changes: changes,
                 warnings: [],
-                commands: [
-                    "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
-                    undoCreate
-                        ? "launchctl bootout system/\(SocketVmnetLaunchd.label(interface: device))"
-                        : "# strip host-bridge marker; never ip link del",
-                ],
+                commands: commands,
                 message: undoCreate
                     ? "Revert restores addresses and removes the new Bridge."
-                    : "Revert restores the saved Device address. socket_vmnet stays.",
+                    : "Revert restores BarkVisor-owned Device addresses. socket_vmnet stays.",
             )
         }
 
@@ -288,13 +292,20 @@ import Foundation
                 return refuse("No interface to delete.")
             }
             var changes: [String] = []
-            if MacHostNetworkApply.readMarker(device: device) != nil {
-                changes.append("Restore saved networksetup profile for \(device)")
+            var commands: [String] = []
+            if let marker = MacHostNetworkApply.readMarker(device: device) {
+                changes.append("Restore BarkVisor-owned addresses on \(device)")
+                commands.append(contentsOf: MacHostNetworkApply.equivalentCommands(
+                    service: marker.service,
+                    device: device,
+                    delta: MacHostNetworkApply.revertDelta(marker: marker),
+                ))
             } else {
-                changes.append("Set \(device) back to DHCP (no saved profile)")
+                changes.append("No BarkVisor-owned address changes for \(device)")
             }
             changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
             changes.append("Strip BarkVisor markers")
+            commands.append("launchctl bootout system/com.barkvisor.socket-vmnet.\(device)")
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -302,10 +313,7 @@ import Foundation
                 backend: "networksetup",
                 changes: changes,
                 warnings: [],
-                commands: [
-                    "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
-                    "launchctl bootout system/com.barkvisor.socket-vmnet.\(device)",
-                ],
+                commands: commands,
                 message: "Ready to delete owned socket_vmnet.",
             )
         }
@@ -355,6 +363,9 @@ import Foundation
             }
             guard plan.success, !plan.needsConfirm else { return plan }
             if request.action == .check || request.action == .dryRun {
+                if request.action == .dryRun {
+                    overlayLiveAddressCommands(&plan, request: request, probe: resolved)
+                }
                 return plan
             }
 
@@ -423,13 +434,7 @@ import Foundation
                     && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
-                    plan.changes.insert("Restored saved networksetup profile.", at: 0)
-                } else if let service = resolved.serviceName {
-                    _ = try PlatformProcess.run(
-                        path: MacHostNetworkApply.networksetupPath,
-                        arguments: ["-setdhcp", service],
-                    )
-                    plan.changes.insert("Set \(service) to DHCP.", at: 0)
+                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
                 }
                 if undoCreate {
                     _ = try? SocketVmnetApplyLive.run(
@@ -455,13 +460,7 @@ import Foundation
             case .delete:
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
-                    plan.changes.insert("Restored saved networksetup profile.", at: 0)
-                } else if let service = resolved.serviceName {
-                    _ = try PlatformProcess.run(
-                        path: MacHostNetworkApply.networksetupPath,
-                        arguments: ["-setdhcp", service],
-                    )
-                    plan.changes.insert("Set \(service) to DHCP.", at: 0)
+                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
                 }
                 _ = try? SocketVmnetApplyLive.run(
                     request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
@@ -478,6 +477,40 @@ import Foundation
                 break
             }
             return plan
+        }
+
+        private static func overlayLiveAddressCommands(
+            _ result: inout LinuxHostBridgeApplyResult,
+            request: LinuxHostBridgeApplyRequest,
+            probe: MacHostBridgeApplyProbe,
+        ) {
+            guard let service = probe.serviceName, !probe.device.isEmpty else { return }
+            guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else { return }
+            guard let delta = try? MacHostNetworkApply.addressDelta(
+                device: probe.device,
+                service: service,
+                plan: plan,
+            ) else { return }
+            let addressCommands = MacHostNetworkApply.equivalentCommands(
+                service: service,
+                device: probe.device,
+                delta: delta,
+            )
+            let addressChanges = MacHostNetworkApply.describeDelta(
+                delta,
+                service: service,
+                device: probe.device,
+            )
+            let keepCommands = result.commands.filter { line in
+                let lower = line.lowercased()
+                return lower.contains("socket_vmnet") || lower.contains("launchctl")
+            }
+            let keepChanges = result.changes.filter { line in
+                let lower = line.lowercased()
+                return lower.contains("socket_vmnet") || lower.contains("host-bridge")
+            }
+            result.commands = addressCommands + keepCommands
+            result.changes = addressChanges + keepChanges
         }
     }
 

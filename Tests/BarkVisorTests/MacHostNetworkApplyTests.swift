@@ -122,6 +122,102 @@ import Testing
             #expect(ifconfigCalls.contains {
                 $0 == [device, "alias", "192.168.10.45", "netmask", "255.255.0.0"]
             })
+            #expect(!ifconfigCalls.contains { $0.contains("-alias") })
+        }
+
+        @Test func `remove one owned alias does not set dhcp`() throws {
+            let device = "en0-remove-one-alias"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\nIP address: 192.168.8.224\n",
+                dnsServers: [],
+                appliedAliasCIDRs: ["192.168.10.45/16", "192.168.10.46/16"],
+            ))
+            var ifconfigCalls: [[String]] = []
+            var networksetupCalls: [[String]] = []
+            let live = """
+            inet 192.168.8.224 netmask 0xffff0000
+            inet 192.168.10.45 netmask 0xffff0000
+            inet 192.168.10.46 netmask 0xffff0000
+            inet 10.1.1.1 netmask 0xffffff00
+            """
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    ifconfigCalls.append(args)
+                    return CommandResult(exitCode: 0, stdout: Data(live.utf8), stderr: Data())
+                }
+                networksetupCalls.append(args)
+                if args.first == "-getinfo" {
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("DHCP Configuration\nIP address: 192.168.8.224\n".utf8),
+                        stderr: Data(),
+                    )
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            try MacHostNetworkApply.apply(
+                device: device,
+                service: "Ethernet",
+                plan: HostInterfaceAddressApplyPlan(
+                    dhcpEnabled: true,
+                    staticCIDRs: ["192.168.10.46/16"],
+                    dns: [],
+                ),
+                run: run,
+            )
+            #expect(ifconfigCalls.contains { $0 == [device, "-alias", "192.168.10.45"] })
+            #expect(!ifconfigCalls.contains { $0.contains("192.168.10.46") && $0.contains("-alias") })
+            #expect(!ifconfigCalls.contains { $0.contains("192.168.8.224") && $0.contains("-alias") })
+            #expect(!ifconfigCalls.contains { $0.contains("10.1.1.1") && $0.contains("-alias") })
+            #expect(!networksetupCalls.contains { $0.contains("-setdhcp") })
+            #expect(!networksetupCalls.contains { $0.contains("-setmanual") })
+        }
+
+        @Test func `address delta equivalent commands are only owned mutations`() throws {
+            let device = "en0-delta-cmds"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\nIP address: 192.168.8.224\n",
+                dnsServers: [],
+                appliedAliasCIDRs: ["192.168.10.45/16"],
+            ))
+            let live = """
+            inet 192.168.8.224 netmask 0xffff0000
+            inet 192.168.10.45 netmask 0xffff0000
+            """
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    return CommandResult(exitCode: 0, stdout: Data(live.utf8), stderr: Data())
+                }
+                if args.first == "-getinfo" {
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("DHCP Configuration\nIP address: 192.168.8.224\n".utf8),
+                        stderr: Data(),
+                    )
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            let delta = try MacHostNetworkApply.addressDelta(
+                device: device,
+                service: "Ethernet",
+                plan: HostInterfaceAddressApplyPlan(dhcpEnabled: true, dns: []),
+                run: run,
+            )
+            #expect(delta.removeAliasIPs == ["192.168.10.45"])
+            #expect(!delta.setDHCP)
+            #expect(delta.setManual == nil)
+            let lines = MacHostNetworkApply.equivalentCommands(
+                service: "Ethernet",
+                device: device,
+                delta: delta,
+            )
+            #expect(lines == ["sudo ifconfig \(device) -alias 192.168.10.45"])
         }
 
         @Test func `revert restores saved dns servers`() throws {
@@ -132,6 +228,7 @@ import Testing
                 service: "Ethernet",
                 infoText: "DHCP Configuration\nIP address: 192.168.1.10\n",
                 dnsServers: ["9.9.9.9"],
+                touchedDNS: true,
             ))
 
             var calls: [[String]] = []
@@ -142,7 +239,7 @@ import Testing
 
             let reverted = try MacHostNetworkApply.revert(device: device, run: run)
             #expect(reverted)
-            #expect(calls.contains(["-setdhcp", "Ethernet"]))
+            #expect(!calls.contains(["-setdhcp", "Ethernet"]))
             #expect(calls.contains(["-setdnsservers", "Ethernet", "9.9.9.9"]))
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
         }
@@ -167,7 +264,7 @@ import Testing
             let reverted = try MacHostNetworkApply.revert(device: device, run: run)
             #expect(reverted)
             #expect(calls.contains { $0 == ["/sbin/ifconfig", device, "-alias", "10.0.0.2"] })
-            #expect(calls.contains { $0 == [MacHostNetworkApply.networksetupPath, "-setdhcp", "Ethernet"] })
+            #expect(!calls.contains { $0 == [MacHostNetworkApply.networksetupPath, "-setdhcp", "Ethernet"] })
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
         }
 
@@ -228,10 +325,11 @@ import Testing
                 service: "Ethernet",
                 infoText: "DHCP Configuration\n",
                 dnsServers: [],
+                appliedAliasCIDRs: ["10.0.0.2/24"],
             ))
 
-            let run: (String, [String]) throws -> CommandResult = { _, args in
-                if args.first == "-setdhcp" {
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig", args.contains("-alias") {
                     return CommandResult(exitCode: 1, stdout: Data(), stderr: Data("fail".utf8))
                 }
                 return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
@@ -254,6 +352,8 @@ import Testing
             )
             #expect(lines.joined(separator: "\n").contains("-setdnsservers"))
             #expect(lines.joined(separator: "\n").contains("1.1.1.1"))
+            #expect(!lines.joined(separator: "\n").contains("-setdhcp"))
+            #expect(!lines.joined(separator: "\n").contains("listallhardwareports"))
         }
     }
 #endif
@@ -349,6 +449,8 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.message.contains("Device address"))
             #expect(!result.message.localizedCaseInsensitiveContains("socket_vmnet"))
             #expect(result.commands.joined(separator: "\n").contains("ifconfig en0 alias"))
+            #expect(!result.commands.joined(separator: "\n").contains("-setdhcp"))
+            #expect(!result.commands.joined(separator: "\n").contains("listallhardwareports"))
         }
 
         @Test func `mac delete stops socket_vmnet when createdBridge`() {
@@ -419,11 +521,11 @@ struct MacHostBridgeApplyPlannerTests {
             )
             #expect(revert.success)
             #expect(!revert.changes.contains { $0.lowercased().contains("stop") })
-            #expect(revert.commands.contains { $0.contains("networksetup") })
-            #expect(revert.commands.contains { $0.contains("never ip link del") || $0.contains("networksetup") })
+            #expect(!revert.commands.contains { $0.contains("-setdhcp") })
+            #expect(revert.commands.contains { $0.contains("never ip link del") })
             #expect(
-                revert.changes.contains { $0.contains("Restore saved") }
-                    || revert.changes.contains { $0.contains("DHCP") },
+                revert.changes.contains { $0.contains("No BarkVisor-owned") }
+                    || revert.changes.contains { $0.contains("Restore BarkVisor-owned") },
             )
             let denied = MacHostBridgeApply.evaluate(
                 request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0", confirm: true),
