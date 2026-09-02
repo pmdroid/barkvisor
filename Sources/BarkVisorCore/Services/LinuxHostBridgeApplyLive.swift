@@ -317,8 +317,46 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         ) throws {
             let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
             let nic = request.nic ?? members.first ?? probe.facts.defaultRouteInterface ?? ""
+            let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
+            if probe.backend == .networkManager {
+                for port in ports {
+                    _ = try? PlatformProcess.run(
+                        path: "/usr/bin/nmcli",
+                        arguments: [
+                            "connection", "delete",
+                            LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: port),
+                        ],
+                        timeout: 15,
+                    )
+                }
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "delete", "barkvisor-\(request.bridge)"],
+                    timeout: 15,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "delete", request.bridge],
+                    timeout: 15,
+                )
+                for port in ports {
+                    _ = try? PlatformProcess.run(
+                        path: Self.ipPath,
+                        arguments: ["link", "set", port, "nomaster"],
+                        timeout: 15,
+                    )
+                }
+                _ = try? PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["link", "delete", request.bridge, "type", "bridge"],
+                    timeout: 15,
+                )
+                try revert(request: request, probe: probe)
+                HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
+                return
+            }
             let cidrs = (try? ipv4CIDRs(on: request.bridge)) ?? []
-            for port in members {
+            for port in ports {
                 _ = try? PlatformProcess.run(
                     path: Self.ipPath,
                     arguments: ["link", "set", port, "nomaster"],
@@ -335,16 +373,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 }
             }
             try revert(request: request, probe: probe)
-            if probe.backend == .networkManager {
-                _ = try? PlatformProcess.run(
-                    path: "/usr/bin/nmcli",
-                    arguments: ["connection", "delete", request.bridge],
-                    timeout: 15,
-                )
-            }
             _ = try? PlatformProcess.run(
                 path: Self.ipPath,
-                arguments: ["link", "del", request.bridge],
+                arguments: ["link", "delete", request.bridge, "type", "bridge"],
                 timeout: 15,
             )
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)

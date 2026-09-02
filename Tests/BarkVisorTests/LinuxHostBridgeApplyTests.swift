@@ -552,7 +552,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(!result.refused)
         #expect(result.changes.contains { $0.contains("Detach eth0") })
         #expect(result.changes.contains { $0.contains("Restore L3") })
-        #expect(result.commands.contains { $0.contains("ip link del br0") })
+        #expect(result.commands.contains { $0.contains("ip link delete br0 type bridge") })
         #expect(result.message.contains("Ready to delete"))
         #expect(!result.message.contains("Keep changes"))
     }
@@ -563,8 +563,14 @@ struct LinuxHostBridgeApplyTests {
             probe: probe(backend: .networkManager, owned: true, createdBridge: true, ready: true),
         )
         #expect(nm.success)
-        #expect(nm.commands.contains { $0.contains("nmcli connection delete barkvisor-br0-eth0") })
-        #expect(nm.commands.contains { $0.contains("nmcli device reapply eth0") })
+        #expect(nm.commands == [
+            "sudo nmcli connection delete barkvisor-br0-eth0",
+            "sudo nmcli connection delete barkvisor-br0",
+            "sudo ip link set eth0 nomaster",
+            "sudo ip link delete br0 type bridge",
+            "sudo nmcli device reapply eth0",
+            "# strip \(LinuxHostBridgeApply.aclMarker(for: "br0")) + allow br0",
+        ])
         let networkd = LinuxHostBridgeApply.evaluate(
             request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
             probe: probe(backend: .systemdNetworkd, owned: true, createdBridge: true, ready: true),
@@ -649,7 +655,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(preview.success)
         #expect(preview.needsConfirm)
         #expect(!preview.applied)
-        #expect(preview.commands.contains { $0.contains("ip link del br0") })
+        #expect(preview.commands.contains { $0.contains("ip link delete br0 type bridge") })
         let recorder = RecordingLinuxHostBridgeMutator()
         let live = try LinuxHostBridgeApplyLive.run(
             request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0"),
@@ -671,6 +677,6 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.applied)
         #expect(!result.pendingCommit)
         #expect(recorder.steps.contains { $0.contains("action=delete") })
-        #expect(recorder.steps.contains { $0.contains("ip link del") || $0.contains("Delete br0") })
+        #expect(recorder.steps.contains { $0.contains("ip link delete") || $0.contains("Delete br0") })
     }
 }

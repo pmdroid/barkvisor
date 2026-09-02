@@ -1028,50 +1028,55 @@ extension LinuxHostBridgeApply {
         }
         let nic = resolvedNic(request: request, probe: probe)
         let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
+        let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
         var changes: [LinuxHostBridgeChange] = []
-        for port in members {
-            changes.append(LinuxHostBridgeChange(
-                description: "Detach \(port) from \(request.bridge)",
-                command: "sudo ip link set \(port) nomaster",
-            ))
-        }
-        if !nic.isEmpty {
-            let restore = switch probe.backend {
-            case .netplan:
-                "sudo netplan try --timeout \(rollbackSeconds)"
-            case .networkManager:
-                "sudo nmcli device reapply \(nic)"
-            case .systemdNetworkd:
-                "sudo networkctl reapply \(nic)"
-            case .ifupdown, .unknown:
-                "sudo ip addr flush \(request.bridge)"
-            }
-            changes.append(LinuxHostBridgeChange(
-                description: "Restore L3 on \(nic)",
-                command: restore,
-            ))
-        }
-        changes.append(LinuxHostBridgeChange(
-            description: "Delete \(request.bridge)",
-            command: "sudo ip link del \(request.bridge)",
-        ))
         switch probe.backend {
-        case .netplan:
-            changes.append(LinuxHostBridgeChange(
-                description: "Remove \(netplanPath(bridge: request.bridge))",
-                command: "sudo rm -f \(netplanPath(bridge: request.bridge)) && sudo netplan try --timeout \(rollbackSeconds)",
-            ))
         case .networkManager:
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: port))",
+                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: port))",
+                ))
+            }
             changes.append(LinuxHostBridgeChange(
                 description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
                 command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
             ))
-            if !nic.isEmpty {
+            for port in ports {
                 changes.append(LinuxHostBridgeChange(
-                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
-                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
                 ))
             }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo nmcli device reapply \(nic)",
+                ))
+            }
+        case .netplan:
+            changes.append(LinuxHostBridgeChange(
+                description: "Remove \(netplanPath(bridge: request.bridge))",
+                command: "sudo rm -f \(netplanPath(bridge: request.bridge))",
+            ))
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Restore L3 with netplan",
+                command: "sudo netplan try --timeout \(rollbackSeconds)",
+            ))
         case .systemdNetworkd:
             var units = "\(networkdNetdevPath(bridge: request.bridge)) \(networkdNetworkPath(bridge: request.bridge))"
             if !nic.isEmpty {
@@ -1081,6 +1086,22 @@ extension LinuxHostBridgeApply {
                 description: "Remove systemd-networkd barkvisor units",
                 command: "sudo rm -f \(units) && sudo networkctl reload",
             ))
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo networkctl reapply \(nic)",
+                ))
+            }
         case .ifupdown, .unknown:
             break
         }
