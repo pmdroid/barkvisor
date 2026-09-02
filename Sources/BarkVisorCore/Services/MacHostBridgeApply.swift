@@ -118,6 +118,38 @@ import Foundation
             guard let service = probe.serviceName else {
                 return refuse("No networksetup service for '\(device)'.")
             }
+            if isSyntheticBridgeName(request.bridge) {
+                let socketPlan = SocketVmnetApply.evaluate(
+                    request: SocketVmnetApplyRequest(action: .setup, interface: device),
+                    probe: probe.socketProbe,
+                )
+                if !socketPlan.success {
+                    return refuse(socketPlan.message)
+                }
+                var changes = [
+                    LinuxHostBridgeChange(
+                        description: "Map \(request.bridge) → \(device) in host-bridge-\(request.bridge).json",
+                        command: "",
+                    ),
+                ]
+                changes.append(contentsOf: socketPlan.changes.map {
+                    LinuxHostBridgeChange(description: $0, command: "")
+                })
+                return LinuxHostBridgeApplyResult(
+                    success: true,
+                    applied: false,
+                    needsConfirm: false,
+                    backend: "networksetup",
+                    changes: changes.map(\.description),
+                    warnings: [
+                        "After Apply, click Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or Revert to undo.",
+                    ],
+                    commands: socketPlan.commands,
+                    message: dryRun
+                        ? "Dry run: create socket_vmnet for \(request.bridge)."
+                        : "Create socket_vmnet for \(request.bridge) on \(device).",
+                )
+            }
             let planResult = HostInterfaceAddressApply.resolve(from: request)
             guard case let .success(plan) = planResult else {
                 if case let .failure(error) = planResult {
@@ -136,36 +168,17 @@ import Foundation
                 "After Apply, click Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or Revert to undo.",
             )
 
-            var changes = HostInterfaceAddressApply.plannedDiffs(
+            let changes = HostInterfaceAddressApply.plannedDiffs(
                 plan: plan,
                 interfaceLabel: "\(service) (\(device))",
             ).map {
                 LinuxHostBridgeChange(description: $0, command: "")
             }
-            var commands = MacHostNetworkApply.equivalentCommands(
+            let commands = MacHostNetworkApply.equivalentCommands(
                 service: service,
                 device: device,
                 plan: plan,
             )
-            if isSyntheticBridgeName(request.bridge) {
-                changes.append(
-                    LinuxHostBridgeChange(
-                        description: "Map \(request.bridge) → \(device) in host-bridge-\(request.bridge).json",
-                        command: "",
-                    ),
-                )
-                let socketPlan = SocketVmnetApply.evaluate(
-                    request: SocketVmnetApplyRequest(action: .setup, interface: device),
-                    probe: probe.socketProbe,
-                )
-                if !socketPlan.success {
-                    return refuse(socketPlan.message)
-                }
-                changes.append(contentsOf: socketPlan.changes.map {
-                    LinuxHostBridgeChange(description: $0, command: "")
-                })
-                commands += socketPlan.commands
-            }
 
             if !request.confirm, probe.facts.onlyUplink {
                 return LinuxHostBridgeApplyResult(
@@ -231,6 +244,31 @@ import Foundation
             if device.isEmpty {
                 return refuse("No interface to revert.")
             }
+            let undoCreate = probe.createdBridge
+                || (
+                    MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                        && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+                )
+            if undoCreate {
+                let label = SocketVmnetLaunchd.label(interface: device)
+                let plist = SocketVmnetLaunchd.plistURL(interface: device).path
+                return LinuxHostBridgeApplyResult(
+                    success: true,
+                    applied: false,
+                    needsConfirm: false,
+                    backend: "networksetup",
+                    changes: [
+                        "Stop BarkVisor-managed socket_vmnet for \(device)",
+                        "Remove \(plist)",
+                    ],
+                    warnings: [],
+                    commands: [
+                        "sudo launchctl bootout system/\(label)",
+                        "sudo rm -f \(plist)",
+                    ],
+                    message: "Revert removes the new Bridge. Device addresses stay.",
+                )
+            }
             var changes: [String] = []
             var commands: [String] = []
             if let marker = MacHostNetworkApply.readMarker(device: device) {
@@ -244,17 +282,7 @@ import Foundation
                 changes.append("No BarkVisor-owned address changes for \(device)")
             }
             changes.append("Strip BarkVisor markers for \(device)")
-            let undoCreate = probe.createdBridge
-                || (
-                    MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
-                        && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
-                )
-            if undoCreate {
-                changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
-                commands.append("launchctl bootout system/\(SocketVmnetLaunchd.label(interface: device))")
-            } else {
-                commands.append("# strip host-bridge marker; never ip link del")
-            }
+            commands.append("# strip host-bridge marker; never ip link del")
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -263,9 +291,7 @@ import Foundation
                 changes: changes,
                 warnings: [],
                 commands: commands,
-                message: undoCreate
-                    ? "Revert restores addresses and removes the new Bridge."
-                    : "Revert restores BarkVisor-owned Device addresses. socket_vmnet stays.",
+                message: "Revert restores BarkVisor-owned Device addresses. socket_vmnet stays.",
             )
         }
 
@@ -371,7 +397,8 @@ import Foundation
                 return plan
             }
             if request.action == .check || request.action == .dryRun {
-                if request.action == .dryRun {
+                if request.action == .dryRun,
+                   !MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
                     overlayLiveAddressCommands(&plan, request: request, probe: resolved)
                 }
                 return plan
@@ -391,17 +418,18 @@ import Foundation
                         throw BarkVisorError.preconditionFailed(socket.message)
                     }
                     plan.changes.append(contentsOf: socket.changes)
+                } else {
+                    try MacHostNetworkApply.apply(
+                        device: resolved.device,
+                        service: service,
+                        plan: {
+                            guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
+                                throw BarkVisorError.badRequest("Invalid host address plan.")
+                            }
+                            return plan
+                        }(),
+                    )
                 }
-                try MacHostNetworkApply.apply(
-                    device: resolved.device,
-                    service: service,
-                    plan: {
-                        guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
-                            throw BarkVisorError.badRequest("Invalid host address plan.")
-                        }
-                        return plan
-                    }(),
-                )
                 let createdNow = MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
                     && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge) == nil
                 if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
@@ -441,15 +469,11 @@ import Foundation
                     || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
                     && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                if try MacHostNetworkApply.revert(device: resolved.device) {
-                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
-                }
                 if undoCreate {
-                    _ = try? SocketVmnetApplyLive.run(
-                        request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
-                        probe: resolved.socketProbe,
-                    )
+                    try SocketVmnetLaunchd.remove(interface: resolved.device)
                     plan.changes.append("Stopped BarkVisor-managed socket_vmnet for \(resolved.device)")
+                } else if try MacHostNetworkApply.revert(device: resolved.device) {
+                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
                 }
                 let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
                 try? FileManager.default.removeItem(

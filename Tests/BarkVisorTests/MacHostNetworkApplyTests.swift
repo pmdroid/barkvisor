@@ -430,7 +430,7 @@ struct MacHostBridgeApplyPlannerTests {
             )
             #expect(result.success)
             #expect(result.changes.contains(where: { $0.contains("host-bridge-br0.json") }))
-            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
+            #expect(result.changes.contains(where: { $0.contains("launchctl bootstrap") || $0.localizedCaseInsensitiveContains("socket-vmnet") }))
         }
         @Test func `mac apply plan lists dns when requested`() {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
@@ -714,7 +714,10 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.changes.contains(where: {
                 $0.contains("host-bridge-en0-bridge.json") && $0.contains("en0")
             }))
-            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
+            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") || $0.contains("launchctl bootstrap") }))
+            #expect(result.commands.contains { $0.contains("launchctl bootstrap") })
+            #expect(!result.commands.contains { $0.contains("ifconfig") })
+            #expect(!result.commands.contains { $0.contains("createnetworkservice") })
         }
 
         @Test func `mac apply plan persists brN to uplink map`() {
@@ -742,7 +745,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.changes.contains(where: {
                 $0.contains("host-bridge-br0.json") && $0.contains("en0")
             }))
-            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
+            #expect(result.changes.contains(where: { $0.contains("launchctl bootstrap") || $0.localizedCaseInsensitiveContains("socket-vmnet") }))
         }
     #endif
 }
