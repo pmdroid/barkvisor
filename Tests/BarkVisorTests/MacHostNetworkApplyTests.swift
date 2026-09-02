@@ -260,7 +260,7 @@ import Testing
 
 struct MacHostBridgeApplyPlannerTests {
     #if os(macOS)
-        @Test func `mac apply refuses wifi service`() {
+        @Test func `mac apply allows wifi service`() {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
                 bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
                 defaultRouteInterface: "en0",
@@ -270,14 +270,20 @@ struct MacHostBridgeApplyPlannerTests {
                 facts: facts,
                 device: "en0",
                 serviceName: "Wi-Fi",
-                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                socketProbe: SocketVmnetApplyProbe(
+                    facts: facts,
+                    interface: "en0",
+                    brewFormulaInstalled: true,
+                    brewServiceLoaded: true,
+                ),
             )
             let result = MacHostBridgeApply.evaluate(
-                request: LinuxHostBridgeApplyRequest(action: .apply, nic: "en0"),
+                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "en0"),
                 probe: probe,
             )
-            #expect(!result.success)
-            #expect(result.message.contains("Wi-Fi"))
+            #expect(result.success)
+            #expect(result.changes.contains(where: { $0.contains("host-bridge-br0.json") }))
+            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
         }
         @Test func `mac apply plan lists dns when requested`() {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
@@ -299,6 +305,7 @@ struct MacHostBridgeApplyPlannerTests {
             let result = MacHostBridgeApply.evaluate(
                 request: LinuxHostBridgeApplyRequest(
                     action: .apply,
+                    bridge: "",
                     nic: "en0",
                     addressing: .staticIP,
                     address: "192.168.1.10/24",
@@ -329,6 +336,7 @@ struct MacHostBridgeApplyPlannerTests {
             let result = MacHostBridgeApply.evaluate(
                 request: LinuxHostBridgeApplyRequest(
                     action: .apply,
+                    bridge: "",
                     nic: "en0",
                     addresses: [
                         HostInterfaceAddressApplyEntry(kind: .dhcp),
@@ -478,6 +486,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.changes.contains(where: {
                 $0.contains("host-bridge-br0.json") && $0.contains("en0")
             }))
+            #expect(result.changes.contains(where: { $0.localizedCaseInsensitiveContains("socket_vmnet") }))
         }
     #endif
 }

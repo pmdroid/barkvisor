@@ -276,7 +276,7 @@ describe('Network Management', () => {
     cy.get('.modal-overlay').should('not.exist')
   })
 
-  it('Host interfaces hides Create Bridge on macOS', () => {
+  it('Create Bridge on macOS lists Wi-Fi en0 as a port', () => {
     cy.intercept('GET', '**/system/capabilities', (req) => {
       req.continue((res) => {
         if (res.body && typeof res.body === 'object') {
@@ -286,10 +286,35 @@ describe('Network Management', () => {
         }
       })
     }).as('macCaps')
+    cy.intercept('GET', '**/system/bridges/next', { bridge: 'br0' }).as('nextBridge')
+    cy.intercept('GET', '**/system/host-bridge-readiness', {
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+      bridges: [{ name: 'en0', enslaved: [] }],
+      defaultRouteInterface: 'en0',
+      onlyUplink: false,
+      ready: true,
+    }).as('ready')
+    cy.intercept('GET', '**/system/interfaces', [
+      {
+        name: 'en0',
+        displayName: 'en0 (Wi-Fi)',
+        ipAddress: '192.168.1.10',
+        dhcpEnabled: true,
+        addresses: [{ cidr: '192.168.1.10/24', source: 'dhcp', primary: true }],
+      },
+    ]).as('ifaces')
     cy.visit('/networks')
     cy.wait('@macCaps')
-    cy.contains('button', 'Create Network').should('not.exist')
-    cy.contains('button', 'Create').should('not.exist')
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextBridge')
+    cy.get('.modal-overlay').should('be.visible')
+    cy.contains('h2', 'Create Bridge').should('be.visible')
+    cy.contains('.form-group', 'Port').find('select').should('contain', 'en0')
+    cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {

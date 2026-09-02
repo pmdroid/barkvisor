@@ -14,10 +14,10 @@ Words: **Home**, **Device**, **Workload**. Host addressing is this Device — co
 
 | Tab | Purpose |
 |-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Linux Bridges are their own rows. |
+| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Bridges are their own rows. |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-**Create → Bridge** is Linux-only. macOS has no Create Bridge — extra static IPs go on the NIC.
+**Create → Bridge** is the path for a **new** switch. macOS maps `brN` onto `en0` (Wi-Fi allowed).
 
 ## Host interfaces tab
 
@@ -115,7 +115,7 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
 
 ### macOS (`socket_vmnet`)
 
-macOS has no Create Bridge. **Apply** on the LAN NIC (`en0`) sets extra static aliases via native Swift (`networksetup` + `ifconfig`). NAT Workloads work with bridged host networking down.
+**Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC via `networksetup` + `ifconfig`. NAT Workloads work with bridged host networking down.
 
 After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
 

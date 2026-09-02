@@ -76,5 +76,26 @@ describe('createHostBridge', () => {
     )
     expect(mac.map((row) => row.name)).toEqual(['en0', 'en1'])
     expect(defaultUnusedPort(mac, ready({ defaultRouteInterface: 'en0' }))).toBe('en0')
+
+    const macSocketListedAsBridge = unusedBridgePorts(
+      [iface({ name: 'en0', displayName: 'en0 (Wi-Fi)' }), iface({ name: 'utun8' })],
+      ready({
+        defaultRouteInterface: 'en0',
+        bridges: [{ name: 'en0', enslaved: [] }],
+        ready: true,
+      }),
+      'macos',
+    )
+    expect(macSocketListedAsBridge.map((row) => row.name)).toEqual(['en0'])
+
+    const macMapped = unusedBridgePorts(
+      [iface({ name: 'en0', displayName: 'en0 (Wi-Fi)' })],
+      ready({
+        defaultRouteInterface: 'en0',
+        bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      }),
+      'macos',
+    )
+    expect(macMapped.map((row) => row.name)).toEqual([])
   })
 })

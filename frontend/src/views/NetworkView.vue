@@ -274,23 +274,27 @@ function deviceBridgeGuideMode(device: HomeDeviceHealthSnapshot) {
   })
 }
 
-const linuxBridgeDevices = computed(() =>
+function canGuideCreateBridge(mode: string): boolean {
+  return mode === 'linux-guide' || mode === 'macos-guide'
+}
+
+const hostBridgeDevices = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId)
-    .filter((device) => deviceBridgeGuideMode(device) === 'linux-guide'),
+    .filter((device) => canGuideCreateBridge(deviceBridgeGuideMode(device))),
 )
 
 const canCreateHostBridge = computed(() => {
-  if (linuxBridgeDevices.value.length > 0) return true
+  if (hostBridgeDevices.value.length > 0) return true
   if (devicesStore.devices.length > 0) return false
-  return bridgeManagementMode({
+  return canGuideCreateBridge(bridgeManagementMode({
     platform: caps.currentHost.platform,
     supportsHostBridgeManagement: caps.currentHost.supportsHostBridgeManagement,
     supportsManagedBridgeDaemon: caps.currentHost.supportsManagedBridgeDaemon,
-  }) === 'linux-guide'
+  }))
 })
 
 const createBridgeDeviceOptions = computed(() =>
-  linuxBridgeDevices.value.map((device) => ({
+  hostBridgeDevices.value.map((device) => ({
     value: device.hostId,
     label: deviceDisplayLabel(device),
     disabled: !canCallDeviceAPI(device),
@@ -1169,7 +1173,7 @@ async function confirmLinuxBridge() {
 }
 
 function resetCreateBridgeForm() {
-  createBridgeHostId.value = linuxBridgeDevices.value.find((device) => canCallDeviceAPI(device))?.hostId
+  createBridgeHostId.value = hostBridgeDevices.value.find((device) => canCallDeviceAPI(device))?.hostId
     || defaultFormHostId()
   createBridgeName.value = ''
   createBridgeNic.value = ''
@@ -1745,7 +1749,7 @@ async function doDeleteNetwork() {
         </option>
       </AppSelect>
       <p v-if="createBridgePorts.length === 0" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-        No unused NIC on this Device. Linux refuses Wi-Fi as a port.
+        No unused NIC on this Device. Linux refuses Wi-Fi as a port. macOS allows en0 (Wi-Fi).
       </p>
     </div>
     <FormError v-if="createBridgeError" :message="createBridgeError" />

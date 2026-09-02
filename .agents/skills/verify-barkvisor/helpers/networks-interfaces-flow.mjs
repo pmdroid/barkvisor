@@ -63,12 +63,21 @@ try {
   if (await page.locator('button:has-text("Bridge setup")').count() > 0) {
     fail('Bridge setup toolbar button should be removed')
   }
-  const about = await fetch(`${base}/api/system/about`, { headers: authHeader }).then((r) => r.json())
-  const platform = String(about.platform || '')
   const createBtnHost = page.locator('.ops-actions button:has-text("Create")')
-  if (/mac|darwin/i.test(platform) && await createBtnHost.count() > 0) {
-    fail('macOS Host interfaces should not show Create Bridge')
-  }
+  if (await createBtnHost.count() === 0) fail('Host interfaces missing Create Bridge')
+  await createBtnHost.click()
+  await page.locator('.create-menu-list button:has-text("Bridge")').click()
+  await page.waitForSelector('h2:has-text("Create Bridge")', { timeout: 15000 })
+  const createText = (await page.locator('.modal-overlay').innerText()).toLowerCase()
+  if (createText.includes('create vm network')) fail('Create Bridge should not show VM network checkbox')
+  const portSelect = page.locator('.modal-overlay select').last()
+  const portValues = await portSelect.locator('option').evaluateAll(
+    (els) => els.map((el) => /** @type {HTMLOptionElement} */ (el).value).filter(Boolean),
+  )
+  if (portValues.length === 0) fail('Create Bridge has no unused NIC (Mac en0 should be a port)')
+  flowSteps.push('createBridgeModal')
+  await page.locator('.modal-overlay button:has-text("Cancel")').click()
+  await page.waitForSelector('.modal-overlay', { state: 'hidden', timeout: 10000 })
 
   const hostSelected = await hostTab.getAttribute('aria-selected')
   if (hostSelected !== 'true') fail('Host interfaces tab should be default')

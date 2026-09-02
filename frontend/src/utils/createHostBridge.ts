@@ -40,18 +40,38 @@ export function linuxRefusesWifiPort(
   return isWirelessPort(iface)
 }
 
+function isMacPlatform(platform?: string | null): boolean {
+  const os = (platform || '').toLowerCase()
+  return os === 'macos' || os === 'darwin'
+}
+
+function isKernelBridgeName(name: string): boolean {
+  return /^br\d+$/.test(name) || name.toLowerCase().startsWith('bridge')
+}
+
 export function unusedBridgePorts(
   ifaces: HostInterface[],
   readiness: HostBridgeReadiness | null | undefined,
   platform?: string | null,
 ): HostInterface[] {
-  const enslaved = new Set(readiness?.bridges.flatMap((bridge) => bridge.enslaved) ?? [])
-  const bridges = new Set(readiness?.bridges.map((bridge) => bridge.name) ?? [])
+  const mac = isMacPlatform(platform)
+  const mode = mac ? 'macos-guide' : undefined
+  const enslaved = new Set(
+    (readiness?.bridges ?? []).flatMap((bridge) => {
+      if (mac && !isKernelBridgeName(bridge.name)) return []
+      return bridge.enslaved
+    }),
+  )
+  const bridges = new Set(
+    (readiness?.bridges ?? [])
+      .map((bridge) => bridge.name)
+      .filter((name) => !mac || isKernelBridgeName(name)),
+  )
   return ifaces.filter((iface) => {
     if (iface.name === 'lo' || iface.name === 'lo0') return false
     if (bridges.has(iface.name)) return false
     if (enslaved.has(iface.name)) return false
-    const role = inferInterfaceRole(iface, readiness)
+    const role = inferInterfaceRole(iface, readiness, mode)
     if (role === 'bridge' || role === 'loopback' || role === 'tailscale') return false
     const n = iface.name.toLowerCase()
     if (n.startsWith('docker') || n.startsWith('veth') || n.startsWith('virbr')) return false

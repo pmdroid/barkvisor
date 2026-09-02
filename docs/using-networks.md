@@ -12,10 +12,10 @@ Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this D
 
 | Tab | Purpose |
 |-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Linux Bridges are their own rows. |
+| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Bridges are their own rows. |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-**Create → Bridge** is Linux-only. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`. macOS has no Create Bridge — extra static IPs go on the NIC.
+**Create → Bridge** is the path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
 
 ## Host interfaces tab
 
@@ -29,12 +29,12 @@ The table lists each NIC on the Device:
 | Bridge | bridge membership / readiness |
 | Route | default route when relevant |
 
-On Linux, toolbar **Create → Bridge** opens the create modal:
+Toolbar **Create → Bridge** opens the create modal:
 
 | Field | Meaning |
 |-------|---------|
 | Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
-| Port | One unused wired NIC. Linux refuses Wi-Fi. |
+| Port | One unused NIC. Linux refuses Wi-Fi. macOS allows `en0` (Wi-Fi). |
 
 Apply always adds a bridged Workload network with `network.bridge = brN`. Same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
 
@@ -123,7 +123,7 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
 
 ### macOS (`socket_vmnet`)
 
-macOS has no Create Bridge. **Apply** on the LAN NIC (`en0`) sets extra static aliases via native Swift (`networksetup` + `ifconfig`). NAT Workloads work with bridged host networking down.
+**Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC via `networksetup` + `ifconfig`. NAT Workloads work with bridged host networking down.
 
 After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
 

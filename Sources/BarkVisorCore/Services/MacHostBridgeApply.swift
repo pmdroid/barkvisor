@@ -102,16 +102,13 @@ import Foundation
         ) -> LinuxHostBridgeApplyResult {
             let device = probe.device
             if device.isEmpty {
-                return refuse("No wired uplink. Connect Ethernet or pass interface.")
+                return refuse("No uplink. Select a NIC.")
             }
             if MacHostNetworkApply.isLoopbackDevice(device) {
                 return refuse("Refuse loopback '\(device)'.")
             }
             guard let service = probe.serviceName else {
                 return refuse("No networksetup service for '\(device)'.")
-            }
-            if MacHostNetworkApply.isWiFiPort(service) {
-                return refuse("Refuse Wi-Fi '\(service)'. Bridge a wired NIC.")
             }
             let planResult = HostInterfaceAddressApply.resolve(from: request)
             guard case let .success(plan) = planResult else {
@@ -137,17 +134,30 @@ import Foundation
             ).map {
                 LinuxHostBridgeChange(description: $0, command: "")
             }
-            changes.append(
-                LinuxHostBridgeChange(
-                    description: "Map \(request.bridge) → \(device) in host-bridge-\(request.bridge).json",
-                    command: "",
-                ),
-            )
-            let commands = MacHostNetworkApply.equivalentCommands(
+            var commands = MacHostNetworkApply.equivalentCommands(
                 service: service,
                 device: device,
                 plan: plan,
             )
+            if isSyntheticBridgeName(request.bridge) {
+                changes.append(
+                    LinuxHostBridgeChange(
+                        description: "Map \(request.bridge) → \(device) in host-bridge-\(request.bridge).json",
+                        command: "",
+                    ),
+                )
+                let socketPlan = SocketVmnetApply.evaluate(
+                    request: SocketVmnetApplyRequest(action: .setup, interface: device),
+                    probe: probe.socketProbe,
+                )
+                if !socketPlan.success {
+                    return refuse(socketPlan.message)
+                }
+                changes.append(contentsOf: socketPlan.changes.map {
+                    LinuxHostBridgeChange(description: $0, command: "")
+                })
+                commands += socketPlan.commands
+            }
 
             if !request.confirm, probe.facts.onlyUplink {
                 return LinuxHostBridgeApplyResult(
@@ -293,6 +303,10 @@ import Foundation
             LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
         }
 
+        fileprivate static func isSyntheticBridgeName(_ name: String) -> Bool {
+            name.range(of: #"^br\d+$"#, options: .regularExpression) != nil
+        }
+
         private static func refuse(_ message: String) -> LinuxHostBridgeApplyResult {
             LinuxHostBridgeApplyResult(
                 success: false,
@@ -338,6 +352,16 @@ import Foundation
                 guard let service = resolved.serviceName else {
                     throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
                 }
+                if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
+                    let socket = try SocketVmnetApplyLive.run(
+                        request: SocketVmnetApplyRequest(action: .setup, interface: resolved.device),
+                        probe: resolved.socketProbe,
+                    )
+                    if !socket.success {
+                        throw BarkVisorError.preconditionFailed(socket.message)
+                    }
+                    plan.changes.append(contentsOf: socket.changes)
+                }
                 try MacHostNetworkApply.apply(
                     device: resolved.device,
                     service: service,
@@ -348,12 +372,14 @@ import Foundation
                         return plan
                     }(),
                 )
-                let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
-                try LinuxHostBridgeApply.writeOwnerMarker(
-                    bridge: request.bridge,
-                    uplink: resolved.device,
-                    createdBridge: created,
-                )
+                if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
+                    let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
+                    try LinuxHostBridgeApply.writeOwnerMarker(
+                        bridge: request.bridge,
+                        uplink: resolved.device,
+                        createdBridge: created,
+                    )
+                }
                 let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
                 try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
