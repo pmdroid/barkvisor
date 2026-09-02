@@ -149,7 +149,11 @@ struct SystemBridgeController: RouteCollection {
                 req: req,
             )
         }
-        return Self.bridgeActionResponse(from: result, target: request.bridge)
+        let target = request.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.bridgeActionResponse(
+            from: result,
+            target: target.isEmpty ? request.nic : target,
+        )
     }
 
     private static func bridgeActionResponse(
@@ -230,7 +234,9 @@ struct SystemBridgeController: RouteCollection {
         )
         if PlatformCapabilities.supportsHostBridgeManagement {
             let bridge = names.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
-            if bridge.isEmpty {
+            let nic = names.nic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let addressOnly = action == .apply || action == .dryRun || action == .check
+            if bridge.isEmpty, !addressOnly || nic.isEmpty {
                 throw BarkVisorError.badRequest(
                     "Bridge name required. Create a Bridge; uplink Apply does not imply br0.",
                 )

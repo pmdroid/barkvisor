@@ -205,6 +205,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).not.toContain('linuxApplyResult && activeTab')
     expect(src).not.toContain('showPendingCommitBanner')
     expect(src).toContain('bridge: existingBridge ?? undefined')
+    expect(src).not.toContain('bridge: existingBridge ?? (targets.bridge || undefined)')
   })
 
   test('NetworkView VM tab distinguishes Workload network from Device address (#432)', () => {

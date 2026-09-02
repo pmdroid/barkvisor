@@ -40,22 +40,33 @@ public enum LinuxHostBridgeApplyLive {
         #endif
         switch request.action {
         case .apply:
-            let createdNow = LinuxHostBridgeApply.createdBridge(
-                named: request.bridge,
-                existingInterfaces: resolved.existingInterfaces,
-                factsBridges: resolved.facts.bridges,
+            let addressOnly = LinuxHostBridgeApply.isAddressOnlyApply(
+                request: request,
+                probe: resolved,
             )
+            let createdNow = addressOnly
+                ? false
+                : LinuxHostBridgeApply.createdBridge(
+                    named: request.bridge,
+                    existingInterfaces: resolved.existingInterfaces,
+                    factsBridges: resolved.facts.bridges,
+                )
             try writer.apply(request: request, probe: resolved, plan: plan)
             plan.applied = true
             let pending = HostNetworkPendingCommitService.makePending(
-                target: request.bridge,
+                target: addressOnly
+                    ? (request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved))
+                    : request.bridge,
                 createdBridge: createdNow,
             )
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
+            let appliedOn = addressOnly
+                ? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
+                : request.bridge
             plan.message =
-                "Applied \(request.bridge) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .commit:
             try writer.commit(request: request, probe: resolved)
             plan.applied = true
@@ -125,6 +136,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             plan _: LinuxHostBridgeApplyResult,
         ) throws {
             if request.action == .revert {
+                if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try revertAddresses(request: request, probe: probe)
+                    return
+                }
                 try revert(request: request, probe: probe)
                 return
             }
@@ -167,6 +182,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
                 throw BarkVisorError.badRequest("Invalid host address plan.")
+            }
+            if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                try persistAddresses(request: request, probe: probe, plan: plan)
+                return
             }
             var pendingNetplan: Process?
             switch probe.backend {
@@ -217,6 +236,76 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             if probe.backend == .netplan {
                 try startRollbackTimer(bridge: request.bridge)
             }
+        }
+
+        private func persistAddresses(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+            plan: HostInterfaceAddressApplyPlan,
+        ) throws {
+            let iface = LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
+            let nic = request.nic ?? iface
+            let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            for cidr in cidrs {
+                let result = try PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["addr", "add", cidr, "dev", iface],
+                    timeout: 15,
+                )
+                if !result.succeeded {
+                    let err = result.stderrString.lowercased()
+                    if !err.contains("file exists"), !err.contains("exists") {
+                        throw BarkVisorError.preconditionFailed(
+                            "ip addr add failed for \(cidr) on \(iface): \(result.stderrString)",
+                        )
+                    }
+                }
+            }
+            try startAddressRollbackTimer(device: nic, iface: iface, cidrs: cidrs)
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: nic,
+                createdBridge: false,
+            )
+            try HostNetworkPendingCommitService.writeLinux(pending)
+        }
+
+        private func revertAddresses(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+        ) throws {
+            let nic = request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
+            stopRollbackTimer(bridge: nic)
+            let helper = "/run/barkvisor/\(nic)-rollback.sh"
+            if FileManager.default.isExecutableFile(atPath: helper) {
+                _ = try? PlatformProcess.run(path: helper, arguments: [], timeout: 15)
+            }
+            HostNetworkPendingCommitService.clearLinux(bridge: nic)
+        }
+
+        private func startAddressRollbackTimer(device: String, iface: String, cidrs: [String]) throws {
+            let unit = "barkvisor-\(device)-rollback"
+            stopRollbackTimer(bridge: device)
+            let stamp = LinuxHostBridgeApply.commitStampPath(bridge: device)
+            try FileManager.default.createDirectory(
+                atPath: "/run/barkvisor",
+                withIntermediateDirectories: true,
+            )
+            try? FileManager.default.removeItem(atPath: stamp)
+            let helper = "/run/barkvisor/\(device)-rollback.sh"
+            try writeAtomically(
+                helper,
+                LinuxHostBridgeApply.addressRollbackHelperScript(device: device, iface: iface, cidrs: cidrs),
+            )
+            _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemd-run",
+                arguments: [
+                    "--on-active=\(LinuxHostBridgeApply.rollbackSeconds)s",
+                    "--unit=\(unit)",
+                    helper,
+                ],
+                timeout: 15,
+            )
         }
 
         private func deleteOwned(

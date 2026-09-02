@@ -447,6 +447,9 @@ public enum LinuxHostBridgeApply {
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
     ) -> LinuxHostBridgeApplyResult {
+        if isAddressOnlyApply(request: request, probe: probe) {
+            return addressOnlyPlan(request: request, probe: probe)
+        }
         if probe.backend == .ifupdown || probe.backend == .unknown {
             return refuse(
                 backend: probe.backend,
@@ -540,10 +543,64 @@ public enum LinuxHostBridgeApply {
         )
     }
 
+    private static func addressOnlyPlan(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> LinuxHostBridgeApplyResult {
+        let nic = resolvedNic(request: request, probe: probe)
+        if nic.isEmpty {
+            return refuse(
+                backend: probe.backend,
+                message: "No interface. Select a NIC.",
+            )
+        }
+        if !validInterfaceName(nic) {
+            return refuse(backend: probe.backend, message: "Invalid interface name '\(nic)'.")
+        }
+        if !probe.existingInterfaces.isEmpty, !probe.existingInterfaces.contains(nic) {
+            return refuse(backend: probe.backend, message: "Interface '\(nic)' is not on this Device.")
+        }
+        let planResult = HostInterfaceAddressApply.resolve(from: request)
+        guard case let .success(plan) = planResult else {
+            if case let .failure(error) = planResult {
+                return refuse(backend: probe.backend, message: error.message)
+            }
+            return refuse(backend: probe.backend, message: "Invalid address plan.")
+        }
+        let target = addressApplyDevice(request: request, probe: probe)
+        let changes = addressOnlyChanges(target: target, plan: plan)
+        let dry = request.action == .dryRun
+        return LinuxHostBridgeApplyResult(
+            success: true,
+            applied: false,
+            needsConfirm: false,
+            backend: probe.backend.rawValue,
+            changes: changes.map(\.description),
+            warnings: [],
+            commands: changes.map(\.command).filter { !$0.isEmpty },
+            message: dry
+                ? "Dry run: Device address apply plan."
+                : "Apply Device addresses on \(target).",
+        )
+    }
+
     private static func revertPlan(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
     ) -> LinuxHostBridgeApplyResult {
+        if isAddressOnlyApply(request: request, probe: probe), !probe.owned {
+            let target = addressApplyDevice(request: request, probe: probe)
+            return LinuxHostBridgeApplyResult(
+                success: true,
+                applied: false,
+                needsConfirm: false,
+                backend: probe.backend.rawValue,
+                changes: ["Remove BarkVisor-owned extra addresses on \(target)"],
+                warnings: [],
+                commands: ["sudo /run/barkvisor/\(target)-rollback.sh"],
+                message: "Revert BarkVisor-owned Device addresses. Bridge stays.",
+            )
+        }
         if !probe.owned {
             return refuse(
                 backend: probe.backend,
@@ -849,6 +906,56 @@ public enum LinuxHostBridgeApply {
         listedMarkerBridges(dataDir: dataDir)
             .sorted()
             .compactMap { readOwnerMarker(bridge: $0, dataDir: dataDir) }
+    }
+
+    public static func isAddressOnlyApply(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> Bool {
+        let bridge = request.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        if bridge.isEmpty { return true }
+        if probe.owned { return false }
+        let nic = resolvedNic(request: request, probe: probe)
+        if nic == bridge { return true }
+        return probe.facts.bridges.contains { $0.name == bridge && $0.enslaved.contains(nic) }
+    }
+
+    public static func addressApplyDevice(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> String {
+        let nic = resolvedNic(request: request, probe: probe)
+        if let master = probe.facts.bridges.first(where: { $0.enslaved.contains(nic) }) {
+            return master.name
+        }
+        return nic
+    }
+
+    public static func addressOnlyChanges(
+        target: String,
+        plan: HostInterfaceAddressApplyPlan,
+    ) -> [LinuxHostBridgeChange] {
+        let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+        return cidrs.map { cidr in
+            LinuxHostBridgeChange(
+                description: "Add \(target) address \(cidr)",
+                command: "sudo ip addr add \(cidr) dev \(target)",
+            )
+        }
+    }
+
+    public static func addressRollbackHelperScript(device: String, iface: String, cidrs: [String]) -> String {
+        let stamp = commitStampPath(bridge: device)
+        let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
+        let dels = cidrs.map { cidr in
+            "/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || true"
+        }.joined(separator: "\n")
+        return """
+        #!/bin/sh
+        if [ -f \(stamp) ]; then exit 0; fi
+        \(dels)
+        rm -f \(pending) || true
+        """
     }
 
     public static func createdBridgeForApply(

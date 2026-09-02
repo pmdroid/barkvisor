@@ -838,7 +838,6 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         }).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
-        bridge: existingBridge ?? (targets.bridge || undefined),
         confirm,
         action: confirm ? 'apply' : 'dry-run',
         rows: payload.rows,

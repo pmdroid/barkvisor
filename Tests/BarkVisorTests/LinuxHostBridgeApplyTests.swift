@@ -338,9 +338,20 @@ struct LinuxHostBridgeApplyTests {
     }
 
     @Test func `apply create-equivalent 409 when name exists`() throws {
+        let taken = LinuxHostBridgeApplyProbe(
+            facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                helperPath: HostBridgeFactsService.qemuBridgeHelperCandidates[0],
+                helperSetuid: true,
+                aclAllowsSuggested: true,
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["eth0"])],
+                defaultRouteInterface: "eth0",
+            )),
+            backend: .netplan,
+            existingInterfaces: ["eth0", "eth1", "lo", "br0"],
+        )
         let result = LinuxHostBridgeApply.evaluate(
-            request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth0", confirm: true),
-            probe: probe(ready: true),
+            request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth1", confirm: true),
+            probe: taken,
         )
         #expect(result.conflict)
         #expect(result.refused)
@@ -355,14 +366,55 @@ struct LinuxHostBridgeApplyTests {
 
         do {
             _ = try LinuxHostBridgeApplyLive.run(
-                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth0", confirm: true),
-                probe: probe(ready: true),
+                request: LinuxHostBridgeApplyRequest(action: .apply, bridge: "br0", nic: "eth1", confirm: true),
+                probe: taken,
                 mutator: RecordingLinuxHostBridgeMutator(),
             )
             Issue.record("expected conflict")
         } catch let error as BarkVisorError {
             #expect(error.httpStatus == 409)
         }
+    }
+
+    @Test func `extra address on existing unowned br0 does not create the bridge`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .apply,
+                bridge: "br0",
+                nic: "eth0",
+                addresses: [
+                    HostInterfaceAddressApplyEntry(kind: .dhcp),
+                    HostInterfaceAddressApplyEntry(kind: .alias, cidr: "10.0.0.2/24"),
+                ],
+                confirm: true,
+            ),
+            probe: probe(ready: true),
+        )
+        #expect(result.success)
+        #expect(!result.conflict)
+        #expect(result.commands.contains { $0.contains("ip addr add 10.0.0.2/24 dev br0") })
+        #expect(!result.commands.contains { $0.contains("nmcli connection add type bridge") })
+        #expect(!result.message.contains("already exists"))
+    }
+
+    @Test func `uplink apply without bridge name adds addresses`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .apply,
+                bridge: "",
+                nic: "eth0",
+                addresses: [
+                    HostInterfaceAddressApplyEntry(kind: .dhcp),
+                    HostInterfaceAddressApplyEntry(kind: .alias, cidr: "10.0.0.2/24"),
+                ],
+                confirm: true,
+            ),
+            probe: probe(),
+        )
+        #expect(result.success)
+        #expect(!result.conflict)
+        #expect(result.commands.contains { $0.contains("ip addr add 10.0.0.2/24 dev eth0") })
+        #expect(!result.changes.contains { $0.contains("netplan") })
     }
 
     @Test func `next-free skips sysfs and markers`() throws {
@@ -477,7 +529,8 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.changes.contains { $0.contains("Detach eth0") })
         #expect(result.changes.contains { $0.contains("Restore L3") })
         #expect(result.commands.contains { $0.contains("ip link del br0") })
-        #expect(result.message.contains("Keep changes"))
+        #expect(result.message.contains("Ready to delete"))
+        #expect(!result.message.contains("Keep changes"))
     }
 
     @Test func `owned delete restores NM slave and networkd port L3`() {
