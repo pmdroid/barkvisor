@@ -58,13 +58,11 @@ import {
   bridgeSetupInterfaceKey,
   bridgeMemberNames,
   effectiveInterfaceForDisplay,
-  formatInterfaceAddressSummary,
   formatInterfaceLinkSummary,
   inferInterfaceRole,
   interfaceAddressColumn,
+  interfaceAddressFieldsReadOnly,
   interfaceBridgeColumn,
-  interfaceBridgeFieldsReadOnly,
-  interfaceBridgeRoleDetail,
   interfaceEnslavedToBridge,
   interfaceOwnsAddressApply,
   interfaceOwnsBridgeSetupApply,
@@ -273,13 +271,6 @@ const createBridgePorts = computed(() =>
   ),
 )
 
-const createBridgeAddressValidation = computed(() =>
-  validateAddressList(createBridgeRows.value, {
-    onlyUplink: createBridgeReadiness.value?.onlyUplink,
-    gateway: createBridgeGateway.value,
-  }),
-)
-
 function deviceBridgeGuideMode(device: HomeDeviceHealthSnapshot) {
   const c = deviceCapsFor(device.hostId)
   return bridgeManagementMode({
@@ -329,18 +320,31 @@ const canApplyAddresses = computed(() => {
   return interfaceAddressValidation.value.ok
 })
 
-const canApplySelectedInterface = computed(() => canApplyAddresses.value)
+const canApplySelectedInterface = computed(() => {
+  const row = selectedInterfaceRow.value
+  if (!row) return false
+  const ready = selectedInterfaceReadiness.value
+  const role = inferInterfaceRole(row.iface, ready, selectedInterfaceMode.value)
+  const deviceCaps = deviceCapsFor(row.hostId)
+  if (!hostBridgeCanApply({
+    platform: deviceCaps.platform,
+    supportsHostMutation: deviceCaps.supportsHostMutation,
+    supportsHostBridgeManagement: deviceCaps.supportsHostBridgeManagement,
+    supportsManagedBridgeDaemon: deviceCaps.supportsManagedBridgeDaemon,
+  })) return false
+  if (interfaceOwnsBridgeSetupApply(role, row.iface, ready, selectedInterfaceMode.value)) return true
+  return interfaceShowsDelete(row.iface, ready)
+})
 
 const showAddressEditor = computed(() => {
   const row = selectedInterfaceRow.value
   if (!row) return false
-  if (interfaceOwnsAddressApply(
+  return interfaceOwnsAddressApply(
     selectedInterfaceRole.value,
     row.iface,
     selectedInterfaceReadiness.value,
     selectedInterfaceMode.value,
-  )) return true
-  return Boolean(interfaceEnslavedToBridge(row.iface, selectedInterfaceReadiness.value))
+  )
 })
 
 const showBridgeSetupPanel = computed(() => {
@@ -368,24 +372,16 @@ const selectedInterfaceRole = computed(() => {
   return inferInterfaceRole(row.iface, selectedInterfaceReadiness.value, selectedInterfaceMode.value)
 })
 
-const selectedInterfaceReadOnly = computed(() =>
-  interfaceBridgeFieldsReadOnly(selectedInterfaceRole.value),
-)
-
-const selectedOwnsAddressApply = computed(() => {
+const selectedAddressFieldsReadOnly = computed(() => {
   const row = selectedInterfaceRow.value
-  if (!row) return false
-  return interfaceOwnsAddressApply(
+  if (!row) return true
+  return interfaceAddressFieldsReadOnly(
     selectedInterfaceRole.value,
     row.iface,
     selectedInterfaceReadiness.value,
     selectedInterfaceMode.value,
   )
 })
-
-const selectedAddressFieldsReadOnly = computed(() =>
-  selectedInterfaceReadOnly.value || !selectedOwnsAddressApply.value,
-)
 
 function interfacePeers(row: InterfaceTableRow): HostInterface[] {
   return interfaceTableRows.value
@@ -451,9 +447,6 @@ const showCreateBridge = ref(false)
 const createBridgeHostId = ref('')
 const createBridgeName = ref('')
 const createBridgeNic = ref('')
-const createBridgeRows = ref<EditableHostAddress[]>([{ id: 'dhcp', kind: 'dhcp', cidr: '' }])
-const createBridgeGateway = ref('')
-const createBridgeDNS = ref('')
 const createBridgeVmNetwork = ref(true)
 const createBridgeError = ref('')
 
@@ -1212,9 +1205,6 @@ function resetCreateBridgeForm() {
   createBridgeHostId.value = defaultFormHostId()
   createBridgeName.value = ''
   createBridgeNic.value = ''
-  createBridgeRows.value = [{ id: 'dhcp', kind: 'dhcp', cidr: '' }]
-  createBridgeGateway.value = ''
-  createBridgeDNS.value = ''
   createBridgeVmNetwork.value = true
   createBridgeError.value = ''
 }
@@ -1270,10 +1260,6 @@ async function applyCreateBridge(confirm = false) {
     createBridgeError.value = 'Select one unused NIC'
     return
   }
-  if (!createBridgeAddressValidation.value.ok) {
-    createBridgeError.value = createBridgeAddressValidation.value.errors[0] || 'Fix address list before applying.'
-    return
-  }
   const device = createBridgeDevice.value
   if (homeUnionDeviceBlocked(device)) {
     createBridgeError.value = 'Device is unreachable. Workloads on this Device keep running locally.'
@@ -1290,13 +1276,14 @@ async function applyCreateBridge(confirm = false) {
   linuxApplyLoading.value = true
   try {
     const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const snapshot = port ? addressesFromInterface(port) : [{ id: 'dhcp', kind: 'dhcp' as const, cidr: '' }]
     const { data } = await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
       nic,
       bridge,
       confirm,
-      rows: createBridgeRows.value,
-      gateway: createBridgeGateway.value,
-      dns: createBridgeDNS.value,
+      rows: snapshot,
+      gateway: port?.gateway ?? '',
+      dns: (port?.dns ?? []).join(', '),
     }))
     linuxApplyResult.value = data
     if (data.needsConfirm && !confirm) {
@@ -1516,7 +1503,7 @@ async function doDeleteNetwork() {
             >{{ interfaceRoleLabel(inferInterfaceRole(row.iface, interfaceReadinessFor(row), interfaceModeFor(row))) }}</span>
           </td>
           <td>{{ formatInterfaceLinkSummary(row.iface) }}</td>
-          <td class="mono">{{ interfaceAddressColumn(row.iface, interfacePeers(row), interfaceReadinessFor(row)) }}</td>
+          <td class="mono">{{ interfaceAddressColumn(row.iface, interfacePeers(row), interfaceReadinessFor(row), interfaceModeFor(row)) }}</td>
           <td class="mono">{{ interfaceBridgeColumn(row.iface, interfaceReadinessFor(row), interfaceBridgeInfo(row), interfaceModeFor(row)) }}</td>
           <td>{{ interfaceRouteColumn(row.iface, interfaceReadinessFor(row)) }}</td>
         </tr>
@@ -1543,7 +1530,6 @@ async function doDeleteNetwork() {
             :only-uplink="selectedInterfaceReadiness?.onlyUplink"
             :gateway="interfaceGateway"
             :disabled="linuxApplyLoading || selectedAddressFieldsReadOnly"
-            :l2-only="!selectedOwnsAddressApply && !selectedInterfaceReadOnly"
           />
 
           <div v-if="showAddressEditor" class="iface-fields-grid">
@@ -1554,17 +1540,6 @@ async function doDeleteNetwork() {
             <div class="form-group">
               <label>DNS</label>
               <input v-model="interfaceDNS" placeholder="1.1.1.1, 8.8.8.8" spellcheck="false" :disabled="linuxApplyLoading || selectedAddressFieldsReadOnly" />
-            </div>
-          </div>
-
-          <div class="iface-fields-grid">
-            <div class="form-group">
-              <label>Bridge role</label>
-              <input
-                :value="interfaceBridgeRoleDetail(selectedInterfaceRole, selectedInterfaceRow.iface, selectedInterfaceReadiness, selectedInterfaceMode)"
-                readonly
-                style="opacity:0.75"
-              />
             </div>
           </div>
 
@@ -1610,7 +1585,7 @@ async function doDeleteNetwork() {
             <AppButton
               variant="primary"
               size="sm"
-              :disabled="!canApplySelectedInterface || linuxApplyLoading || (showAddressEditor && !interfaceAddressValidation.ok)"
+              :disabled="!canApplyAddresses || linuxApplyLoading || (showAddressEditor && !interfaceAddressValidation.ok)"
               :loading="linuxApplyLoading"
               @click="applySelectedInterface"
             >{{ applyButtonLabel }}</AppButton>
@@ -1794,10 +1769,6 @@ async function doDeleteNetwork() {
       </div>
       <div class="split-s">
         <span class="wizard-dot">2</span>
-        <div><div class="t">Addressing</div><div class="d">On the new Bridge</div></div>
-      </div>
-      <div class="split-s">
-        <span class="wizard-dot">3</span>
         <div><div class="t">VM network</div><div class="d">Optional Workload record</div></div>
       </div>
     </template>
@@ -1821,22 +1792,6 @@ async function doDeleteNetwork() {
         No unused NIC on this Device. Linux refuses Wi-Fi as a port.
       </p>
     </div>
-    <HostInterfaceAddressList
-      v-model="createBridgeRows"
-      :only-uplink="createBridgeReadiness?.onlyUplink"
-      :gateway="createBridgeGateway"
-      :disabled="linuxApplyLoading"
-    />
-    <div class="iface-fields-grid">
-      <div class="form-group">
-        <label>Gateway</label>
-        <input v-model="createBridgeGateway" placeholder="192.168.1.1" spellcheck="false" :disabled="linuxApplyLoading" />
-      </div>
-      <div class="form-group">
-        <label>DNS</label>
-        <input v-model="createBridgeDNS" placeholder="1.1.1.1, 8.8.8.8" spellcheck="false" :disabled="linuxApplyLoading" />
-      </div>
-    </div>
     <label class="create-bridge-vm">
       <input type="checkbox" v-model="createBridgeVmNetwork">
       <span>Create VM network</span>
@@ -1850,7 +1805,7 @@ async function doDeleteNetwork() {
       <AppButton
         variant="primary"
         :loading="linuxApplyLoading"
-        :disabled="!createBridgeNic || !createBridgeAddressValidation.ok"
+        :disabled="!createBridgeNic"
         :loading-text="'Applying...'"
         @click="applyCreateBridge()"
       >Apply</AppButton>

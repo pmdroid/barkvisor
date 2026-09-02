@@ -63,7 +63,7 @@ describe('hostInterfaceDisplay', () => {
     }
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'macos-guide')).toBe('uplink')
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'linux-guide')).toBe('bridge')
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
   })
 
   test('infers enslaved NIC without IPv4 as uplink', () => {
@@ -122,7 +122,7 @@ describe('hostInterfaceDisplay', () => {
     }))).toBe('DHCP 192.168.30.50 + 10.0.0.2/24 (extra)')
   })
 
-  test('enslaved port without IPv4 shows L2 only', () => {
+  test('enslaved port without IPv4 overlays master L3', () => {
     const ready = {
       defaultRouteInterface: 'br0',
       bridges: [{ name: 'br0', enslaved: ['enp2s0'] }],
@@ -133,11 +133,23 @@ describe('hostInterfaceDisplay', () => {
       suggestedBridge: 'br0',
       aclAllowsSuggested: true,
     }
+    const br0 = iface({
+      name: 'br0',
+      addresses: [
+        { cidr: '192.168.30.1/16', source: 'static', primary: true },
+      ],
+    })
+    const enp2 = iface({ name: 'enp2s0', ipAddress: '', addresses: [], bridgeMaster: 'br0' })
     expect(formatInterfaceAddressSummary(
-      iface({ name: 'enp2s0', ipAddress: '', addresses: [], bridgeMaster: 'br0' }),
+      enp2,
+      ready,
+      { mode: 'linux-guide', allIfaces: [br0, enp2] },
+    )).toBe('192.168.30.1/16')
+    expect(formatInterfaceAddressSummary(
+      enp2,
       ready,
       { mode: 'linux-guide', allIfaces: [] },
-    )).toBe('L2 only → br0')
+    )).toBe('—')
   })
 
   test('linux bridge L3 shown on enslaved port not br0 row', () => {
@@ -160,9 +172,10 @@ describe('hostInterfaceDisplay', () => {
     })
     const enp2 = iface({ name: 'enp2s0', ipAddress: '', addresses: [], bridgeMaster: 'br0' })
     const allIfaces = [br0, enp2]
-    expect(formatInterfaceAddressSummary(br0, ready, { mode: 'linux-guide', allIfaces }))
-      .toBe('L3 on enp2s0')
+    expect(interfaceAddressColumn(br0, allIfaces, ready, 'linux-guide')).toBe('—')
     expect(formatInterfaceAddressSummary(enp2, ready, { mode: 'linux-guide', allIfaces }))
+      .toBe('192.168.30.1/16 + 192.168.8.199/16 (extra)')
+    expect(interfaceAddressColumn(enp2, allIfaces, ready, 'linux-guide'))
       .toBe('192.168.30.1/16 + 192.168.8.199/16 (extra)')
   })
 
@@ -238,18 +251,21 @@ describe('hostInterfaceDisplay', () => {
       aclAllowsSuggested: true,
     }
     expect(interfaceOwnsBridgeSetupApply('uplink', iface({ name: 'eth0' }), pending, 'linux-guide')).toBe(true)
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), pending, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), pending, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeSetupApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeSetupApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
-    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
-    expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
-    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
+    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceAddressFieldsReadOnly('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceAddressFieldsReadOnly('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceAddressFieldsReadOnly('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
   })
 
-  test('interfaceOwnsAddressApply is the Bridge row on Linux and Mac', () => {
+  test('interfaceOwnsAddressApply is the NIC/uplink row, not the Bridge', () => {
     const ready = {
       defaultRouteInterface: 'eth0',
       bridges: [{ name: 'br0', enslaved: ['eth0'] }],
@@ -260,11 +276,13 @@ describe('hostInterfaceDisplay', () => {
       suggestedBridge: 'br0',
       aclAllowsSuggested: true,
     }
-    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), ready, 'linux-guide')).toBe(false)
-    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
-    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'eth0' }), ready, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
     expect(interfaceOwnsAddressApply('external', iface({ name: 'docker0' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('loopback', iface({ name: 'lo' }), ready, 'linux-guide')).toBe(false)
+    expect(interfaceOwnsAddressApply('tailscale', iface({ name: 'utun0' }), ready, 'linux-guide')).toBe(false)
   })
 
   test('existingBridgeForInterfaceApply is parent or self, never implied br0', () => {
@@ -319,20 +337,20 @@ describe('hostInterfaceDisplay', () => {
       suggestedBridge: 'br0',
       aclAllowsSuggested: true,
     }
-    expect(addressApplyTargets(iface({ name: 'br0' }), linux, 'linux-guide'))
+    expect(addressApplyTargets(iface({ name: 'eth0' }), linux, 'linux-guide'))
       .toEqual({ nic: 'eth0', bridge: 'br0' })
     const macMapped = {
       ...linux,
       defaultRouteInterface: 'en0',
       bridges: [{ name: 'br0', enslaved: ['en0'] }],
     }
-    expect(addressApplyTargets(iface({ name: 'br0' }), macMapped, 'macos-guide'))
+    expect(addressApplyTargets(iface({ name: 'en0' }), macMapped, 'macos-guide'))
       .toEqual({ nic: 'en0', bridge: 'br0' })
-    expect(addressApplyTargets(iface({ name: 'br0' }), { ...linux, bridges: [{ name: 'br0', enslaved: [] }] }, 'linux-guide'))
-      .toEqual({ nic: 'br0', bridge: 'br0' })
+    expect(addressApplyTargets(iface({ name: 'en0' }), { ...linux, defaultRouteInterface: 'en0', bridges: [] }, 'macos-guide'))
+      .toEqual({ nic: 'en0', bridge: 'en0' })
   })
 
-  test('address column shows IPs on brN and hides them on the enslaved NIC', () => {
+  test('address column shows IPs on the NIC and hides them on the Bridge', () => {
     const ready = {
       defaultRouteInterface: 'en0',
       bridges: [{ name: 'br0', enslaved: ['en0'] }],
@@ -350,9 +368,10 @@ describe('hostInterfaceDisplay', () => {
       addresses: [{ cidr: '192.168.1.10/24', source: 'dhcp', primary: true }],
     })
     const br0 = iface({ name: 'br0', ipAddress: '', displayName: 'br0' })
-    expect(interfaceAddressColumn(en0, [en0, br0], ready)).toBe('—')
-    expect(interfaceAddressColumn(br0, [en0, br0], ready)).toBe('DHCP 192.168.1.10')
-    expect(overlayBridgeAddresses(br0, [en0, br0], ready).ipAddress).toBe('192.168.1.10')
+    expect(interfaceAddressColumn(en0, [en0, br0], ready, 'macos-guide')).toBe('DHCP 192.168.1.10')
+    expect(interfaceAddressColumn(br0, [en0, br0], ready, 'macos-guide')).toBe('—')
+    expect(overlayBridgeAddresses(en0, [en0, br0], ready).ipAddress).toBe('192.168.1.10')
+    expect(overlayBridgeAddresses(br0, [en0, br0], ready).ipAddress).toBeFalsy()
   })
 
   test('bridgeSetupInterfaceKey prefers br0 on Linux and uplink on Mac', () => {
@@ -374,7 +393,7 @@ describe('hostInterfaceDisplay', () => {
   test('Keep match and DELETE path use pending.target not br0', () => {
     const pending = { target: 'br1', nic: 'eth1' }
     expect(pendingCommitMatchesInterface(pending, 'eth1', 'linux-guide')).toBe(true)
-    expect(pendingCommitMatchesInterface(pending, 'br1', 'linux-guide')).toBe(true)
+    expect(pendingCommitMatchesInterface(pending, 'br1', 'linux-guide')).toBe(false)
     expect(pendingCommitMatchesInterface(pending, 'eth0', 'linux-guide')).toBe(false)
     expect(pendingCommitMatchesInterface({ target: 'en0', nic: 'en0' }, 'en0', 'macos-guide')).toBe(true)
     expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br1'))
@@ -385,7 +404,7 @@ describe('hostInterfaceDisplay', () => {
       .toBe('/system/bridges/en0')
   })
 
-  test('Mac Keep follows the Bridge row when Apply sent nic en0', () => {
+  test('Mac Keep follows the NIC row when Apply sent nic en0', () => {
     const ready = {
       defaultRouteInterface: 'en0',
       bridges: [{ name: 'br0', enslaved: ['en0'] }],
@@ -397,11 +416,10 @@ describe('hostInterfaceDisplay', () => {
       aclAllowsSuggested: true,
     }
     const pending = { target: 'en0', nic: 'en0' }
-    expect(pendingCommitBridgeName(pending, ready)).toBe('br0')
-    expect(pendingCommitMatchesInterface(pending, 'br0', 'macos-guide', ready)).toBe(true)
-    expect(pendingCommitMatchesInterface(pending, 'en0', 'macos-guide', ready)).toBe(false)
-    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'br0', 'macos-guide', ready)).toBe(true)
-    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'en0', 'macos-guide', ready)).toBe(false)
+    expect(pendingCommitMatchesInterface(pending, 'en0', 'macos-guide', ready)).toBe(true)
+    expect(pendingCommitMatchesInterface(pending, 'br0', 'macos-guide', ready)).toBe(false)
+    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'en0', 'macos-guide', ready)).toBe(true)
+    expect(pendingCommitMatchesInterface({ target: 'br0', nic: 'en0' }, 'br0', 'macos-guide', ready)).toBe(false)
   })
 
   test('Delete vs Revert follows createdBridge on the marker snapshot', () => {

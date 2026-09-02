@@ -12,22 +12,24 @@ Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this D
 
 | Tab | Purpose |
 |-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, bridge role, Apply/Revert |
+| **Host interfaces** (default) | Every OS NIC on this Device. Addresses, DHCP, gateway, DNS. Apply and Revert. |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-**Create → Bridge** on Host interfaces is the only path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
+**Create → Bridge** on Host interfaces is the only path for a **new** switch. Fresh install: NICs are unbridged. Applying addresses on an uplink does not create `br0`.
 
 ## Host interfaces tab
 
-The table lists each NIC on the Device:
+The table lists every OS interface. A managed Bridge is its own row, attached to the port NIC (Linux `brN`, Mac `socket_vmnet` on `en0`).
 
 | Column | Meaning |
 |--------|---------|
 | Interface | OS name (`en0`, `eth0`, `br0`, …) |
 | Role | uplink, bridge, external, … |
-| Addresses (live) | DHCP + static aliases read from the host |
-| Bridge | bridge membership / readiness |
+| Addresses (live) | DHCP + static aliases on the NIC. Bridge rows show an em dash. |
+| Bridge | attachment: `→ brN` on the port, members on the Bridge row |
 | Route | default route when relevant |
+
+Edit addresses, DHCP, gateway, and DNS on the **NIC** row. The kernel may still keep Linux L3 on `brN`. The UI overlays that onto the enslaved NIC when the NIC itself has no IPv4. Mac does not invent `br0` for display or Apply.
 
 Toolbar **Create → Bridge** opens the create modal:
 
@@ -35,29 +37,31 @@ Toolbar **Create → Bridge** opens the create modal:
 |-------|---------|
 | Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
 | Port | One unused NIC. Linux refuses Wi-Fi. Mac `en0` (Wi-Fi) is allowed. |
-| Addressing | DHCP + static aliases, gateway, DNS on the new Bridge |
 | Create VM network | Default on. Adds a bridged Workload network with `network.bridge = brN` |
 
-**Apply** uses the same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+Create does not ask for DHCP, IP, gateway, or DNS. Addressing stays on the NIC. Apply copies the selected port's current snapshot into the plan so the API still gets addresses.
 
-Select a row to open the **edit drawer** below the table.
+**Apply** uses the same confirm and 30 second Keep as other host-network changes. Keep lands on the NIC you applied from, not the Bridge row. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+
+Select a row to open the **edit drawer** below the table. Attachment is the Bridge column and the Bridge row subtitle (members). There is no Bridge role field.
 
 ### Address list
 
-The drawer shows DHCP primary and static aliases together:
+The drawer on a NIC shows DHCP primary and static aliases together:
 
-- **DHCP (primary)** — toggle for the main address from your router
-- **static** — primary static CIDR when DHCP is off
-- **alias** — extra CIDR on the same NIC (multi-homed or service IPs)
-- **on host** chip — BarkVisor wrote this config and can revert it
+- **DHCP (primary)**. Toggle for the main address from your router
+- **static**. Primary static CIDR when DHCP is off
+- **alias**. Extra CIDR on the same NIC (multi-homed or service IPs)
+- **on host** chip. BarkVisor wrote this config and can revert it
 
-**Gateway** and **DNS** apply to the interface as a whole (not per alias). **Bridge role** is read-only here — uplink vs `br0` vs external.
+**Gateway** and **DNS** apply to the NIC as a whole, not per alias. The enslaved NIC editor stays enabled. The Bridge row hides the address editor. Delete and Revert still work on a created Bridge.
 
 Actions:
 
-- **Apply** — persist the address plan on the host
-- **Revert** — remove BarkVisor-tagged config for this interface
-- **Re-check** — refresh live addresses from the OS
+- **Apply**. Persist the address plan on the NIC
+- **Revert**. Remove BarkVisor-tagged config
+- **Delete**. Tear down a BarkVisor-created Bridge
+- **Re-check**. Refresh live addresses from the OS
 
 Copyable CLI steps stay under **Advanced CLI** on the same drawer.
 
@@ -79,7 +83,7 @@ Copyable CLI steps stay under **Advanced CLI** on the same drawer.
 
 ```json
 {
-  "interface": "br0",
+  "interface": "eth0",
   "addresses": [
     { "kind": "static", "cidr": "192.168.1.10/24" }
   ],
@@ -96,10 +100,10 @@ Both platforms use the same drawer. Apply paths differ:
 
 | | Linux | macOS |
 |---|--------|--------|
-| DHCP + aliases | netplan / NetworkManager / systemd-networkd on the NIC or `br0` | `networksetup -setdhcp` on the hardware port; aliases via `ifconfig <dev> alias …` |
+| DHCP + aliases | netplan / NetworkManager / systemd-networkd. Kernel L3 may sit on `brN`; edit it on the enslaved NIC | `networksetup -setdhcp` on the hardware port; aliases via `ifconfig <dev> alias …` |
 | Static + gateway | Written into netplan/NM with `via:` / routes | `networksetup -setmanual` with gateway on the service |
 | DNS | netplan `nameservers` / NM | `networksetup -setdnsservers` on the hardware port |
-| Bridge | Enslave wired uplink into `br0`, qemu-bridge-helper ACL | `socket_vmnet` LaunchDaemon; LAN NIC is not enslaved |
+| Bridge | Enslave a wired NIC into `brN`, qemu-bridge-helper ACL | `socket_vmnet` LaunchDaemon attached to `en0`. Do not invent `br0` |
 
 On **Linux**, gateway and DNS in the drawer apply to the whole interface plan (including DHCP primary). Static-only uplinks require a gateway before Apply.
 
@@ -109,7 +113,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 **Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared kernel bridges are never default-deleted.
 
-After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** in the SPA or run `--commit` on the host; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
+After Create, edit L3 on the enslaved NIC. Linux still refuses to create a Bridge by applying addresses on a standalone uplink. After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** on that NIC row, or run `--commit` on the host. Otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
@@ -132,19 +136,19 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
 
 ### macOS bridge (`socket_vmnet`)
 
-**Create → Bridge** on Host interfaces sends `bridge` plus `nic` (Mac `en0` is allowed). **Apply** on the LAN row starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
+**Create → Bridge** on Host interfaces sends `bridge` plus `nic` (Mac `en0` is allowed). Addressing is not collected in Create. **Apply** on the LAN NIC starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
 
-After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
+After Apply, the same **30 second keep window** applies on the NIC row (`en0`). Click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts. Do not invent `br0` to place the banner or the Apply target.
 
 API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
 
 ```sh
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
+  -d '{"interface":"en0","action":"apply","confirm":true,"addressing":"dhcp"}'
 curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
   -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","bridge":"br0","action":"commit","confirm":true}'
+  -d '{"interface":"en0","action":"commit","confirm":true}'
 curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/en0 \
   -H 'Content-Type: application/json' \
   -d '{"confirm":true,"action":"revert","interface":"en0"}'
