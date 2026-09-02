@@ -81,6 +81,13 @@ export function syncStatusBadge(
   return 'badge-gray'
 }
 
+export function lastSyncedLabel(lastSyncedAt: string | null): string {
+  if (!lastSyncedAt) return 'never'
+  const parsed = new Date(lastSyncedAt)
+  if (Number.isNaN(parsed.getTime())) return 'never'
+  return parsed.toLocaleString()
+}
+
 export function catalogDeviceHasError(row: CatalogDeviceSync): boolean {
   return Boolean(row.lastError) || row.syncStatus === 'error' || !row.reachable
 }

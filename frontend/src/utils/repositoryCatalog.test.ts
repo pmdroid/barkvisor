@@ -5,6 +5,7 @@ import {
   catalogHasDeviceError,
   catalogIsSyncing,
   catalogUrlKey,
+  lastSyncedLabel,
   matchRepoByUrl,
   memberDeviceSync,
   syncStatusBadge,
@@ -38,6 +39,15 @@ describe('repositoryCatalog helpers', () => {
     expect(syncStatusBadge('idle', null, '2026-01-02T00:00:00Z')).toBe('badge-green')
     expect(syncStatusLabel('idle', null, null)).toBe('idle')
     expect(syncStatusBadge('idle', null, null)).toBe('badge-gray')
+  })
+
+  test('lastSyncedLabel formats ISO or never', () => {
+    expect(lastSyncedLabel(null)).toBe('never')
+    expect(lastSyncedLabel('')).toBe('never')
+    expect(lastSyncedLabel('not-a-date')).toBe('never')
+    expect(lastSyncedLabel('2026-08-28T16:00:00.000Z')).toBe(
+      new Date('2026-08-28T16:00:00.000Z').toLocaleString(),
+    )
   })
 
   test('matchRepoByUrl uses trimmed URL, not Device-local ids', () => {

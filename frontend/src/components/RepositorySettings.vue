@@ -8,6 +8,7 @@ import {
   catalogDeviceHasError,
   catalogHasDeviceError,
   catalogIsSyncing,
+  lastSyncedLabel,
   syncStatusBadge,
   syncStatusLabel,
 } from '../utils/repositoryCatalog'
@@ -152,18 +153,25 @@ async function addRepo() {
                 style="font-size:10px"
               >{{ syncStatusLabel(d.syncStatus, d.lastError, d.lastSyncedAt) }}</span>
             </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
+              Last synced {{ lastSyncedLabel(d.lastSyncedAt) }}
+            </div>
             <div
               v-if="d.lastError"
               style="font-size:12px;color:var(--red, #ef4444);margin-top:2px"
             >{{ d.lastError }}</div>
           </div>
         </div>
-        <span
-          v-else
-          class="badge"
-          :class="syncStatusBadge(r.syncStatus, r.lastError, r.lastSyncedAt)"
-          style="font-size:10px"
-        >{{ syncStatusLabel(r.syncStatus, r.lastError, r.lastSyncedAt) }}</span>
+        <div v-else>
+          <span
+            class="badge"
+            :class="syncStatusBadge(r.syncStatus, r.lastError, r.lastSyncedAt)"
+            style="font-size:10px"
+          >{{ syncStatusLabel(r.syncStatus, r.lastError, r.lastSyncedAt) }}</span>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">
+            Last synced {{ lastSyncedLabel(r.lastSyncedAt) }}
+          </div>
+        </div>
       </td>
       <td style="text-align:right">
         <div style="display:flex;gap:6px;justify-content:flex-end">
