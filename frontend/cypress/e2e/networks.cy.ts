@@ -278,7 +278,8 @@ describe('Network Management', () => {
   it('Host interfaces drawer shows multi-address editor', () => {
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
-      cy.contains('Use DHCP for primary address').should('exist')
+      cy.contains('DHCP').should('exist')
+      cy.contains('Use DHCP for primary address').should('not.exist')
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('button', 'Add address').should('exist')
@@ -318,8 +319,9 @@ describe('Network Management', () => {
     })
     cy.contains('.iface-row', 'eth0').click()
     cy.get('.iface-drawer').within(() => {
-      cy.contains('Use DHCP for primary address').should('exist')
-      cy.get('input[type="checkbox"]').first().should('not.be.disabled')
+      cy.contains('Use DHCP for primary address').should('not.exist')
+      cy.contains('DHCP').should('exist')
+      cy.get('input[placeholder="from router"]').should('be.disabled')
     })
   })
 

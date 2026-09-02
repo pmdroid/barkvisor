@@ -43,14 +43,13 @@ Select a row to open the **edit drawer** below the table.
 
 ### Address list
 
-The drawer shows DHCP primary and static aliases together:
+The drawer keeps DHCP on. The router lease is shown and is not editable or removable.
 
-- **DHCP (primary)** — toggle for the main address from your router
-- **static** — primary static CIDR when DHCP is off
-- **alias** — extra CIDR on the same NIC (multi-homed or service IPs)
+- **DHCP** — live lease from the router (read-only)
+- **additional** — extra static CIDR on the same NIC
 - **on host** chip — BarkVisor wrote this config and can revert it
 
-**Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Edit DHCP/IP on the NIC, then **Apply** and **Keep changes** within the keep window.
+**Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Add extra static IPs on the NIC, then **Apply** and **Keep changes** within the keep window. DHCP stays on.
 
 Actions:
 
