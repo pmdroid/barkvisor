@@ -186,15 +186,25 @@ public enum LinuxHostBridgeApply {
         return acl.contains(aclMarker(for: name))
     }
 
+    public static func leftoverHostBridge(
+        bridge: String,
+        dir: String = systemdNetworkDir,
+    ) -> Bool {
+        let persist = systemdBridgePersist(bridge: bridge, dir: dir)
+        return !persist.remove.isEmpty || !persist.rewrite.isEmpty
+    }
+
     public static func ownership(
         bridge: String,
         marker: OwnerMarker?,
         acl: String?,
+        leftoverPersist: Bool = false,
     ) -> (owned: Bool, createdBridge: Bool) {
         let tagged = aclTagged(bridge: bridge, acl: acl)
+        let leftover = leftoverPersist
         return (
-            owned: marker != nil || tagged,
-            createdBridge: marker?.createdBridge == true || (marker == nil && tagged),
+            owned: marker != nil || tagged || leftover,
+            createdBridge: marker?.createdBridge == true || (marker == nil && (tagged || leftover)),
         )
     }
 
@@ -412,7 +422,12 @@ public enum LinuxHostBridgeApply {
             encoding: .utf8,
         )
         let marker = readOwnerMarker(bridge: bridge)
-        let claim = ownership(bridge: bridge, marker: marker, acl: acl)
+        let claim = ownership(
+            bridge: bridge,
+            marker: marker,
+            acl: acl,
+            leftoverPersist: leftoverHostBridge(bridge: bridge),
+        )
         return LinuxHostBridgeApplyProbe(
             facts: facts,
             backend: backend,

@@ -112,6 +112,7 @@ export function inferInterfaceRole(
 ): HostInterfaceRole {
   const name = iface.name.toLowerCase()
   if (name === 'lo' || name === 'lo0') return 'loopback'
+  if (name.endsWith('-bridge')) return 'bridge'
   // Linux readiness.bridges lists kernel masters (br0). macOS lists socket_vmnet uplinks (en0).
   if (
     mode !== 'macos-guide'

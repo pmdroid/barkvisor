@@ -65,6 +65,15 @@ describe('hostInterfaceDisplay', () => {
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'macos-guide')).toBe('uplink')
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'linux-guide')).toBe('bridge')
     expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
+    expect(inferInterfaceRole(
+      iface({ name: 'en0-bridge' }),
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    )).toBe('bridge')
+    expect(interfaceShowsDelete(
+      iface({ name: 'en0-bridge' }),
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+    )).toBe(true)
   })
 
   test('infers enslaved NIC without IPv4 as uplink', () => {

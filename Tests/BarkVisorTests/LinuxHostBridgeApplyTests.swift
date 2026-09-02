@@ -377,7 +377,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(rewritten.contains("DHCP=yes"))
     }
 
-    @Test func `acl tag without marker is leftover we can delete`() {
+    @Test func `acl tag without marker is leftover we can delete`() throws {
         let tagged = LinuxHostBridgeApply.ownership(
             bridge: "br0",
             marker: nil,
@@ -399,6 +399,24 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(attached.owned)
         #expect(!attached.createdBridge)
+        let leftover = LinuxHostBridgeApply.ownership(
+            bridge: "br0",
+            marker: nil,
+            acl: nil,
+            leftoverPersist: true,
+        )
+        #expect(leftover.owned)
+        #expect(leftover.createdBridge)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try """
+        [NetDev]
+        Name=br0
+        Kind=bridge
+        """.write(toFile: "\(dir.path)/10-br0.netdev", atomically: true, encoding: .utf8)
+        #expect(LinuxHostBridgeApply.leftoverHostBridge(bridge: "br0", dir: dir.path))
+        #expect(!LinuxHostBridgeApply.leftoverHostBridge(bridge: "br1", dir: dir.path))
     }
 
     @Test func `apply create-equivalent 409 when name exists`() throws {

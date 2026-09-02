@@ -33,7 +33,15 @@ import Foundation
             let device = resolvedDevice(nic: nic, facts: facts)
             let service = try device.flatMap { try MacHostNetworkApply.serviceName(forDevice: $0) }
             let socketProbe = SocketVmnetApply.liveProbe(interface: device)
-            let created = device.map { LinuxHostBridgeApply.createdBridgeForUplink($0) } ?? false
+            let created = device.map { name in
+                LinuxHostBridgeApply.createdBridgeForUplink(name)
+                    || facts.bridges.contains { snap in
+                        snap.createdBridge
+                            && (snap.name == name
+                                || snap.enslaved.contains(name)
+                                || snap.name == HostBridgeFactsService.syntheticMacBridgeName(uplink: name))
+                    }
+            } ?? false
             return MacHostBridgeApplyProbe(
                 facts: facts,
                 device: device ?? "",

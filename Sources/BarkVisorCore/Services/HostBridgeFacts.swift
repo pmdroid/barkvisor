@@ -68,6 +68,7 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                         bridge: name,
                         marker: marker,
                         acl: acl,
+                        leftoverPersist: LinuxHostBridgeApply.leftoverHostBridge(bridge: name),
                     ).createdBridge,
                 )
             }
@@ -156,6 +157,12 @@ public enum HostBridgeFactsService {
         )).readiness
     }
 
+    public static func syntheticMacBridgeName(uplink: String) -> String {
+        let port = uplink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !port.isEmpty else { return "" }
+        return "\(port)-bridge"
+    }
+
     public static func macSyntheticBridges(
         markers: [LinuxHostBridgeApply.OwnerMarker],
         sockets: [(interface: String, path: String)] = [],
@@ -173,8 +180,10 @@ public enum HostBridgeFactsService {
         if !fromMarkers.isEmpty {
             return fromMarkers
         }
-        return sockets.map {
-            HostBridgeSnapshot(name: $0.interface, enslaved: [], createdBridge: true)
+        return sockets.compactMap { item -> HostBridgeSnapshot? in
+            let name = syntheticMacBridgeName(uplink: item.interface)
+            guard !name.isEmpty else { return nil }
+            return HostBridgeSnapshot(name: name, enslaved: [item.interface], createdBridge: true)
         }
     }
 
