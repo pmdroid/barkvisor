@@ -453,6 +453,29 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(!result.commands.joined(separator: "\n").contains("listallhardwareports"))
         }
 
+        @Test func `mac delete without confirm is a preview`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                createdBridge: true,
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0"),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.needsConfirm)
+            #expect(!result.applied)
+            #expect(result.commands.contains { $0.contains("launchctl bootout") })
+        }
+
         @Test func `mac delete stops socket_vmnet when createdBridge`() {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
                 bridges: [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)],

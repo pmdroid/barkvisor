@@ -641,6 +641,26 @@ struct LinuxHostBridgeApplyTests {
         #expect(!LinuxHostBridgeApply.createdBridgeForUplink("eth0", dataDir: dir))
     }
 
+    @Test func `delete without confirm is a preview`() throws {
+        let preview = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0"),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+        )
+        #expect(preview.success)
+        #expect(preview.needsConfirm)
+        #expect(!preview.applied)
+        #expect(preview.commands.contains { $0.contains("ip link del br0") })
+        let recorder = RecordingLinuxHostBridgeMutator()
+        let live = try LinuxHostBridgeApplyLive.run(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0"),
+            probe: probe(owned: true, createdBridge: true, ready: true),
+            mutator: recorder,
+        )
+        #expect(live.needsConfirm)
+        #expect(!live.applied)
+        #expect(recorder.steps.isEmpty)
+    }
+
     @Test func `live delete is immediate without keep window`() throws {
         let recorder = RecordingLinuxHostBridgeMutator()
         let result = try LinuxHostBridgeApplyLive.run(

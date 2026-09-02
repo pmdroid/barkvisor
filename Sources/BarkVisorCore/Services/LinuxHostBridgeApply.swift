@@ -1088,16 +1088,14 @@ extension LinuxHostBridgeApply {
             description: "Remove marker-tagged allow \(request.bridge) from \(HostBridgeFactsService.defaultACLPath)",
             command: "# strip \(aclMarker(for: request.bridge)) + allow \(request.bridge)",
         ))
-        if probe.facts.onlyUplink || !probe.sessionRiskNics.isEmpty, !request.confirm {
+        if !request.confirm {
             return LinuxHostBridgeApplyResult(
-                success: false,
+                success: true,
                 applied: false,
                 needsConfirm: true,
                 backend: probe.backend.rawValue,
                 changes: changes.map(\.description),
-                warnings: probe.sessionWarnings + [
-                    "Delete moves the Device address off \(request.bridge). Confirm before applying.",
-                ],
+                warnings: probe.sessionWarnings,
                 commands: changes.map(\.command),
                 message: "Confirm required before delete.",
             )

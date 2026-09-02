@@ -309,12 +309,14 @@ import Foundation
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
-                needsConfirm: false,
+                needsConfirm: !request.confirm,
                 backend: "networksetup",
                 changes: changes,
                 warnings: [],
                 commands: commands,
-                message: "Ready to delete owned socket_vmnet.",
+                message: request.confirm
+                    ? "Ready to delete owned socket_vmnet."
+                    : "Confirm required before delete.",
             )
         }
 
@@ -362,6 +364,9 @@ import Foundation
                 throw BarkVisorError.conflict(plan.message)
             }
             guard plan.success, !plan.needsConfirm else { return plan }
+            if request.action == .delete, !request.confirm {
+                return plan
+            }
             if request.action == .check || request.action == .dryRun {
                 if request.action == .dryRun {
                     overlayLiveAddressCommands(&plan, request: request, probe: resolved)

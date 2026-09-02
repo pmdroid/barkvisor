@@ -31,6 +31,9 @@ public enum LinuxHostBridgeApplyLive {
         if request.action == .check || request.action == .dryRun {
             return plan
         }
+        if request.action == .delete, !request.confirm {
+            return plan
+        }
         #if os(Linux)
             let writer: any LinuxHostBridgeMutating = mutator ?? LiveLinuxHostBridgeMutator()
         #else
