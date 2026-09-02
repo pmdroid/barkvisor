@@ -5,6 +5,8 @@ import {
   folderBrowseRequestPath,
   folderMkdirRequestPath,
   folderHasRealEntries,
+  folderParentBrowsePath,
+  withFolderParentEntry,
 } from './folderBrowse'
 
 const self = { hostId: 'desk-1', role: 'self' }
@@ -60,5 +62,27 @@ describe('folderBrowse', () => {
         { name: 'pascal', path: '/Users/pascal', isDirectory: true },
       ]),
     ).toBe(true)
+  })
+
+  test('folderParentBrowsePath drops the last component', () => {
+    expect(folderParentBrowsePath('')).toBe('')
+    expect(folderParentBrowsePath('/')).toBe('')
+    expect(folderParentBrowsePath('///')).toBe('')
+    expect(folderParentBrowsePath('/a/b')).toBe('/a')
+    expect(folderParentBrowsePath('/a/b/')).toBe('/a')
+    expect(folderParentBrowsePath('/a/b///')).toBe('/a')
+    expect(folderParentBrowsePath('/a')).toBe('')
+    expect(folderParentBrowsePath('/a/')).toBe('')
+  })
+
+  test('withFolderParentEntry prepends .. unless already present', () => {
+    const child = { name: 'vms', path: '/var/lib/barkvisor/disks/vms', isDirectory: true }
+    expect(withFolderParentEntry([child], '')).toEqual([child])
+    expect(withFolderParentEntry([child], '/var/lib/barkvisor/disks')).toEqual([
+      { name: '..', path: '/var/lib/barkvisor', isDirectory: true },
+      child,
+    ])
+    const withParent = [{ name: '..', path: '', isDirectory: true }, child]
+    expect(withFolderParentEntry(withParent, '/var/lib/barkvisor/disks')).toEqual(withParent)
   })
 })
