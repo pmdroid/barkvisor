@@ -37,8 +37,8 @@ struct SystemBridgeController: RouteCollection {
     @Sendable
     func nextBridge(req: Vapor.Request) async throws -> NextBridgeResponse {
         let occupied = try await req.db.read { db in
-            Set(
-                try Network.fetchAll(db)
+            try Set(
+                Network.fetchAll(db)
                     .compactMap(\.bridge)
                     .filter { !$0.isEmpty },
             )

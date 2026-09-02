@@ -401,9 +401,7 @@ import Foundation
             }
             var setDHCP = false
             var setManual: (ip: String, mask: String, gateway: String)?
-            if plan.dhcpEnabled {
-                setDHCP = !currentDHCP
-            } else if let primary = plan.primaryStaticCIDR {
+            if !plan.dhcpEnabled, let primary = plan.primaryStaticCIDR {
                 let parsed = try parseStaticAddress(primary)
                 guard let gateway = plan.gateway, !gateway.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw BarkVisorError.badRequest("Static host address needs gateway")

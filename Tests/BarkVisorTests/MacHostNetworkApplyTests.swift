@@ -125,6 +125,38 @@ import Testing
             #expect(!ifconfigCalls.contains { $0.contains("-alias") })
         }
 
+        @Test func `alias apply on manual primary does not set dhcp`() throws {
+            let device = "en0-alias-keep-manual"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            var networksetupCalls: [[String]] = []
+            let run: (String, [String]) throws -> CommandResult = { path, args in
+                if path == "/sbin/ifconfig" {
+                    return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+                }
+                networksetupCalls.append(args)
+                if args.first == "-getinfo" {
+                    return CommandResult(
+                        exitCode: 0,
+                        stdout: Data("Manual Configuration\nIP address: 192.168.1.10\nSubnet mask: 255.255.255.0\n".utf8),
+                        stderr: Data(),
+                    )
+                }
+                return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+            }
+            try MacHostNetworkApply.apply(
+                device: device,
+                service: "Ethernet",
+                plan: HostInterfaceAddressApplyPlan(
+                    dhcpEnabled: true,
+                    staticCIDRs: ["10.0.0.2/24"],
+                    dns: [],
+                ),
+                run: run,
+            )
+            #expect(!networksetupCalls.contains { $0.contains("-setdhcp") })
+            #expect(!networksetupCalls.contains { $0.contains("-setmanual") })
+        }
+
         @Test func `remove one owned alias does not set dhcp`() throws {
             let device = "en0-remove-one-alias"
             defer { MacHostNetworkApply.removeMarker(device: device) }

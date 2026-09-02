@@ -566,6 +566,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(nm.commands == [
             "sudo nmcli connection delete barkvisor-br0-eth0",
             "sudo nmcli connection delete barkvisor-br0",
+            "sudo nmcli connection delete br0",
             "sudo ip link set eth0 nomaster",
             "sudo ip link delete br0 type bridge",
             "sudo nmcli device reapply eth0",

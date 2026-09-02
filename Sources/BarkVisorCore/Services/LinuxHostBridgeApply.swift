@@ -1042,6 +1042,12 @@ extension LinuxHostBridgeApply {
                 description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
                 command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
             ))
+            if request.bridge != "barkvisor-\(request.bridge)" {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Delete NetworkManager connection \(request.bridge)",
+                    command: "sudo nmcli connection delete \(request.bridge)",
+                ))
+            }
             for port in ports {
                 changes.append(LinuxHostBridgeChange(
                     description: "Detach \(port) from \(request.bridge)",
