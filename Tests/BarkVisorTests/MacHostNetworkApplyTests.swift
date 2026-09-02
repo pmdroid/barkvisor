@@ -501,7 +501,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(!result.commands.joined(separator: "\n").contains("listallhardwareports"))
         }
 
-        @Test func `mac delete without confirm is a preview`() {
+        @Test func `mac delete without confirm is a preview`() throws {
             let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
                 bridges: [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)],
                 defaultRouteInterface: "en0",
@@ -522,6 +522,31 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.needsConfirm)
             #expect(!result.applied)
             #expect(result.commands.contains { $0.contains("launchctl bootout") })
+            #expect(result.commands.contains { $0.contains("rm -f") && $0.contains("socket-vmnet") })
+            #expect(!result.commands.contains { $0.contains("networksetup") })
+            #expect(!result.commands.contains { $0.contains("ifconfig") })
+            let device = "en0-delete-ignores-aliases"
+            defer { MacHostNetworkApply.removeMarker(device: device) }
+            try MacHostNetworkApply.writeMarker(MacHostNetworkApply.Snapshot(
+                device: device,
+                service: "Ethernet",
+                infoText: "DHCP Configuration\n",
+                dnsServers: [],
+                appliedAliasCIDRs: ["192.168.30.22/16"],
+                removedAliasCIDRs: ["192.168.33.13/16"],
+            ))
+            let withMarker = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .delete, nic: "en0"),
+                probe: MacHostBridgeApplyProbe(
+                    facts: facts,
+                    device: "en0",
+                    serviceName: "Ethernet",
+                    socketProbe: SocketVmnetApplyProbe(facts: facts, interface: "en0"),
+                    createdBridge: true,
+                ),
+            )
+            #expect(!withMarker.commands.contains { $0.contains("192.168.30.22") })
+            #expect(!withMarker.commands.contains { $0.contains("192.168.33.13") })
         }
 
         @Test func `mac delete stops socket_vmnet when createdBridge`() {
@@ -544,6 +569,9 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.success)
             #expect(result.changes.contains { $0.contains("socket_vmnet") })
             #expect(result.message.contains("delete") || result.message.contains("socket_vmnet"))
+            #expect(!result.commands.contains { $0.contains("networksetup") })
+            #expect(!result.commands.contains { $0.contains("ifconfig") })
+            #expect(result.commands.allSatisfy { $0.contains("launchctl bootout") || $0.contains("rm -f") })
         }
 
         @Test func `mac revert of created brN stops socket_vmnet`() {

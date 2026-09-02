@@ -299,21 +299,16 @@ import Foundation
             if device.isEmpty {
                 return refuse("No interface to delete.")
             }
-            var changes: [String] = []
-            var commands: [String] = []
-            if let marker = MacHostNetworkApply.readMarker(device: device) {
-                changes.append("Restore BarkVisor-owned addresses on \(device)")
-                commands.append(contentsOf: MacHostNetworkApply.equivalentCommands(
-                    service: marker.service,
-                    device: device,
-                    delta: MacHostNetworkApply.revertDelta(marker: marker),
-                ))
-            } else {
-                changes.append("No BarkVisor-owned address changes for \(device)")
-            }
-            changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
-            changes.append("Strip BarkVisor markers")
-            commands.append("launchctl bootout system/com.barkvisor.socket-vmnet.\(device)")
+            let label = SocketVmnetLaunchd.label(interface: device)
+            let plist = SocketVmnetLaunchd.plistURL(interface: device).path
+            let changes = [
+                "Stop BarkVisor-managed socket_vmnet for \(device)",
+                "Remove \(plist)",
+            ]
+            let commands = [
+                "sudo launchctl bootout system/\(label)",
+                "sudo rm -f \(plist)",
+            ]
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -472,17 +467,16 @@ import Foundation
                     : "Reverted BarkVisor host network files. socket_vmnet was not stopped."
             case .delete:
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                if try MacHostNetworkApply.revert(device: resolved.device) {
-                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
-                }
-                _ = try? SocketVmnetApplyLive.run(
-                    request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
-                    probe: resolved.socketProbe,
-                )
-                MacHostNetworkApply.removeMarker(device: resolved.device)
+                let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
+                try SocketVmnetLaunchd.remove(interface: resolved.device)
                 try? FileManager.default.removeItem(
                     at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
                 )
+                if let uplink {
+                    try? FileManager.default.removeItem(
+                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                    )
+                }
                 plan.applied = true
                 plan.pendingCommit = false
                 plan.message = "Deleted owned socket_vmnet on \(resolved.device)."
