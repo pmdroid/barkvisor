@@ -337,6 +337,46 @@ struct LinuxHostBridgeApplyTests {
         #expect(!probe.facts.bridges.isEmpty)
     }
 
+    @Test func `systemd-networkd units for br0 are found and port files rewritten`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try """
+        [NetDev]
+        Name=br0
+        Kind=bridge
+        """.write(toFile: "\(dir.path)/10-br0.netdev", atomically: true, encoding: .utf8)
+        try """
+        [Match]
+        Name=enp2s0
+
+        [Network]
+        Bridge=br0
+        """.write(toFile: "\(dir.path)/20-enp2s0.network", atomically: true, encoding: .utf8)
+        try """
+        [Match]
+        Name=br0
+
+        [Network]
+        Address=192.168.30.1/16
+        DHCP=yes
+        """.write(toFile: "\(dir.path)/25-br0.network", atomically: true, encoding: .utf8)
+        let persist = LinuxHostBridgeApply.systemdBridgePersist(bridge: "br0", dir: dir.path)
+        #expect(Set(persist.remove.map { ($0 as NSString).lastPathComponent }) == [
+            "10-br0.netdev",
+            "25-br0.network",
+        ])
+        #expect(persist.rewrite.map { ($0 as NSString).lastPathComponent } == ["20-enp2s0.network"])
+        let rewritten = try LinuxHostBridgeApply.rewritePortNetworkDroppingBridge(
+            String(contentsOfFile: persist.rewrite[0], encoding: .utf8),
+            bridge: "br0",
+            cidrs: ["192.168.30.1/16"],
+        )
+        #expect(!rewritten.contains("Bridge=br0"))
+        #expect(rewritten.contains("Address=192.168.30.1/16"))
+        #expect(rewritten.contains("DHCP=yes"))
+    }
+
     @Test func `acl tag without marker is leftover we can delete`() {
         let tagged = LinuxHostBridgeApply.ownership(
             bridge: "br0",
@@ -563,15 +603,14 @@ struct LinuxHostBridgeApplyTests {
             probe: probe(backend: .networkManager, owned: true, createdBridge: true, ready: true),
         )
         #expect(nm.success)
-        #expect(nm.commands == [
-            "sudo nmcli connection delete barkvisor-br0-eth0",
-            "sudo nmcli connection delete barkvisor-br0",
-            "sudo nmcli connection delete br0",
-            "sudo ip link set eth0 nomaster",
-            "sudo ip link delete br0 type bridge",
-            "sudo nmcli device reapply eth0",
-            "# strip \(LinuxHostBridgeApply.aclMarker(for: "br0")) + allow br0",
-        ])
+        func idx(_ pred: (String) -> Bool) -> Int {
+            nm.commands.firstIndex(where: pred) ?? 9_999
+        }
+        #expect(idx { $0.contains("nomaster") } < idx { $0.contains("barkvisor-br0-eth0") })
+        #expect(idx { $0.contains("barkvisor-br0-eth0") } < idx { $0.hasSuffix("barkvisor-br0") })
+        #expect(idx { $0.hasSuffix("barkvisor-br0") } < idx { $0.contains("ip link delete br0 type bridge") })
+        #expect(idx { $0.contains("ip link delete br0 type bridge") } < idx { $0.contains("nmcli device reapply eth0") })
+        #expect(nm.commands.contains { $0.contains("ip addr add") && $0.contains("eth0") })
         let networkd = LinuxHostBridgeApply.evaluate(
             request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
             probe: probe(backend: .systemdNetworkd, owned: true, createdBridge: true, ready: true),

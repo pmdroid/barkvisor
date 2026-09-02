@@ -318,6 +318,27 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
             let nic = request.nic ?? members.first ?? probe.facts.defaultRouteInterface ?? ""
             let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
+            let cidrs = (try? ipv4CIDRs(on: request.bridge)) ?? []
+            try persistDropSystemdBridge(bridge: request.bridge, cidrs: cidrs)
+            if probe.backend == .networkManager, !nic.isEmpty {
+                unslaveNmPort(nic: nic, cidrs: cidrs)
+            }
+            for port in ports {
+                _ = try? PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["link", "set", port, "nomaster"],
+                    timeout: 15,
+                )
+            }
+            if !nic.isEmpty {
+                for cidr in cidrs {
+                    _ = try? PlatformProcess.run(
+                        path: Self.ipPath,
+                        arguments: ["addr", "add", cidr, "dev", nic],
+                        timeout: 15,
+                    )
+                }
+            }
             if probe.backend == .networkManager {
                 for port in ports {
                     _ = try? PlatformProcess.run(
@@ -339,46 +360,59 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     arguments: ["connection", "delete", request.bridge],
                     timeout: 15,
                 )
-                for port in ports {
-                    _ = try? PlatformProcess.run(
-                        path: Self.ipPath,
-                        arguments: ["link", "set", port, "nomaster"],
-                        timeout: 15,
-                    )
-                }
-                _ = try? PlatformProcess.run(
-                    path: Self.ipPath,
-                    arguments: ["link", "delete", request.bridge, "type", "bridge"],
-                    timeout: 15,
-                )
-                try revert(request: request, probe: probe)
-                HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
-                return
             }
-            let cidrs = (try? ipv4CIDRs(on: request.bridge)) ?? []
-            for port in ports {
-                _ = try? PlatformProcess.run(
-                    path: Self.ipPath,
-                    arguments: ["link", "set", port, "nomaster"],
-                    timeout: 15,
-                )
-            }
-            if !nic.isEmpty {
-                for cidr in cidrs {
-                    _ = try? PlatformProcess.run(
-                        path: Self.ipPath,
-                        arguments: ["addr", "add", cidr, "dev", nic],
-                        timeout: 15,
-                    )
-                }
-            }
-            try revert(request: request, probe: probe)
             _ = try? PlatformProcess.run(
                 path: Self.ipPath,
                 arguments: ["link", "delete", request.bridge, "type", "bridge"],
                 timeout: 15,
             )
+            try revert(request: request, probe: probe)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/networkctl",
+                arguments: ["reload"],
+                timeout: 15,
+            )
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
+        }
+
+        private func persistDropSystemdBridge(bridge: String, cidrs: [String]) throws {
+            let persist = LinuxHostBridgeApply.systemdBridgePersist(bridge: bridge)
+            for path in persist.remove {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+            for path in persist.rewrite {
+                guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+                let next = LinuxHostBridgeApply.rewritePortNetworkDroppingBridge(
+                    text,
+                    bridge: bridge,
+                    cidrs: cidrs,
+                )
+                try next.write(toFile: path, atomically: true, encoding: .utf8)
+            }
+        }
+
+        private func unslaveNmPort(nic: String, cidrs: [String]) {
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "connection.slave-type", "",
+                    "connection.master", "",
+                    "connection.port-type", "",
+                    "connection.controller", "",
+                ],
+                timeout: 15,
+            )
+            guard !cidrs.isEmpty else { return }
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "ipv4.method", "manual",
+                    "ipv4.addresses", cidrs.joined(separator: ","),
+                ],
+                timeout: 15,
+            )
         }
 
         private func ipv4CIDRs(on device: String) throws -> [String] {

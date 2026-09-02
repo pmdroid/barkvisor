@@ -218,6 +218,68 @@ public enum LinuxHostBridgeApply {
         "barkvisor-\(bridge)-\(nic)"
     }
 
+    public static let systemdNetworkDir = "/etc/systemd/network"
+
+    public struct SystemdBridgePersist: Sendable, Equatable {
+        public var remove: [String]
+        public var rewrite: [String]
+
+        public init(remove: [String] = [], rewrite: [String] = []) {
+            self.remove = remove
+            self.rewrite = rewrite
+        }
+    }
+
+    public static func systemdBridgePersist(
+        bridge: String,
+        dir: String = systemdNetworkDir,
+    ) -> SystemdBridgePersist {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        var remove: [String] = []
+        var rewrite: [String] = []
+        for name in names.sorted() {
+            let path = "\(dir)/\(name)"
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            if name.hasSuffix(".netdev"),
+               hasNetworkAssignment(text, key: "Name", value: bridge),
+               hasNetworkAssignment(text, key: "Kind", value: "bridge") {
+                remove.append(path)
+            } else if name.hasSuffix(".network"), hasNetworkAssignment(text, key: "Bridge", value: bridge) {
+                rewrite.append(path)
+            } else if name.hasSuffix(".network"),
+                      hasNetworkAssignment(text, key: "Name", value: bridge) {
+                remove.append(path)
+            }
+        }
+        return SystemdBridgePersist(remove: remove, rewrite: rewrite)
+    }
+
+    public static func rewritePortNetworkDroppingBridge(_ text: String, bridge: String, cidrs: [String]) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        lines.removeAll { $0.trimmingCharacters(in: .whitespaces) == "Bridge=\(bridge)" }
+        let hasAddress = lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("Address=") }
+        if !hasAddress {
+            for cidr in cidrs {
+                lines.append("Address=\(cidr)")
+            }
+        }
+        let hasDHCP = lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("DHCP=") }
+        if !hasDHCP, !cidrs.isEmpty {
+            lines.append("DHCP=yes")
+        }
+        var body = lines.joined(separator: "\n")
+        if !body.hasSuffix("\n") { body += "\n" }
+        return body
+    }
+
+    static func hasNetworkAssignment(_ text: String, key: String, value: String) -> Bool {
+        let want = "\(key)=\(value)"
+        for raw in text.split(whereSeparator: \.isNewline) {
+            if raw.trimmingCharacters(in: .whitespaces) == want { return true }
+        }
+        return false
+    }
+
     public static func commitStampPath(bridge: String) -> String {
         "/run/barkvisor/\(bridge)-commit"
     }
@@ -1030,8 +1092,39 @@ extension LinuxHostBridgeApply {
         let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
         let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
         var changes: [LinuxHostBridgeChange] = []
+        let persist = systemdBridgePersist(bridge: request.bridge)
+        for path in persist.remove {
+            changes.append(LinuxHostBridgeChange(
+                description: "Remove \(path) so \(request.bridge) is not recreated on boot",
+                command: "sudo rm -f \(path)",
+            ))
+        }
+        for path in persist.rewrite {
+            changes.append(LinuxHostBridgeChange(
+                description: "Stop enslaving the NIC in \(path)",
+                command: "sudo sed -i '/^Bridge=\(request.bridge)$/d' \(path)",
+            ))
+        }
+        if !persist.remove.isEmpty || !persist.rewrite.isEmpty {
+            changes.append(LinuxHostBridgeChange(
+                description: "Reload systemd-networkd",
+                command: "sudo networkctl reload",
+            ))
+        }
         switch probe.backend {
         case .networkManager:
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Move Device addresses from \(request.bridge) onto \(nic)",
+                    command: "sudo bash -c 'ip -4 -o addr show dev \(request.bridge) | awk \"{print \\$4}\" | while read -r c; do ip addr add \"$c\" dev \(nic); done'",
+                ))
+            }
             for port in ports {
                 changes.append(LinuxHostBridgeChange(
                     description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: port))",
@@ -1046,12 +1139,6 @@ extension LinuxHostBridgeApply {
                 changes.append(LinuxHostBridgeChange(
                     description: "Delete NetworkManager connection \(request.bridge)",
                     command: "sudo nmcli connection delete \(request.bridge)",
-                ))
-            }
-            for port in ports {
-                changes.append(LinuxHostBridgeChange(
-                    description: "Detach \(port) from \(request.bridge)",
-                    command: "sudo ip link set \(port) nomaster",
                 ))
             }
             changes.append(LinuxHostBridgeChange(
