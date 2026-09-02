@@ -153,8 +153,10 @@ public enum HostBridgeFactsService {
     ) -> [HostBridgeSnapshot] {
         let fromMarkers = markers.compactMap { marker -> HostBridgeSnapshot? in
             guard let uplink = marker.uplink, !uplink.isEmpty else { return nil }
+            let name = marker.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
             return HostBridgeSnapshot(
-                name: marker.bridge,
+                name: name,
                 enslaved: [uplink],
                 createdBridge: marker.createdBridge,
             )

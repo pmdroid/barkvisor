@@ -73,6 +73,16 @@ struct HostBridgeReadinessTests {
         #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [])])
     }
 
+    @Test func `mac synthetic skips empty bridge names`() {
+        let snaps = HostBridgeFactsService.macSyntheticBridges(
+            markers: [
+                LinuxHostBridgeApply.OwnerMarker(bridge: "", uplink: "en0", createdBridge: true),
+            ],
+            sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
+        )
+        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [])])
+    }
+
     @Test func `mac socket_vmnet present is ready without linux remediations`() {
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
             bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],

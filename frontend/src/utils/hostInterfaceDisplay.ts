@@ -428,3 +428,25 @@ export function interfaceShowsDelete(
 ): boolean {
   return interfaceAssociatedBridge(iface, readiness)?.createdBridge === true
 }
+
+export function syntheticMacBridgeIfaces(
+  ifaces: HostInterface[],
+  readiness: HostBridgeReadiness | null | undefined,
+  mode: string,
+): HostInterface[] {
+  if (mode !== 'macos-guide' || !readiness) return []
+  const seen = new Set(ifaces.map((iface) => iface.name))
+  const extra: HostInterface[] = []
+  for (const bridge of readiness.bridges) {
+    if (!bridge.name || seen.has(bridge.name)) continue
+    if (!/^br\d+$/.test(bridge.name)) continue
+    seen.add(bridge.name)
+    extra.push({
+      name: bridge.name,
+      displayName: bridge.name,
+      ipAddress: '',
+      managedByBarkvisor: true,
+    })
+  }
+  return extra
+}

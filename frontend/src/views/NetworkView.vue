@@ -65,6 +65,7 @@ import {
   interfaceRouteColumn,
   overlayBridgeAddresses,
   existingBridgeForInterfaceApply,
+  syntheticMacBridgeIfaces,
   resolveBridgeApplyNic,
   pendingCommitBridgeName,
   pendingCommitMatchesInterface,
@@ -200,7 +201,12 @@ const interfaceTableRows = computed<InterfaceTableRow[]>(() => {
     const ifaces = useHomeUnion.value
       ? homeNets.interfacesFor(device.hostId)
       : localInterfaces.value
-    for (const iface of ifaces) {
+    const mode = deviceBridgeGuideMode(device)
+    const listed = [
+      ...ifaces,
+      ...syntheticMacBridgeIfaces(ifaces, readinessByHost.value[device.hostId], mode),
+    ]
+    for (const iface of listed) {
       if (iface.name === 'lo' || iface.name === 'lo0') continue
       rows.push({
         key: `${device.hostId}:${iface.name}`,

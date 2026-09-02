@@ -11,6 +11,7 @@ import {
   interfaceAddressColumn,
   interfaceAddressFieldsReadOnly,
   interfaceShowsDelete,
+  syntheticMacBridgeIfaces,
   interfaceBridgeColumn,
   interfaceBridgeRoleDetail,
   interfaceOwnsAddressApply,
@@ -435,6 +436,27 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), owned)).toBe(true)
     expect(interfaceShowsDelete(iface({ name: 'br0' }), foreign)).toBe(false)
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), foreign)).toBe(false)
+  })
+
+  test('syntheticMacBridgeIfaces adds brN rows that are not OS NICs', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'], createdBridge: true }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'macos-guide').map((row) => row.name))
+      .toEqual(['br0'])
+    expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'linux-guide')).toEqual([])
+    expect(syntheticMacBridgeIfaces(
+      [iface({ name: 'en0' })],
+      { ...ready, bridges: [{ name: '', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    )).toEqual([])
   })
 
   test('VM picker lists brN not raw uplink when synthetic bridge exists', () => {
