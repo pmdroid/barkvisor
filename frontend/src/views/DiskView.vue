@@ -474,7 +474,7 @@ async function resizeDisk() {
   </div>
   <table>
     <thead>
-      <tr><th>Name</th><th>Device</th><th>Path</th><th>Format</th><th>Size</th><th>VM</th><th>Resize</th><th>Delete</th></tr>
+      <tr><th>Name</th><th>Device</th><th>Path</th><th>Format</th><th>Size</th><th>Used</th><th>VM</th><th>Resize</th><th>Delete</th></tr>
     </thead>
     <tbody>
     <tr v-for="row in homeRows" :key="rowKey(row)">
@@ -483,6 +483,15 @@ async function resizeDisk() {
       <td><span class="path" :title="row.disk.path">{{ row.disk.path }}</span></td>
       <td><span class="fmt">{{ row.disk.format }}</span></td>
       <td class="num">{{ formatBytes(row.disk.sizeBytes) }}</td>
+      <td class="num">
+        <template v-if="usageFor(row)">
+          {{ formatBytes(usageFor(row)!.actualSizeBytes) }}
+          <div class="usage-bar">
+            <div class="usage-bar-fill" :style="{ width: barPct(usageFor(row)!.actualSizeBytes, usageFor(row)!.virtualSizeBytes) + '%' }" />
+          </div>
+        </template>
+        <span v-else style="color:var(--text-dim)">-</span>
+      </td>
       <td>
         <a
           v-for="att in attachmentsFor(row)"
