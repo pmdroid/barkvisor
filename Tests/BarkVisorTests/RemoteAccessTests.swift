@@ -169,7 +169,7 @@ struct RemoteAccessTests {
         #expect(try pool.read { try RemoteAccessSettings.load(from: $0).deviceUrl == "nas.lan" })
     }
 
-    @Test func `magicdns Device URL is https without a port`() throws {
+    @Test func `magicdns Device URL is https without a port`() {
         #expect(RemoteAccessSettings.isMagicDNSHost("box.tailnet.ts.net"))
         #expect(RemoteAccessSettings.isMagicDNSHost("box.tailscale.net"))
         #expect(!RemoteAccessSettings.isMagicDNSHost("192.168.0.4"))
@@ -188,18 +188,6 @@ struct RemoteAccessTests {
         #expect(RemoteAccessSettings.magicDNSHost(tailnet: up) == "box.tailnet.ts.net")
         let down = TailnetInfo(available: false, ip: nil, dnsName: "stale.tailnet.ts.net")
         #expect(RemoteAccessSettings.magicDNSHost(tailnet: down) == nil)
-        let feature = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("features/device-url.feature"),
-            encoding: .utf8,
-        )
-        #expect(feature.contains("https://box.tailnet.ts.net"))
-        #expect(feature.contains("studio.home"))
-        #expect(feature.contains("no port"))
-        #expect(feature.contains("saved Device URL is still"))
     }
 
     @Test func `advertised hosts prefer Device URL then tailnet then LAN`() {

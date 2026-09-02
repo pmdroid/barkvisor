@@ -422,14 +422,19 @@ struct LinuxGuestScriptsTests {
         #expect(!docs.localizedCaseInsensitiveContains("quorum"))
     }
 
-    @Test func `packages ship barkvisor and barkvisor-agent`() throws {
-        let feature = try String(
-            contentsOf: repoRoot.appendingPathComponent("features/install-binaries.feature"),
-            encoding: .utf8,
-        )
-        #expect(feature.contains("barkvisor-agent"))
-        #expect(feature.contains("Conflicts"))
+    @Test func `features directory only contains mapped gherkin`() throws {
+        let dir = repoRoot.appendingPathComponent("features")
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasSuffix(".feature") }
+            .sorted()
+        #expect(names == [
+            "api-contract.feature",
+            "cross-device.feature",
+            "guest-boot.feature",
+        ])
+    }
 
+    @Test func `packages ship barkvisor and barkvisor-agent`() throws {
         let stage = try String(
             contentsOf: repoRoot.appendingPathComponent("scripts/lib/linux-package-stage.sh"),
             encoding: .utf8,
