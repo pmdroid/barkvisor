@@ -70,7 +70,7 @@ struct HostBridgeReadinessTests {
             markers: [],
             sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
         )
-        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [])])
+        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)])
     }
 
     @Test func `mac synthetic skips empty bridge names`() {
@@ -80,7 +80,7 @@ struct HostBridgeReadinessTests {
             ],
             sockets: [(interface: "en0", path: "/var/run/socket_vmnet.bridged.en0")],
         )
-        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [])])
+        #expect(snaps == [HostBridgeSnapshot(name: "en0", enslaved: [], createdBridge: true)])
     }
 
     @Test func `mac socket_vmnet present is ready without linux remediations`() {
