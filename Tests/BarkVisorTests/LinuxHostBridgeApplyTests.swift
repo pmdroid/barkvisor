@@ -122,7 +122,7 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(!pending.success)
         #expect(pending.needsConfirm)
-        #expect(pending.warnings.contains { $0.contains("Keep changes") })
+        #expect(pending.warnings.contains { $0.contains("keeps the bridge automatically") })
         #expect(!pending.applied)
 
         let confirmed = LinuxHostBridgeApply.evaluate(
@@ -131,7 +131,8 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(confirmed.success)
         #expect(!confirmed.needsConfirm)
-        #expect(confirmed.commands.contains { $0.contains("netplan try") })
+        #expect(confirmed.commands.contains { $0.contains("netplan apply") })
+        #expect(!confirmed.commands.contains { $0.contains("netplan try") })
     }
 
     @Test func `revert never deletes a shared br0`() {
@@ -244,6 +245,19 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.success)
         #expect(recorder.steps.contains { $0.contains("action=apply") })
         #expect(recorder.steps.contains { $0.contains("netplan") })
+    }
+
+    @Test func `live apply keeps immediately when nic would drop SSH`() throws {
+        let recorder = RecordingLinuxHostBridgeMutator()
+        let result = try LinuxHostBridgeApplyLive.run(
+            request: LinuxHostBridgeApplyRequest(action: .apply, nic: "enp2s0", confirm: true),
+            probe: probe(session: ["enp2s0"], nic: "enp2s0"),
+            mutator: recorder,
+        )
+        #expect(result.applied)
+        #expect(result.success)
+        #expect(!result.pendingCommit)
+        #expect(result.message.contains("kept"))
     }
 
     @Test func `check includes address diffs when addresses provided`() {
@@ -556,6 +570,15 @@ struct LinuxHostBridgeApplyTests {
             dataDir: dir,
             extraTaken: ["br0", "br1", "br2"],
         ) == "br3")
+    }
+
+    @Test func `dropsManagementSession when nic carries SSH or is the only uplink`() {
+        let session = probe(session: ["enp2s0"], nic: "enp2s0")
+        #expect(LinuxHostBridgeApply.dropsManagementSession(nic: "enp2s0", probe: session))
+        let only = probe(nic: "eth0", onlyUplink: true)
+        #expect(LinuxHostBridgeApply.dropsManagementSession(nic: "eth0", probe: only))
+        let safe = probe(nic: "eth1", ready: true)
+        #expect(!LinuxHostBridgeApply.dropsManagementSession(nic: "eth1", probe: safe))
     }
 
     @Test func `one pending commit per Device`() {

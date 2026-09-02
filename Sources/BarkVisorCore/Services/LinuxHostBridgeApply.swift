@@ -172,6 +172,14 @@ public enum LinuxHostBridgeApply {
     public static let aclMarker = "# barkvisor:allow-br0"
     public static let ownedMarkerName = "host-bridge"
     public static let rollbackSeconds = 30
+
+    public static func dropsManagementSession(
+        nic: String,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> Bool {
+        if probe.sessionRiskNics.contains(nic) { return true }
+        return probe.facts.onlyUplink
+    }
     public static let netplanPath = "/etc/netplan/90-barkvisor-br0.yaml"
     public static let networkdNetdevPath = "/etc/systemd/network/90-barkvisor-br0.netdev"
     public static let networkdNetworkPath = "/etc/systemd/network/90-barkvisor-br0.network"
@@ -597,17 +605,18 @@ public enum LinuxHostBridgeApply {
         var warnings = probe.sessionWarnings
         if probe.facts.onlyUplink {
             warnings.append(
-                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Keep changes in the SPA within \(rollbackSeconds)s or they auto-revert.",
+                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Apply keeps the bridge automatically because Keep cannot run after the session drops.",
             )
         }
         let sessionHit = probe.sessionRiskNics.contains(nic)
         if sessionHit {
             warnings.append(
-                "'\(nic)' carries SSH or the SPA session. Pass --confirm. After Apply, click Keep changes within \(rollbackSeconds)s or the host auto-reverts.",
+                "'\(nic)' carries SSH or the SPA session. Pass --confirm. Apply keeps the bridge automatically because Keep cannot run after the session drops.",
             )
         }
 
-        let changes = plannedChanges(request: request, probe: probe, nic: nic, plan: plan)
+        let keepNow = dropsManagementSession(nic: nic, probe: probe)
+        let changes = plannedChanges(request: request, probe: probe, nic: nic, plan: plan, keepNow: keepNow)
         let commands = changes.map(\.command)
         let changeText = changes.map(\.description)
 
@@ -833,9 +842,9 @@ public enum LinuxHostBridgeApply {
         probe: LinuxHostBridgeApplyProbe,
         nic: String,
         plan: HostInterfaceAddressApplyPlan,
+        keepNow: Bool = false,
     ) -> [LinuxHostBridgeChange] {
         var changes: [LinuxHostBridgeChange] = []
-        let addrParts = addressCLIFlags(plan: plan)
         changes.append(LinuxHostBridgeChange(
             description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device addresses on \(request.bridge), not the guest)",
             command: "POST /api/system/bridges (interface: \(nic), action: apply, confirm: true)",
@@ -843,13 +852,19 @@ public enum LinuxHostBridgeApply {
         switch probe.backend {
         case .netplan:
             changes.append(LinuxHostBridgeChange(
-                description: "Write \(netplanPath(bridge: request.bridge)) and `netplan try` (\(rollbackSeconds)s keep window)",
-                command: "sudo netplan try --timeout \(rollbackSeconds)",
+                description: keepNow
+                    ? "Write \(netplanPath(bridge: request.bridge)) and apply"
+                    : "Write \(netplanPath(bridge: request.bridge)) and `netplan try` (\(rollbackSeconds)s keep window)",
+                command: keepNow
+                    ? "sudo netplan apply"
+                    : "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
             let slave = nmSlaveConnectionName(bridge: request.bridge, nic: nic)
             changes.append(LinuxHostBridgeChange(
-                description: "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
+                description: keepNow
+                    ? "nmcli bridge barkvisor-\(request.bridge)"
+                    : "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo nmcli connection add type bridge ifname \(request.bridge) con-name barkvisor-\(request.bridge)",
             ))
             changes.append(LinuxHostBridgeChange(
@@ -862,7 +877,9 @@ public enum LinuxHostBridgeApply {
             ))
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
-                description: "Write \(networkdNetdevPath(bridge: request.bridge)) + systemd-run \(rollbackSeconds)s revert",
+                description: keepNow
+                    ? "Write \(networkdNetdevPath(bridge: request.bridge))"
+                    : "Write \(networkdNetdevPath(bridge: request.bridge)) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo networkctl reload",
             ))
         case .ifupdown, .unknown:
@@ -884,24 +901,6 @@ public enum LinuxHostBridgeApply {
         return changes
     }
 
-    private static func addressCLIFlags(plan: HostInterfaceAddressApplyPlan) -> String {
-        var parts: [String] = []
-        if plan.dhcpEnabled { parts.append("--dhcp") }
-        if !plan.dhcpEnabled, plan.staticCIDRs.isEmpty == false {
-            parts.append("--static")
-        }
-        for cidr in plan.staticCIDRs {
-            parts.append("--address \(cidr)")
-        }
-        if let gateway = plan.gateway, !gateway.isEmpty {
-            parts.append("--gateway \(gateway)")
-        }
-        if !plan.dns.isEmpty {
-            parts.append("--dns \(plan.dns.joined(separator: ","))")
-        }
-        return parts.isEmpty ? "--dhcp" : parts.joined(separator: " ")
-    }
-
     private static func equivalentCommands(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
@@ -913,7 +912,13 @@ public enum LinuxHostBridgeApply {
         guard let plan = resolvedPlan(from: request) else {
             return ["# invalid address plan"]
         }
-        return plannedChanges(request: request, probe: probe, nic: nic, plan: plan).map(\.command)
+        return plannedChanges(
+            request: request,
+            probe: probe,
+            nic: nic,
+            plan: plan,
+            keepNow: dropsManagementSession(nic: nic, probe: probe),
+        ).map(\.command)
     }
 
     private static func resolvedPlan(from request: LinuxHostBridgeApplyRequest) -> HostInterfaceAddressApplyPlan? {

@@ -836,7 +836,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
           action: 'delete',
           interface: nic,
           bridge: targetBridge,
-        }).then((r) => r.data)
+        }, { timeout: 45_000 }).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
         confirm,
@@ -844,7 +844,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         rows: payload.rows,
         gateway: payload.gateway,
         dns: payload.dns,
-      })).then((r) => r.data)
+      }), { timeout: 45_000 }).then((r) => r.data)
     linuxApplyResult.value = data
     if (!confirm && (action === 'apply' || action === 'delete')) {
       if (data.needsConfirm || data.success) {
@@ -1336,7 +1336,7 @@ async function applyCreateBridge(confirm = false) {
         : [{ id: 'dhcp', kind: 'dhcp', cidr: '' }],
       gateway: createBridgeGateway.value,
       dns: createBridgeDNS.value,
-    }))
+    }), { timeout: 45_000 })
     linuxApplyResult.value = data
     if (!confirm) {
       if (data.needsConfirm || data.success) {
@@ -1811,7 +1811,7 @@ async function doDeleteNetwork() {
         variant="primary"
         :loading="linuxApplyLoading"
         :disabled="!createBridgeNic"
-        :loading-text="'Applying...'"
+        :loading-text="'Working — Device may drop…'"
         @click="applyCreateBridge()"
       >Apply</AppButton>
     </template>

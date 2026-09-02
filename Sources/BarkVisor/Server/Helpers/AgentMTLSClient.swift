@@ -43,7 +43,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         material: HomeCertificateMaterial,
         presentationCertificatePEM: String? = nil,
         trustCertificatePEMs: [String] = [],
-        timeoutSeconds: Int64 = 10,
+        timeoutSeconds: Int64 = 30,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
@@ -260,7 +260,7 @@ public struct LocalHostProxyClient: HomeDeviceProxyClient {
     public var maxBodyBytes: Int
 
     public init(
-        timeout: TimeInterval = 10,
+        timeout: TimeInterval = 30,
         maxBodyBytes: Int = HomeDeviceProxy.maxBodyBytes,
     ) {
         self.timeout = timeout
@@ -299,7 +299,7 @@ private enum LocalHostProxyHTTP {
     static let shared: HTTPClient = {
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
-        config.timeout = HTTPClient.Configuration.Timeout(connect: .seconds(10), read: .seconds(10))
+        config.timeout = HTTPClient.Configuration.Timeout(connect: .seconds(10), read: .seconds(30))
         return HTTPClient(
             eventLoopGroupProvider: .shared(LocalHostProxyHTTPGroup.shared),
             configuration: config,
