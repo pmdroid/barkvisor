@@ -276,6 +276,7 @@ struct SystemBridgeController: RouteCollection {
     ) -> LinuxHostBridgeApplyAction {
         if body.dryRun == true { return .dryRun }
         if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            if raw == "dryRun" { return .dryRun }
             return LinuxHostBridgeApplyAction(rawValue: raw) ?? defaultAction
         }
         return defaultAction

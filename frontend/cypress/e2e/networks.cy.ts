@@ -221,7 +221,7 @@ describe('Network Management', () => {
     cy.intercept('POST', '**/system/bridges', (req) => {
       expect(req.body.bridge).to.eq(bridge)
       expect(req.body.interface).to.be.a('string').and.not.be.empty
-      const checking = req.body.action === 'check' || req.body.action === 'dryRun'
+      const checking = req.body.action === 'check' || req.body.action === 'dry-run' || req.body.action === 'dryRun' || req.body.dryRun === true
       req.reply({
         success: true,
         applied: !checking,

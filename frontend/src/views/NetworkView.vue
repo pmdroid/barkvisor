@@ -840,7 +840,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         nic,
         bridge: existingBridge ?? (targets.bridge || undefined),
         confirm,
-        action: confirm ? 'apply' : 'dryRun',
+        action: confirm ? 'apply' : 'dry-run',
         rows: payload.rows,
         gateway: payload.gateway,
         dns: payload.dns,
@@ -1306,7 +1306,7 @@ async function applyCreateBridge(confirm = false) {
       nic,
       bridge,
       confirm,
-      action: confirm ? 'apply' : 'dryRun',
+      action: confirm ? 'apply' : 'dry-run',
       rows: createBridgeRows.value.length
         ? createBridgeRows.value
         : [{ id: 'dhcp', kind: 'dhcp', cidr: '' }],

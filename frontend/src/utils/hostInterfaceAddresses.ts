@@ -109,10 +109,12 @@ export function buildHostBridgeApplyBody(input: {
   dns?: string
 }): HostBridgeApplyRequest {
   const addresses = buildAddressApplyEntries(input.rows)
+  const action = input.action ?? 'apply'
   const body: HostBridgeApplyRequest = {
     interface: input.nic,
-    action: input.action ?? 'apply',
+    action,
     confirm: input.confirm ?? false,
+    dryRun: action === 'dry-run',
     addresses,
   }
   const hasDHCP = input.rows.some((r) => r.kind === 'dhcp')

@@ -172,6 +172,18 @@ describe('hostInterfaceAddresses', () => {
     expect(body.bridge).toBeUndefined()
   })
 
+  test('preview body is dry-run and does not apply', () => {
+    const body = buildHostBridgeApplyBody({
+      nic: 'en0',
+      bridge: 'br0',
+      action: 'dry-run',
+      rows: [{ id: 'd', kind: 'dhcp', cidr: '' }],
+    })
+    expect(body.action).toBe('dry-run')
+    expect(body.dryRun).toBe(true)
+    expect(body.confirm).toBe(false)
+  })
+
   test('check action body includes addresses', () => {
     const body = buildHostBridgeApplyBody({
       nic: 'eth0',
