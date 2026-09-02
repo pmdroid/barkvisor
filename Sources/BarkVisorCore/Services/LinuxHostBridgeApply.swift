@@ -1170,7 +1170,15 @@ extension LinuxHostBridgeApply {
             ))
             if !nic.isEmpty {
                 changes.append(LinuxHostBridgeChange(
+                    description: "Keep DHCP plus moved addresses on \(nic)",
+                    command: "sudo nmcli connection modify \(nic) ipv4.method auto",
+                ))
+                changes.append(LinuxHostBridgeChange(
                     description: "Restore L3 on \(nic)",
+                    command: "sudo nmcli connection up \(nic)",
+                ))
+                changes.append(LinuxHostBridgeChange(
+                    description: "Reapply \(nic)",
                     command: "sudo nmcli device reapply \(nic)",
                 ))
             }

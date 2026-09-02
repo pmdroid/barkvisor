@@ -452,6 +452,19 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 arguments: ["reload"],
                 timeout: 15,
             )
+            if probe.backend == .networkManager, !nic.isEmpty {
+                persistNmFileIfRuntime(connection: nic)
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "up", nic],
+                    timeout: 30,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["device", "reapply", nic],
+                    timeout: 15,
+                )
+            }
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
@@ -459,6 +472,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let persist = LinuxHostBridgeApply.systemdBridgePersist(bridge: bridge)
             for path in persist.remove {
                 try? FileManager.default.removeItem(atPath: path)
+                try? FileManager.default.removeItem(atPath: "\(path).d")
             }
             for path in persist.rewrite {
                 guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
@@ -483,14 +497,56 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ],
                 timeout: 15,
             )
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "ipv4.method", "auto",
+                    "connection.autoconnect", "yes",
+                ],
+                timeout: 15,
+            )
             guard !cidrs.isEmpty else { return }
             _ = try? PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: [
                     "connection", "modify", nic,
-                    "ipv4.method", "manual",
                     "ipv4.addresses", cidrs.joined(separator: ","),
                 ],
+                timeout: 15,
+            )
+            persistNmFileIfRuntime(connection: nic)
+        }
+
+        private func persistNmFileIfRuntime(connection: String) {
+            let listed = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-t", "-f", "NAME,FILENAME", "connection", "show"],
+                timeout: 15,
+            )
+            guard let listed else { return }
+            var src = ""
+            for raw in listed.stdoutString.split(whereSeparator: \.isNewline) {
+                let line = String(raw)
+                guard let sep = line.firstIndex(of: ":") else { continue }
+                let name = String(line[..<sep])
+                if name == connection {
+                    src = String(line[line.index(after: sep)...])
+                    break
+                }
+            }
+            guard src.contains("/run/"), FileManager.default.fileExists(atPath: src) else { return }
+            let dest = "/etc/NetworkManager/system-connections/\((src as NSString).lastPathComponent)"
+            try? FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: dest).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            try? FileManager.default.removeItem(atPath: dest)
+            try? FileManager.default.copyItem(atPath: src, toPath: dest)
+            _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0600", dest], timeout: 5)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "reload"],
                 timeout: 15,
             )
         }

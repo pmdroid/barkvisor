@@ -651,8 +651,10 @@ struct LinuxHostBridgeApplyTests {
         #expect(idx { $0.contains("nomaster") } < idx { $0.contains("barkvisor-br0-eth0") })
         #expect(idx { $0.contains("barkvisor-br0-eth0") } < idx { $0.hasSuffix("barkvisor-br0") })
         #expect(idx { $0.hasSuffix("barkvisor-br0") } < idx { $0.contains("ip link delete br0 type bridge") })
-        #expect(idx { $0.contains("ip link delete br0 type bridge") } < idx { $0.contains("nmcli device reapply eth0") })
+        #expect(idx { $0.contains("ip link delete br0 type bridge") } < idx { $0.contains("nmcli connection up eth0") })
+        #expect(idx { $0.contains("nmcli connection up eth0") } < idx { $0.contains("nmcli device reapply eth0") })
         #expect(nm.commands.contains { $0.contains("ip addr add") && $0.contains("eth0") })
+        #expect(nm.commands.contains { $0.contains("ipv4.method auto") })
         let networkd = LinuxHostBridgeApply.evaluate(
             request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
             probe: probe(backend: .systemdNetworkd, owned: true, createdBridge: true, ready: true),
