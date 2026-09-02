@@ -39,6 +39,11 @@ describe('createHostBridge', () => {
       [iface({ name: 'eth0' }), iface({ name: 'br0' })],
       ready({ bridges: [{ name: 'br1', enslaved: [] }] }),
     ).sort()).toEqual(['br0', 'br1'])
+    expect(nextFreeBridgeName(takenBridgeNames(
+      [iface({ name: 'en0' })],
+      ready({ bridges: [] }),
+      ['br0'],
+    ))).toBe('br1')
   })
 
   test('Linux refuses Wi-Fi as port; Mac en0 is allowed', () => {

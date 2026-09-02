@@ -245,9 +245,11 @@ public enum LinuxHostBridgeApply {
     public static func nextFreeBridgeLive(
         facts: HostBridgeFacts = HostBridgeFactsService.probe(),
         dataDir: URL = Config.dataDir,
+        extraTaken: Set<String> = [],
     ) -> String {
         var existing = Set(facts.bridges.map(\.name))
         existing.formUnion(existingInterfaceNames())
+        existing.formUnion(extraTaken)
         return nextFreeBridge(existingInterfaces: existing, markerBridges: listedMarkerBridges(dataDir: dataDir))
     }
 

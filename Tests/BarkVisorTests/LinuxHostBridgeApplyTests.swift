@@ -393,6 +393,11 @@ struct LinuxHostBridgeApplyTests {
         #expect(marker?.uplink == "en0")
         #expect(marker?.createdBridge == true)
         #expect(LinuxHostBridgeApply.listOwnerMarkers(dataDir: dir).contains(where: { $0.bridge == "br1" }))
+        #expect(LinuxHostBridgeApply.nextFreeBridgeLive(
+            facts: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()),
+            dataDir: dir,
+            extraTaken: ["br0", "br1", "br2"],
+        ) == "br3")
     }
 
     @Test func `one pending commit per Device`() {

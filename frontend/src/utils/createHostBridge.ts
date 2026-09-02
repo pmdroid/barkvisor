@@ -13,6 +13,7 @@ export function nextFreeBridgeName(taken: Iterable<string>): string {
 export function takenBridgeNames(
   ifaces: HostInterface[],
   readiness?: HostBridgeReadiness | null,
+  extra: Iterable<string> = [],
 ): string[] {
   const names = new Set<string>()
   for (const iface of ifaces) {
@@ -20,6 +21,9 @@ export function takenBridgeNames(
   }
   for (const bridge of readiness?.bridges ?? []) {
     names.add(bridge.name)
+  }
+  for (const name of extra) {
+    if (name) names.add(name)
   }
   return [...names]
 }

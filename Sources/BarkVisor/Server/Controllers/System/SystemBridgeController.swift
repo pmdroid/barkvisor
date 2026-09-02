@@ -35,8 +35,15 @@ struct SystemBridgeController: RouteCollection {
     }
 
     @Sendable
-    func nextBridge(req _: Vapor.Request) async throws -> NextBridgeResponse {
-        NextBridgeResponse(bridge: LinuxHostBridgeApply.nextFreeBridgeLive())
+    func nextBridge(req: Vapor.Request) async throws -> NextBridgeResponse {
+        let occupied = try await req.db.read { db in
+            Set(
+                try Network.fetchAll(db)
+                    .compactMap(\.bridge)
+                    .filter { !$0.isEmpty },
+            )
+        }
+        return NextBridgeResponse(bridge: LinuxHostBridgeApply.nextFreeBridgeLive(extraTaken: occupied))
     }
 
     private static func bridgeInfo(from dto: BridgeStateDTO) -> BridgeInfo {

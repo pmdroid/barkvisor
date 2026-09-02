@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorMessage, isOccupiedBridgeConflict } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
 import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface, NextBridgeResponse } from '../api/types'
@@ -1183,10 +1183,18 @@ function resetCreateBridgeForm() {
   createBridgeError.value = ''
 }
 
+function takenVmBridgeNames(hostId: string): string[] {
+  return homeRows.value
+    .filter((row) => row.hostId === hostId && row.network.mode === 'bridged' && row.network.bridge)
+    .map((row) => row.network.bridge as string)
+}
+
 async function fetchNextBridgeName(device: HomeDeviceHealthSnapshot | null) {
+  const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
   const fallback = nextFreeBridgeName(takenBridgeNames(
     createBridgeIfaces.value,
     createBridgeReadiness.value,
+    takenVmBridgeNames(hostId),
   ))
   try {
     const path = device && useHomeUnion.value
@@ -1285,8 +1293,12 @@ async function applyCreateBridge(confirm = false) {
         mode: 'bridged',
         bridge,
       }
-      if (useHomeUnion.value && device) await homeNets.create(device, body)
-      else await networkStore.create(body)
+      try {
+        if (useHomeUnion.value && device) await homeNets.create(device, body)
+        else await networkStore.create(body)
+      } catch (e: unknown) {
+        if (!isOccupiedBridgeConflict(e, bridge)) throw e
+      }
       toast.success(data.message || `Created Bridge ${bridge}.`)
       showCreateBridge.value = false
       const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
