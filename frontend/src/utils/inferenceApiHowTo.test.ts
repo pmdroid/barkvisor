@@ -142,9 +142,9 @@ describe('inferenceApiHowTo (#212)', () => {
     expect(preferredListenHost(advertised)).toBe('box.ts.net')
     expect(lanListenHost(advertised)).toBe('box.ts.net')
     expect(lanListenPort(advertised)).toBe(7777)
-    expect(lanOrigin(advertised)).toBe('http://box.ts.net:7777')
-    expect(lanOpenAIBaseURL(advertised)).toBe('http://box.ts.net:7777/v1')
-    expect(lanOrigin(advertised)).not.toContain('https://')
+    expect(lanOrigin(advertised)).toBe('https://box.ts.net')
+    expect(lanOpenAIBaseURL(advertised)).toBe('https://box.ts.net/v1')
+    expect(lanCompletionsURL(advertised)).toBe('https://box.ts.net/v1/chat/completions')
     expect(lanOrigin(advertised)).not.toContain(':443')
 
     const tailnet = {
