@@ -82,6 +82,24 @@ public enum LinuxHostAddressPersist {
         return files
     }
 
+    public static func ipAddrAddAlreadyPresent(_ stderr: String) -> Bool {
+        let err = stderr.lowercased()
+        return err.contains("already assigned")
+            || err.contains("file exists")
+            || err.contains("exists")
+    }
+
+    public static func cidrsNotOnDevice(_ desired: [String], live: [String]) -> [String] {
+        let present = Set(live.flatMap { cidr -> [String] in
+            let ip = cidr.split(separator: "/").first.map(String.init) ?? cidr
+            return [cidr, ip]
+        })
+        return desired.filter { cidr in
+            let ip = cidr.split(separator: "/").first.map(String.init) ?? cidr
+            return !present.contains(cidr) && !present.contains(ip)
+        }
+    }
+
     public static func previewCommands(
         interface: String,
         cidrs: [String],

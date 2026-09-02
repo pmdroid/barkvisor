@@ -390,6 +390,13 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(preview.contains { $0.command.contains("90-barkvisor-eth0-aliases.yaml") })
         #expect(preview.contains { $0.command.contains("ip addr add 10.0.0.2/24 dev eth0") })
+        #expect(LinuxHostAddressPersist.ipAddrAddAlreadyPresent(
+            "Error: ipv4: Address already assigned.\n",
+        ))
+        #expect(LinuxHostAddressPersist.cidrsNotOnDevice(
+            ["192.168.30.1/16", "192.168.33.13/16"],
+            live: ["192.168.30.1/16"],
+        ) == ["192.168.33.13/16"])
     }
 
     @Test func `acl tag without marker is leftover we can delete`() throws {

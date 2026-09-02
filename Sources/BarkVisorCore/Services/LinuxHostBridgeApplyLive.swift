@@ -248,10 +248,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         ) throws {
             let iface = LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
             let nic = request.nic ?? iface
-            let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            let desired = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            let live = (try? ipv4CIDRs(on: iface)) ?? []
+            let cidrs = LinuxHostAddressPersist.cidrsNotOnDevice(desired, live: live)
             let files = LinuxHostAddressPersist.persistFiles(
                 interface: iface,
-                cidrs: cidrs,
+                cidrs: desired,
                 backend: probe.backend,
             )
             for file in files {
@@ -275,13 +277,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     arguments: ["addr", "add", cidr, "dev", iface],
                     timeout: 15,
                 )
-                if !result.succeeded {
-                    let err = result.stderrString.lowercased()
-                    if !err.contains("file exists"), !err.contains("exists") {
-                        throw BarkVisorError.preconditionFailed(
-                            "ip addr add failed for \(cidr) on \(iface): \(result.stderrString)",
-                        )
-                    }
+                if !result.succeeded, !LinuxHostAddressPersist.ipAddrAddAlreadyPresent(result.stderrString) {
+                    throw BarkVisorError.preconditionFailed(
+                        "ip addr add failed for \(cidr) on \(iface): \(result.stderrString)",
+                    )
                 }
             }
             try startAddressRollbackTimer(
