@@ -149,6 +149,8 @@ describe('settings tab query', () => {
     expect(repos).toContain('Catalog URLs each Device in this Home syncs')
     expect(repos).not.toContain('Catalog URLs this Home syncs')
     expect(repos).toContain('deviceSyncs')
+    expect(repos).toContain('lastSyncedLabel')
+    expect(repos).toContain('Last synced')
     expect(repos).toContain('fetchHealth')
     expect(app).not.toContain('/registry')
     expect(app).not.toContain('nav-label">Repositories')

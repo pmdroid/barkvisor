@@ -15,6 +15,7 @@ describe('Settings / Repositories', () => {
     cy.get('table thead th').should('contain', 'URL')
     cy.get('table tbody tr').first().within(() => {
       cy.contains('button', 'Sync').should('exist')
+      cy.contains('Last synced').should('exist')
     })
   })
 
