@@ -399,7 +399,7 @@ import Foundation
                 if live.contains(where: { $0.ip == ip }) { continue }
                 addAliasCIDRs.append(cidr)
             }
-            var setDHCP = false
+            let setDHCP = false
             var setManual: (ip: String, mask: String, gateway: String)?
             if !plan.dhcpEnabled, let primary = plan.primaryStaticCIDR {
                 let parsed = try parseStaticAddress(primary)
