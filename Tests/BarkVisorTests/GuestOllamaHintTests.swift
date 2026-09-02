@@ -13,16 +13,6 @@ struct GuestOllamaHintTests {
         try String(contentsOf: repoRoot.appendingPathComponent(relative), encoding: .utf8)
     }
 
-    @Test func `feature forbids Guest Ollama 11434 hint and keeps Models how-to`() throws {
-        let feature = try read("features/guest-ollama-hint.feature")
-        #expect(feature.contains("Guest Ollama"))
-        #expect(feature.contains("127.0.0.1:11434"))
-        #expect(feature.contains("Models"))
-        #expect(feature.contains("Home"))
-        #expect(feature.contains("Device"))
-        #expect(feature.contains("Workload"))
-    }
-
     @Test func `web and Console GPU copy have no Guest Ollama loopback hint`() throws {
         let files = [
             "frontend/src/utils/gpuPassthrough.ts",

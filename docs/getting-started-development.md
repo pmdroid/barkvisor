@@ -235,6 +235,10 @@ mise run lint       # suitable for CI (lint + format check)
 
 ## Testing
 
+`features/` only contains Gherkin that a mapper script runs
+(`guest-boot`, `api-contract`, `cross-device`). Other behavior is covered
+by Swift tests or `bun test`.
+
 ### Unit Tests
 
 ```sh

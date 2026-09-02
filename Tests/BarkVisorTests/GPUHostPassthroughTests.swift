@@ -13,16 +13,6 @@ struct GPUHostPassthroughTests {
         try String(contentsOf: repoRoot.appendingPathComponent(relative), encoding: .utf8)
     }
 
-    @Test func `feature allows host GPU passthrough without warning`() throws {
-        let feature = try read("features/gpu-host-passthrough.feature")
-        #expect(feature.contains("This machine lists one GPU"))
-        #expect(feature.contains("In use by host"))
-        #expect(feature.contains("Host GPU driver"))
-        #expect(feature.contains("Device"))
-        #expect(feature.contains("Workload"))
-        #expect(feature.contains("does not disable Attach"))
-    }
-
     @Test func `web GPU copy has no single-GPU warning or In use by host`() throws {
         let files = [
             "frontend/src/utils/gpuPassthrough.ts",

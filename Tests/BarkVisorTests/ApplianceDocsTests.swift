@@ -85,12 +85,6 @@ struct ApplianceDocsTests {
     }
 
     @Test func `gpu passthrough docs cover intel amd vfio and occupancy`() throws {
-        let feature = try read("features/gpu-passthrough-docs.feature")
-        #expect(feature.contains("intel_iommu=on"))
-        #expect(feature.contains("amd_iommu=on"))
-        #expect(feature.contains("In use by host"))
-        #expect(feature.contains("/docs/guides/gpu-passthrough/"))
-
         let text = try read("docs/getting-started-gpu-passthrough.md")
         #expect(text.contains("intel_iommu=on"))
         #expect(text.contains("amd_iommu=on"))
