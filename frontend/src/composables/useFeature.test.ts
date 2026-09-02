@@ -155,6 +155,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('canApplySelectedInterface')
     expect(src).toContain('canDeleteSelectedInterface')
     expect(src).toContain('runInterfaceHostBridge')
+    expect(src).toContain('data.needsConfirm || data.success')
     expect(src).toContain('applySelectedInterface')
     expect(src).not.toContain('revertSelectedInterface')
     expect(src).not.toContain('recheckSelectedInterface')

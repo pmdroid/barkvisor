@@ -12,7 +12,7 @@ const emit = defineEmits(['confirm', 'cancel'])
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="!loading && emit('cancel')">
+  <div class="modal-overlay stack" @click.self="!loading && emit('cancel')">
     <div class="split-frame split-narrow">
       <section class="split-stage">
         <div class="split-head">

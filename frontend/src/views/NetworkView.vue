@@ -847,11 +847,11 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
       })).then((r) => r.data)
     linuxApplyResult.value = data
     if (!confirm && (action === 'apply' || action === 'delete')) {
-      if (!data.success && data.message) {
-        toast.error(data.message)
+      if (data.needsConfirm || data.success) {
+        linuxApplyConfirm.value = action
         return
       }
-      linuxApplyConfirm.value = action
+      if (data.message) toast.error(data.message)
       return
     }
     if (data.needsConfirm && !confirm) {
@@ -1339,15 +1339,11 @@ async function applyCreateBridge(confirm = false) {
     }))
     linuxApplyResult.value = data
     if (!confirm) {
-      if (!data.success && data.message) {
-        createBridgeError.value = data.message
+      if (data.needsConfirm || data.success) {
+        linuxApplyConfirm.value = 'apply'
         return
       }
-      linuxApplyConfirm.value = 'apply'
-      return
-    }
-    if (data.needsConfirm && !confirm) {
-      linuxApplyConfirm.value = 'apply'
+      createBridgeError.value = data.message || 'Create Bridge failed'
       return
     }
     if (data.pendingCommit && data.commitDeadline) {
@@ -1922,8 +1918,8 @@ async function doDeleteNetwork() {
 
   <ConfirmDialog
     v-if="linuxApplyConfirm"
-    :title="linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
-    :message="(linuxApplyResult?.warnings || []).join(' ') || (linuxApplyConfirm === 'delete' ? 'Removes the Bridge and restores the NIC. Review the commands first.' : linuxApplyConfirm === 'apply' ? 'These changes go live for 30 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
+    :title="linuxApplySource === 'create-bridge' ? 'Create this Bridge?' : linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
+    :message="[linuxApplyResult?.message, ...(linuxApplyResult?.warnings || [])].filter(Boolean).join(' ') || (linuxApplyConfirm === 'delete' ? 'Removes the Bridge and restores the NIC. Review the commands first.' : linuxApplyConfirm === 'apply' ? 'These changes go live for 30 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
     :details="linuxApplyResult?.changes ?? []"
     :commands="linuxApplyResult?.commands ?? []"
     :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete' : linuxApplyConfirm === 'revert' ? 'Revert' : 'Apply'"
