@@ -12,7 +12,7 @@ Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this D
 
 | Tab | Purpose |
 |-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, bridge role, Apply/Revert |
+| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply/Revert. Bridges are their own rows. |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
 **Create → Bridge** on Host interfaces is the only path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
@@ -35,7 +35,6 @@ Toolbar **Create → Bridge** opens the create modal:
 |-------|---------|
 | Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
 | Port | One unused NIC. Linux refuses Wi-Fi. Mac `en0` (Wi-Fi) is allowed. |
-| Addressing | DHCP + static aliases, gateway, DNS on the new Bridge |
 | Create VM network | Default on. Adds a bridged Workload network with `network.bridge = brN` |
 
 **Apply** uses the same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
@@ -51,7 +50,7 @@ The drawer shows DHCP primary and static aliases together:
 - **alias** — extra CIDR on the same NIC (multi-homed or service IPs)
 - **on host** chip — BarkVisor wrote this config and can revert it
 
-**Gateway** and **DNS** apply to the interface as a whole (not per alias). **Bridge role** is read-only here — uplink vs `br0` vs external.
+**Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Edit DHCP/IP on the NIC, then **Apply** and **Keep changes** within the keep window.
 
 Actions:
 

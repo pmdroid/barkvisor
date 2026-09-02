@@ -15,7 +15,6 @@ const props = defineProps<{
   onlyUplink?: boolean
   gateway?: string
   disabled?: boolean
-  l2Only?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,7 +30,7 @@ const dhcpRow = computed(() => props.modelValue.find((r) => r.kind === 'dhcp'))
 const primaryRow = computed(() => props.modelValue.find((r) => r.kind === 'primary'))
 const additionalRows = computed(() => props.modelValue.filter((r) => r.kind === 'additional'))
 const primaryCidr = computed(() => dhcpEnabled.value ? (dhcpRow.value?.cidr ?? '') : (primaryRow.value?.cidr ?? ''))
-const locked = computed(() => props.disabled || props.l2Only)
+const locked = computed(() => props.disabled)
 
 function rowIndex(id: string): number {
   return props.modelValue.findIndex((r) => r.id === id)
@@ -100,8 +99,6 @@ function addAddress() {
     <button type="button" class="ghost add-btn" :disabled="locked" @click="addAddress">
       + Add address
     </button>
-    <p v-if="l2Only" class="l2-hint">L2 only · addresses live on the Bridge</p>
-
     <p v-if="!dhcpEnabled" class="hint">
       Static primary needs a gateway below. Extra rows are additional IPs on the same interface (Linux and macOS).
     </p>
@@ -157,9 +154,4 @@ function addAddress() {
 .errors { color: #dc2626; margin: 0; padding-left: 1rem; }
 .warnings { color: #b45309; margin: 0; padding-left: 1rem; }
 .add-btn { align-self: flex-start; }
-.l2-hint {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
 </style>

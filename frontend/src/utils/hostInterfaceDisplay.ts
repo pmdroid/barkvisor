@@ -79,19 +79,14 @@ export function formatInterfaceAddressSummary(
   const allIfaces = opts?.allIfaces ?? []
   const role = inferInterfaceRole(iface, readiness, mode)
 
-  if (mode === 'linux-guide' && role === 'bridge') {
-    const master = readiness?.bridges.find((bridge) => bridge.name === iface.name)
-    if (master?.enslaved.length && interfaceHasIPv4(iface)) {
-      return `L3 on ${master.enslaved.join(', ')}`
-    }
-  }
+  if (role === 'bridge') return '—'
 
   const displayIface = mode === 'linux-guide'
     ? effectiveInterfaceForDisplay(iface, allIfaces, readiness, mode)
     : iface
   const enslaved = interfaceEnslavedToBridge(iface, readiness)
   if (enslaved && !interfaceHasIPv4(displayIface)) {
-    return `L2 only → ${enslaved}`
+    return '—'
   }
   const parts: string[] = []
   if (displayIface.dhcpEnabled) {
@@ -171,18 +166,15 @@ export function interfaceBridgeColumn(
   bridgeInfo?: BridgeInfo,
   mode?: string,
 ): string {
-  if (mode === 'macos-guide') {
-    if (bridgeInfo?.status === 'active' || bridgeInfo?.status === 'installed') return 'socket_vmnet'
-    const enslaved = readiness?.bridges.flatMap((bridge) => bridge.enslaved) ?? []
-    if (enslaved.includes(iface.name)) return 'enslaved'
-    return '—'
-  }
   const master = readiness?.bridges.find((bridge) => bridge.name === iface.name)
   if (master) {
-    return master.enslaved.length ? `master (${master.enslaved.join(', ')})` : 'master'
+    return master.enslaved.length ? master.enslaved.join(', ') : '—'
   }
   const parent = readiness?.bridges.find((bridge) => bridge.enslaved.includes(iface.name))
   if (parent) return `→ ${parent.name}`
+  if (mode === 'macos-guide' && (bridgeInfo?.status === 'active' || bridgeInfo?.status === 'installed')) {
+    return '—'
+  }
   if (iface.bridgeStatus === 'active') return 'active'
   if (iface.bridgeStatus === 'installed') return 'installed'
   return '—'
@@ -216,7 +208,7 @@ export function interfaceOwnsAddressApply(
   _readiness: HostBridgeReadiness | null | undefined,
   _mode: string,
 ): boolean {
-  return role === 'bridge'
+  return role === 'uplink'
 }
 
 export function interfaceOwnsBridgeApply(
@@ -234,9 +226,11 @@ export function addressApplyTargets(
   readiness: HostBridgeReadiness | null | undefined,
   _mode: string,
 ): { nic: string; bridge: string } {
+  const parent = interfaceEnslavedToBridge(iface, readiness)
+  if (parent) return { nic: iface.name, bridge: parent }
   const mapped = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
   if (mapped) return { nic: mapped, bridge: iface.name }
-  return { nic: iface.name, bridge: iface.name }
+  return { nic: iface.name, bridge: '' }
 }
 
 export function overlayBridgeAddresses(
@@ -244,19 +238,18 @@ export function overlayBridgeAddresses(
   peers: HostInterface[],
   readiness?: HostBridgeReadiness | null,
 ): HostInterface {
-  if (inferInterfaceRole(iface, readiness) !== 'bridge') return iface
-  if (iface.dhcpEnabled || iface.ipAddress || (iface.addresses?.length ?? 0) > 0) return iface
-  const uplinkName = readiness?.bridges.find((bridge) => bridge.name === iface.name)?.enslaved[0]
-  if (!uplinkName) return iface
-  const uplink = peers.find((peer) => peer.name === uplinkName)
-  if (!uplink) return iface
+  const parent = interfaceEnslavedToBridge(iface, readiness)
+  if (!parent) return iface
+  if (interfaceHasIPv4(iface)) return iface
+  const master = peers.find((peer) => peer.name === parent)
+  if (!master || !interfaceHasIPv4(master)) return iface
   return {
     ...iface,
-    ipAddress: uplink.ipAddress,
-    addresses: uplink.addresses,
-    dhcpEnabled: uplink.dhcpEnabled,
-    gateway: uplink.gateway,
-    dns: uplink.dns,
+    ipAddress: master.ipAddress,
+    addresses: master.addresses,
+    dhcpEnabled: master.dhcpEnabled,
+    gateway: master.gateway,
+    dns: master.dns,
   }
 }
 
@@ -265,8 +258,12 @@ export function interfaceAddressColumn(
   peers: HostInterface[],
   readiness?: HostBridgeReadiness | null,
 ): string {
-  if (readiness?.bridges.some((bridge) => bridge.enslaved.includes(iface.name))) return '—'
-  return formatInterfaceAddressSummary(overlayBridgeAddresses(iface, peers, readiness))
+  if (inferInterfaceRole(iface, readiness) === 'bridge') return '—'
+  return formatInterfaceAddressSummary(
+    overlayBridgeAddresses(iface, peers, readiness),
+    readiness,
+    { allIfaces: peers },
+  )
 }
 
 export function interfaceBridgeFieldsReadOnly(role: HostInterfaceRole): boolean {
@@ -390,17 +387,16 @@ export function pendingCommitBridgeName(
 export function pendingCommitMatchesInterface(
   pending: { target: string; nic: string },
   ifaceName: string,
-  mode: string,
+  _mode: string,
   readiness?: HostBridgeReadiness | null,
 ): boolean {
-  if (
-    mode === 'macos-guide'
-    && readiness?.bridges.some((bridge) => bridge.enslaved.includes(ifaceName))
-  ) {
-    return false
+  if (pending.nic === ifaceName) return true
+  if (pending.target === ifaceName) {
+    const isBridgeRow = readiness?.bridges.some((bridge) => bridge.name === ifaceName)
+    if (isBridgeRow && pending.nic && pending.nic !== ifaceName) return false
+    return true
   }
-  if (pending.target === ifaceName || pending.nic === ifaceName) return true
-  return pendingCommitBridgeName(pending, readiness) === ifaceName
+  return false
 }
 
 export function hostBridgeActionPath(
