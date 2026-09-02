@@ -221,7 +221,7 @@ describe('Network Management', () => {
     cy.intercept('POST', '**/system/bridges', (req) => {
       expect(req.body.bridge).to.eq(bridge)
       expect(req.body.interface).to.be.a('string').and.not.be.empty
-      const checking = req.body.action === 'check'
+      const checking = req.body.action === 'check' || req.body.action === 'dryRun'
       req.reply({
         success: true,
         applied: !checking,
@@ -230,6 +230,7 @@ describe('Network Management', () => {
         rollbackSeconds: 30,
         target: bridge,
         changes: [`Create Bridge ${bridge}`],
+        commands: [`nmcli connection add type bridge ifname ${bridge}`],
         message: checking ? `Ready to create Bridge ${bridge}.` : `Created Bridge ${bridge}.`,
       })
     }).as('createBridgeApply')

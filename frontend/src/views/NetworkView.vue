@@ -840,7 +840,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         nic,
         bridge: existingBridge ?? (targets.bridge || undefined),
         confirm,
-        action: confirm ? 'apply' : 'check',
+        action: confirm ? 'apply' : 'dryRun',
         rows: payload.rows,
         gateway: payload.gateway,
         dns: payload.dns,
@@ -1306,7 +1306,7 @@ async function applyCreateBridge(confirm = false) {
       nic,
       bridge,
       confirm,
-      action: confirm ? 'apply' : 'check',
+      action: confirm ? 'apply' : 'dryRun',
       rows: createBridgeRows.value.length
         ? createBridgeRows.value
         : [{ id: 'dhcp', kind: 'dhcp', cidr: '' }],
@@ -1584,13 +1584,6 @@ async function doDeleteNetwork() {
             v-if="selectedInterfaceRole === 'bridge'"
             style="font-size:13px;margin:12px 0 0;color:var(--text-secondary)"
           >Attached to {{ selectedBridgeMembers.length ? selectedBridgeMembers.join(', ') : 'no port' }}.</p>
-
-          <div v-if="linuxApplyResult && activeTab === 'interfaces'" style="margin-top:12px;font-size:13px">
-            <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
-            <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
-              <li v-for="change in linuxApplyResult.changes" :key="change">{{ change }}</li>
-            </ul>
-          </div>
 
           <div class="iface-drawer-actions">
             <AppButton
@@ -1906,6 +1899,7 @@ async function doDeleteNetwork() {
     :title="linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
     :message="(linuxApplyResult?.warnings || []).join(' ') || (linuxApplyConfirm === 'apply' ? 'These changes go live for 30 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
     :details="linuxApplyResult?.changes ?? []"
+    :commands="linuxApplyResult?.commands ?? []"
     :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete' : linuxApplyConfirm === 'revert' ? 'Revert' : 'Apply'"
     :danger="linuxApplyConfirm === 'delete' || linuxApplyConfirm === 'revert'"
     :loading="linuxApplyLoading"

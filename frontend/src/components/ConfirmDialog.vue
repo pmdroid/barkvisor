@@ -6,6 +6,7 @@ const props = defineProps<{
   danger?: boolean
   loading?: boolean
   details?: string[]
+  commands?: string[]
 }>()
 const emit = defineEmits(['confirm', 'cancel'])
 </script>
@@ -19,11 +20,15 @@ const emit = defineEmits(['confirm', 'cancel'])
         </div>
         <div class="split-body">
           <p class="split-warn">{{ message }}</p>
-          <details v-if="props.details?.length" class="split-details">
+          <details v-if="props.details?.length" class="split-details" open>
             <summary>Changes</summary>
             <ul>
               <li v-for="item in props.details" :key="item">{{ item }}</li>
             </ul>
+          </details>
+          <details v-if="props.commands?.length" class="split-details" open>
+            <summary>Commands</summary>
+            <pre class="split-commands">{{ props.commands.join('\n') }}</pre>
           </details>
         </div>
         <div class="split-foot">
@@ -60,5 +65,15 @@ const emit = defineEmits(['confirm', 'cancel'])
 .split-details ul {
   margin: 0;
   padding-left: 18px;
+}
+.split-commands {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  max-height: 12rem;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  background: color-mix(in srgb, var(--text, #111) 6%, transparent);
+  border-radius: 6px;
 }
 </style>
