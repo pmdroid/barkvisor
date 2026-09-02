@@ -547,22 +547,11 @@ function syncPendingCommitFromReadiness(hostId: string, ready: HostBridgeReadine
   startPendingCommitTimer()
 }
 
-const showPendingCommitBanner = computed(() => {
-  const row = selectedInterfaceRow.value
-  const pending = pendingCommit.value
-  if (!row || !pending || pending.hostId !== row.hostId) return false
-  return pendingCommitMatchesInterface(
-    pending,
-    row.iface.name,
-    selectedInterfaceMode.value,
-    selectedInterfaceReadiness.value,
-  )
-})
+const showPendingCommitModal = computed(() => pendingCommit.value !== null)
 
 async function keepPendingCommit() {
   const pending = pendingCommit.value
-  const row = selectedInterfaceRow.value
-  if (!pending || !row) return
+  if (!pending) return
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
@@ -578,7 +567,7 @@ async function keepPendingCommit() {
       clearPendingCommitState()
       toast.success(data.message || 'Kept host network changes.')
       await fetchHostReadiness(device)
-      await refreshInterfaceContext(row.hostId)
+      await refreshInterfaceContext(pending.hostId)
     } else if (data.message) {
       toast.error(data.message)
     }
@@ -1561,24 +1550,6 @@ async function doDeleteNetwork() {
             style="font-size:13px;margin:12px 0 0;color:var(--text-secondary)"
           >Attached to {{ selectedBridgeMembers.length ? selectedBridgeMembers.join(', ') : 'no port' }}.</p>
 
-          <div
-            v-if="showPendingCommitBanner"
-            class="iface-pending-commit"
-            role="status"
-            style="margin-top:12px;padding:12px 14px;border-radius:8px;border:1px solid var(--amber, #f59e0b);background:color-mix(in srgb, var(--amber, #f59e0b) 12%, transparent)"
-          >
-            <p style="margin:0 0 8px">
-              Network changes are live but not permanent.
-              <strong>{{ pendingCommitSecondsLeft }}s</strong> left — click Keep changes or they auto-revert.
-            </p>
-            <AppButton
-              variant="primary"
-              size="sm"
-              :loading="linuxApplyLoading"
-              @click="keepPendingCommit"
-            >Keep changes</AppButton>
-          </div>
-
           <div v-if="linuxApplyResult && activeTab === 'interfaces'" style="margin-top:12px;font-size:13px">
             <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
             <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
@@ -1874,6 +1845,24 @@ async function doDeleteNetwork() {
     <template #actions>
       <AppButton @click="showCreate = false">Cancel</AppButton>
       <AppButton variant="primary" :loading="loading" :disabled="cannotSaveBridged" :loading-text="'Saving...'" @click="saveNetwork">{{ editingId ? 'Save' : 'Create' }}</AppButton>
+    </template>
+  </AppModal>
+
+  <AppModal
+    v-if="showPendingCommitModal"
+    title="Keep network changes"
+    subtitle="Network changes are live but not permanent."
+  >
+    <p>
+      <strong>{{ pendingCommitSecondsLeft }}s</strong> left — click Keep changes or they auto-revert.
+    </p>
+    <template #actions>
+      <AppButton
+        variant="primary"
+        :loading="linuxApplyLoading"
+        :loading-text="'Keeping...'"
+        @click="keepPendingCommit"
+      >Keep changes</AppButton>
     </template>
   </AppModal>
 

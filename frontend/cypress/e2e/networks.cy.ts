@@ -367,7 +367,7 @@ describe('Network Management', () => {
     })
   })
 
-  it('Keep banner shows on the NIC row when pending nic is the uplink', () => {
+  it('Keep modal shows when pending nic is the uplink', () => {
     const readiness = {
       helperPath: null,
       helperSetuid: true,
@@ -391,7 +391,8 @@ describe('Network Management', () => {
     cy.visit('/networks')
     cy.wait('@ifaces')
     cy.wait('@ready')
-    cy.contains('.iface-row', 'en0').click()
-    cy.get('.iface-drawer').contains('Keep changes').should('be.visible')
+    cy.get('.modal-overlay').contains('Keep network changes').should('be.visible')
+    cy.get('.modal-overlay').contains('Keep changes').should('be.visible')
+    cy.get('.iface-drawer').contains('Keep changes').should('not.exist')
   })
 })

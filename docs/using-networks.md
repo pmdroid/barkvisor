@@ -100,7 +100,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 **Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. Shared kernel bridges are never default-deleted.
 
-After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** in the SPA or run `--commit` on the host; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
+After Apply, the host keeps changes **pending** for 30 seconds. A modal asks you to click **Keep changes** or the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
@@ -125,7 +125,7 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
 
 **Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC via `networksetup` + `ifconfig`. NAT Workloads work with bridged host networking down.
 
-After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
+After Apply, the same **30 second keep window** applies: the Keep modal or POST `action: commit`. If the timer expires, the Device auto-reverts.
 
 API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
 

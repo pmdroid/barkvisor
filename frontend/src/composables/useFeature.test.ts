@@ -197,6 +197,9 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('interfaceAddressColumn')
     expect(src).toContain('pendingCommitBridgeName')
     expect(src).toContain('pendingCommitMatchesInterface')
+    expect(src).toContain('showPendingCommitModal')
+    expect(src).toContain('Keep network changes')
+    expect(src).not.toContain('showPendingCommitBanner')
     expect(src).toContain('bridge: existingBridge ?? undefined')
   })
 
