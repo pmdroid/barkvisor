@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import api from '../api/client'
 import { setupApi } from '../api/setup'
 import { apiErrorCode, apiErrorMessage } from '../api/errors'
@@ -9,6 +9,7 @@ import {
   folderBrowseParams,
   folderBrowseRequestPath,
   folderMkdirRequestPath,
+  withFolderParentEntry,
   type FolderEntry,
 } from '../utils/folderBrowse'
 import FormError from './ui/FormError.vue'
@@ -32,14 +33,16 @@ function browseClient() {
   return props.source === 'setup' ? setupApi : api
 }
 
+const listedEntries = computed(() => withFolderParentEntry(entries.value, currentPath.value))
+
 onMounted(() => {
-  browse('')
+  browse(props.modelValue || '')
 })
 
 watch(
   () => props.device?.hostId,
   () => {
-    browse('')
+    browse(props.modelValue || '')
   },
 )
 
@@ -128,7 +131,7 @@ async function createFolder() {
             <div v-if="loading" class="folder-empty">Loading...</div>
             <div v-else class="folder-list">
               <button
-                v-for="entry in entries"
+                v-for="entry in listedEntries"
                 :key="`${entry.name}:${entry.path}`"
                 type="button"
                 class="folder-item"
@@ -144,7 +147,7 @@ async function createFolder() {
                 </svg>
                 <span>{{ entry.name }}</span>
               </button>
-              <div v-if="!entries.length" class="folder-empty">No folders</div>
+              <div v-if="!listedEntries.length" class="folder-empty">No folders</div>
             </div>
             <div v-if="currentPath" class="folder-create">
               <input

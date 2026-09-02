@@ -7,6 +7,7 @@ struct FolderPickerView: View {
     @Environment(\.dismiss) private var dismiss
 
     var device: HomeDeviceHealthSnapshot?
+    var initialPath: String = ""
     var onSelect: (String) -> Void
 
     @State private var currentPath = ""
@@ -80,7 +81,7 @@ struct FolderPickerView: View {
                     .background(.bar)
             }
         }
-        .task { await browse("") }
+        .task { await browse(initialPath) }
     }
 
     private var chosenPath: String {

@@ -257,6 +257,16 @@ struct ControllerLogicTests {
         #expect(!DirectoryBrowser.isPermissionError(other))
     }
 
+    @Test func `directory browser list prepends parent entry`() throws {
+        let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: base) }
+        let nested = (base as NSString).appendingPathComponent("child")
+        try FileManager.default.createDirectory(atPath: nested, withIntermediateDirectories: true)
+        let entries = try DirectoryBrowser.list(path: nested, extraRoots: [base])
+        #expect(entries.first?.name == "..")
+    }
+
     @Test func `directory browser createFolder`() throws {
         let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true)
