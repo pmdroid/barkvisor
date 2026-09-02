@@ -755,7 +755,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 )
             }
             let slave = LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic)
-            _ = try PlatformProcess.run(
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "delete", slave],
+                timeout: 15,
+            )
+            let addedSlave = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: [
                     "connection", "add", "type", "bridge-slave", "ifname", nic,
@@ -763,6 +768,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ],
                 timeout: 30,
             )
+            if !addedSlave.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli failed: \(addedSlave.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
             _ = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: ["connection", "modify", name, "connection.autoconnect-ports", "1"],
