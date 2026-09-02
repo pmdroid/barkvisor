@@ -576,24 +576,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   margin: 0;
   line-height: 1.45;
 }
-.iface-advanced {
-  margin-top: 4px;
-}
-.iface-advanced > summary {
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-  list-style: none;
-}
-.iface-advanced > summary::-webkit-details-marker {
-  display: none;
-}
-.iface-advanced[open] > summary {
-  color: var(--text-secondary);
-  margin-bottom: 10px;
-}
 .ops-actions {
   margin-left: auto;
   display: flex;
@@ -629,13 +611,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 .create-menu-list button:hover {
   background: var(--bg-hover);
-}
-.create-bridge-vm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 13px;
 }
 .ops-actions .app-btn,
 .ops-actions .ops-search,

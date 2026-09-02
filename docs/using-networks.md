@@ -12,10 +12,10 @@ Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this D
 
 | Tab | Purpose |
 |-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply/Revert. Bridges are their own rows. |
+| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Linux Bridges are their own rows. |
 | **VM networks** | NAT / bridged / isolated records Workloads attach to |
 
-**Create → Bridge** on Host interfaces is the only path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
+**Create → Bridge** is Linux-only. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`. macOS has no Create Bridge — extra static IPs go on the NIC.
 
 ## Host interfaces tab
 
@@ -29,15 +29,14 @@ The table lists each NIC on the Device:
 | Bridge | bridge membership / readiness |
 | Route | default route when relevant |
 
-Toolbar **Create → Bridge** opens the create modal:
+On Linux, toolbar **Create → Bridge** opens the create modal:
 
 | Field | Meaning |
 |-------|---------|
 | Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
-| Port | One unused NIC. Linux refuses Wi-Fi. Mac `en0` (Wi-Fi) is allowed. |
-| Create VM network | Default on. Adds a bridged Workload network with `network.bridge = brN` |
+| Port | One unused wired NIC. Linux refuses Wi-Fi. |
 
-**Apply** uses the same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+Apply always adds a bridged Workload network with `network.bridge = brN`. Same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
 
 Select a row to open the **edit drawer** below the table.
 
@@ -47,17 +46,11 @@ The drawer keeps DHCP on. The router lease is shown and is not editable or remov
 
 - **DHCP** — live lease from the router (read-only)
 - **additional** — extra static CIDR on the same NIC
-- **on host** chip — BarkVisor wrote this config and can revert it
+- **on host** chip — BarkVisor wrote this config
 
 **Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Add extra static IPs on the NIC, then **Apply** and **Keep changes** within the keep window. DHCP stays on.
 
-Actions:
-
-- **Apply** — persist the address plan on the host
-- **Revert** — remove BarkVisor-tagged config for this interface
-- **Re-check** — refresh live addresses from the OS
-
-Copyable CLI steps stay under **Advanced CLI** on the same drawer.
+**Apply** persists the address plan on the host. Linux Bridge rows can **Delete**.
 
 ### Multi-address examples
 
@@ -105,7 +98,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 ### Linux Bridge (`brN`)
 
-**Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. **Revert** removes those tagged files. Shared kernel bridges are never default-deleted.
+**Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. Shared kernel bridges are never default-deleted.
 
 After Apply, the host keeps changes **pending** for 30 seconds. Click **Keep changes** in the SPA or run `--commit` on the host; otherwise the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
 
@@ -128,9 +121,9 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
 
 `action: check` and `dryRun: true` preview the plan without changing the host.
 
-### macOS bridge (`socket_vmnet`)
+### macOS (`socket_vmnet`)
 
-**Create → Bridge** on Host interfaces sends `bridge` plus `nic` (Mac `en0` is allowed). **Apply** on the LAN row starts a BarkVisor-owned LaunchDaemon (or an already-installed Homebrew service) and sets this Device’s LAN address via native Swift (`networksetup` + `ifconfig` aliases). **Revert** restores the saved profile and stops the service. NAT Workloads work with bridged host networking down.
+macOS has no Create Bridge. **Apply** on the LAN NIC (`en0`) sets extra static aliases via native Swift (`networksetup` + `ifconfig`). NAT Workloads work with bridged host networking down.
 
 After Apply, the same **30 second keep window** applies: click **Keep changes** in the SPA or POST `action: commit`. If the timer expires, the Device auto-reverts.
 

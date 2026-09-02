@@ -63,23 +63,36 @@ try {
   if (await page.locator('button:has-text("Bridge setup")').count() > 0) {
     fail('Bridge setup toolbar button should be removed')
   }
+  const about = await fetch(`${base}/api/system/about`, { headers: authHeader }).then((r) => r.json())
+  const platform = String(about.platform || '')
+  const createBtnHost = page.locator('.ops-actions button:has-text("Create")')
+  if (/mac|darwin/i.test(platform) && await createBtnHost.count() > 0) {
+    fail('macOS Host interfaces should not show Create Bridge')
+  }
 
   const hostSelected = await hostTab.getAttribute('aria-selected')
   if (hostSelected !== 'true') fail('Host interfaces tab should be default')
 
   await page.waitForSelector('.iface-row', { timeout: 15000 })
+  const nicRow = page.locator('.iface-row').filter({ hasNotText: 'BRIDGE' }).first()
+  if (await nicRow.count() === 0) fail('No NIC row to edit')
+  await nicRow.click()
   await page.waitForSelector('.iface-drawer', { timeout: 15000 })
   const drawer = page.locator('.iface-drawer')
   if (await drawer.locator('button:has-text("Apply")').count() === 0) fail('Interface drawer missing Apply')
-  if (await drawer.locator('button:has-text("Revert")').count() === 0) fail('Interface drawer missing Revert')
-  if (await drawer.locator('button:has-text("Re-check")').count() === 0) fail('Interface drawer missing Re-check')
+  if (await drawer.locator('button:has-text("Revert")').count() > 0) fail('Interface drawer should not show Revert')
+  if (await drawer.locator('button:has-text("Re-check")').count() > 0) fail('Interface drawer should not show Re-check')
 
-  const drawerText = await drawer.innerText()
-  if (!drawerText.includes('Addresses')) fail('Address editor missing Addresses heading')
-  if (!drawerText.includes('DHCP')) fail('Address editor missing DHCP control')
+  const drawerText = (await drawer.innerText()).toLowerCase()
+  if (!drawerText.includes('addresses')) fail('Address editor missing Addresses heading')
+  if (!drawerText.includes('dhcp')) fail('Address editor missing DHCP row')
+  if (drawerText.includes('dhcp is always on')) fail('DHCP hint should be gone')
+  if (drawerText.includes('advanced cli')) fail('Advanced CLI should be gone')
+  if (drawerText.includes('ready for bridged networks')) fail('Bridge status copy should be gone')
+  if (drawerText.includes('vm network records')) fail('Drawer footer hint should be gone')
   if (await drawer.locator('button:has-text("Add address")').count() === 0) fail('Address editor missing Add address')
-  if (!drawerText.includes('Gateway')) fail('Address editor missing Gateway field')
-  if (!drawerText.includes('DNS')) fail('Address editor missing DNS field')
+  if (!drawerText.includes('gateway')) fail('Address editor missing Gateway field')
+  if (!drawerText.includes('dns')) fail('Address editor missing DNS field')
   if (drawerText.includes('option value="alias"') || drawerText.match(/\balias\b.*\bstatic\b.*select/)) {
     fail('Address editor should not expose static/alias dropdown')
   }
@@ -88,43 +101,21 @@ try {
   shots.hostInterfaces = `${dir}/networks-host-interfaces.png`
   await page.screenshot({ path: shots.hostInterfaces, fullPage: true })
 
-  const dhcpCheckbox = drawer.locator('.dhcp-row input[type="checkbox"]')
+  const dhcpInput = drawer.locator('input[placeholder="from router"]')
   const addBtn = drawer.locator('button:has-text("Add address")')
   const gatewayInput = drawer.locator('.iface-fields-grid input[placeholder="192.168.1.1"]')
 
-  // --- Address editing flows (always run when editor is enabled) ---
-  if (await dhcpCheckbox.isEnabled()) {
-    if (!(await dhcpCheckbox.isChecked())) {
-      await dhcpCheckbox.check()
-      flowSteps.push('dhcpOn')
-    }
-    await dhcpCheckbox.uncheck()
-    flowSteps.push('dhcpOff')
+  if (await dhcpInput.count() === 0) fail('DHCP row missing')
+  if (await dhcpInput.isEnabled()) fail('DHCP row should be read-only')
+  flowSteps.push('dhcpReadOnly')
 
-    const primaryInput = drawer.locator('.address-row input[placeholder="192.168.1.10/24"]')
-    if (await primaryInput.count() === 0) fail('Static mode missing primary address field')
-    await primaryInput.fill('192.168.50.10/24')
-    await gatewayInput.fill('192.168.50.1')
-    flowSteps.push('staticPrimary')
-
-    if (await addBtn.isEnabled()) {
-      await addBtn.click()
-      const additionalInputs = drawer.locator('.address-row input[placeholder="192.168.1.20/24"]')
-      await additionalInputs.last().fill('10.20.30.40/24')
-      flowSteps.push('addAdditional')
-      await additionalInputs.last().fill('10.20.30.41/24')
-      flowSteps.push('editAdditional')
-    }
-
-    await dhcpCheckbox.check()
-    const addressValues = await drawer.locator('.address-row input').evaluateAll(
-      (els) => els.map((el) => /** @type {HTMLInputElement} */ (el).value).filter(Boolean),
-    )
-    if (!addressValues.includes('192.168.50.10/24') || !addressValues.includes('10.20.30.41/24')) {
-      fail(`Enabling DHCP should preserve edited addresses as additional rows; got ${JSON.stringify(addressValues)}`)
-    }
-    flowSteps.push('dhcpOnPreservesExtras')
-
+  if (await addBtn.isEnabled()) {
+    await addBtn.click()
+    const additionalInputs = drawer.locator('.address-row input[placeholder="192.168.1.20/24"]')
+    await additionalInputs.last().fill('10.20.30.40/24')
+    flowSteps.push('addAdditional')
+    await additionalInputs.last().fill('10.20.30.41/24')
+    flowSteps.push('editAdditional')
     shots.addressEditor = `${dir}/networks-address-editor.png`
     await page.screenshot({ path: shots.addressEditor, fullPage: true })
   } else {
@@ -132,15 +123,11 @@ try {
   }
 
   async function addressesFromDrawerForm() {
-    const dhcp = await dhcpCheckbox.isChecked()
-    const primary = await drawer.locator('.address-row input[placeholder="192.168.1.10/24"]').inputValue().catch(() => '')
     const additional = await drawer.locator('.address-row input[placeholder="192.168.1.20/24"]').evaluateAll(
       (els) => els.map((el) => /** @type {HTMLInputElement} */ (el).value).filter(Boolean),
     )
     const gateway = await gatewayInput.inputValue().catch(() => '')
-    const addresses = []
-    if (dhcp) addresses.push({ kind: 'dhcp' })
-    if (!dhcp && primary.trim()) addresses.push({ kind: 'static', cidr: primary.trim() })
+    const addresses = [{ kind: 'dhcp' }]
     for (const cidr of additional) addresses.push({ kind: 'alias', cidr: cidr.trim() })
     return { addresses, gateway: gateway.trim() || undefined }
   }

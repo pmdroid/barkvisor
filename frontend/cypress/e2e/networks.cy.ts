@@ -20,7 +20,6 @@ describe('Network Management', () => {
     cy.contains('button', 'Bridge setup').should('not.exist')
     cy.get('.iface-row').should('exist')
     cy.contains('button', 'Create Network').should('not.exist')
-    cy.contains('button', 'Create').should('be.visible')
   })
 
   it('VM networks tab shows Create Network and Workload network copy', () => {
@@ -197,10 +196,24 @@ describe('Network Management', () => {
     cy.get('.iface-row').should('have.length.gte', 1)
     cy.get('.iface-drawer').should('exist')
     cy.get('.iface-drawer').contains('button', 'Apply').should('exist')
-    cy.get('.iface-drawer').contains('button', 'Revert').should('exist')
-    cy.get('.iface-drawer').contains('button', 'Re-check').should('exist')
-    cy.get('.iface-drawer').contains('VM network records').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Revert').should('not.exist')
+    cy.get('.iface-drawer').contains('button', 'Re-check').should('not.exist')
+    cy.get('.iface-drawer').contains('VM network records').should('not.exist')
+    cy.contains('DHCP is always on').should('not.exist')
+    cy.contains('Advanced CLI').should('not.exist')
   })
+
+  function stubLinuxHost() {
+    cy.intercept('GET', '**/system/capabilities', (req) => {
+      req.continue((res) => {
+        if (res.body && typeof res.body === 'object') {
+          res.body.platform = 'Linux'
+          res.body.supportsHostBridgeManagement = true
+          res.body.supportsManagedBridgeDaemon = false
+        }
+      })
+    })
+  }
 
   function stubCreateBridge(opts: { vmNetwork: boolean; bridge?: string }) {
     const bridge = opts.bridge ?? 'br1'
@@ -231,21 +244,25 @@ describe('Network Management', () => {
     }).as('createVmNetwork')
   }
 
-  it('Create Bridge modal has next-free name, port, and VM network default on', () => {
+  it('Create Bridge modal has next-free name and port, no VM network checkbox', () => {
+    stubLinuxHost()
     stubCreateBridge({ vmNetwork: true })
+    cy.visit('/networks')
     cy.contains('button', 'Create').click()
     cy.contains('button', 'Bridge').click()
     cy.wait('@nextBridge')
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Create Bridge').should('be.visible')
     cy.contains('.form-group', 'Name').find('input').should('have.value', 'br1').and('have.attr', 'readonly')
-    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').should('be.checked')
+    cy.contains('Create VM network').should('not.exist')
     cy.get('.modal-overlay').contains('button', 'Apply').should('exist')
     cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
-  it('Create Bridge Apply with VM network posts bridge plus nic and creates Workload network', () => {
+  it('Create Bridge Apply posts bridge plus nic and creates Workload network', () => {
+    stubLinuxHost()
     stubCreateBridge({ vmNetwork: true })
+    cy.visit('/networks')
     cy.contains('button', 'Create').click()
     cy.contains('button', 'Bridge').click()
     cy.wait('@nextBridge')
@@ -259,20 +276,20 @@ describe('Network Management', () => {
     cy.get('.modal-overlay').should('not.exist')
   })
 
-  it('Create Bridge Apply with VM network unchecked does not create Workload network', () => {
-    stubCreateBridge({ vmNetwork: false })
-    cy.contains('button', 'Create').click()
-    cy.contains('button', 'Bridge').click()
-    cy.wait('@nextBridge')
-    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').uncheck()
-    cy.contains('.form-group', 'Port').find('select').then(($sel) => {
-      const values = [...$sel.find('option')].map((o) => o.value).filter((v) => v)
-      if (values[0]) cy.wrap($sel).select(values[0], { force: true })
-    })
-    cy.get('.modal-overlay').contains('button', 'Apply').click()
-    cy.wait('@createBridgeApply')
-    cy.get('@createVmNetwork.all').should('have.length', 0)
-    cy.get('.modal-overlay').should('not.exist')
+  it('Host interfaces hides Create Bridge on macOS', () => {
+    cy.intercept('GET', '**/system/capabilities', (req) => {
+      req.continue((res) => {
+        if (res.body && typeof res.body === 'object') {
+          res.body.platform = 'macOS'
+          res.body.supportsHostBridgeManagement = false
+          res.body.supportsManagedBridgeDaemon = true
+        }
+      })
+    }).as('macCaps')
+    cy.visit('/networks')
+    cy.wait('@macCaps')
+    cy.contains('button', 'Create Network').should('not.exist')
+    cy.contains('button', 'Create').should('not.exist')
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {

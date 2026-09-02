@@ -83,9 +83,6 @@ function addAddress() {
     <button type="button" class="ghost add-btn" :disabled="locked" @click="addAddress">
       + Add address
     </button>
-    <p class="hint">
-      DHCP is always on. Add extra static addresses on this interface.
-    </p>
 
     <ul v-if="validation.errors.length" class="errors">
       <li v-for="err in validation.errors" :key="err">{{ err }}</li>
