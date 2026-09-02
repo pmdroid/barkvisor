@@ -32,7 +32,8 @@ Linux block-device notes:
 | Device | Where it lives |
 | Path | On-host path |
 | Format | qcow2/raw |
-| Size | Current size |
+| Size | Provisioned |
+| Used | On-disk size (qcow2 sparse) with bar |
 | VM | Attached Workload, if any |
 | Resize | Grow in place |
 | Delete | Remove after confirmation |
