@@ -225,6 +225,21 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     return res.data?.taskID as string | undefined
   }
 
+  async function remove(
+    device: DeviceApiTarget,
+    vmId: string,
+    keepDisk = false,
+  ): Promise<string | undefined> {
+    const res = await api.delete(deviceVmPath(device, vmId), { params: { keepDisk } })
+    if (res.status === 202) {
+      const current = vmFor(device.hostId, vmId)
+      if (current) putOne(device.hostId, { ...current, state: 'deleting' })
+      return res.data.taskID
+    }
+    removeOne(device.hostId, vmId)
+    return undefined
+  }
+
   async function fetchHomeAll(devices: HomeDeviceHealthSnapshot[]): Promise<void> {
     await Promise.all(devices.map((device) => fetchFor(device)))
   }
@@ -270,6 +285,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     resumeSession,
     resetSession,
     burnSession,
+    remove,
     noteSelf: inventory.noteSelf,
   }
 })

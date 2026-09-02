@@ -70,11 +70,19 @@ public enum HostInterfaceAddressDiscovery {
         let configuredIPs = Set(merged.addresses.map { ipFromCIDR($0.cidr) })
         let configuredDHCPIP = merged.addresses.first(where: { $0.source == .dhcp })
             .map { ipFromCIDR($0.cidr) }
-        for (index, ip) in liveIPv4.enumerated() {
+        for (index, live) in liveIPv4.enumerated() {
+            let ip = ipFromCIDR(live)
             if merged.dhcpEnabled, isLiveDHCPCandidate(ip: ip, index: index, configuredDHCPIP: configuredDHCPIP) {
                 continue
             }
-            let cidr = inferCIDR(ip: ip, existing: merged.addresses)
+            let cidr = liveCIDR(live, existing: merged.addresses)
+            if let rowIndex = merged.addresses.firstIndex(where: { ipFromCIDR($0.cidr) == ip }) {
+                merged.addresses[rowIndex].cidr = preferredCIDR(
+                    existing: merged.addresses[rowIndex].cidr,
+                    live: cidr,
+                )
+                continue
+            }
             if configuredCIDRs.contains(cidr) || configuredIPs.contains(ip) {
                 continue
             }
@@ -83,27 +91,29 @@ public enum HostInterfaceAddressDiscovery {
             )
         }
         if merged.addresses.isEmpty, !liveIPv4.isEmpty {
-            for (index, ip) in liveIPv4.enumerated() {
+            for (index, live) in liveIPv4.enumerated() {
                 merged.addresses.append(
                     HostInterfaceAddressEntry(
-                        cidr: inferCIDR(ip: ip, existing: merged.addresses),
+                        cidr: liveCIDR(live, existing: merged.addresses),
                         source: merged.dhcpEnabled && index == 0 ? .dhcp : .alias,
                         primary: index == 0,
                     ),
                 )
             }
         } else if merged.dhcpEnabled {
-            for (index, ip) in liveIPv4.enumerated() {
+            for (index, live) in liveIPv4.enumerated() {
+                let ip = ipFromCIDR(live)
                 guard isLiveDHCPCandidate(ip: ip, index: index, configuredDHCPIP: configuredDHCPIP) else {
                     continue
                 }
-                let cidr = inferCIDR(ip: ip, existing: merged.addresses)
+                let cidr = liveCIDR(live, existing: merged.addresses)
                 if let rowIndex = merged.addresses.firstIndex(where: {
                     HostInterfaceAddressDiscovery.ipFromCIDR($0.cidr) == ip
                 }) {
                     var row = merged.addresses.remove(at: rowIndex)
                     row.source = .dhcp
                     row.primary = true
+                    row.cidr = preferredCIDR(existing: row.cidr, live: cidr)
                     merged.addresses.insert(row, at: 0)
                 } else {
                     merged.addresses.insert(
@@ -163,15 +173,20 @@ public enum HostInterfaceAddressDiscovery {
         for interface: String,
         from rows: [HostInterfaceInfo],
     ) -> [String] {
-        rows.filter { $0.name == interface && !$0.ipAddress.contains(":") }.map(\.ipAddress)
+        rows.filter { $0.name == interface && !$0.ipAddress.contains(":") }.map { row in
+            if let prefix = row.prefixLength {
+                return "\(row.ipAddress)/\(prefix)"
+            }
+            return row.ipAddress
+        }
     }
 
     private static func fallbackFromLive(liveIPv4: [String]) -> HostInterfaceAddressing {
         var addressing = HostInterfaceAddressing()
-        for (index, ip) in liveIPv4.enumerated() {
+        for (index, live) in liveIPv4.enumerated() {
             addressing.addresses.append(
                 HostInterfaceAddressEntry(
-                    cidr: "\(ip)/32",
+                    cidr: liveCIDR(live, existing: addressing.addresses),
                     source: .alias,
                     primary: index == 0,
                 ),
@@ -205,6 +220,26 @@ public enum HostInterfaceAddressDiscovery {
             return match.cidr
         }
         return "\(ip)/32"
+    }
+
+    static func liveCIDR(_ live: String, existing: [HostInterfaceAddressEntry]) -> String {
+        let ip = ipFromCIDR(live)
+        if live.contains("/") {
+            return live
+        }
+        return inferCIDR(ip: ip, existing: existing)
+    }
+
+    static func preferredCIDR(existing: String, live: String) -> String {
+        let livePrefix = live.split(separator: "/").last.map(String.init)
+        let existingPrefix = existing.split(separator: "/").last.map(String.init)
+        if livePrefix != nil, livePrefix != "32", livePrefix != existingPrefix {
+            return live
+        }
+        if existingPrefix == "32", livePrefix != nil, livePrefix != "32" {
+            return live
+        }
+        return existing
     }
 }
 
@@ -258,12 +293,27 @@ public enum HostInterfaceAddressDiscovery {
 
             let parsed = MacHostInterfaceAddressRead.parseGetInfo(infoText)
             let additional = MacHostInterfaceAddressRead.parseAdditionalAddresses(additionalText)
-            let config = MacHostInterfaceAddressRead.buildAddressing(
+            var config = MacHostInterfaceAddressRead.buildAddressing(
                 parsed: parsed,
                 additionalCIDRs: additional,
                 dns: dnsServers,
                 managedByBarkvisor: managed,
             )
+            if let marker = MacHostNetworkApply.readMarker(device: interface) {
+                for cidr in marker.appliedAliasCIDRs {
+                    let ip = ipFromCIDR(cidr)
+                    if let rowIndex = config.addresses.firstIndex(where: { ipFromCIDR($0.cidr) == ip }) {
+                        config.addresses[rowIndex].cidr = preferredCIDR(
+                            existing: config.addresses[rowIndex].cidr,
+                            live: cidr,
+                        )
+                    } else {
+                        config.addresses.append(
+                            HostInterfaceAddressEntry(cidr: cidr, source: .alias, primary: false),
+                        )
+                    }
+                }
+            }
             return mergeLiveAddresses(config: config, liveIPv4: liveIPv4)
         }
     }

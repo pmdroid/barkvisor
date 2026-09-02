@@ -281,12 +281,11 @@ describe('Network Management', () => {
       cy.contains('Use DHCP for primary address').should('exist')
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
-      cy.contains('Bridge role').should('exist')
       cy.contains('button', 'Add address').should('exist')
     })
   })
 
-  it('Bridge drawer edits L3; enslaved NIC is L2-only', () => {
+  it('NIC drawer edits addresses; Bridge drawer has no address fields', () => {
     const readiness = {
       helperPath: null,
       helperSetuid: true,
@@ -314,18 +313,17 @@ describe('Network Management', () => {
     cy.wait('@ifaces')
     cy.contains('.iface-row', 'br0').click()
     cy.get('.iface-drawer').within(() => {
-      cy.contains('Use DHCP for primary address').should('exist')
-      cy.get('input[type="checkbox"]').first().should('not.be.disabled')
-      cy.contains('L2 only').should('not.exist')
+      cy.contains('Use DHCP for primary address').should('not.exist')
+      cy.contains('Attached to eth0').should('be.visible')
     })
     cy.contains('.iface-row', 'eth0').click()
     cy.get('.iface-drawer').within(() => {
-      cy.contains('L2 only · addresses live on the Bridge').should('be.visible')
-      cy.get('input[type="checkbox"]').first().should('be.disabled')
+      cy.contains('Use DHCP for primary address').should('exist')
+      cy.get('input[type="checkbox"]').first().should('not.be.disabled')
     })
   })
 
-  it('Keep banner shows on the Bridge row when pending target is the uplink', () => {
+  it('Keep banner shows on the NIC row when pending nic is the uplink', () => {
     const readiness = {
       helperPath: null,
       helperSetuid: true,
@@ -349,7 +347,7 @@ describe('Network Management', () => {
     cy.visit('/networks')
     cy.wait('@ifaces')
     cy.wait('@ready')
-    cy.contains('.iface-row', 'br0').click()
+    cy.contains('.iface-row', 'en0').click()
     cy.get('.iface-drawer').contains('Keep changes').should('be.visible')
   })
 })

@@ -271,6 +271,38 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(patch).toHaveBeenCalledTimes(1)
   })
 
+  test('members delete through the Home proxy with keepDisk, never local /vms', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'stopped' })]
+    api.get = mock((url: string) => {
+      if (url === '/home/devices/peer-1/v1/vms') return Promise.resolve({ data: listed })
+      throw new Error(`unexpected GET ${url}`)
+    }) as typeof api.get
+    const del = mock((url: string, config?: { params?: { keepDisk?: boolean } }) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2')
+      if (config?.params?.keepDisk) {
+        return Promise.resolve({ status: 202, data: { taskID: 'task-9' } })
+      }
+      return Promise.resolve({ status: 204, data: {} })
+    })
+    api.delete = del as typeof api.delete
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    const taskID = await store.remove(peer, 'vm-2', true)
+    expect(taskID).toBe('task-9')
+    expect(store.vmFor('peer-1', 'vm-2')?.state).toBe('deleting')
+    expect(del.mock.calls[0]?.[1]).toEqual({ params: { keepDisk: true } })
+    const evicted = await store.remove(peer, 'vm-2', false)
+    expect(evicted).toBeUndefined()
+    expect(store.vmFor('peer-1', 'vm-2')).toBeUndefined()
+    expect(del.mock.calls[1]?.[1]).toEqual({ params: { keepDisk: false } })
+    expect(del.mock.calls.map((call) => call[0])).toEqual([
+      '/home/devices/peer-1/v1/vms/vm-2',
+      '/home/devices/peer-1/v1/vms/vm-2',
+    ])
+    expect(del.mock.calls.some((call) => call[0] === '/vms/vm-2')).toBe(false)
+  })
+
   test('removeOne evicts a cached member Workload so detail can show not-found', async () => {
     const peer = snapshot({ hostId: 'peer-1', role: 'member' })
     const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]

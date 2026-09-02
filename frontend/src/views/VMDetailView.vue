@@ -11,6 +11,7 @@ import {
   deviceCapabilitiesPath,
   deviceDiskUsagePath,
   devicePath,
+  deviceTaskPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
@@ -1171,6 +1172,30 @@ let deletePollerStop: (() => void) | null = null
 async function deleteVM() {
   deletingVM.value = true
   try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      const taskID = await homeWorkloads.remove(device, vmId.value, keepDisk.value)
+      if (taskID) {
+        const { useTaskPoller } = await import('../composables/useTaskPoller')
+        const { poll, stop } = useTaskPoller()
+        deletePollerStop = stop
+        await poll(taskID, {
+          path: deviceTaskPath(device, taskID),
+          onComplete: () => { router.push('/vms') },
+          onFailed: async (event) => {
+            toast.error(event.error || 'VM deletion failed')
+            try {
+              await homeWorkloads.refreshOne(device, vmId.value)
+            } catch {
+            }
+          },
+        })
+      } else {
+        router.push('/vms')
+      }
+      return
+    }
     const taskID = await store.remove(vmId.value, keepDisk.value)
     if (taskID) {
       // Background deletion — poll until done then navigate
