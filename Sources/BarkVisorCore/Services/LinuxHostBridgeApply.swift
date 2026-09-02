@@ -282,7 +282,7 @@ public enum LinuxHostBridgeApply {
         return body
     }
 
-    static func hasNetworkAssignment(_ text: String, key: String, value: String) -> Bool {
+    public static func hasNetworkAssignment(_ text: String, key: String, value: String) -> Bool {
         let want = "\(key)=\(value)"
         for raw in text.split(whereSeparator: \.isNewline) {
             if raw.trimmingCharacters(in: .whitespaces) == want { return true }
@@ -664,7 +664,7 @@ public enum LinuxHostBridgeApply {
             return refuse(backend: probe.backend, message: "Invalid address plan.")
         }
         let target = addressApplyDevice(request: request, probe: probe)
-        let changes = addressOnlyChanges(target: target, plan: plan)
+        let changes = addressOnlyChanges(target: target, plan: plan, backend: probe.backend)
         let dry = request.action == .dryRun
         return LinuxHostBridgeApplyResult(
             success: true,
@@ -1030,26 +1030,34 @@ public enum LinuxHostBridgeApply {
     public static func addressOnlyChanges(
         target: String,
         plan: HostInterfaceAddressApplyPlan,
+        backend: LinuxNetworkBackend = .netplan,
     ) -> [LinuxHostBridgeChange] {
         let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
-        return cidrs.map { cidr in
-            LinuxHostBridgeChange(
-                description: "Add \(target) address \(cidr)",
-                command: "sudo ip addr add \(cidr) dev \(target)",
-            )
-        }
+        return LinuxHostAddressPersist.previewCommands(
+            interface: target,
+            cidrs: cidrs,
+            backend: backend,
+        )
     }
 
-    public static func addressRollbackHelperScript(device: String, iface: String, cidrs: [String]) -> String {
+    public static func addressRollbackHelperScript(
+        device: String,
+        iface: String,
+        cidrs: [String],
+        persistFiles: [String] = [],
+    ) -> String {
         let stamp = commitStampPath(bridge: device)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
         let dels = cidrs.map { cidr in
             "/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || true"
         }.joined(separator: "\n")
+        let rms = persistFiles.map { "rm -rf \($0) || true" }.joined(separator: "\n")
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
         \(dels)
+        \(rms)
+        /usr/bin/networkctl reload >/dev/null 2>&1 || true
         rm -f \(pending) || true
         """
     }

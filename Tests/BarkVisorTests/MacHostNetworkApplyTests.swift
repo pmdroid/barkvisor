@@ -154,7 +154,13 @@ import Testing
                 run: run,
             )
             #expect(!networksetupCalls.contains { $0.contains("-setdhcp") })
-            #expect(!networksetupCalls.contains { $0.contains("-setmanual") })
+            #expect(!networksetupCalls.contains { $0.first == "-setmanual" && $0.contains("Ethernet") })
+            #expect(networksetupCalls.contains {
+                $0.first == "-createnetworkservice" && $0.contains("BarkVisor 10.0.0.2")
+            })
+            #expect(networksetupCalls.contains {
+                $0.first == "-setmanual" && $0.contains("BarkVisor 10.0.0.2")
+            })
         }
 
         @Test func `remove one owned alias does not set dhcp`() throws {
@@ -205,7 +211,10 @@ import Testing
             #expect(!ifconfigCalls.contains { $0.contains("192.168.8.224") && $0.contains("-alias") })
             #expect(!ifconfigCalls.contains { $0.contains("10.1.1.1") && $0.contains("-alias") })
             #expect(!networksetupCalls.contains { $0.contains("-setdhcp") })
-            #expect(!networksetupCalls.contains { $0.contains("-setmanual") })
+            #expect(!networksetupCalls.contains { $0.first == "-setmanual" && $0.contains("Ethernet") })
+            #expect(networksetupCalls.contains {
+                $0.first == "-removenetworkservice" && $0.contains("BarkVisor 192.168.10.45")
+            })
         }
 
         @Test func `address delta equivalent commands are only owned mutations`() throws {
@@ -249,7 +258,10 @@ import Testing
                 device: device,
                 delta: delta,
             )
-            #expect(lines == ["sudo ifconfig \(device) -alias 192.168.10.45"])
+            #expect(lines == [
+                "sudo networksetup -removenetworkservice \"BarkVisor 192.168.10.45\"",
+                "sudo ifconfig \(device) -alias 192.168.10.45",
+            ])
         }
 
         @Test func `revert restores saved dns servers`() throws {
@@ -296,6 +308,9 @@ import Testing
             let reverted = try MacHostNetworkApply.revert(device: device, run: run)
             #expect(reverted)
             #expect(calls.contains { $0 == ["/sbin/ifconfig", device, "-alias", "10.0.0.2"] })
+            #expect(calls.contains {
+                $0 == [MacHostNetworkApply.networksetupPath, "-removenetworkservice", "BarkVisor 10.0.0.2"]
+            })
             #expect(!calls.contains { $0 == [MacHostNetworkApply.networksetupPath, "-setdhcp", "Ethernet"] })
             #expect(MacHostNetworkApply.readMarker(device: device) == nil)
         }
@@ -481,6 +496,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.message.contains("Device address"))
             #expect(!result.message.localizedCaseInsensitiveContains("socket_vmnet"))
             #expect(result.commands.joined(separator: "\n").contains("ifconfig en0 alias"))
+            #expect(result.commands.joined(separator: "\n").contains("createnetworkservice"))
             #expect(!result.commands.joined(separator: "\n").contains("-setdhcp"))
             #expect(!result.commands.joined(separator: "\n").contains("listallhardwareports"))
         }

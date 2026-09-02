@@ -375,6 +375,21 @@ struct LinuxHostBridgeApplyTests {
         #expect(!rewritten.contains("Bridge=br0"))
         #expect(rewritten.contains("Address=192.168.30.1/16"))
         #expect(rewritten.contains("DHCP=yes"))
+        let files = LinuxHostAddressPersist.persistFiles(
+            interface: "br0",
+            cidrs: ["192.168.33.13/16"],
+            backend: .networkManager,
+            dir: dir.path,
+        )
+        #expect(files.contains { $0.path.hasSuffix("25-br0.network.d/90-barkvisor-aliases.conf") })
+        #expect(files.contains { $0.body.contains("Address=192.168.33.13/16") })
+        let preview = LinuxHostAddressPersist.previewCommands(
+            interface: "eth0",
+            cidrs: ["10.0.0.2/24"],
+            backend: .netplan,
+        )
+        #expect(preview.contains { $0.command.contains("90-barkvisor-eth0-aliases.yaml") })
+        #expect(preview.contains { $0.command.contains("ip addr add 10.0.0.2/24 dev eth0") })
     }
 
     @Test func `acl tag without marker is leftover we can delete`() throws {
@@ -475,6 +490,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.success)
         #expect(!result.conflict)
         #expect(result.commands.contains { $0.contains("ip addr add 10.0.0.2/24 dev br0") })
+        #expect(result.commands.contains { $0.contains("90-barkvisor-aliases.conf") || $0.contains("90-barkvisor-br0.network") })
         #expect(!result.commands.contains { $0.contains("nmcli connection add type bridge") })
         #expect(!result.message.contains("already exists"))
     }
@@ -496,7 +512,8 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.success)
         #expect(!result.conflict)
         #expect(result.commands.contains { $0.contains("ip addr add 10.0.0.2/24 dev eth0") })
-        #expect(!result.changes.contains { $0.contains("netplan") })
+        #expect(result.commands.contains { $0.contains("90-barkvisor-eth0-aliases.yaml") })
+        #expect(!result.changes.contains { $0.contains("netplan try") })
     }
 
     @Test func `next-free skips sysfs and markers`() throws {

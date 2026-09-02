@@ -138,6 +138,52 @@ import Foundation
             return rows.first(where: { $0.device == device })?.name
         }
 
+        public static func extraServiceName(ip: String) -> String {
+            "BarkVisor \(ip)"
+        }
+
+        public static func persistExtraService(
+            hardwarePort: String,
+            ip: String,
+            mask: String,
+            gateway: String,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws {
+            let extra = extraServiceName(ip: ip)
+            let listed = try run(networksetupPath, ["-listallnetworkservices"])
+            let names = Set(
+                listed.stdoutString
+                    .split(whereSeparator: \.isNewline)
+                    .map { String($0).trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty && !$0.hasPrefix("An asterisk") },
+            )
+            if !names.contains(extra) {
+                let created = try run(networksetupPath, ["-createnetworkservice", extra, hardwarePort])
+                if !created.succeeded {
+                    let err = created.stderrString.lowercased()
+                    if !err.contains("already exists"), !err.contains("exist") {
+                        throw BarkVisorError.preconditionFailed(
+                            "networksetup -createnetworkservice failed: \(created.stderrString)",
+                        )
+                    }
+                }
+            }
+            let result = try run(networksetupPath, ["-setmanual", extra, ip, mask, gateway])
+            guard result.succeeded else {
+                throw BarkVisorError.preconditionFailed(
+                    "networksetup -setmanual failed: \(result.stderrString)",
+                )
+            }
+        }
+
+        public static func removePersistedExtraService(
+            ip: String,
+            run: (String, [String]) throws -> CommandResult,
+        ) throws {
+            let extra = extraServiceName(ip: ip)
+            _ = try run(networksetupPath, ["-removenetworkservice", extra])
+        }
+
         public static func isWiFiPort(_ name: String) -> Bool {
             let lower = name.lowercased()
             return lower.contains("wi-fi") || lower.contains("wifi") || lower.contains("airport")
@@ -308,6 +354,7 @@ import Foundation
                 ? []
                 : try listIPv4Rows(device: device, run: run)
             for ip in delta.removeAliasIPs {
+                try removePersistedExtraService(ip: ip, run: run)
                 let aliasResult = try run("/sbin/ifconfig", [device, "-alias", ip])
                 guard aliasResult.succeeded else {
                     throw BarkVisorError.preconditionFailed(
@@ -330,6 +377,13 @@ import Foundation
             }
             for cidr in delta.addAliasCIDRs {
                 let parsed = try parseStaticAddress(cidr)
+                try persistExtraService(
+                    hardwarePort: service,
+                    ip: parsed.ip,
+                    mask: parsed.mask,
+                    gateway: delta.setManual?.gateway ?? "",
+                    run: run,
+                )
                 let aliasResult = try run(
                     "/sbin/ifconfig",
                     [device, "alias", parsed.ip, "netmask", parsed.mask],
@@ -440,6 +494,7 @@ import Foundation
             }
             for cidr in marker.appliedAliasCIDRs {
                 let parsed = try parseStaticAddress(cidr)
+                try removePersistedExtraService(ip: parsed.ip, run: run)
                 let aliasResult = try run("/sbin/ifconfig", [device, "-alias", parsed.ip])
                 guard aliasResult.succeeded else {
                     throw BarkVisorError.preconditionFailed(
@@ -478,6 +533,13 @@ import Foundation
             }
             for cidr in marker.removedAliasCIDRs {
                 let parsed = try parseStaticAddress(cidr)
+                try persistExtraService(
+                    hardwarePort: marker.service,
+                    ip: parsed.ip,
+                    mask: parsed.mask,
+                    gateway: "",
+                    run: run,
+                )
                 _ = try run(
                     "/sbin/ifconfig",
                     [device, "alias", parsed.ip, "netmask", parsed.mask],
@@ -633,10 +695,16 @@ import Foundation
                 )
             }
             for ip in delta.removeAliasIPs {
+                lines.append("sudo networksetup -removenetworkservice \"\(extraServiceName(ip: ip))\"")
                 lines.append("sudo ifconfig \(device) -alias \(ip)")
             }
             for cidr in delta.addAliasCIDRs {
                 let parsed = (try? parseStaticAddress(cidr)) ?? (ip: cidr, mask: "255.255.255.0")
+                let extra = extraServiceName(ip: parsed.ip)
+                lines.append("sudo networksetup -createnetworkservice \"\(extra)\" \"\(service)\"")
+                lines.append(
+                    "sudo networksetup -setmanual \"\(extra)\" \(parsed.ip) \(parsed.mask) \"\"",
+                )
                 lines.append("sudo ifconfig \(device) alias \(parsed.ip) netmask \(parsed.mask)")
             }
             if let dns = delta.setDNS, !dns.isEmpty {
@@ -686,6 +754,11 @@ import Foundation
             }
             for cidr in plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs {
                 let parsed = (try? parseStaticAddress(cidr)) ?? (ip: cidr, mask: "255.255.255.0")
+                let extra = extraServiceName(ip: parsed.ip)
+                lines.append("sudo networksetup -createnetworkservice \"\(extra)\" \"\(service)\"")
+                lines.append(
+                    "sudo networksetup -setmanual \"\(extra)\" \(parsed.ip) \(parsed.mask) \"\"",
+                )
                 lines.append("sudo ifconfig \(device) alias \(parsed.ip) netmask \(parsed.mask)")
             }
             if !plan.dns.isEmpty {

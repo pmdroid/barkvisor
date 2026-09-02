@@ -249,6 +249,26 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let iface = LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
             let nic = request.nic ?? iface
             let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            let files = LinuxHostAddressPersist.persistFiles(
+                interface: iface,
+                cidrs: cidrs,
+                backend: probe.backend,
+            )
+            for file in files {
+                try FileManager.default.createDirectory(
+                    at: URL(fileURLWithPath: file.path).deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try writeAtomically(file.path, file.body)
+            }
+            if probe.backend == .networkManager {
+                try persistNmAddresses(interface: iface, cidrs: cidrs, add: true)
+            }
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/networkctl",
+                arguments: ["reload"],
+                timeout: 15,
+            )
             for cidr in cidrs {
                 let result = try PlatformProcess.run(
                     path: Self.ipPath,
@@ -264,12 +284,63 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     }
                 }
             }
-            try startAddressRollbackTimer(device: nic, iface: iface, cidrs: cidrs)
+            try startAddressRollbackTimer(
+                device: nic,
+                iface: iface,
+                cidrs: cidrs,
+                persistFiles: files.map(\.path),
+            )
             let pending = HostNetworkPendingCommitService.makePending(
                 target: nic,
                 createdBridge: false,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
+        }
+
+        private func persistNmAddresses(interface: String, cidrs: [String], add: Bool) throws {
+            let shown = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-t", "-f", "GENERAL.CONNECTION", "device", "show", interface],
+                timeout: 15,
+            )
+            let name = shown.stdoutString
+                .split(separator: ":", maxSplits: 1)
+                .last
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            guard !name.isEmpty, name != "--" else { return }
+            let flag = add ? "+ipv4.addresses" : "-ipv4.addresses"
+            for cidr in cidrs {
+                _ = try PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "modify", name, flag, cidr],
+                    timeout: 15,
+                )
+            }
+            let file = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-g", "connection.filename", "connection", "show", name],
+                timeout: 15,
+            )
+            let src = file.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if src.contains("/run/"), FileManager.default.fileExists(atPath: src) {
+                let dest = "/etc/NetworkManager/system-connections/\((src as NSString).lastPathComponent)"
+                try FileManager.default.createDirectory(
+                    at: URL(fileURLWithPath: dest).deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try? FileManager.default.removeItem(atPath: dest)
+                try FileManager.default.copyItem(atPath: src, toPath: dest)
+                _ = try? PlatformProcess.run(
+                    path: "/bin/chmod",
+                    arguments: ["0600", dest],
+                    timeout: 5,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "reload"],
+                    timeout: 15,
+                )
+            }
         }
 
         private func revertAddresses(
@@ -285,7 +356,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             HostNetworkPendingCommitService.clearLinux(bridge: nic)
         }
 
-        private func startAddressRollbackTimer(device: String, iface: String, cidrs: [String]) throws {
+        private func startAddressRollbackTimer(
+            device: String,
+            iface: String,
+            cidrs: [String],
+            persistFiles: [String] = [],
+        ) throws {
             let unit = "barkvisor-\(device)-rollback"
             stopRollbackTimer(bridge: device)
             let stamp = LinuxHostBridgeApply.commitStampPath(bridge: device)
@@ -297,7 +373,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let helper = "/run/barkvisor/\(device)-rollback.sh"
             try writeAtomically(
                 helper,
-                LinuxHostBridgeApply.addressRollbackHelperScript(device: device, iface: iface, cidrs: cidrs),
+                LinuxHostBridgeApply.addressRollbackHelperScript(
+                    device: device,
+                    iface: iface,
+                    cidrs: cidrs,
+                    persistFiles: persistFiles,
+                ),
             )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
             _ = try? PlatformProcess.run(

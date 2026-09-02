@@ -1,0 +1,120 @@
+import Foundation
+
+public enum LinuxHostAddressPersist {
+    public static func networkdMatchingNetworkFile(
+        interface: String,
+        dir: String = LinuxHostBridgeApply.systemdNetworkDir,
+    ) -> String? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        for name in names.sorted() where name.hasSuffix(".network") {
+            let path = "\(dir)/\(name)"
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            if LinuxHostBridgeApply.hasNetworkAssignment(text, key: "Name", value: interface) {
+                return path
+            }
+        }
+        return nil
+    }
+
+    public static func networkdAliasDropInPath(matchFile: String) -> String {
+        "\(matchFile).d/90-barkvisor-aliases.conf"
+    }
+
+    public static func networkdAliasUnitPath(
+        interface: String,
+        dir: String = LinuxHostBridgeApply.systemdNetworkDir,
+    ) -> String {
+        "\(dir)/90-barkvisor-\(interface).network"
+    }
+
+    public static func networkdAliasDropInBody(cidrs: [String]) -> String {
+        var body = "# managed-by: barkvisor\n[Network]\n"
+        for cidr in cidrs {
+            body += "Address=\(cidr)\n"
+        }
+        return body
+    }
+
+    public static func networkdAliasUnitBody(interface: String, cidrs: [String]) -> String {
+        var body = "# managed-by: barkvisor\n[Match]\nName=\(interface)\n\n[Network]\n"
+        for cidr in cidrs {
+            body += "Address=\(cidr)\n"
+        }
+        return body
+    }
+
+    public static func netplanAliasPath(interface: String) -> String {
+        "/etc/netplan/90-barkvisor-\(interface)-aliases.yaml"
+    }
+
+    public static func netplanAliasYAML(interface: String, cidrs: [String]) -> String {
+        let kind = interface.hasPrefix("br") ? "bridges" : "ethernets"
+        let lines = cidrs.map { "      - \($0)" }.joined(separator: "\n")
+        return """
+        # managed-by: barkvisor
+        network:
+          version: 2
+          \(kind):
+            \(interface):
+              addresses:
+        \(lines)
+        """
+    }
+
+    public static func persistFiles(
+        interface: String,
+        cidrs: [String],
+        backend: LinuxNetworkBackend,
+        dir: String = LinuxHostBridgeApply.systemdNetworkDir,
+    ) -> [(path: String, body: String)] {
+        var files: [(String, String)] = []
+        if let match = networkdMatchingNetworkFile(interface: interface, dir: dir) {
+            files.append((networkdAliasDropInPath(matchFile: match), networkdAliasDropInBody(cidrs: cidrs)))
+        } else {
+            files.append((
+                networkdAliasUnitPath(interface: interface, dir: dir),
+                networkdAliasUnitBody(interface: interface, cidrs: cidrs),
+            ))
+        }
+        if backend == .netplan {
+            files.append((netplanAliasPath(interface: interface), netplanAliasYAML(interface: interface, cidrs: cidrs)))
+        }
+        return files
+    }
+
+    public static func previewCommands(
+        interface: String,
+        cidrs: [String],
+        backend: LinuxNetworkBackend,
+    ) -> [LinuxHostBridgeChange] {
+        var rows: [LinuxHostBridgeChange] = []
+        let files = persistFiles(interface: interface, cidrs: cidrs, backend: backend)
+        for file in files {
+            rows.append(LinuxHostBridgeChange(
+                description: "Persist extra IPs in \(file.path)",
+                command: "sudo tee \(file.path)",
+            ))
+        }
+        if backend == .networkManager {
+            for cidr in cidrs {
+                rows.append(LinuxHostBridgeChange(
+                    description: "Persist \(cidr) on \(interface) via NetworkManager",
+                    command: "sudo nmcli connection modify \(interface) +ipv4.addresses \(cidr)",
+                ))
+            }
+        }
+        if backend == .systemdNetworkd || backend == .networkManager {
+            rows.append(LinuxHostBridgeChange(
+                description: "Reload systemd-networkd",
+                command: "sudo networkctl reload",
+            ))
+        }
+        for cidr in cidrs {
+            rows.append(LinuxHostBridgeChange(
+                description: "Add \(interface) address \(cidr)",
+                command: "sudo ip addr add \(cidr) dev \(interface)",
+            ))
+        }
+        return rows
+    }
+}
