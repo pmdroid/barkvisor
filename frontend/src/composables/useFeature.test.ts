@@ -153,6 +153,7 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('VM networks')
     expect(src).not.toContain('Bridge setup')
     expect(src).toContain('canApplySelectedInterface')
+    expect(src).toContain('canDeleteSelectedInterface')
     expect(src).toContain('runInterfaceHostBridge')
     expect(src).toContain('applySelectedInterface')
     expect(src).not.toContain('revertSelectedInterface')

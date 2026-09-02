@@ -348,6 +348,13 @@ const canApplyAddresses = computed(() => {
 const canApplySelectedInterface = computed(() => {
   const row = selectedInterfaceRow.value
   if (!row) return false
+  const mode = selectedInterfaceMode.value
+  if (
+    interfaceShowsDelete(row.iface, selectedInterfaceReadiness.value)
+    && (mode === 'linux-guide' || mode === 'macos-guide')
+  ) {
+    return true
+  }
   const deviceCaps = deviceCapsFor(row.hostId)
   if (!hostBridgeCanApply({
     platform: deviceCaps.platform,
@@ -893,6 +900,12 @@ const selectedInterfaceDeleteBlocked = computed(() => {
     && item.network.bridge === bridge
     && attachedWorkloads(item).length > 0
   ))
+})
+
+const canDeleteSelectedInterface = computed(() => {
+  if (!selectedInterfaceShowsDelete.value || selectedInterfaceDeleteBlocked.value) return false
+  const mode = selectedInterfaceMode.value
+  return mode === 'linux-guide' || mode === 'macos-guide'
 })
 
 async function openBridgeSetupForPending(item: PendingBridge) {
@@ -1586,7 +1599,7 @@ async function doDeleteNetwork() {
               v-if="selectedInterfaceShowsDelete"
               size="sm"
               variant="danger"
-              :disabled="!canApplySelectedInterface || linuxApplyLoading || selectedInterfaceDeleteBlocked"
+              :disabled="!canDeleteSelectedInterface || linuxApplyLoading"
               @click="deleteSelectedInterface"
             >Delete</AppButton>
             <p

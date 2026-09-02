@@ -255,11 +255,12 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceOwnsBridgeSetupApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsAddressApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeSetupApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsBridgeSetupApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
     expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
-    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
   })
 
   test('interfaceOwnsAddressApply is the NIC row on Linux and Mac', () => {

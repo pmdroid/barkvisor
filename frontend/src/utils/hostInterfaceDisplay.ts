@@ -196,7 +196,7 @@ export function interfaceOwnsBridgeSetupApply(
   mode: string,
 ): boolean {
   if (role === 'external' || role === 'loopback' || role === 'tailscale') return false
-  if (mode === 'macos-guide') return role === 'uplink'
+  if (mode === 'macos-guide') return role === 'uplink' || role === 'bridge'
   if (role === 'bridge') return true
   if (role === 'uplink' && !interfaceEnslavedToBridge(iface, readiness)) return true
   return false
