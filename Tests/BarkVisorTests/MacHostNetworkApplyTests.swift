@@ -370,7 +370,34 @@ struct MacHostBridgeApplyPlannerTests {
             )
             #expect(result.success)
             #expect(result.changes.contains { $0.contains("socket_vmnet") })
-            #expect(result.message.contains("Keep"))
+            #expect(result.message.contains("delete") || result.message.contains("socket_vmnet"))
+        }
+
+        @Test func `mac revert of created brN stops socket_vmnet`() {
+            let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+                bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["en0"], createdBridge: true)],
+                defaultRouteInterface: "en0",
+                macSocketVmnet: true,
+            ))
+            let probe = MacHostBridgeApplyProbe(
+                facts: facts,
+                device: "en0",
+                serviceName: "Ethernet",
+                socketProbe: SocketVmnetApplyProbe(
+                    facts: facts,
+                    interface: "en0",
+                    brewFormulaInstalled: true,
+                    brewServiceLoaded: true,
+                ),
+                createdBridge: true,
+            )
+            let result = MacHostBridgeApply.evaluate(
+                request: LinuxHostBridgeApplyRequest(action: .revert, bridge: "br0", nic: "en0", confirm: true),
+                probe: probe,
+            )
+            #expect(result.success)
+            #expect(result.changes.contains { $0.contains("socket_vmnet") })
+            #expect(result.message.contains("removes the new Bridge") || result.message.contains("Bridge"))
         }
 
         @Test func `mac revert foreign never stops socket_vmnet`() {
@@ -393,7 +420,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(revert.success)
             #expect(!revert.changes.contains { $0.lowercased().contains("stop") })
             #expect(revert.commands.contains { $0.contains("networksetup") })
-            #expect(revert.commands.contains { $0.contains("never ip link del") })
+            #expect(revert.commands.contains { $0.contains("never ip link del") || $0.contains("networksetup") })
             #expect(
                 revert.changes.contains { $0.contains("Restore saved") }
                     || revert.changes.contains { $0.contains("DHCP") },

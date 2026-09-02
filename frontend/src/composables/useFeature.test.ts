@@ -199,6 +199,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('pendingCommitMatchesInterface')
     expect(src).toContain('showPendingCommitModal')
     expect(src).toContain('Keep network changes')
+    expect(src).toContain('Apply these network changes?')
+    expect(src).toContain(':details="linuxApplyResult?.changes ?? []"')
     expect(src).not.toContain('showPendingCommitBanner')
     expect(src).toContain('bridge: existingBridge ?? undefined')
   })

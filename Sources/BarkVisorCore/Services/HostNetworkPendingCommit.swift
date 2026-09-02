@@ -5,23 +5,34 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
     public var target: String
     public var commitDeadline: Date
     public var rollbackSeconds: Int
-    /// Linux netplan try PID; omitted from API responses.
+    public var createdBridge: Bool
     public var netplanPid: Int32?
 
     public init(
         target: String,
         commitDeadline: Date,
         rollbackSeconds: Int,
+        createdBridge: Bool = false,
         netplanPid: Int32? = nil,
     ) {
         self.target = target
         self.commitDeadline = commitDeadline
         self.rollbackSeconds = rollbackSeconds
+        self.createdBridge = createdBridge
         self.netplanPid = netplanPid
     }
 
     enum CodingKeys: String, CodingKey {
-        case target, commitDeadline, rollbackSeconds, netplanPid
+        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        target = try c.decode(String.self, forKey: .target)
+        commitDeadline = try c.decode(Date.self, forKey: .commitDeadline)
+        rollbackSeconds = try c.decode(Int.self, forKey: .rollbackSeconds)
+        createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
+        netplanPid = try c.decodeIfPresent(Int32.self, forKey: .netplanPid)
     }
 
     public var expired: Bool {
@@ -34,6 +45,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
             target: target,
             commitDeadline: commitDeadline,
             rollbackSeconds: rollbackSeconds,
+            createdBridge: createdBridge,
         )
     }
 }
@@ -42,11 +54,25 @@ public struct HostNetworkPendingCommitInfo: Codable, Sendable, Equatable {
     public var target: String
     public var commitDeadline: Date
     public var rollbackSeconds: Int
+    public var createdBridge: Bool
 
-    public init(target: String, commitDeadline: Date, rollbackSeconds: Int) {
+    public init(target: String, commitDeadline: Date, rollbackSeconds: Int, createdBridge: Bool = false) {
         self.target = target
         self.commitDeadline = commitDeadline
         self.rollbackSeconds = rollbackSeconds
+        self.createdBridge = createdBridge
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case target, commitDeadline, rollbackSeconds, createdBridge
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        target = try c.decode(String.self, forKey: .target)
+        commitDeadline = try c.decode(Date.self, forKey: .commitDeadline)
+        rollbackSeconds = try c.decode(Int.self, forKey: .rollbackSeconds)
+        createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
     }
 }
 
@@ -156,11 +182,16 @@ public enum HostNetworkPendingCommitService {
         #endif
     }
 
-    public static func makePending(target: String, netplanPid: Int32? = nil) -> HostNetworkPendingCommit {
+    public static func makePending(
+        target: String,
+        createdBridge: Bool = false,
+        netplanPid: Int32? = nil,
+    ) -> HostNetworkPendingCommit {
         HostNetworkPendingCommit(
             target: target,
             commitDeadline: Date().addingTimeInterval(TimeInterval(rollbackSeconds)),
             rollbackSeconds: rollbackSeconds,
+            createdBridge: createdBridge,
             netplanPid: netplanPid,
         )
     }

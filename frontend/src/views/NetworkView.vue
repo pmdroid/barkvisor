@@ -460,6 +460,7 @@ type PendingCommitState = {
   target: string
   commitDeadline: string
   rollbackSeconds: number
+  createdBridge: boolean
 }
 
 const pendingCommit = ref<PendingCommitState | null>(null)
@@ -506,6 +507,7 @@ function setPendingCommitFromResponse(
   nic: string,
   data: BridgeActionResponse,
   bridge?: string,
+  createdBridge = false,
 ) {
   if (!data.pendingCommit || !data.commitDeadline) {
     return
@@ -519,6 +521,7 @@ function setPendingCommitFromResponse(
     target: pendingCommitBridgeName({ target: hinted, nic }, ready),
     commitDeadline: data.commitDeadline,
     rollbackSeconds: data.rollbackSeconds ?? 30,
+    createdBridge: createdBridge || ready?.pendingCommit?.createdBridge === true,
   }
   startPendingCommitTimer()
 }
@@ -543,6 +546,7 @@ function syncPendingCommitFromReadiness(hostId: string, ready: HostBridgeReadine
     target: pendingCommitBridgeName({ target: row.target, nic }, ready),
     commitDeadline: row.commitDeadline,
     rollbackSeconds: row.rollbackSeconds,
+    createdBridge: row.createdBridge === true,
   }
   startPendingCommitTimer()
 }
@@ -581,24 +585,37 @@ async function keepPendingCommit() {
 async function autoRevertPendingCommit() {
   const pending = pendingCommit.value
   if (!pending) return
-  const row = selectedInterfaceRow.value
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
-    const path = hostBridgeRevertPath(pending.nic, device ?? undefined, pending.target)
-    const { data } = await api.delete<BridgeActionResponse>(path, {
-      data: { confirm: true, action: 'revert', interface: pending.nic, bridge: pending.target },
-    })
+    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const undo = pending.createdBridge ? 'delete' : 'revert'
+    const { data } = undo === 'delete'
+      ? await api.post<BridgeActionResponse>(path, {
+        confirm: true,
+        action: 'delete',
+        interface: pending.nic,
+        bridge: pending.target,
+      }).then((r) => r.data)
+      : await api.delete<BridgeActionResponse>(
+        hostBridgeRevertPath(pending.nic, device ?? undefined, pending.target),
+        {
+          data: {
+            confirm: true,
+            action: 'revert',
+            interface: pending.nic,
+            bridge: pending.target,
+          },
+        },
+      ).then((r) => r.data)
     clearPendingCommitState()
     if (data.success) {
       toast.info(data.message || 'Host network changes auto-reverted.')
-      if (row) {
-        await fetchHostReadiness(device)
-        await refreshInterfaceContext(row.hostId)
-      }
+      await fetchHostReadiness(device)
+      await refreshInterfaceContext(pending.hostId)
     }
   } catch {
-    toast.error('Auto-revert failed. Use Revert manually if connectivity is broken.')
+    toast.error('Auto-revert failed. The new Bridge may still be live — Delete it from Host interfaces.')
   } finally {
     linuxApplyLoading.value = false
     pendingCommitAutoRevert = false
@@ -823,16 +840,25 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         nic,
         bridge: existingBridge ?? (targets.bridge || undefined),
         confirm,
+        action: confirm ? 'apply' : 'check',
         rows: payload.rows,
         gateway: payload.gateway,
         dns: payload.dns,
       })).then((r) => r.data)
     linuxApplyResult.value = data
+    if (!confirm && action === 'apply') {
+      if (!data.success && data.message) {
+        toast.error(data.message)
+        return
+      }
+      linuxApplyConfirm.value = 'apply'
+      return
+    }
     if (data.needsConfirm && !confirm) {
       linuxApplyConfirm.value = action
       return
     }
-    if (data.pendingCommit && data.commitDeadline && (action === 'apply' || action === 'delete')) {
+    if (data.pendingCommit && data.commitDeadline && action === 'apply') {
       setPendingCommitFromResponse(row.hostId, nic, data, targetBridge)
     } else if (action === 'revert' || action === 'apply' || action === 'delete') {
       if (pendingCommit.value?.hostId === row.hostId) clearPendingCommitState()
@@ -1280,6 +1306,7 @@ async function applyCreateBridge(confirm = false) {
       nic,
       bridge,
       confirm,
+      action: confirm ? 'apply' : 'check',
       rows: createBridgeRows.value.length
         ? createBridgeRows.value
         : [{ id: 'dhcp', kind: 'dhcp', cidr: '' }],
@@ -1287,13 +1314,21 @@ async function applyCreateBridge(confirm = false) {
       dns: createBridgeDNS.value,
     }))
     linuxApplyResult.value = data
+    if (!confirm) {
+      if (!data.success && data.message) {
+        createBridgeError.value = data.message
+        return
+      }
+      linuxApplyConfirm.value = 'apply'
+      return
+    }
     if (data.needsConfirm && !confirm) {
       linuxApplyConfirm.value = 'apply'
       return
     }
     if (data.pendingCommit && data.commitDeadline) {
       const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
-      if (hostId) setPendingCommitFromResponse(hostId, nic, data, bridge)
+      if (hostId) setPendingCommitFromResponse(hostId, nic, data, bridge, true)
     }
     if (data.success) {
       const body: NetworkWriteBody = {
@@ -1868,10 +1903,11 @@ async function doDeleteNetwork() {
 
   <ConfirmDialog
     v-if="linuxApplyConfirm"
-    title="Confirm host bridge change"
-    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. After Apply you have 30 seconds to click Keep changes or the host auto-reverts.'"
-    :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete anyway' : linuxApplyConfirm === 'revert' ? 'Revert anyway' : 'Apply anyway'"
-    :danger="true"
+    :title="linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
+    :message="(linuxApplyResult?.warnings || []).join(' ') || (linuxApplyConfirm === 'apply' ? 'These changes go live for 30 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
+    :details="linuxApplyResult?.changes ?? []"
+    :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete' : linuxApplyConfirm === 'revert' ? 'Revert' : 'Apply'"
+    :danger="linuxApplyConfirm === 'delete' || linuxApplyConfirm === 'revert'"
     :loading="linuxApplyLoading"
     @confirm="confirmLinuxBridge"
     @cancel="linuxApplyConfirm = null"

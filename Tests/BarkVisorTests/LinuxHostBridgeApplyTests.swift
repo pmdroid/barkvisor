@@ -564,7 +564,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(!LinuxHostBridgeApply.createdBridgeForUplink("eth0", dataDir: dir))
     }
 
-    @Test func `live delete records keep window without touching the host`() throws {
+    @Test func `live delete is immediate without keep window`() throws {
         let recorder = RecordingLinuxHostBridgeMutator()
         let result = try LinuxHostBridgeApplyLive.run(
             request: LinuxHostBridgeApplyRequest(action: .delete, nic: "eth0", confirm: true),
@@ -572,7 +572,7 @@ struct LinuxHostBridgeApplyTests {
             mutator: recorder,
         )
         #expect(result.applied)
-        #expect(result.pendingCommit)
+        #expect(!result.pendingCommit)
         #expect(recorder.steps.contains { $0.contains("action=delete") })
         #expect(recorder.steps.contains { $0.contains("ip link del") || $0.contains("Delete br0") })
     }

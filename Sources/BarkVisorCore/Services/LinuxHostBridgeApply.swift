@@ -289,6 +289,9 @@ public enum LinuxHostBridgeApply {
           /usr/bin/networkctl reapply "$uplink" >/dev/null 2>&1 || true
         fi
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
+        if grep -q '"createdBridge"[[:space:]]*:[[:space:]]*true' \(pending) 2>/dev/null; then
+          /sbin/ip link del \(bridge) >/dev/null 2>&1 || /usr/sbin/ip link del \(bridge) >/dev/null 2>&1 || true
+        fi
         rm -f \(marker) \(pending) || true
         """
     }
@@ -981,7 +984,7 @@ extension LinuxHostBridgeApply {
             changes: changes.map(\.description),
             warnings: probe.sessionWarnings,
             commands: changes.map(\.command),
-            message: "Ready to delete owned \(request.bridge). Keep changes within \(rollbackSeconds)s or they auto-revert.",
+            message: "Ready to delete owned \(request.bridge).",
         )
     }
 

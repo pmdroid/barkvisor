@@ -230,6 +230,14 @@ import Foundation
                 changes.append("Set \(device) back to DHCP (no saved profile)")
             }
             changes.append("Strip BarkVisor markers for \(device)")
+            let undoCreate = probe.createdBridge
+                || (
+                    MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+                )
+            if undoCreate {
+                changes.append("Stop BarkVisor-managed socket_vmnet for \(device)")
+            }
             return LinuxHostBridgeApplyResult(
                 success: true,
                 applied: false,
@@ -239,9 +247,13 @@ import Foundation
                 warnings: [],
                 commands: [
                     "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
-                    "# strip host-bridge marker; never ip link del",
+                    undoCreate
+                        ? "launchctl bootout system/\(SocketVmnetLaunchd.label(interface: device))"
+                        : "# strip host-bridge marker; never ip link del",
                 ],
-                message: "Revert restores the saved Device address. socket_vmnet stays.",
+                message: undoCreate
+                    ? "Revert restores addresses and removes the new Bridge."
+                    : "Revert restores the saved Device address. socket_vmnet stays.",
             )
         }
 
@@ -294,8 +306,7 @@ import Foundation
                     "sudo networksetup -setdhcp \"\(probe.serviceName ?? "Ethernet")\"",
                     "launchctl bootout system/com.barkvisor.socket-vmnet.\(device)",
                 ],
-                message:
-                "Ready to delete owned socket_vmnet. Keep changes within \(HostNetworkPendingCommitService.rollbackSeconds)s or they auto-revert.",
+                message: "Ready to delete owned socket_vmnet.",
             )
         }
 
@@ -372,6 +383,8 @@ import Foundation
                         return plan
                     }(),
                 )
+                let createdNow = MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge) == nil
                 if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
                     let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
                     try LinuxHostBridgeApply.writeOwnerMarker(
@@ -380,7 +393,10 @@ import Foundation
                         createdBridge: created,
                     )
                 }
-                let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
+                let pending = HostNetworkPendingCommitService.makePending(
+                    target: resolved.device,
+                    createdBridge: createdNow,
+                )
                 try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
                 plan.pendingCommit = true
@@ -402,6 +418,9 @@ import Foundation
                 plan.pendingCommit = false
                 plan.message = "Kept host network changes for \(resolved.device)."
             case .revert:
+                let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
+                    || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
                     plan.changes.insert("Restored saved networksetup profile.", at: 0)
@@ -411,6 +430,13 @@ import Foundation
                         arguments: ["-setdhcp", service],
                     )
                     plan.changes.insert("Set \(service) to DHCP.", at: 0)
+                }
+                if undoCreate {
+                    _ = try? SocketVmnetApplyLive.run(
+                        request: SocketVmnetApplyRequest(action: .stop, interface: resolved.device),
+                        probe: resolved.socketProbe,
+                    )
+                    plan.changes.append("Stopped BarkVisor-managed socket_vmnet for \(resolved.device)")
                 }
                 let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
                 try? FileManager.default.removeItem(
@@ -423,7 +449,9 @@ import Foundation
                 }
                 plan.applied = true
                 plan.pendingCommit = false
-                plan.message = "Reverted BarkVisor host network files. socket_vmnet was not stopped."
+                plan.message = undoCreate
+                    ? "Reverted host network changes and removed the new Bridge."
+                    : "Reverted BarkVisor host network files. socket_vmnet was not stopped."
             case .delete:
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if try MacHostNetworkApply.revert(device: resolved.device) {
@@ -443,14 +471,9 @@ import Foundation
                 try? FileManager.default.removeItem(
                     at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
                 )
-                let pending = HostNetworkPendingCommitService.makePending(target: resolved.device)
-                try HostNetworkPendingCommitService.writeMac(pending)
                 plan.applied = true
-                plan.pendingCommit = true
-                plan.commitDeadline = pending.commitDeadline
-                plan.rollbackSeconds = pending.rollbackSeconds
-                plan.message =
-                    "Deleted owned socket_vmnet on \(resolved.device). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                plan.pendingCommit = false
+                plan.message = "Deleted owned socket_vmnet on \(resolved.device)."
             case .check, .dryRun:
                 break
             }

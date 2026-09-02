@@ -221,14 +221,16 @@ describe('Network Management', () => {
     cy.intercept('POST', '**/system/bridges', (req) => {
       expect(req.body.bridge).to.eq(bridge)
       expect(req.body.interface).to.be.a('string').and.not.be.empty
+      const checking = req.body.action === 'check'
       req.reply({
         success: true,
-        applied: true,
-        pendingCommit: true,
-        commitDeadline: new Date(Date.now() + 30_000).toISOString(),
+        applied: !checking,
+        pendingCommit: !checking,
+        commitDeadline: checking ? undefined : new Date(Date.now() + 30_000).toISOString(),
         rollbackSeconds: 30,
         target: bridge,
-        message: `Created Bridge ${bridge}.`,
+        changes: [`Create Bridge ${bridge}`],
+        message: checking ? `Ready to create Bridge ${bridge}.` : `Created Bridge ${bridge}.`,
       })
     }).as('createBridgeApply')
     cy.intercept('POST', '**/networks', (req) => {
@@ -272,8 +274,11 @@ describe('Network Management', () => {
     })
     cy.get('.modal-overlay').contains('button', 'Apply').click()
     cy.wait('@createBridgeApply')
+    cy.contains('Apply these network changes').should('be.visible')
+    cy.contains('summary', 'Changes').click()
+    cy.get('.modal-overlay').contains('button', 'Apply').click()
+    cy.wait('@createBridgeApply')
     cy.wait('@createVmNetwork')
-    cy.get('.modal-overlay').should('not.exist')
   })
 
   it('Create Bridge on macOS lists Wi-Fi en0 as a port', () => {

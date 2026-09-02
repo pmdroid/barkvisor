@@ -40,9 +40,17 @@ public enum LinuxHostBridgeApplyLive {
         #endif
         switch request.action {
         case .apply:
+            let createdNow = LinuxHostBridgeApply.createdBridge(
+                named: request.bridge,
+                existingInterfaces: resolved.existingInterfaces,
+                factsBridges: resolved.facts.bridges,
+            )
             try writer.apply(request: request, probe: resolved, plan: plan)
             plan.applied = true
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: request.bridge,
+                createdBridge: createdNow,
+            )
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
@@ -61,12 +69,8 @@ public enum LinuxHostBridgeApplyLive {
         case .delete:
             try writer.apply(request: request, probe: resolved, plan: plan)
             plan.applied = true
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
-            plan.pendingCommit = true
-            plan.commitDeadline = pending.commitDeadline
-            plan.rollbackSeconds = pending.rollbackSeconds
-            plan.message =
-                "Deleted \(request.bridge). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+            plan.pendingCommit = false
+            plan.message = "Deleted \(request.bridge)."
         case .check, .dryRun:
             break
         }
@@ -202,6 +206,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             try setuidHelpers(probe.helperPaths)
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
+                createdBridge: LinuxHostBridgeApply.createdBridge(
+                    named: request.bridge,
+                    existingInterfaces: probe.existingInterfaces,
+                    factsBridges: probe.facts.bridges,
+                ),
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
@@ -228,9 +237,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 arguments: ["link", "del", request.bridge],
                 timeout: 15,
             )
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
-            try HostNetworkPendingCommitService.writeLinux(pending)
-            try startRollbackTimer(bridge: request.bridge)
+            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
         private static var ipPath: String {

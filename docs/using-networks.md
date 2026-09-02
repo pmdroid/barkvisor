@@ -100,7 +100,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 **Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. Shared kernel bridges are never default-deleted.
 
-After Apply, the host keeps changes **pending** for 30 seconds. A modal asks you to click **Keep changes** or the host auto-reverts (netplan try / systemd timer). If the NIC carries SSH or the SPA, Apply warns and asks you to confirm **before** the uplink moves.
+Apply first shows a confirmation with collapsible change details. After Apply, changes stay **pending** for 30 seconds. A modal asks you to click **Keep changes** or they auto-revert — including tearing down a Bridge you just created. If the NIC carries SSH or the SPA, Apply warns before the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
