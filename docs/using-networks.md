@@ -51,32 +51,11 @@ The drawer keeps DHCP on. The router lease is shown and is not editable or remov
 
 ### Multi-address examples
 
-**DHCP primary + static alias** (common for a service IP alongside router DHCP):
+**DHCP primary + static alias** — the common case for a service IP alongside router DHCP: keep DHCP on, add one extra static address on the same NIC, Apply, then Keep.
 
-```json
-{
-  "interface": "eth0",
-  "addresses": [
-    { "kind": "dhcp" },
-    { "kind": "alias", "cidr": "10.0.0.2/24" }
-  ]
-}
-```
+**Static-only** (no DHCP) — used on bridges: fill in the static address plus gateway and DNS, Apply, then Keep.
 
-**Static-only** (no DHCP):
-
-```json
-{
-  "interface": "br0",
-  "addresses": [
-    { "kind": "static", "cidr": "192.168.1.10/24" }
-  ],
-  "gateway": "192.168.1.1",
-  "dns": ["1.1.1.1"]
-}
-```
-
-Use **Apply** in the drawer, or `POST /api/system/interfaces` with `"action": "check"` to preview planned diffs without changing the host.
+Use **Apply** in the drawer — it previews the plan before anything on the host changes.
 
 ### Mac vs Linux — gateway and DNS
 
@@ -101,42 +80,15 @@ Apply first shows a confirmation with collapsible change details. After Apply, c
 
 Wi-Fi is refused. ifupdown is refused.
 
-Use **Create → Bridge**, or the API (include `bridge` and `nic`):
-
-```sh
-curl -sS http://127.0.0.1:7777/api/system/bridges/next
-curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
-  -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
-curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
-  -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"commit","confirm":true}'
-curl -sS -X DELETE http://127.0.0.1:7777/api/system/interfaces/br0 \
-  -H 'Content-Type: application/json' \
-  -d '{"confirm":true,"action":"revert","interface":"<wired-uplink>","bridge":"br0"}'
-```
-
-`action: check` and `dryRun: true` preview the plan without changing the host.
+Use **Create → Bridge** in the toolbar — it walks you through NIC selection and confirmation.
 
 ### macOS (`socket_vmnet`)
 
-**Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC via `networksetup` + `ifconfig`. NAT Workloads work with bridged host networking down.
+**Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC from the same drawer. NAT Workloads work with bridged host networking down.
 
-After Apply, the same **60 second keep window** applies: the Keep modal or POST `action: commit`. If the timer expires, the Device auto-reverts.
+After Apply, the same **60 second keep window** applies: click **Keep changes** in the modal. If the timer expires, the Device auto-reverts.
 
-API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
-
-```sh
-curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
-  -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
-curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
-  -H 'Content-Type: application/json' \
-  -d '{"interface":"en0","bridge":"br0","action":"commit","confirm":true}'
-curl -sS -X DELETE http://127.0.0.1:7777/api/system/interfaces/en0 \
-  -H 'Content-Type: application/json' \
-  -d '{"confirm":true,"action":"revert","interface":"en0"}'
-```
+Automating host networking (scripts, onboarding)? The same operations live in `docs/api/openapi.yaml` under `/api/system/interfaces`.
 
 ## VM networks tab
 
