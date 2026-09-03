@@ -191,10 +191,43 @@ describe('Network Management', () => {
     cy.contains(netName).should('not.exist')
   })
 
+  function openHostInterfaceAddressDrawer() {
+    cy.get('.iface-row').should('have.length.gte', 1)
+    cy.get('.iface-row').then(($rows) => {
+      const usable = [...$rows].filter((el) => !/loopback|tailscale/i.test(el.innerText || ''))
+      const preferred = usable.filter((el) => /Uplink|Bridge/.test(el.innerText || ''))
+      const order = [...preferred, ...usable.filter((el) => !preferred.includes(el))]
+      expect(order.length, 'no Uplink/Bridge row excluding Loopback/Tailscale').to.be.greaterThan(0)
+      const pick = (i: number) => {
+        if (i >= order.length) {
+          throw new Error('No non-loopback/non-tailscale interface row showed Add address')
+        }
+        cy.wrap(order[i]).click()
+        cy.get('.iface-drawer').then(($drawer) => {
+          const text = $drawer.text()
+          if (/add address/i.test(text) && /addresses/i.test(text)) return
+          pick(i + 1)
+        })
+      }
+      pick(0)
+    })
+  }
+
   it('Host interfaces tab shows interface table and edit drawer', () => {
+    cy.intercept('GET', '**/system/host-bridge-readiness').as('hostBridgeReadiness')
+    cy.intercept('GET', '**/system/bridges/next').as('nextBridgeUnused')
+    cy.visit('/networks')
+    cy.wait('@hostBridgeReadiness').then((interception) => {
+      expect(interception.response?.statusCode).to.eq(200)
+      expect(interception.response?.body).to.have.property('suggestedBridge')
+    })
     cy.contains('[role="tab"]', 'Host interfaces').should('have.attr', 'aria-selected', 'true')
     cy.get('.iface-row').should('have.length.gte', 1)
+    openHostInterfaceAddressDrawer()
     cy.get('.iface-drawer').should('exist')
+    cy.get('.iface-drawer').contains(/addresses/i).should('exist')
+    cy.get('.iface-drawer').contains(/DHCP/).should('exist')
+    cy.get('.iface-drawer').contains('button', 'Add address').should('exist')
     cy.get('.iface-drawer').contains('button', 'Apply').should('exist')
     cy.get('.iface-drawer').contains('button', 'Revert').should('not.exist')
     cy.get('.iface-drawer').contains('button', 'Re-check').should('not.exist')
@@ -324,6 +357,7 @@ describe('Network Management', () => {
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {
+    cy.contains('.iface-row', /uplink/i).click()
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
       cy.contains('DHCP').should('exist')
@@ -331,7 +365,27 @@ describe('Network Management', () => {
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('button', 'Add address').should('exist')
+      cy.contains('button', 'Apply').should('exist')
+      cy.contains('button', 'Revert').should('exist')
+      cy.contains('button', 'Re-check').should('exist')
     })
+  })
+
+  it('loads next-free bridge and readiness over HTTP', () => {
+    cy.intercept('GET', '**/system/bridges/next').as('nextLive')
+    cy.intercept('GET', '**/system/host-bridge-readiness').as('readyLive')
+    cy.visit('/networks')
+    cy.wait('@readyLive').then((hit) => {
+      expect(hit.response?.statusCode).to.eq(200)
+      expect(hit.response?.body?.suggestedBridge).to.be.a('string')
+    })
+    cy.contains('button', 'Create').click()
+    cy.contains('button', 'Bridge').click()
+    cy.wait('@nextLive').then((hit) => {
+      expect(hit.response?.statusCode).to.eq(200)
+      expect(hit.response?.body?.bridge).to.match(/^br/)
+    })
+    cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
   it('NIC drawer edits addresses; Bridge drawer has no address fields', () => {
