@@ -23,20 +23,17 @@ The table lists each NIC on the Device:
 
 | Column | Meaning |
 |--------|---------|
+| Device | Which Device owns the NIC |
 | Interface | OS name (`en0`, `eth0`, `br0`, …) |
-| Role | uplink, bridge, external, … |
+| Role | uplink, bridge, tailscale, … |
+| Link | link state when known |
 | Addresses (live) | DHCP + static aliases read from the host |
 | Bridge | bridge membership / readiness |
 | Route | default route when relevant |
 
-Toolbar **Create → Bridge** opens the create modal:
+The toolbar **Create** button opens a menu with **Bridge**. The create modal suggests the next-free `brN` (editable) and enslaves one unused NIC — Linux refuses Wi-Fi, macOS allows `en0` (Wi-Fi).
 
-| Field | Meaning |
-|-------|---------|
-| Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
-| Port | One unused NIC. Linux refuses Wi-Fi. macOS allows `en0` (Wi-Fi). |
-
-Apply always adds a bridged Workload network with `network.bridge = brN`. Same confirm and 60 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+Apply creates the host bridge and wires a bridged Workload network (`network.bridge = brN`) to it. Same confirm and 60 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
 
 Select a row to open the **edit drawer** below the table.
 

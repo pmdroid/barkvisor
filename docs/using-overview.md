@@ -25,7 +25,7 @@ Details live in [First launch](getting-started-first-launch.md) and [Home and pa
 Around every page sit four shared pieces of chrome:
 
 - **Sidebar** — the navigation listed below. On small screens it collapses behind a hamburger button.
-- **Device scope selector** — above the nav, "…scope" switches between **All** (the union of the Home) and one Device. List pages filter to that scope. Creating a VM keeps its own placement picker regardless.
+- **Device scope selector** — at the top of the sidebar, "…scope" switches between **All** (the union of the Home) and one Device. List pages filter to that scope. Creating a VM keeps its own placement picker regardless.
 - **Ops ticker** — the strip above the content shows live counts of running, failed, stopped, and unreachable Workloads/Devices, with a pulsing dot on problems and a **Live** marker on the right.
 - **Bottom of the sidebar** — a **Light/Dark mode** toggle and **Logout**.
 

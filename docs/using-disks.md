@@ -10,13 +10,12 @@ Storage cards show each Device's disk usage; unreachable Devices render as unrea
 
 ## Create Disk
 
-**Create Disk** opens a modal with:
+**Create Disk** opens a modal ("Saved on this Device…") with:
 
 - Name
-- Block device (Linux only — attach a host block device as raw)
-- Size in GB
+- Block device (attach a host block device as raw; only offered when available)
+- Size (GB)
 - Format
-- Location (defaults to the Device's default VM disk directory)
 
 Linux block-device notes:
 
@@ -36,9 +35,9 @@ Linux block-device notes:
 | Used | On-disk size (qcow2 sparse) with bar |
 | VM | Attached Workload, if any |
 | Resize | Grow in place |
-| Delete | Remove after confirmation |
+| Delete | Remove after confirmation (hidden while a Workload uses the disk) |
 
-New Workloads get their disks here by default; change the default on the [Device](using-devices.md) page.
+New disks on a Device go to that Device's default disk directory unless Create Disk picks another folder — see the disk directory on the [Device](using-devices.md) page.
 
 ## Related
 

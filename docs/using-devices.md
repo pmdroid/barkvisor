@@ -12,20 +12,20 @@ Each Device renders as a card with:
 - Temperature and storage readings
 - Reachability and workload totals in the header
 
-Cards poll every 5 seconds, so state changes show up without a reload. Clicking a card opens the Device detail view.
+Cards refresh automatically, so state changes show up without a reload. Clicking a card opens the Device detail view.
 
 ## Adding a Device
 
-**Add a {Device}** in the toolbar jumps to **Settings → Pairing**, where you issue the pairing offer. The flow is documented in [Home and pairing](home-and-pairing.md).
+**Add a Device** in the toolbar jumps to **Settings → Pairing**, where you issue the pairing offer. The flow is documented in [Home and pairing](home-and-pairing.md).
 
 ## Device detail
 
 The detail page for one Device has:
 
-- A **reachability pill** and a `platform · role` subtitle next to the name
-- Stat cards **CPU**, **Memory**, and **GPU** with sparklines
-- A **Facts** sheet — OS, Role, CPU, Memory, Storage, Temperature, Address, Uptime, Virtualization support, Agent version
-- A **Workloads** table (Name, OS, CPU·Memory, Ports, Status) with per-row **Start / Stop / Restart** actions and a confirmation dialog before stopping
+- A **reachability pill** and a `platform · hostArch` subtitle next to the name (member Devices are labeled **Member**)
+- Stat cards **CPU** and **Memory** with sparklines, plus a GPU section
+- A **Facts** sheet — CPU, Memory, Storage, Temperature, Address, Uptime, Virtualization support
+- A **Workloads** table (Name, OS, CPU · Mem, Ports, Status) with per-row **Start** / **Stop** buttons and **Restart**, and a confirmation dialog before stopping (**Shutdown** vs **Force Stop**)
 - A **failed-workload banner** with an inline **Start** button when something did not survive a reboot
 - **Create VM** to place a new Workload directly on this Device
 - **Disk directory** — default path for new VM disks on this Device (**Browse**, **Save**, **Reset to default**)

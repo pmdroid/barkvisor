@@ -40,7 +40,7 @@ A pulled model can only run on a Device that already has it.
 - Several reachable Devices have it: picker lists only those Devices. Always a real Device, never “Any reachable Device.”
 - No reachable location: Start is disabled (not on this Device, or only on unreachable Devices).
 
-**Stop** uses the Device that is running the model and does not ask.
+**Stop** uses the Device that is running the model and asks for confirmation first.
 
 ## Completions
 

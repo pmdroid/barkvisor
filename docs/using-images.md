@@ -10,14 +10,14 @@ The capacity bar shows used/free space for the Library path's volume. That volum
 
 ## Upload and download
 
-- **Upload** opens a split-rail wizard modal: pick a file (or paste a URL), review name/arch, and confirm. Archives are decompressed automatically.
-- **Download** pulls an image from a URL. Catalog images land through [Create VM](create-workload.md); catalog URLs live under [Settings → Repositories](settings-repositories.md).
+- **Upload** opens a File → Identity rail modal: pick a file, review name/arch, and confirm. Accepted archives include `.xz` / `.gz`.
+- **Download** pulls an image from a URL (paste the URL in the Download modal). Catalog images land through [Create VM](create-workload.md); catalog URLs live under [Settings → Repositories](settings-repositories.md).
 
 Catalog downloads follow this Device's architecture by default; you can still download the other arch when it will deploy on a matching Device.
 
 ## The table
 
-Name · Type · Arch · Size · Status, with a delete action per row. Deleting frees library space but breaks nothing that already booted from it.
+Name · Type · Arch · Size · Location · Status, with a delete action per row. Deleting frees library space but breaks nothing that already booted from it.
 
 ## Related
 

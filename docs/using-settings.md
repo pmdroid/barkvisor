@@ -20,7 +20,7 @@ Settings is admin-only; the **inference** role does not see it.
 
 ## Deep links
 
-Tabs are addressable with `?tab=` using the ids `home`, `pairing`, `library`, `repositories`, `updates`, `apikeys`, `sshkeys`, `passkeys`, `audit`. Example: `/settings?tab=updates`. Several pages in this app (like **Add a {Device}**) link straight into a tab that way. Without a query you land on **API Keys**, the default tab. `/registry` redirects here at `?tab=repositories`. `/settings?tab=disks` redirects to **Devices**; the default VM disk directory is on the Device page.
+Tabs are addressable with `?tab=` using the ids `home`, `pairing`, `library`, `repositories`, `updates`, `apikeys`, `sshkeys`, `passkeys`, `audit`. Example: `/settings?tab=updates`. Several pages in this app (like **Add a Device**) link straight into a tab that way. Without a query you land on **API Keys**, the default tab. `/registry` redirects here at `?tab=repositories`. `/settings?tab=disks` redirects to **Devices**; the default VM disk directory is on the Device page.
 
 ## Related
 
