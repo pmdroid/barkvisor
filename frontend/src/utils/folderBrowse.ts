@@ -40,3 +40,17 @@ export function asFolderEntries(data: unknown): FolderEntry[] {
 export function folderHasRealEntries(entries: FolderEntry[]): boolean {
   return entries.some((row) => row.name !== '..')
 }
+
+export function folderParentBrowsePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, '')
+  if (!trimmed || trimmed === '/') return ''
+  const slash = trimmed.lastIndexOf('/')
+  if (slash <= 0) return ''
+  return trimmed.slice(0, slash)
+}
+
+export function withFolderParentEntry(entries: FolderEntry[], currentPath: string): FolderEntry[] {
+  if (!currentPath) return entries
+  if (entries.some((row) => row.name === '..')) return entries
+  return [{ name: '..', path: folderParentBrowsePath(currentPath), isDirectory: true }, ...entries]
+}

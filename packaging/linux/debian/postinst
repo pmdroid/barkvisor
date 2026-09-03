@@ -13,6 +13,9 @@ case "$1" in
     if getent group kvm >/dev/null 2>&1; then
       usermod -aG kvm barkvisor 2>/dev/null || true
     fi
+    if getent group vfio >/dev/null 2>&1; then
+      usermod -aG vfio barkvisor 2>/dev/null || true
+    fi
     if getent group disk >/dev/null 2>&1; then
       usermod -aG disk barkvisor 2>/dev/null || true
       for unit in barkvisor.service barkvisor-agent.service; do
@@ -25,6 +28,10 @@ case "$1" in
     # Apply writes /etc/qemu/bridge.conf. The dir must exist before the unit
     # starts or systemd ignores ReadWritePaths=-/etc/qemu (ProtectSystem=strict).
     install -d -m 0755 /etc/qemu
+    if command -v udevadm >/dev/null 2>&1; then
+      udevadm control --reload || true
+      udevadm trigger --subsystem-match=vfio || true
+    fi
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true
       if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then

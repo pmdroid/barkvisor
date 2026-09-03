@@ -43,7 +43,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         material: HomeCertificateMaterial,
         presentationCertificatePEM: String? = nil,
         trustCertificatePEMs: [String] = [],
-        timeoutSeconds: Int64 = 30,
+        timeoutSeconds: Int64 = HomeDeviceProxy.hopTimeoutSeconds,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM

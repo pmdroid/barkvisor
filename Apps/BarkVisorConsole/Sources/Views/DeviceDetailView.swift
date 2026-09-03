@@ -381,7 +381,7 @@ private struct DiskDirectorySection: View {
         }
         #if os(iOS)
             .sheet(isPresented: $showFolderPicker) {
-                FolderPickerView(device: device) { path in
+                FolderPickerView(device: device, initialPath: draft) { path in
                     draft = path
                 }
             }

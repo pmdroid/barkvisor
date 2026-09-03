@@ -155,6 +155,7 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain("api.put<RemoteAccessStatus>('/home/settings/remote-access'")
     expect(settings).toContain('deviceUrl')
     expect(settings).toContain('formatDeviceURL')
+    expect(settings).toContain('formatDeviceURL(host)')
     expect(settings).not.toContain('http://${formatListenHost(host)}:7777')
     expect(settings).not.toContain('requireTailnet')
     expect(settings).not.toContain('advertiseUrl')

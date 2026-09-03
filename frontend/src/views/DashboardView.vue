@@ -167,14 +167,21 @@ function openDevice(row: HomeDeviceHealthSnapshot) {
   router.push({ name: 'device-detail', params: { hostId: row.hostId } })
 }
 
+let homeRefreshInFlight = false
 async function refreshHomeWorkloads() {
-  await devices.fetchHealth().catch(() => {})
-  const list = devices.devices
-  if (list.length === 0) {
-    await store.fetchAll()
-    return
+  if (homeRefreshInFlight) return
+  homeRefreshInFlight = true
+  try {
+    await devices.fetchHealth().catch(() => {})
+    const list = devices.devices
+    if (list.length === 0) {
+      await store.fetchAll()
+      return
+    }
+    await homeWorkloads.fetchHomeAll(list)
+  } finally {
+    homeRefreshInFlight = false
   }
-  await homeWorkloads.fetchHomeAll(list)
 }
 
 let pollTimer: number

@@ -121,14 +121,11 @@ enum InferenceAPIHowTo {
         advertiseHost: String? = nil,
         tailnetHost: String? = nil,
     ) -> String {
-        if !preferredListenHost(advertiseHost: advertiseHost, tailnetHost: tailnetHost).isEmpty {
-            let host = formatListenHost(lanListenHost(
-                role: role,
-                originHost: originHost,
-                memberHost: memberHost,
-                advertiseHost: advertiseHost,
-                tailnetHost: tailnetHost,
-            ))
+        let preferred = preferredListenHost(advertiseHost: advertiseHost, tailnetHost: tailnetHost)
+        if !preferred.isEmpty {
+            let formatted = DeviceURL.formatHomeDeviceURL(preferred)
+            if !formatted.isEmpty { return formatted }
+            let host = formatListenHost(preferred)
             let resolvedHost = host.isEmpty ? "127.0.0.1" : host
             return "http://\(resolvedHost):\(listenPort)"
         }

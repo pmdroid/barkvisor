@@ -1645,7 +1645,7 @@ async function doDeleteNetwork() {
 
   <div
     class="ops-body"
-    :class="{ split: activeTab === 'vm' && (homeRows.length > 0 || pendingBridges.length > 0) }"
+    :class="{ 'net-vm-body': activeTab === 'vm' && (homeRows.length > 0 || pendingBridges.length > 0) }"
   >
 
   <template v-if="activeTab === 'interfaces'">
@@ -1764,6 +1764,7 @@ async function doDeleteNetwork() {
     Device addresses (NICs, DHCP, gateways) are on the Host interfaces tab.
   </p>
   <template v-if="homeRows.length > 0 || pendingBridges.length > 0">
+  <div class="net-vm-split">
   <section class="list-col">
     <div class="ops-sec-head"><h3>Workload networks</h3><span class="n">{{ homeRows.length + pendingBridges.length }}</span></div>
     <div class="list-scroll">
@@ -1875,6 +1876,7 @@ async function doDeleteNetwork() {
     </div>
   </section>
 
+  </div>
   </template>
 
   <template v-else>
@@ -2075,6 +2077,24 @@ async function doDeleteNetwork() {
 </template>
 
 <style scoped>
+.ops-body.net-vm-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.net-vm-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+  overflow: hidden;
+}
+@media (max-width: 900px) {
+  .net-vm-split {
+    flex-direction: column;
+    overflow: auto;
+  }
+}
 .host-net-working {
   position: fixed;
   inset: 0;

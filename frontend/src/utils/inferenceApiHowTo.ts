@@ -128,9 +128,9 @@ export function lanListenPort(input: InferenceHowToInput): number {
 }
 
 export function lanOrigin(input: InferenceHowToInput): string {
-  if (preferredListenHost(input)) {
-    const host = formatListenHost(lanListenHost(input) || '127.0.0.1')
-    return `http://${host}:${HOME_LISTEN_PORT}`
+  const preferred = preferredListenHost(input)
+  if (preferred) {
+    return formatDeviceURL(preferred) || `http://${formatListenHost(preferred)}:${HOME_LISTEN_PORT}`
   }
   const memberDirect = Boolean(stripListenHost(input.memberHost ?? '')) && input.role === 'member'
   const rawScheme = memberDirect

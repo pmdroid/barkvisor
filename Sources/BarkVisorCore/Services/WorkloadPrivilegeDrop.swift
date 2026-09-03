@@ -214,4 +214,31 @@ public enum WorkloadPrivilegeDrop {
     private static func firstExistingWrapper(_ path: String) -> String? {
         FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
+
+    public static func canOpenVFIONode(mode: UInt16, groupName: String, userGroups: [String]) -> Bool {
+        let bits = mode & 0o777
+        if bits & 0o006 == 0o006 { return true }
+        if bits & 0o060 == 0o060, userGroups.contains(groupName) { return true }
+        return false
+    }
+
+    public static func vfioGroupNodesOpenable(nodes: [VFIOGroupNode], userGroups: [String]) -> Bool? {
+        let groups = nodes.filter { $0.name != "vfio" && $0.name.allSatisfy(\.isNumber) }
+        if groups.isEmpty { return nil }
+        return groups.allSatisfy {
+            canOpenVFIONode(mode: $0.mode, groupName: $0.groupName, userGroups: userGroups)
+        }
+    }
+}
+
+public struct VFIOGroupNode: Sendable, Equatable {
+    public var name: String
+    public var mode: UInt16
+    public var groupName: String
+
+    public init(name: String, mode: UInt16, groupName: String) {
+        self.name = name
+        self.mode = mode
+        self.groupName = groupName
+    }
 }

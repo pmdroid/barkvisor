@@ -9,6 +9,8 @@ import NIOSSL
 /// a failed member must not affect local SQLite / QEMU.
 public enum HomeDeviceProxy {
     public static let maxBodyBytes = 10_485_760
+    public static let hopTimeoutSeconds: Int64 = 2
+    public static let healthProbeBudgetNanoseconds: UInt64 = 2_500_000_000
 
     public static func memberAPIPath(components: [String]) throws -> String {
         guard !components.isEmpty else {

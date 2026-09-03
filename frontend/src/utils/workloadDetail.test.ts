@@ -105,6 +105,17 @@ describe('member detail role (PAS-202)', () => {
     expect(view).toContain('!memberDevice.value')
   })
 
+  test('VMDetailView hops member delete through homeWorkloads and deviceTaskPath', () => {
+    const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const deleteFn = view.slice(
+      view.indexOf('async function deleteVM()'),
+      view.indexOf('async function addSharedPath'),
+    )
+    expect(deleteFn).toContain('homeWorkloads.remove')
+    expect(deleteFn).toContain('deviceTaskPath')
+    expect(deleteFn).toContain('homeWorkloads.refreshOne')
+  })
+
   test('VMDetailView has no Recent events sheet or events fetch', () => {
     const view = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
     expect(view).not.toContain('Recent events')

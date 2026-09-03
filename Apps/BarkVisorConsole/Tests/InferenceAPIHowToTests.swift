@@ -125,8 +125,7 @@ struct InferenceAPIHowToTests {
             advertiseHost: "https://box.ts.net:443",
             tailnetHost: "box.tailnet.ts.net",
         )
-        #expect(advertised.lanBaseURL == "http://box.ts.net:7777/v1")
-        #expect(!advertised.lanBaseURL.contains("https://"))
+        #expect(advertised.lanBaseURL == "https://box.ts.net/v1")
         #expect(!advertised.lanCompletionsURL.contains(":443"))
         #expect(advertised.cageBaseURL == "http://10.0.2.2:11434/v1")
         #expect(!advertised.env.contains(":11434"))

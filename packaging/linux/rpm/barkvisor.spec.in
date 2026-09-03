@@ -38,6 +38,7 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 /usr/local/lib/barkvisor
 /usr/lib/systemd/system/barkvisor.service
 /usr/lib/systemd/system/barkvisor-agent.service
+/usr/lib/udev/rules.d/99-barkvisor-vfio.rules
 %config(noreplace) /etc/barkvisor/barkvisor.env
 %dir /etc/qemu
 
@@ -46,6 +47,7 @@ getent passwd barkvisor >/dev/null 2>&1 || \
   useradd --system --home /var/lib/barkvisor --shell /sbin/nologin barkvisor 2>/dev/null || \
   useradd --system --home /var/lib/barkvisor --shell /bin/false barkvisor
 getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
+getent group vfio >/dev/null 2>&1 && usermod -aG vfio barkvisor 2>/dev/null || true
 getent group disk >/dev/null 2>&1 && usermod -aG disk barkvisor 2>/dev/null || true
 exit 0
 
@@ -58,6 +60,10 @@ if getent group disk >/dev/null 2>&1; then
     printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
       >/etc/systemd/system/${unit}.d/disk.conf
   done
+fi
+if command -v udevadm >/dev/null 2>&1; then
+  udevadm control --reload || true
+  udevadm trigger --subsystem-match=vfio || true
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true

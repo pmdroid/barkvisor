@@ -339,6 +339,34 @@ struct HomeDevicesControllerTests {
         #expect(transportFacts.resources?.cpuCount == 2)
     }
 
+    @Test func `healthReport budget times out a hung member and keeps this Device`() async throws {
+        let dir = try isolatedDir("health-budget")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hungId = "hung-peer"
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "this-device"),
+            HomeDevice(hostId: hungId, role: "member", agentHost: "10.0.0.11", agentPort: 7_778),
+        ])
+        let client = RecordingProxyClient()
+        client.hang(host: "10.0.0.11", port: 7_778, path: "/api/agent/inventory")
+        let report = await controller(dir: dir, hostId: "self", mtlsClient: client).healthReport(
+            listed: listed,
+            local: localFacts(running: 1),
+            bearer: nil,
+            probeBudgetNanoseconds: 50_000_000,
+        )
+        let selfRow = try #require(report.devices.first { $0.role == "self" })
+        #expect(selfRow.hostId == "self")
+        #expect(selfRow.reachability == HomeDeviceHealthAggregator.ok)
+        #expect(selfRow.workloadCount == 1)
+        let hung = try #require(report.devices.first { $0.hostId == hungId })
+        #expect(hung.reachability == HomeDeviceHealthAggregator.connectTimeout)
+        #expect(hung.reachabilityError == HomeDeviceProxyError.connectTimeout.localizedDescription)
+        #expect(hung.reachability != HomeDeviceHealthAggregator.ok)
+        #expect(HomeDeviceProxy.hopTimeoutSeconds == 2)
+        #expect(HomeDeviceProxy.healthProbeBudgetNanoseconds == 2_500_000_000)
+    }
+
     @Test func `connect timeout and member 5xx are not sold as Device offline`() async throws {
         let dir = try isolatedDir("hop-codes")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -529,6 +557,7 @@ private final class RecordingProxyClient: HomeDeviceProxyClient, @unchecked Send
     private let lock = NSLock()
     private var _calls: [Call] = []
     private var responses: [String: Result<HomeDeviceProxyResponse, Error>] = [:]
+    private var hangs: Set<String> = []
 
     var calls: [Call] {
         lock.lock()
@@ -550,8 +579,21 @@ private final class RecordingProxyClient: HomeDeviceProxyClient, @unchecked Send
         responses[key(host: host, port: port, path: path)] = .failure(error)
     }
 
+    func hang(host: String, port: Int, path: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        hangs.insert(key(host: host, port: port, path: path))
+    }
+
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
-        switch record(request) {
+        let recorded = record(request)
+        if recorded.hang {
+            while !Task.isCancelled {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            throw CancellationError()
+        }
+        switch recorded.response {
         case let .success(response):
             return response
         case let .failure(error):
@@ -561,11 +603,14 @@ private final class RecordingProxyClient: HomeDeviceProxyClient, @unchecked Send
         }
     }
 
-    private func record(_ request: HomeDeviceProxyRequest) -> Result<HomeDeviceProxyResponse, Error>? {
+    private func record(
+        _ request: HomeDeviceProxyRequest,
+    ) -> (response: Result<HomeDeviceProxyResponse, Error>?, hang: Bool) {
         lock.lock()
         defer { lock.unlock() }
         _calls.append(Call(method: request.method, url: request.url, headers: request.headers))
-        return responses[key(url: request.url)]
+        let pathKey = key(url: request.url)
+        return (responses[pathKey], hangs.contains(pathKey))
     }
 
     private func key(host: String, port: Int, path: String) -> String {

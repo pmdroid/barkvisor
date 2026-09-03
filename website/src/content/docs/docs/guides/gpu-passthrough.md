@@ -55,6 +55,8 @@ Do not bind vendor:device ids yourself. BarkVisor binds `vfio-pci` when the Work
 
 If `/dev/kvm` is missing, install `qemu-kvm`, add the service user to group `kvm`, or enable nested virtualization.
 
+The package installs a udev rule so dropped QEMU (group `kvm`) can open `/dev/vfio/*`.
+
 ## Verify groups
 
 ```sh

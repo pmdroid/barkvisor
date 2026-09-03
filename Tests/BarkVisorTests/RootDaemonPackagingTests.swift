@@ -99,6 +99,18 @@ struct RootDaemonPackagingTests {
         #expect(prerm.contains("systemctl stop barkvisor.service"))
     }
 
+    @Test func `linux packaging installs vfio udev rule and drop-user groups`() throws {
+        let rules = try read("packaging/linux/udev/99-barkvisor-vfio.rules")
+        #expect(rules == "SUBSYSTEM==\"vfio\", GROUP=\"kvm\", MODE=\"0660\"\n")
+
+        let stage = try read("scripts/lib/linux-package-stage.sh")
+        #expect(stage.contains("/usr/lib/udev/rules.d/99-barkvisor-vfio.rules"))
+
+        let postinst = try read("packaging/linux/debian/postinst")
+        #expect(postinst.contains("usermod -aG vfio barkvisor"))
+        #expect(postinst.contains("udevadm trigger --subsystem-match=vfio"))
+    }
+
     @Test func `macos appliance plist is root without _barkvisor`() throws {
         let plist = try read("Resources/dev.barkvisor.plist")
         #expect(!plist.contains("<key>UserName</key>"))

@@ -10,6 +10,7 @@ Each row is a source:
 
 - Name, type (`images` or `templates`), and the catalog URL
 - Sync status per Device on built-in catalogs — idle, syncing, synced, or error, including `lastError`
+- Last synced timestamp under each status badge (or `never` if the catalog has not synced)
 - **Sync** pulls the catalog on Home and fans out to reachable members
 - **Remove** on sources you added (built-in catalogs stay)
 

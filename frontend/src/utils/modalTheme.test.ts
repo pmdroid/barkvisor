@@ -25,7 +25,8 @@ describe('modal light mode', () => {
     expect(text).toContain('apiErrorMessage')
     expect(text).toContain('modal-overlay stack')
     expect(text).toContain('folderBrowseRequestPath')
-    expect(text).toContain('browse(\'\')')
+    expect(text).toContain('modelValue')
+    expect(text).toContain('withFolderParentEntry')
   })
 
   test('log stream uses theme term tokens, not a hardcoded dark pane', () => {

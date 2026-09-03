@@ -79,6 +79,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var hostBridge: HostBridgeReadiness
     public var suggestedBridgeAddress: String?
     public var macSocketServiceRunning: Bool
+    public var vfioPresent: Bool
+    public var vfioNodesOpenable: Bool?
 
     public init(
         os: String,
@@ -95,6 +97,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
         hostBridge: HostBridgeReadiness,
         suggestedBridgeAddress: String? = nil,
         macSocketServiceRunning: Bool = false,
+        vfioPresent: Bool = false,
+        vfioNodesOpenable: Bool? = nil,
     ) {
         self.os = os
         self.uid = uid
@@ -110,6 +114,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.hostBridge = hostBridge
         self.suggestedBridgeAddress = suggestedBridgeAddress
         self.macSocketServiceRunning = macSocketServiceRunning
+        self.vfioPresent = vfioPresent
+        self.vfioNodesOpenable = vfioNodesOpenable
     }
 }
 
@@ -133,6 +139,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         let address = HostInfoService.listInterfaces()
             .first { $0.name == suggested }?.ipAddress
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let vfio = Self.vfioFacts()
         return DoctorFactInputs(
             os: PlatformHost.platformName,
             uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(geteuid())),
@@ -148,7 +155,80 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             hostBridge: facts.readiness,
             suggestedBridgeAddress: trimmed.isEmpty ? nil : trimmed,
             macSocketServiceRunning: processes.contains { $0.command.contains("socket_vmnet") },
+            vfioPresent: vfio.present,
+            vfioNodesOpenable: vfio.openable,
         )
+    }
+
+    static func vfioFacts() -> (present: Bool, openable: Bool?) {
+        let present = FileManager.default.fileExists(atPath: "/dev/vfio/vfio")
+        guard present else { return (false, nil) }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/vfio")) ?? []
+        var nodes: [VFIOGroupNode] = []
+        for name in entries {
+            if name == "vfio" { continue }
+            let path = "/dev/vfio/\(name)"
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+                  let modeNum = attrs[.posixPermissions] as? NSNumber
+            else { continue }
+            let gid = gid_t((attrs[.groupOwnerAccountID] as? NSNumber)?.uint32Value ?? 0)
+            let groupName = Self.groupName(gid: gid)
+                ?? (attrs[.groupOwnerAccountName] as? String)
+                ?? String(gid)
+            nodes.append(VFIOGroupNode(name: name, mode: modeNum.uint16Value, groupName: groupName))
+        }
+        return (true, WorkloadPrivilegeDrop.vfioGroupNodesOpenable(
+            nodes: nodes,
+            userGroups: Self.dropUserGroupNames(),
+        ))
+    }
+
+    static func dropUserGroupNames() -> [String] {
+        unixGroupNames(forUser: dropUserName())
+    }
+
+    static func dropUserName() -> String {
+        for name in WorkloadPrivilegeDrop.preferredUsers {
+            if name.withCString({ getpwnam($0) != nil }) {
+                return name
+            }
+        }
+        return NSUserName()
+    }
+
+    static func groupName(gid: gid_t) -> String? {
+        guard let gr = getgrgid(gid) else { return nil }
+        return String(cString: gr.pointee.gr_name)
+    }
+
+    static func unixGroupNames(forUser name: String) -> [String] {
+        name.withCString { ptr in
+            guard let pw = getpwnam(ptr) else { return [] }
+            let base = pw.pointee.pw_gid
+            #if canImport(Darwin)
+                var count: Int32 = 32
+                var gids = [Int32](repeating: 0, count: Int(count))
+                var rc = getgrouplist(ptr, Int32(base), &gids, &count)
+                if rc < 0 {
+                    gids = [Int32](repeating: 0, count: max(Int(count), 1))
+                    rc = getgrouplist(ptr, Int32(base), &gids, &count)
+                }
+                guard rc >= 0 else { return [] }
+                return gids.prefix(Int(count)).compactMap { gid in
+                    groupName(gid: gid_t(UInt32(bitPattern: gid)))
+                }
+            #else
+                var count: Int32 = 32
+                var gids = [gid_t](repeating: 0, count: Int(count))
+                var rc = getgrouplist(ptr, base, &gids, &count)
+                if rc < 0 {
+                    gids = [gid_t](repeating: 0, count: max(Int(count), 1))
+                    rc = getgrouplist(ptr, base, &gids, &count)
+                }
+                guard rc >= 0 else { return [] }
+                return gids.prefix(Int(count)).compactMap { groupName(gid: $0) }
+            #endif
+        }
     }
 }
 
@@ -189,6 +269,7 @@ public enum DoctorService {
             qemuCheck(inputs),
             qemuProcessCheck(inputs),
             kvmCheck(inputs),
+            vfioDropCheck(inputs),
             swtpmCheck(inputs),
             healthCheck(inputs),
             linuxBridgeCheck(inputs, privileged: privileged),
@@ -301,6 +382,42 @@ public enum DoctorService {
             )
         }
         return DoctorCheck(id: "kvm", status: .ok, detail: "/dev/kvm is present.")
+    }
+
+    private static func vfioDropCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if !isLinux(inputs.os) {
+            return DoctorCheck(
+                id: "vfio-drop",
+                status: .skip,
+                detail: "Not used on \(inputs.os) (no VFIO).",
+            )
+        }
+        if !inputs.vfioPresent {
+            return DoctorCheck(
+                id: "vfio-drop",
+                status: .skip,
+                detail: "/dev/vfio/vfio is missing.",
+            )
+        }
+        if inputs.vfioNodesOpenable == false {
+            return DoctorCheck(
+                id: "vfio-drop",
+                status: inputs.uid == 0 ? .fail : .warn,
+                detail: "dropped QEMU cannot open /dev/vfio group nodes.",
+            )
+        }
+        if inputs.vfioNodesOpenable == true {
+            return DoctorCheck(
+                id: "vfio-drop",
+                status: .ok,
+                detail: "/dev/vfio group nodes are openable by the drop user.",
+            )
+        }
+        return DoctorCheck(
+            id: "vfio-drop",
+            status: .ok,
+            detail: "/dev/vfio is present; no group nodes yet.",
+        )
     }
 
     private static func swtpmCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {

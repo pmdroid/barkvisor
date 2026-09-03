@@ -100,20 +100,52 @@ struct HomeDevicesController: RouteCollection {
         listed: HomeDeviceList,
         local: HomeDeviceLiveFacts,
         bearer: String?,
+        probeBudgetNanoseconds: UInt64 = HomeDeviceProxy.healthProbeBudgetNanoseconds,
     ) async -> HomeDeviceHealthReport {
         let members = listed.devices.filter { $0.role != "self" }
+        let probed = await collectMemberProbes(
+            members: members,
+            bearer: bearer,
+            budgetNanoseconds: probeBudgetNanoseconds,
+        )
+        return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
+    }
+
+    func collectMemberProbes(
+        members: [HomeDevice],
+        bearer: String?,
+        budgetNanoseconds: UInt64,
+    ) async -> [String: HomeDeviceProbeOutcome] {
         var probed: [String: HomeDeviceProbeOutcome] = [:]
-        await withTaskGroup(of: (String, HomeDeviceProbeOutcome).self) { group in
+        guard !members.isEmpty else { return probed }
+        await withTaskGroup(of: (String, HomeDeviceProbeOutcome)?.self) { group in
             for device in members {
                 group.addTask {
-                    await (device.hostId, self.probeMember(device, bearer: bearer))
+                    await Optional((device.hostId, self.probeMember(device, bearer: bearer)))
                 }
             }
-            for await (id, result) in group {
-                probed[id] = result
+            group.addTask {
+                try? await Task.sleep(nanoseconds: budgetNanoseconds)
+                return nil
+            }
+            var expired = false
+            for await item in group {
+                guard let (id, outcome) = item else {
+                    expired = true
+                    group.cancelAll()
+                    continue
+                }
+                if expired { continue }
+                probed[id] = outcome
+                if probed.count == members.count {
+                    group.cancelAll()
+                }
             }
         }
-        return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
+        for device in members where probed[device.hostId] == nil {
+            probed[device.hostId] = .failed(.connectTimeout)
+        }
+        return probed
     }
 
     private func listedDevices(db: DatabasePool) async throws -> HomeDeviceList {
@@ -365,12 +397,12 @@ struct HomeDevicesController: RouteCollection {
             return .unreachable("Device address is not reachable")
         }
         do {
-            let inventoryData = try await getJSON(url: inventoryURL, client: client, bearer: bearer)
-            let inventory = try HomeDeviceHealthAggregator.decodeInventory(inventoryData)
-            let summary = await loadMemberHealthSummary(
+            async let inventoryData = getJSON(url: inventoryURL, client: client, bearer: bearer)
+            async let summary = loadMemberHealthSummary(
                 url: summaryURL, client: client, bearer: bearer, hostId: device.hostId,
             )
-            return .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
+            let inventory = try await HomeDeviceHealthAggregator.decodeInventory(inventoryData)
+            return await .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
         } catch {
             return .failed(HomeDeviceProxyError.classify(error))
         }
