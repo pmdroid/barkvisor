@@ -48,6 +48,8 @@ struct DoctorServiceTests {
         hostBridge: HostBridgeReadiness? = nil,
         suggestedBridgeAddress: String? = "192.168.1.2",
         macSocketServiceRunning: Bool = false,
+        vfioPresent: Bool = false,
+        vfioNodesOpenable: Bool? = nil,
     ) -> DoctorFactInputs {
         DoctorFactInputs(
             os: os,
@@ -64,6 +66,8 @@ struct DoctorServiceTests {
             hostBridge: hostBridge ?? linuxReady(),
             suggestedBridgeAddress: suggestedBridgeAddress,
             macSocketServiceRunning: macSocketServiceRunning,
+            vfioPresent: vfioPresent,
+            vfioNodesOpenable: vfioNodesOpenable,
         )
     }
 
@@ -225,6 +229,53 @@ struct DoctorServiceTests {
     @Test func `linux skips socket_vmnet check`() {
         let report = DoctorService.assemble(from: inputs(os: "Linux"))
         #expect(check(report, "macos-socket-vmnet").status == .skip)
+    }
+
+    @Test func `linux missing vfio skips vfio-drop`() {
+        let report = DoctorService.assemble(from: inputs(vfioPresent: false))
+        #expect(check(report, "vfio-drop").status == .skip)
+        #expect(report.ok)
+    }
+
+    @Test func `linux vfio nodes not openable fails when privileged`() {
+        let report = DoctorService.assemble(from: inputs(
+            uid: 0,
+            vfioPresent: true,
+            vfioNodesOpenable: false,
+        ))
+        #expect(check(report, "vfio-drop").status == .fail)
+        #expect(!report.ok)
+    }
+
+    @Test func `linux vfio nodes not openable warns when unprivileged`() {
+        let report = DoctorService.assemble(from: inputs(
+            uid: 501,
+            vfioPresent: true,
+            vfioNodesOpenable: false,
+        ))
+        #expect(check(report, "vfio-drop").status == .warn)
+        #expect(report.ok)
+    }
+
+    @Test func `linux vfio nodes openable is ok`() {
+        let report = DoctorService.assemble(from: inputs(
+            vfioPresent: true,
+            vfioNodesOpenable: true,
+        ))
+        #expect(check(report, "vfio-drop").status == .ok)
+        #expect(report.ok)
+    }
+
+    @Test func `macos skips vfio-drop`() {
+        let report = DoctorService.assemble(from: inputs(
+            os: "macOS",
+            uid: 0,
+            hostBridge: macReady(),
+            vfioPresent: true,
+            vfioNodesOpenable: false,
+        ))
+        #expect(check(report, "vfio-drop").status == .skip)
+        #expect(report.ok)
     }
 
     @Test func `json round trip keeps host bridge facts`() throws {

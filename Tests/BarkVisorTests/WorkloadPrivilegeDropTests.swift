@@ -195,6 +195,68 @@ struct WorkloadPrivilegeDropTests {
         #expect((dirMode?.intValue ?? 0) & 0o777 == 0o770)
     }
 
+    @Test func `0600 vfio node is not openable`() {
+        #expect(!WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o600,
+            groupName: "root",
+            userGroups: ["kvm", "disk"],
+        ))
+    }
+
+    @Test func `0660 kvm vfio node is openable when user is in kvm`() {
+        #expect(WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o660,
+            groupName: "kvm",
+            userGroups: ["kvm", "disk"],
+        ))
+        #expect(!WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o640,
+            groupName: "kvm",
+            userGroups: ["kvm"],
+        ))
+    }
+
+    @Test func `world writable vfio node is openable`() {
+        #expect(WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o666,
+            groupName: "root",
+            userGroups: [],
+        ))
+    }
+
+    @Test func `vfio container name is skipped so only that node is nil`() {
+        #expect(
+            WorkloadPrivilegeDrop.vfioGroupNodesOpenable(
+                nodes: [VFIOGroupNode(name: "vfio", mode: 0o600, groupName: "root")],
+                userGroups: ["kvm"],
+            ) == nil,
+        )
+    }
+
+    @Test func `setpriv drop cannot open 0600 vfio with kvm-only groups`() {
+        let launch = WorkloadPrivilegeDrop.plan(
+            executable: qemu,
+            arguments: args,
+            euid: 0,
+            dropsOnPlatform: true,
+            userExists: { $0 == "barkvisor" || $0 == "qemu" },
+            wrapperPath: { $0 == WorkloadPrivilegeDrop.setprivPath ? $0 : nil },
+        )
+        #expect(launch.dropped)
+        #expect(launch.user == "barkvisor" || launch.user == "qemu")
+        let kvmOnly = ["kvm"]
+        #expect(!WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o600,
+            groupName: "root",
+            userGroups: kvmOnly,
+        ))
+        #expect(WorkloadPrivilegeDrop.canOpenVFIONode(
+            mode: 0o660,
+            groupName: "kvm",
+            userGroups: kvmOnly,
+        ))
+    }
+
     @Test func `live handoff is a no-op when this process will not drop`() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bv-handoff-live-\(UUID().uuidString)")

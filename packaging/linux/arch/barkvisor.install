@@ -2,6 +2,7 @@ post_install() {
   getent passwd barkvisor >/dev/null 2>&1 || \
     useradd --system --home /var/lib/barkvisor --shell /usr/bin/nologin barkvisor
   getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
+  getent group vfio >/dev/null 2>&1 && usermod -aG vfio barkvisor 2>/dev/null || true
   if getent group disk >/dev/null 2>&1; then
     usermod -aG disk barkvisor 2>/dev/null || true
     for unit in barkvisor.service barkvisor-agent.service; do
@@ -12,6 +13,10 @@ post_install() {
   fi
   install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
   install -d -m 0755 /etc/qemu
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload || true
+    udevadm trigger --subsystem-match=vfio || true
+  fi
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable barkvisor.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
