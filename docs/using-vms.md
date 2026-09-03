@@ -28,9 +28,9 @@ The counts update live; a failed count above zero is your cue to visit the [Dash
 
 ## Create VM
 
-**Create VM** opens the split-rail wizard (Basics → Image → Place → Hardware → Storage → Network → Summary). The full walkthrough is in [Create a Workload](create-workload.md).
+**Create VM** opens the 3-step wizard (**Gallery → Configure → Disk**). The full walkthrough is in [Create a Workload](create-workload.md).
 
-Empty Homes see "No virtual machines yet" with a shortcut to create the first one.
+Empty Homes see "No virtual machines yet" with a **Create your first VM** button.
 
 ## Related
 

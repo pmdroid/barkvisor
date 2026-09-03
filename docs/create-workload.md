@@ -7,7 +7,7 @@ A **Workload** is a VM running on one **Device**. Create it from the Home dashbo
 1. Open the Home console (`http://<dashboard-device>:7777`).
 2. Click **Create VM**.
 3. Pick what to run from the template gallery, Windows, or your own Library image.
-4. Name the VM, pick the Device, size, and disk options in the 3-step Create VM dialog.
+4. Name the VM, pick the Device, size, and disk options in the 3-step Create VM dialog (**Gallery → Configure → Disk**).
 5. Create. Provisioning on a member Device is proxied through Home. The phone does not connect to the member’s IP.
 
 Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-win). Windows on **x86_64** is a guest profile in progress (`windows-amd64`); Linux guests already run on both arches.

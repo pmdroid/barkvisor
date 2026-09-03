@@ -84,7 +84,6 @@ The package installs `barkvisor.service` and `/etc/barkvisor/barkvisor.env`.
 ```sh
 systemctl status barkvisor.service
 journalctl -u barkvisor.service -f
-curl -sS http://127.0.0.1:7777/api/health
 ```
 
 The unit is **root**:
@@ -226,15 +225,9 @@ Uninstall and `postrm` strip **marker-tagged** host-bridge files only (`# barkvi
 
 NAT works out of the box. Bridged mode uses a host `br0` plus QEMU `qemu-bridge-helper`. There is no XPC helper.
 
-Prefer **Networks → Host interfaces → Create → Bridge** on the Device. After Apply, keep changes within 60 seconds in the SPA or POST `action: commit`; otherwise the host auto-reverts. Wi-Fi is refused.
+Prefer **Networks → Host interfaces → Create → Bridge** on the Device. After Apply, click **Keep changes** within 60 seconds, otherwise the host auto-reverts. Wi-Fi is refused.
 
-Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Host interfaces**.
-
-```sh
-curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
-  -H 'Content-Type: application/json' \
-  -d '{"interface":"<wired-uplink>","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
-```
+Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Host interfaces** — no terminal needed.
 
 See [Networks](using-networks.md).
 

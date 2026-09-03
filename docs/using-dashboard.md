@@ -1,33 +1,32 @@
 # Dashboard
 
-**Dashboard** is the triage inbox for your Home: what needs attention first, what is running, and how the machines feel. Admins see it right after sign-in.
+**Dashboard** is the triage inbox for your Home: what needs attention first, what is running, and how the machines feel.
 
-![Dashboard with the ops ticker, feed columns, and vitals rail](img/dashboard.png)
+![Dashboard with the ops ticker, workload sections, and Home device card](img/dashboard.png)
 
 ## Incidents
 
-Problems float to the top as incident rows — **Failed** Workloads and **Unreachable** Devices — each with an **Open** button that jumps straight to the offending item. If nothing is wrong, there are no incidents and the board reads calm.
+Problems float to the top as incident rows — **Failed** Workloads and **Unreachable** Devices. Failed rows carry an **Open** button that jumps straight to the offending item. If nothing is wrong, there are no incidents and the board reads calm.
 
 ## Feed columns
 
-Below the incidents, Workloads sort into four columns:
+Below the incidents, Workloads sort into sections:
 
-| Column | Meaning |
+| Section | Meaning |
 |--------|---------|
-| **Needs you** | Waiting on a human decision — failed, stopped unexpectedly, or pending action |
-| **Running** | Live Workloads across the scoped Devices |
-| **Failed** | Workloads whose process died or never came up |
-| **Stopped** | Deliberately shut down Workloads |
+| **Needs you** | Always visible — waiting on a human decision, or "Nothing needs you" |
+| **Running** | Live Workloads across the scoped Devices (only when non-empty) |
+| **Stopped** | Shut down Workloads (only when non-empty) |
 
-Each card carries the Workload name and its Device; clicking one opens [Workload details](using-vm-details.md).
+Failed Workloads surface as incident rows at the top. Each card carries the Workload name and its Device; clicking one opens [Workload details](using-vm-details.md).
 
-## Vitals rail
+## Home card
 
-The side rail meters **CPU**, **Memory**, **Temperature**, and **Storage** for the current Device scope. Spikes here usually explain the incidents on the left.
+The side rail shows the **Home** Device card (name, platform · arch, reachability) — per-Device CPU/memory meters live on [Devices](using-devices.md) and the Device detail page. Spikes there usually explain the incidents on the left.
 
 ## Customize
 
-**Customize** opens the "Customize Home" drawer: reorder modules with **move up/down** and hide modules you never look at. Layout is per person, not global.
+**Customize** opens the "Customize Home" drawer: reorder modules with the ▲/▼ (Move up/Move down) buttons and show/hide modules you never look at, then **Done**. Layout is per person, not global.
 
 ## Create VM
 
