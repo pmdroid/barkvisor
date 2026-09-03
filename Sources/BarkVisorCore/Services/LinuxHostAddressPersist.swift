@@ -67,19 +67,20 @@ public enum LinuxHostAddressPersist {
         backend: LinuxNetworkBackend,
         dir: String = LinuxHostBridgeApply.systemdNetworkDir,
     ) -> [(path: String, body: String)] {
-        var files: [(String, String)] = []
-        if let match = networkdMatchingNetworkFile(interface: interface, dir: dir) {
-            files.append((networkdAliasDropInPath(matchFile: match), networkdAliasDropInBody(cidrs: cidrs)))
-        } else {
-            files.append((
+        switch backend {
+        case .networkManager, .ifupdown, .unknown:
+            return []
+        case .systemdNetworkd:
+            if let match = networkdMatchingNetworkFile(interface: interface, dir: dir) {
+                return [(networkdAliasDropInPath(matchFile: match), networkdAliasDropInBody(cidrs: cidrs))]
+            }
+            return [(
                 networkdAliasUnitPath(interface: interface, dir: dir),
                 networkdAliasUnitBody(interface: interface, cidrs: cidrs),
-            ))
+            )]
+        case .netplan:
+            return [(netplanAliasPath(interface: interface), netplanAliasYAML(interface: interface, cidrs: cidrs))]
         }
-        if backend == .netplan {
-            files.append((netplanAliasPath(interface: interface), netplanAliasYAML(interface: interface, cidrs: cidrs)))
-        }
-        return files
     }
 
     public static func ipAddrAddAlreadyPresent(_ stderr: String) -> Bool {
@@ -161,7 +162,7 @@ public enum LinuxHostAddressPersist {
                 ))
             }
         }
-        if backend == .systemdNetworkd || backend == .networkManager {
+        if backend == .systemdNetworkd {
             rows.append(LinuxHostBridgeChange(
                 description: "Reload systemd-networkd",
                 command: "sudo networkctl reload",

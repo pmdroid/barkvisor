@@ -308,11 +308,13 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 try persistNmAddresses(interface: iface, cidrs: cidrs, add: true)
                 try persistNmAddresses(interface: iface, cidrs: removed, add: false)
             }
-            _ = try? PlatformProcess.run(
-                path: "/usr/bin/networkctl",
-                arguments: ["reload"],
-                timeout: 15,
-            )
+            if probe.backend == .systemdNetworkd || probe.backend == .netplan {
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/networkctl",
+                    arguments: ["reload"],
+                    timeout: 15,
+                )
+            }
             for cidr in cidrs {
                 let result = try PlatformProcess.run(
                     path: Self.ipPath,

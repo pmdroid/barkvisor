@@ -425,7 +425,6 @@ public enum LinuxHostBridgeApply {
         bridge: String = HostBridgeFactsService.suggestedBridgeName,
         nic: String? = nil,
     ) -> LinuxHostBridgeApplyProbe {
-        let backend = detectBackend()
         let wireless = Set(existingInterfaceNames().filter { LinuxHostNetwork.isWirelessInterface($0) })
         let session = sessionRisk(facts: facts, listenPort: listenPort)
         let helperPaths = HostBridgeFactsService.qemuBridgeHelperCandidates.filter {
@@ -444,6 +443,9 @@ public enum LinuxHostBridgeApply {
             leftoverPersist: leftoverHostBridge(bridge: bridge),
         )
         let target = (nic ?? facts.defaultRouteInterface ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let backend = target.isEmpty
+            ? detectBackend()
+            : detectActiveBackend(nic: target)
         var liveIPv4: [String] = []
         var keepIPv4: [String] = []
         if !target.isEmpty {
@@ -500,6 +502,54 @@ public enum LinuxHostBridgeApply {
             return .ifupdown
         }
         return .unknown
+    }
+
+    public static func detectActiveBackend(
+        nic: String,
+        nmManaged: Bool? = nil,
+        networkdManages: Bool? = nil,
+        installed: () -> LinuxNetworkBackend = { detectBackend() },
+    ) -> LinuxNetworkBackend {
+        let nm = nmManaged ?? nicManagedByNetworkManager(nic)
+        if nm == true { return .networkManager }
+        let networkd = networkdManages ?? nicManagedByNetworkd(nic)
+        if networkd == true { return .systemdNetworkd }
+        return installed()
+    }
+
+    public static func nicManagedByNetworkManager(_ nic: String) -> Bool? {
+        let name = nic.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/nmcli") else { return nil }
+        let result = try? PlatformProcess.run(
+            path: "/usr/bin/nmcli",
+            arguments: ["-g", "GENERAL.NM-MANAGED", "device", "show", name],
+            timeout: 5,
+        )
+        guard let result, result.succeeded else { return nil }
+        switch result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "yes": return true
+        case "no": return false
+        default: return nil
+        }
+    }
+
+    public static func nicManagedByNetworkd(_ nic: String) -> Bool? {
+        let name = nic.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let path = ["/usr/bin/networkctl", "/bin/networkctl"].first {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+        guard let path else { return nil }
+        let result = try? PlatformProcess.run(
+            path: path,
+            arguments: ["status", name],
+            timeout: 5,
+        )
+        guard let result, result.succeeded else { return nil }
+        let text = result.stdoutString.lowercased()
+        if text.contains("unmanaged") { return false }
+        return true
     }
 
     public static func mergeACL(existing: String?, bridge: String) -> String {
