@@ -8,6 +8,7 @@ export const useDevicesStore = defineStore('devices', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   let fetchSeq = 0
+  let inFlight: Promise<void> | null = null
 
   const devices = computed(() => report.value?.devices ?? [])
   const totals = computed(() => report.value?.totals ?? null)
@@ -20,19 +21,24 @@ export const useDevicesStore = defineStore('devices', () => {
   }
 
   async function fetchHealth(): Promise<void> {
+    if (inFlight) return inFlight
     const seq = ++fetchSeq
     loading.value = true
-    try {
-      const { data } = await api.get<HomeDeviceHealthReport>('/home/devices/health')
-      if (seq !== fetchSeq) return
-      report.value = data
-      error.value = null
-    } catch (err) {
-      if (seq !== fetchSeq) return
-      error.value = err instanceof Error ? err.message : 'Unable to load Devices'
-    } finally {
-      if (seq === fetchSeq) loading.value = false
-    }
+    inFlight = (async () => {
+      try {
+        const { data } = await api.get<HomeDeviceHealthReport>('/home/devices/health')
+        if (seq !== fetchSeq) return
+        report.value = data
+        error.value = null
+      } catch (err) {
+        if (seq !== fetchSeq) return
+        error.value = err instanceof Error ? err.message : 'Unable to load Devices'
+      } finally {
+        if (seq === fetchSeq) loading.value = false
+        inFlight = null
+      }
+    })()
+    return inFlight
   }
 
   function deviceLabel(row: HomeDeviceHealthSnapshot): string {

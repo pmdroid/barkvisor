@@ -3,6 +3,8 @@ import { wsTicketPath } from '../utils/consoleHome'
 import { needsHomeSession } from '../utils/streamTicket'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
+export const HOME_MEMBER_PROXY_TIMEOUT_MS = 4000
+
 const api = axios.create({
   baseURL: '/api',
 })
@@ -11,6 +13,9 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (isHomeMemberProxyRequest(config) && !config.timeout) {
+    config.timeout = HOME_MEMBER_PROXY_TIMEOUT_MS
   }
   return config
 })
