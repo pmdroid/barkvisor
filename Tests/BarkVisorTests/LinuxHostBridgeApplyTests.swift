@@ -82,16 +82,16 @@ struct LinuxHostBridgeApplyTests {
 
     @Test func `rollback helper keeps config only after commit stamp`() {
         #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0").hasSuffix("host-network/br0-commit"))
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
+        let script = LinuxHostBridgeApply.rollbackHelperScript(
+            bridge: "br0",
+            dataDir: "/var/lib/barkvisor",
+            binary: "/usr/local/bin/barkvisor",
+        )
         #expect(script.contains("host-network/br0-commit"))
         #expect(script.contains("then exit 0"))
-        #expect(script.contains("mkdir "))
-        #expect(script.contains("-reverting"))
-        #expect(script.contains("stat -c %Y"))
-        #expect(script.contains("rm -rf "))
-        #expect(script.contains("nmcli connection delete barkvisor-br0"))
-        #expect(script.contains("grep \"^barkvisor-br0-\""))
-        #expect(script.contains("netplan apply"))
+        #expect(script.contains("hostnet-expire"))
+        #expect(script.contains("/usr/local/bin/barkvisor"))
+        #expect(!script.contains("ip link del"))
     }
 
     @Test func `static host address is Device not guest`() {
@@ -769,15 +769,16 @@ struct LinuxHostBridgeApplyTests {
     }
 
     @Test func `rollback helper is per-bridge`() {
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br1", dataDir: "/var/lib/barkvisor")
-        #expect(script.contains("/etc/netplan/90-barkvisor-br1.yaml"))
-        #expect(script.contains("barkvisor-br1"))
-        #expect(script.contains("host-bridge-br1.json"))
-        #expect(script.contains("host-network/br1-pending.json"))
-        #expect(script.contains("grep \"^barkvisor-br1-\""))
-        #expect(script.contains("90-barkvisor-\"$uplink\".network"))
-        #expect(script.contains("nmcli device reapply"))
+        let script = LinuxHostBridgeApply.rollbackHelperScript(
+            bridge: "br1",
+            dataDir: "/var/lib/barkvisor",
+            binary: "/usr/local/bin/barkvisor",
+        )
+        #expect(script.contains("host-network/br1-commit"))
+        #expect(script.contains("host-network/br1-keeping"))
+        #expect(script.contains("hostnet-expire"))
         #expect(!script.contains("90-barkvisor-br0.yaml"))
+        #expect(!script.contains("ip link del"))
     }
 
     @Test func `owned delete detaches ports and ip link dels`() {

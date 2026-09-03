@@ -425,34 +425,18 @@ public enum LinuxHostBridgeApply {
         return (bridge, nic)
     }
 
-    public static func rollbackHelperScript(bridge: String, dataDir: String) -> String {
+    public static func rollbackHelperScript(
+        bridge: String,
+        dataDir _: String,
+        binary: String = HostNetworkRollbackLaunchd.binaryPath(),
+    ) -> String {
         let stamp = commitStampPath(bridge: bridge)
-        let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
-        let claim = HostNetworkPendingCommitService.claimPath(bridge)
         let keeping = HostNetworkPendingCommitService.keepingPath(bridge)
-        let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
-        \(rollbackClaimShell(claim: claim, stamp: stamp, keeping: keeping))
-        rm -f \(netplanPath(bridge: bridge)) || true
-        /usr/sbin/netplan apply >/dev/null 2>&1 || true
-        /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
-        /usr/bin/nmcli -t -f NAME connection show 2>/dev/null | grep "^barkvisor-\(bridge)-" | while read -r n; do
-          /usr/bin/nmcli connection delete "$n" >/dev/null 2>&1 || true
-        done
-        rm -f \(networkdNetdevPath(bridge: bridge)) \(networkdNetworkPath(bridge: bridge)) || true
-        uplink=$(sed -n 's/.*"uplink"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' \(marker) 2>/dev/null | head -1)
-        if [ -n "$uplink" ]; then
-          rm -f /etc/systemd/network/90-barkvisor-"$uplink".network || true
-          /usr/bin/nmcli device reapply "$uplink" >/dev/null 2>&1 || true
-          /usr/bin/networkctl reapply "$uplink" >/dev/null 2>&1 || true
-        fi
-        /usr/bin/networkctl reload >/dev/null 2>&1 || true
-        if grep -q '"createdBridge"[[:space:]]*:[[:space:]]*true' \(pending) 2>/dev/null; then
-          /sbin/ip link del \(bridge) >/dev/null 2>&1 || /usr/sbin/ip link del \(bridge) >/dev/null 2>&1 || true
-        fi
-        rm -f \(marker) \(pending) || true
-        rmdir \(claim) 2>/dev/null || true
+        if [ -f \(stamp) ]; then exit 0; fi
+        if [ -f \(keeping) ]; then exit 0; fi
+        exec "\(binary)" hostnet-expire
         """
     }
 
