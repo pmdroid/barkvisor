@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { HostBridgeReadiness, HostInterface } from '../api/types'
 import {
+  defaultMacBridgeName,
   defaultUnusedPort,
   linuxRefusesWifiPort,
   nextFreeBridgeName,
@@ -31,6 +32,12 @@ function ready(over: Partial<HostBridgeReadiness> = {}): HostBridgeReadiness {
 }
 
 describe('createHostBridge', () => {
+  test('mac default name is port-bridge', () => {
+    expect(defaultMacBridgeName('en0')).toBe('en0-bridge')
+    expect(defaultMacBridgeName('en0', ['en0-bridge'])).toBe('en0-bridge-2')
+    expect(defaultMacBridgeName('')).toBe('')
+  })
+
   test('next-free skips kernel and marked names', () => {
     expect(nextFreeBridgeName([])).toBe('br0')
     expect(nextFreeBridgeName(['br0', 'eth0'])).toBe('br1')
@@ -39,6 +46,11 @@ describe('createHostBridge', () => {
       [iface({ name: 'eth0' }), iface({ name: 'br0' })],
       ready({ bridges: [{ name: 'br1', enslaved: [] }] }),
     ).sort()).toEqual(['br0', 'br1'])
+    expect(nextFreeBridgeName(takenBridgeNames(
+      [iface({ name: 'en0' })],
+      ready({ bridges: [] }),
+      ['br0'],
+    ))).toBe('br1')
   })
 
   test('Linux refuses Wi-Fi as port; Mac en0 is allowed', () => {
@@ -76,5 +88,26 @@ describe('createHostBridge', () => {
     )
     expect(mac.map((row) => row.name)).toEqual(['en0', 'en1'])
     expect(defaultUnusedPort(mac, ready({ defaultRouteInterface: 'en0' }))).toBe('en0')
+
+    const macSocketListedAsBridge = unusedBridgePorts(
+      [iface({ name: 'en0', displayName: 'en0 (Wi-Fi)' }), iface({ name: 'utun8' })],
+      ready({
+        defaultRouteInterface: 'en0',
+        bridges: [{ name: 'en0', enslaved: [] }],
+        ready: true,
+      }),
+      'macos',
+    )
+    expect(macSocketListedAsBridge.map((row) => row.name)).toEqual(['en0'])
+
+    const macMapped = unusedBridgePorts(
+      [iface({ name: 'en0', displayName: 'en0 (Wi-Fi)' })],
+      ready({
+        defaultRouteInterface: 'en0',
+        bridges: [{ name: 'br0', enslaved: ['en0'] }],
+      }),
+      'macos',
+    )
+    expect(macMapped.map((row) => row.name)).toEqual([])
   })
 })

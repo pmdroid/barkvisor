@@ -5,23 +5,34 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
     public var target: String
     public var commitDeadline: Date
     public var rollbackSeconds: Int
-    /// Linux netplan try PID; omitted from API responses.
+    public var createdBridge: Bool
     public var netplanPid: Int32?
 
     public init(
         target: String,
         commitDeadline: Date,
         rollbackSeconds: Int,
+        createdBridge: Bool = false,
         netplanPid: Int32? = nil,
     ) {
         self.target = target
         self.commitDeadline = commitDeadline
         self.rollbackSeconds = rollbackSeconds
+        self.createdBridge = createdBridge
         self.netplanPid = netplanPid
     }
 
     enum CodingKeys: String, CodingKey {
-        case target, commitDeadline, rollbackSeconds, netplanPid
+        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        target = try c.decode(String.self, forKey: .target)
+        commitDeadline = try c.decode(Date.self, forKey: .commitDeadline)
+        rollbackSeconds = try c.decode(Int.self, forKey: .rollbackSeconds)
+        createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
+        netplanPid = try c.decodeIfPresent(Int32.self, forKey: .netplanPid)
     }
 
     public var expired: Bool {
@@ -34,6 +45,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
             target: target,
             commitDeadline: commitDeadline,
             rollbackSeconds: rollbackSeconds,
+            createdBridge: createdBridge,
         )
     }
 }
@@ -42,19 +54,34 @@ public struct HostNetworkPendingCommitInfo: Codable, Sendable, Equatable {
     public var target: String
     public var commitDeadline: Date
     public var rollbackSeconds: Int
+    public var createdBridge: Bool
 
-    public init(target: String, commitDeadline: Date, rollbackSeconds: Int) {
+    public init(target: String, commitDeadline: Date, rollbackSeconds: Int, createdBridge: Bool = false) {
         self.target = target
         self.commitDeadline = commitDeadline
         self.rollbackSeconds = rollbackSeconds
+        self.createdBridge = createdBridge
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case target, commitDeadline, rollbackSeconds, createdBridge
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        target = try c.decode(String.self, forKey: .target)
+        commitDeadline = try c.decode(Date.self, forKey: .commitDeadline)
+        rollbackSeconds = try c.decode(Int.self, forKey: .rollbackSeconds)
+        createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
     }
 }
 
 public enum HostNetworkPendingCommitService {
     public static let rollbackSeconds = LinuxHostBridgeApply.rollbackSeconds
 
-    public static func linuxPendingPath(bridge: String) -> String {
-        "/run/barkvisor/\(bridge)-pending.json"
+    public static func linuxPendingPath(bridge: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(bridge)-pending.json").path
     }
 
     public static func macPendingURL(device: String, dataDir: URL = Config.dataDir) -> URL {
@@ -76,11 +103,12 @@ public enum HostNetworkPendingCommitService {
         existing.first { $0.target != target && !$0.expired }
     }
 
-    public static func listLinuxPending(runDir: String = "/run/barkvisor") -> [HostNetworkPendingCommit] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: runDir)) ?? []
+    public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
+        let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         var result: [HostNetworkPendingCommit] = []
         for name in names where name.hasSuffix("-pending.json") {
-            let path = "\(runDir)/\(name)"
+            let path = "\(dir)/\(name)"
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                   let pending = try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
             else { continue }
@@ -96,6 +124,10 @@ public enum HostNetworkPendingCommitService {
             )
         }
         let path = linuxPendingPath(bridge: pending.target)
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
         try FileManager.default.createDirectory(
             atPath: "/run/barkvisor",
             withIntermediateDirectories: true,
@@ -130,37 +162,76 @@ public enum HostNetworkPendingCommitService {
         }
     #endif
 
+    public static func listMacPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
+        let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        var result: [HostNetworkPendingCommit] = []
+        for name in names where name.hasSuffix("-pending.json") {
+            let path = "\(dir)/\(name)"
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let pending = try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
+            else { continue }
+            result.append(pending)
+        }
+        return result
+    }
+
+    public static func stampExists(_ target: String) -> Bool {
+        FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target))
+    }
+
+    public static func claimPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(target)-reverting").path
+    }
+
+    public static func claimRevert(_ target: String) -> Bool {
+        let path = claimPath(target)
+        let fm = FileManager.default
+        try? fm.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        if fm.fileExists(atPath: path) {
+            let attrs = try? fm.attributesOfItem(atPath: path)
+            let created = attrs?[.creationDate] as? Date ?? .distantPast
+            if Date().timeIntervalSince(created) < 30 {
+                return false
+            }
+            try? fm.removeItem(atPath: path)
+        }
+        do {
+            try fm.createDirectory(atPath: path, withIntermediateDirectories: false)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public static func releaseRevert(_ target: String) {
+        try? FileManager.default.removeItem(atPath: claimPath(target))
+    }
+
     public static func activePending() -> HostNetworkPendingCommit? {
         #if os(Linux)
-            let all = listLinuxPending()
-            if let live = all.first(where: { !$0.expired }) {
-                return live
-            }
-            for pending in all where pending.expired {
-                clearLinux(bridge: pending.target)
-            }
-            return nil
+            return listLinuxPending().first { !stampExists($0.target) }
         #elseif os(macOS)
-            let uplink = HostBridgeFactsService.probe().defaultRouteInterface ?? ""
-            guard !uplink.isEmpty else { return nil }
-            if let pending = readMac(device: uplink) {
-                if pending.expired {
-                    clearMac(device: uplink)
-                    return nil
-                }
-                return pending
-            }
-            return nil
+            return listMacPending().first { !stampExists($0.target) }
         #else
             return nil
         #endif
     }
 
-    public static func makePending(target: String, netplanPid: Int32? = nil) -> HostNetworkPendingCommit {
+    public static func makePending(
+        target: String,
+        createdBridge: Bool = false,
+        netplanPid: Int32? = nil,
+    ) -> HostNetworkPendingCommit {
         HostNetworkPendingCommit(
             target: target,
             commitDeadline: Date().addingTimeInterval(TimeInterval(rollbackSeconds)),
             rollbackSeconds: rollbackSeconds,
+            createdBridge: createdBridge,
             netplanPid: netplanPid,
         )
     }

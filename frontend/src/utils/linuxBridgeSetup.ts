@@ -127,9 +127,9 @@ export function macosSocketVmnetSetupGroups(
     label: 'Device address (Apply in Networks or API)',
     commands: [
       'Networks → Host interfaces → select LAN NIC → Apply.',
-      '# After Apply: Keep changes within 30s in the SPA (POST action commit).',
+      '# After Apply: Keep changes within 60s in the SPA (POST action commit).',
       'networksetup -listallhardwareports',
-      `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
+      `curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \\`,
       `  -H 'Content-Type: application/json' \\`,
       `  -d '{"interface":"${iface}","bridge":"${ready?.suggestedBridge || HOST_BRIDGE_SUGGESTED}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
     ].join('\n'),
@@ -158,11 +158,11 @@ export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
   const nic = ready.defaultRouteInterface || '<wired-uplink>'
   return [
     `Networks → Host interfaces → Create → Bridge.`,
-    `# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.`,
-    `curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\`,
+    `# After Apply: Keep changes within 60s in the SPA (POST action commit) or the host auto-reverts.`,
+    `curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \\`,
     `  -H 'Content-Type: application/json' \\`,
     `  -d '{"interface":"${nic}","bridge":"${br}","action":"apply","confirm":true,"addressing":"dhcp"}'`,
-    `# Revert foreign: DELETE /api/system/bridges/${br}. Delete owned: POST action delete.`,
+    `# Revert foreign: DELETE /api/system/interfaces/${br}. Delete owned: POST action delete.`,
   ]
 }
 

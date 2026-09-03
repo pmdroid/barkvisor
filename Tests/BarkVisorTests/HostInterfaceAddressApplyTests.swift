@@ -128,6 +128,7 @@ struct HostInterfaceAddressApplyTests {
             let result = MacHostBridgeApply.evaluate(
                 request: LinuxHostBridgeApplyRequest(
                     action: .apply,
+                    bridge: "",
                     nic: "en0",
                     addresses: [
                         HostInterfaceAddressApplyEntry(kind: .dhcp),

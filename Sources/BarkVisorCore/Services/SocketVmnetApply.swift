@@ -171,7 +171,10 @@ public enum SocketVmnetApply {
     }
 
     public static func pickBackend(probe: SocketVmnetApplyProbe) -> SocketVmnetBackend {
-        if probe.ownedPlistExists || (probe.binaryPath != nil && probe.canWriteLaunchDaemons) {
+        if probe.canWriteLaunchDaemons {
+            return .ownedLaunchd
+        }
+        if probe.ownedPlistExists || probe.binaryPath != nil {
             return .ownedLaunchd
         }
         if probe.brewFormulaInstalled || probe.brewPlistPath != nil || probe.brewPath != nil {
@@ -223,7 +226,8 @@ public enum SocketVmnetApply {
         var commands: [String] = []
         switch backend {
         case .ownedLaunchd:
-            changes.append("Write \(probe.ownedPlistPath) and launchctl bootstrap")
+            changes.append("Write \(probe.ownedPlistPath)")
+            changes.append("launchctl bootstrap \(probe.ownedPlistPath)")
             commands.append("sudo launchctl bootstrap system \(probe.ownedPlistPath)")
         case .homebrewService:
             changes.append("Start already-installed Homebrew socket_vmnet (formula already present)")
@@ -269,7 +273,7 @@ public enum SocketVmnetApply {
             backend: backend.rawValue,
             changes: changes,
             commands: commands.isEmpty
-                ? ["POST /api/system/bridges (interface: \(probe.interface), action: revert, confirm: true)"]
+                ? ["POST /api/system/interfaces (interface: \(probe.interface), action: revert, confirm: true)"]
                 : commands,
             message: "Stop socket_vmnet (\(backend.rawValue))",
         )

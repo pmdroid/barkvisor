@@ -301,12 +301,15 @@ struct LinuxGuestScriptsTests {
         #expect(mise.contains("guest-boot-bdd.sh real"))
         #expect(mise.contains("[tasks.api-bdd]"))
         #expect(mise.contains("api-contract-bdd.sh"))
+        #expect(mise.contains("[tasks.host-network-extra-ip]"))
+        #expect(mise.contains("linux-host-network-docker.sh"))
 
         // Default prepush must stay lint + test + frontend-test (no guest boot).
         let prepushDeps = defaultPrepushDepends(mise)
         #expect(prepushDeps == ["lint", "test", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
+        #expect(!prepushTable.contains("host-network-extra-ip"))
 
         let docs = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
@@ -431,6 +434,7 @@ struct LinuxGuestScriptsTests {
             "api-contract.feature",
             "cross-device.feature",
             "guest-boot.feature",
+            "host-network-extra-ip.feature",
         ])
     }
 
@@ -619,6 +623,83 @@ struct LinuxGuestScriptsTests {
         #expect(prepushDeps == ["lint", "test", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
+        #expect(!prepushTable.contains("host-network-extra-ip"))
+    }
+
+    @Test func `host-network extra-IP BDD exists and dry-run succeeds`() throws {
+        let feature = repoRoot.appendingPathComponent("features/host-network-extra-ip.feature")
+        let bdd = repoRoot.appendingPathComponent("scripts/linux-host-network-bdd.sh")
+        let docker = repoRoot.appendingPathComponent("scripts/linux-host-network-docker.sh")
+        #expect(FileManager.default.fileExists(atPath: feature.path))
+        #expect(FileManager.default.isExecutableFile(atPath: bdd.path))
+        #expect(FileManager.default.isExecutableFile(atPath: docker.path))
+
+        let featureBody = try String(contentsOf: feature, encoding: .utf8)
+        for needle in [
+            "Scenario: add an extra IP then remove it",
+            "ip addr del",
+            "10.200.55.50/24",
+            "address-only",
+            "Mac Apply is verified on the Mini by hand",
+        ] {
+            #expect(featureBody.contains(needle), "feature should mention \(needle)")
+        }
+
+        let bddBody = try String(contentsOf: bdd, encoding: .utf8)
+        for needle in [
+            "features/host-network-extra-ip.feature",
+            "/api/system/interfaces",
+            "ip addr del",
+            "action:\"commit\"",
+            "linux-smoke-common.sh",
+        ] {
+            #expect(bddBody.contains(needle), "bdd should reference \(needle)")
+        }
+
+        let dockerBody = try String(contentsOf: docker, encoding: .utf8)
+        for needle in [
+            "linux-host-network-bdd.sh",
+            "NET_ADMIN",
+            "swift:6.3.3-noble",
+            "SKIP: docker not on PATH",
+        ] {
+            #expect(dockerBody.contains(needle), "docker wrapper should reference \(needle)")
+        }
+
+        let linuxDocs = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),
+            encoding: .utf8,
+        )
+        #expect(linuxDocs.contains("mise run host-network-extra-ip"))
+
+        func run(path: URL, extraEnv: [String: String] = [:]) throws -> (Int32, String) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [path.path]
+            proc.currentDirectoryURL = repoRoot
+            var env = ProcessInfo.processInfo.environment
+            extraEnv.forEach { env[$0.key] = $0.value }
+            proc.environment = env
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        let dryBdd = try run(path: bdd, extraEnv: ["DRY_RUN": "1"])
+        #expect(dryBdd.0 == 0, "bdd DRY_RUN exit \(dryBdd.0): \(dryBdd.1)")
+        #expect(dryBdd.1.contains("DRY_RUN OK"))
+
+        let dryDocker = try run(path: docker, extraEnv: ["DRY_RUN": "1"])
+        #expect(dryDocker.0 == 0, "docker DRY_RUN exit \(dryDocker.0): \(dryDocker.1)")
+        #expect(dryDocker.1.contains("DRY_RUN OK"))
+
+        let skipped = try run(path: bdd, extraEnv: ["BDD_FORCE_SKIP": "1"])
+        #expect(skipped.0 == 0, "skip exit \(skipped.0): \(skipped.1)")
+        #expect(skipped.1.contains("SKIP:"))
     }
 
     @Test func `starlight changelog and terminology keep Roadmap links`() throws {

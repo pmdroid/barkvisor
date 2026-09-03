@@ -7,6 +7,10 @@ struct SocketVmnetLaunchdTests {
         try validateBridgeName("en0")
         #expect(SocketVmnetLaunchd.label(interface: "en0") == "dev.barkvisor.socket-vmnet.en0")
         #expect(SocketVmnetLaunchd.socketPath(interface: "en0") == "/var/run/socket_vmnet.bridged.en0")
+        #expect(SocketVmnetLaunchd.socketPathsToRemove(interface: "en0").contains("/var/run/socket_vmnet.bridged.en0"))
+        #expect(SocketVmnetLaunchd.socketPathsToRemove(interface: "en0").contains(
+            "/opt/homebrew/var/run/socket_vmnet.bridged.en0",
+        ))
         #expect(
             SocketVmnetLaunchd.plistURL(interface: "en1").path
                 == "/Library/LaunchDaemons/dev.barkvisor.socket-vmnet.en1.plist",
@@ -54,6 +58,28 @@ struct SocketVmnetLaunchdTests {
         #expect(SocketVmnetLaunchd.brewServicesStopArguments() == ["services", "stop", "socket_vmnet"])
         #expect(!SocketVmnetLaunchd.brewServicesStartArguments().contains("install"))
         #expect(SocketVmnetLaunchd.homebrewServiceLabel == "homebrew.mxcl.socket_vmnet")
+    }
+
+    @Test func `hostnet rollback launchd is a one-shot sleep then expire`() {
+        #expect(HostNetworkRollbackLaunchd.label(target: "en0") == "dev.barkvisor.hostnet-rollback.en0")
+        #expect(
+            HostNetworkRollbackLaunchd.plistURL(target: "en0").path
+                == "/Library/LaunchDaemons/dev.barkvisor.hostnet-rollback.en0.plist",
+        )
+        let helper = HostNetworkRollbackLaunchd.helperScript(
+            binary: "/usr/local/bin/barkvisor",
+            seconds: 60,
+        )
+        #expect(helper.contains("sleep 60"))
+        #expect(helper.contains("hostnet-expire"))
+        let xml = HostNetworkRollbackLaunchd.plistXML(
+            target: "en0",
+            helperPath: "/var/lib/barkvisor/host-network/en0-rollback.sh",
+        )
+        #expect(xml.contains("dev.barkvisor.hostnet-rollback.en0"))
+        #expect(xml.contains("/bin/sh"))
+        #expect(xml.contains("<false/>"))
+        #expect(!xml.contains("MachServices"))
     }
 
     @Test func `install hint never says sudo brew install`() {

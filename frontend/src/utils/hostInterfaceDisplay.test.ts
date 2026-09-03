@@ -11,6 +11,7 @@ import {
   interfaceAddressColumn,
   interfaceAddressFieldsReadOnly,
   interfaceShowsDelete,
+  syntheticMacBridgeIfaces,
   interfaceBridgeColumn,
   interfaceBridgeRoleDetail,
   interfaceOwnsAddressApply,
@@ -64,6 +65,15 @@ describe('hostInterfaceDisplay', () => {
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'macos-guide')).toBe('uplink')
     expect(inferInterfaceRole(iface({ name: 'en0' }), ready, 'linux-guide')).toBe('bridge')
     expect(interfaceOwnsAddressApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
+    expect(inferInterfaceRole(
+      iface({ name: 'en0-bridge' }),
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    )).toBe('bridge')
+    expect(interfaceShowsDelete(
+      iface({ name: 'en0-bridge' }),
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+    )).toBe(true)
   })
 
   test('infers enslaved NIC without IPv4 as uplink', () => {
@@ -254,11 +264,12 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceOwnsBridgeSetupApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsAddressApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeSetupApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
+    expect(interfaceOwnsBridgeSetupApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
     expect(interfaceOwnsAddressApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(false)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'enp2s0', bridgeMaster: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'linux-guide')).toBe(true)
     expect(interfaceOwnsBridgeApply('uplink', iface({ name: 'en0' }), ready, 'macos-guide')).toBe(true)
-    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(false)
+    expect(interfaceOwnsBridgeApply('bridge', iface({ name: 'br0' }), ready, 'macos-guide')).toBe(true)
   })
 
   test('interfaceOwnsAddressApply is the NIC row on Linux and Mac', () => {
@@ -389,12 +400,12 @@ describe('hostInterfaceDisplay', () => {
     expect(pendingCommitMatchesInterface(pending, 'br1', 'linux-guide')).toBe(true)
     expect(pendingCommitMatchesInterface(pending, 'eth0', 'linux-guide')).toBe(false)
     expect(pendingCommitMatchesInterface({ target: 'en0', nic: 'en0' }, 'en0', 'macos-guide')).toBe(true)
-    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br1'))
-      .toBe('/system/bridges/br1')
-    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br0'))
-      .not.toBe('/system/bridges/br1')
-    expect(hostBridgeActionPath('/system/bridges', 'en0', 'macos-guide', 'br1'))
-      .toBe('/system/bridges/en0')
+    expect(hostBridgeActionPath('/system/interfaces', 'eth1', 'linux-guide', 'br1'))
+      .toBe('/system/interfaces/br1')
+    expect(hostBridgeActionPath('/system/interfaces', 'eth1', 'linux-guide', 'br0'))
+      .not.toBe('/system/interfaces/br1')
+    expect(hostBridgeActionPath('/system/interfaces', 'en0', 'macos-guide', 'br1'))
+      .toBe('/system/interfaces/en0')
   })
 
   test('Mac Keep follows the NIC row when Apply sent nic en0', () => {
@@ -435,6 +446,32 @@ describe('hostInterfaceDisplay', () => {
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), owned)).toBe(true)
     expect(interfaceShowsDelete(iface({ name: 'br0' }), foreign)).toBe(false)
     expect(interfaceShowsDelete(iface({ name: 'eth0' }), foreign)).toBe(false)
+  })
+
+  test('syntheticMacBridgeIfaces adds brN rows that are not OS NICs', () => {
+    const ready = {
+      defaultRouteInterface: 'en0',
+      bridges: [{ name: 'br0', enslaved: ['en0'], createdBridge: true }],
+      onlyUplink: false,
+      ready: true,
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+    }
+    expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'macos-guide').map((row) => row.name))
+      .toEqual(['br0'])
+    expect(syntheticMacBridgeIfaces(
+      [iface({ name: 'en0' })],
+      { ...ready, bridges: [{ name: 'en0-bridge', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    ).map((row) => row.name)).toEqual(['en0-bridge'])
+    expect(syntheticMacBridgeIfaces([iface({ name: 'en0' })], ready, 'linux-guide')).toEqual([])
+    expect(syntheticMacBridgeIfaces(
+      [iface({ name: 'en0' })],
+      { ...ready, bridges: [{ name: '', enslaved: ['en0'], createdBridge: true }] },
+      'macos-guide',
+    )).toEqual([])
   })
 
   test('VM picker lists brN not raw uplink when synthetic bridge exists', () => {

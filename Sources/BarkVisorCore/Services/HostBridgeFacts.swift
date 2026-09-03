@@ -55,11 +55,21 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
         #if os(Linux)
             let helper = LinuxHostNetwork.resolvedQemuBridgeHelperPath()
             let setuid = helper.map { LinuxHostNetwork.isSetuidExecutable(at: $0) } ?? false
-            let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name in
-                HostBridgeSnapshot(
+            let acl = try? String(
+                contentsOfFile: HostBridgeFactsService.defaultACLPath,
+                encoding: .utf8,
+            )
+            let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name -> HostBridgeSnapshot in
+                let marker = LinuxHostBridgeApply.readOwnerMarker(bridge: name)
+                return HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
-                    createdBridge: LinuxHostBridgeApply.readOwnerMarker(bridge: name)?.createdBridge == true,
+                    createdBridge: LinuxHostBridgeApply.ownership(
+                        bridge: name,
+                        marker: marker,
+                        acl: acl,
+                        leftoverPersist: LinuxHostBridgeApply.leftoverHostBridge(bridge: name),
+                    ).createdBridge,
                 )
             }
             return HostBridgeFactInputs(
@@ -147,22 +157,35 @@ public enum HostBridgeFactsService {
         )).readiness
     }
 
+    public static func syntheticMacBridgeName(uplink: String) -> String {
+        let port = uplink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !port.isEmpty else { return "" }
+        return "\(port)-bridge"
+    }
+
     public static func macSyntheticBridges(
         markers: [LinuxHostBridgeApply.OwnerMarker],
         sockets: [(interface: String, path: String)] = [],
     ) -> [HostBridgeSnapshot] {
         let fromMarkers = markers.compactMap { marker -> HostBridgeSnapshot? in
             guard let uplink = marker.uplink, !uplink.isEmpty else { return nil }
+            let name = marker.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
             return HostBridgeSnapshot(
-                name: marker.bridge,
+                name: name,
                 enslaved: [uplink],
-                createdBridge: marker.createdBridge,
+                createdBridge: true,
             )
         }
         if !fromMarkers.isEmpty {
             return fromMarkers
         }
-        return sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) }
+        return sockets.compactMap { item -> HostBridgeSnapshot? in
+            if SocketVmnetDiscovery.isSharedSocketPath(item.path) { return nil }
+            let name = syntheticMacBridgeName(uplink: item.interface)
+            guard !name.isEmpty else { return nil }
+            return HostBridgeSnapshot(name: name, enslaved: [item.interface], createdBridge: true)
+        }
     }
 
     public static func assemble(from inputs: HostBridgeFactInputs) -> HostBridgeFacts {
@@ -217,8 +240,8 @@ public enum HostBridgeFactsService {
                 label: "Create \(br)",
                 commands: [
                     "Networks → Host interfaces → Create → Bridge.",
-                    "# After Apply: Keep changes within 30s in the SPA (POST action commit) or the host auto-reverts.",
-                    "curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \\",
+                    "# After Apply: Keep changes within 60s in the SPA (POST action commit) or the host auto-reverts.",
+                    "curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \\",
                     "  -H 'Content-Type: application/json' \\",
                     "  -d '{\"interface\":\"<wired-uplink>\",\"bridge\":\"\(br)\",\"action\":\"apply\",\"confirm\":true,\"addressing\":\"dhcp\"}'",
                 ].joined(separator: "\n"),

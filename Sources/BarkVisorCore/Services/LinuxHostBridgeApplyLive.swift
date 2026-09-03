@@ -16,7 +16,7 @@ public enum LinuxHostBridgeApplyLive {
             resolved = probe
         } else {
             #if os(Linux)
-                resolved = LinuxHostBridgeApply.liveProbe(bridge: request.bridge)
+                resolved = LinuxHostBridgeApply.liveProbe(bridge: request.bridge, nic: request.nic)
             #else
                 throw BarkVisorError.forbidden("Linux host-bridge apply runs on a Linux Device.")
             #endif
@@ -31,6 +31,9 @@ public enum LinuxHostBridgeApplyLive {
         if request.action == .check || request.action == .dryRun {
             return plan
         }
+        if request.action == .delete, !request.confirm {
+            return plan
+        }
         #if os(Linux)
             let writer: any LinuxHostBridgeMutating = mutator ?? LiveLinuxHostBridgeMutator()
         #else
@@ -40,14 +43,35 @@ public enum LinuxHostBridgeApplyLive {
         #endif
         switch request.action {
         case .apply:
+            let addressOnly = LinuxHostBridgeApply.isAddressOnlyApply(
+                request: request,
+                probe: resolved,
+            )
+            let createdNow = addressOnly
+                ? false
+                : LinuxHostBridgeApply.createdBridge(
+                    named: request.bridge,
+                    existingInterfaces: resolved.existingInterfaces,
+                    factsBridges: resolved.facts.bridges,
+                )
             try writer.apply(request: request, probe: resolved, plan: plan)
             plan.applied = true
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
+            let appliedOn = addressOnly
+                ? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
+                : request.bridge
+            let nic = request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
+            let target = addressOnly ? nic : request.bridge
+            let pending = HostNetworkPendingCommitService.readLinux(bridge: target)
+                ?? HostNetworkPendingCommitService.makePending(
+                    target: target,
+                    createdBridge: createdNow,
+                )
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
+            plan.createdBridge = createdNow
             plan.message =
-                "Applied \(request.bridge) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .commit:
             try writer.commit(request: request, probe: resolved)
             plan.applied = true
@@ -61,12 +85,8 @@ public enum LinuxHostBridgeApplyLive {
         case .delete:
             try writer.apply(request: request, probe: resolved, plan: plan)
             plan.applied = true
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
-            plan.pendingCommit = true
-            plan.commitDeadline = pending.commitDeadline
-            plan.rollbackSeconds = pending.rollbackSeconds
-            plan.message =
-                "Deleted \(request.bridge). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+            plan.pendingCommit = false
+            plan.message = "Deleted \(request.bridge)."
         case .check, .dryRun:
             break
         }
@@ -121,6 +141,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             plan _: LinuxHostBridgeApplyResult,
         ) throws {
             if request.action == .revert {
+                if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try revertAddresses(request: request, probe: probe)
+                    return
+                }
                 try revert(request: request, probe: probe)
                 return
             }
@@ -128,7 +152,14 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 try deleteOwned(request: request, probe: probe)
                 return
             }
-            try persist(request: request, probe: probe)
+            do {
+                try persist(request: request, probe: probe)
+            } catch {
+                if !LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try? revert(request: request, probe: probe)
+                }
+                throw error
+            }
         }
 
         func commit(
@@ -143,16 +174,18 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
                 )
             }
-            stopRollbackTimer(bridge: request.bridge)
-            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
             if probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 {
-                _ = kill(pid_t(pid), SIGUSR1)
-                let deadline = Date().addingTimeInterval(30)
-                while Date() < deadline {
-                    if kill(pid_t(pid), 0) != 0 { break }
-                    Thread.sleep(forTimeInterval: 0.05)
+                if kill(pid_t(pid), SIGUSR1) != 0 {
+                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
+                }
+                var status: Int32 = 0
+                let waited = waitpid(pid_t(pid), &status, 0)
+                if waited <= 0 || status != 0 {
+                    throw BarkVisorError.internalError("netplan try did not keep the config.")
                 }
             }
+            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
+            stopRollbackTimer(bridge: request.bridge)
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
@@ -163,6 +196,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
                 throw BarkVisorError.badRequest("Invalid host address plan.")
+            }
+            if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                try persistAddresses(request: request, probe: probe, plan: plan)
+                return
             }
             var pendingNetplan: Process?
             switch probe.backend {
@@ -178,10 +215,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 pendingNetplan = try beginNetplanTry()
             case .networkManager:
                 try applyNetworkManager(request: request, nic: nic, plan: plan)
-                try startRollbackTimer(bridge: request.bridge)
             case .systemdNetworkd:
                 try writeNetworkd(request: request, nic: nic, plan: plan)
-                try startRollbackTimer(bridge: request.bridge)
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
                     arguments: ["reload"],
@@ -202,12 +237,218 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             try setuidHelpers(probe.helperPaths)
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
+                createdBridge: LinuxHostBridgeApply.createdBridge(
+                    named: request.bridge,
+                    existingInterfaces: probe.existingInterfaces,
+                    factsBridges: probe.facts.bridges,
+                ),
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
-            if probe.backend == .netplan {
+            if probe.backend != .netplan {
                 try startRollbackTimer(bridge: request.bridge)
             }
+        }
+
+        private func persistAddresses(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+            plan: HostInterfaceAddressApplyPlan,
+        ) throws {
+            let iface = LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
+            let nic = request.nic ?? iface
+            let desired = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+            let live = (try? ipv4CIDRs(on: iface)) ?? probe.liveIPv4CIDRs
+            var keep = probe.keepIPv4CIDRs
+            if keep.isEmpty, plan.dhcpEnabled, let primary = live.first {
+                keep = [primary]
+            }
+            let cidrs = LinuxHostAddressPersist.cidrsNotOnDevice(desired, live: live)
+            let removed = LinuxHostAddressPersist.cidrsToRemove(desired: desired, live: live, keep: keep)
+            let files = LinuxHostAddressPersist.persistFiles(
+                interface: iface,
+                cidrs: desired,
+                backend: probe.backend,
+            )
+            let persistRestore: [(String, String?)] = files.map { file in
+                if FileManager.default.fileExists(atPath: file.path) {
+                    return (file.path, try? String(contentsOfFile: file.path, encoding: .utf8))
+                }
+                return (file.path, nil)
+            }
+            for file in files {
+                try FileManager.default.createDirectory(
+                    at: URL(fileURLWithPath: file.path).deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                if desired.isEmpty {
+                    try? FileManager.default.removeItem(atPath: file.path)
+                } else {
+                    try writeAtomically(file.path, file.body)
+                }
+            }
+            var nmConnection = ""
+            if probe.backend == .networkManager {
+                nmConnection = nmConnectionName(interface: iface)
+                try persistNmAddresses(interface: iface, cidrs: cidrs, add: true)
+                try persistNmAddresses(interface: iface, cidrs: removed, add: false)
+            }
+            if probe.backend == .systemdNetworkd || probe.backend == .netplan {
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/networkctl",
+                    arguments: ["reload"],
+                    timeout: 15,
+                )
+            }
+            for cidr in cidrs {
+                let result = try PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["addr", "add", cidr, "dev", iface],
+                    timeout: 15,
+                )
+                if !result.succeeded, !LinuxHostAddressPersist.ipAddrAddAlreadyPresent(result.stderrString) {
+                    throw BarkVisorError.preconditionFailed(
+                        "ip addr add failed for \(cidr) on \(iface): \(result.stderrString)",
+                    )
+                }
+            }
+            for cidr in removed {
+                _ = try? PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["addr", "del", cidr, "dev", iface],
+                    timeout: 15,
+                )
+            }
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: nic,
+                createdBridge: false,
+            )
+            try HostNetworkPendingCommitService.writeLinux(pending)
+            try startAddressRollbackTimer(
+                device: nic,
+                iface: iface,
+                cidrs: cidrs,
+                persistFiles: files.map(\.path),
+                restoreCIDRs: removed,
+                persistRestore: persistRestore,
+                nmConnection: nmConnection,
+            )
+        }
+
+        private func nmConnectionName(interface: String) -> String {
+            let shown = (try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-t", "-f", "GENERAL.CONNECTION", "device", "show", interface],
+                timeout: 15,
+            ))
+            let name = shown?.stdoutString
+                .split(separator: ":", maxSplits: 1)
+                .last
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            if name.isEmpty || name == "--" { return "" }
+            return name
+        }
+
+        private func persistNmAddresses(interface: String, cidrs: [String], add: Bool) throws {
+            let name = nmConnectionName(interface: interface)
+            guard !name.isEmpty else { return }
+            let flag = add ? "+ipv4.addresses" : "-ipv4.addresses"
+            for cidr in cidrs {
+                _ = try PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "modify", name, flag, cidr],
+                    timeout: 15,
+                )
+            }
+            let file = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-g", "connection.filename", "connection", "show", name],
+                timeout: 15,
+            )
+            let src = file.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if src.contains("/run/"), FileManager.default.fileExists(atPath: src) {
+                let dest = "/etc/NetworkManager/system-connections/\((src as NSString).lastPathComponent)"
+                try FileManager.default.createDirectory(
+                    at: URL(fileURLWithPath: dest).deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try? FileManager.default.removeItem(atPath: dest)
+                try FileManager.default.copyItem(atPath: src, toPath: dest)
+                _ = try? PlatformProcess.run(
+                    path: "/bin/chmod",
+                    arguments: ["0600", dest],
+                    timeout: 5,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "reload"],
+                    timeout: 15,
+                )
+            }
+        }
+
+        private func revertAddresses(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+        ) throws {
+            let nic = request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
+            stopRollbackTimer(bridge: nic)
+            let helper = "/run/barkvisor/\(nic)-rollback.sh"
+            if FileManager.default.isExecutableFile(atPath: helper) {
+                _ = try? PlatformProcess.run(path: helper, arguments: [], timeout: 15)
+            }
+            HostNetworkPendingCommitService.clearLinux(bridge: nic)
+        }
+
+        private func startAddressRollbackTimer(
+            device: String,
+            iface: String,
+            cidrs: [String],
+            persistFiles: [String] = [],
+            restoreCIDRs: [String] = [],
+            persistRestore: [(String, String?)] = [],
+            nmConnection: String = "",
+        ) throws {
+            let unit = "barkvisor-\(device)-rollback"
+            stopRollbackTimer(bridge: device)
+            let stamp = LinuxHostBridgeApply.commitStampPath(bridge: device)
+            try FileManager.default.createDirectory(
+                atPath: "/run/barkvisor",
+                withIntermediateDirectories: true,
+            )
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            let helper = "/run/barkvisor/\(device)-rollback.sh"
+            try writeAtomically(
+                helper,
+                LinuxHostBridgeApply.addressRollbackHelperScript(
+                    device: device,
+                    iface: iface,
+                    cidrs: cidrs,
+                    persistFiles: persistFiles,
+                    restoreCIDRs: restoreCIDRs,
+                    persistRestore: persistRestore,
+                    nmConnection: nmConnection,
+                ),
+            )
+            _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
+            let armed = try PlatformProcess.run(
+                path: "/usr/bin/systemd-run",
+                arguments: [
+                    "--on-active=\(LinuxHostBridgeApply.rollbackSeconds)s",
+                    "--unit=\(unit)",
+                    helper,
+                ],
+                timeout: 15,
+            )
+            if !armed.succeeded {
+                throw BarkVisorError.internalError(
+                    "Could not arm \(LinuxHostBridgeApply.rollbackSeconds)s revert timer: \(armed.stderrString)",
+                )
+            }
+            try? FileManager.default.removeItem(atPath: stamp)
         }
 
         private func deleteOwned(
@@ -215,22 +456,177 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
             let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
-            for port in members {
+            let nic = request.nic ?? members.first ?? probe.facts.defaultRouteInterface ?? ""
+            let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
+            let cidrs = (try? ipv4CIDRs(on: request.bridge)) ?? []
+            try persistDropSystemdBridge(bridge: request.bridge, cidrs: cidrs)
+            if probe.backend == .networkManager, !nic.isEmpty {
+                unslaveNmPort(nic: nic, cidrs: cidrs)
+            }
+            for port in ports {
                 _ = try? PlatformProcess.run(
                     path: Self.ipPath,
                     arguments: ["link", "set", port, "nomaster"],
                     timeout: 15,
                 )
             }
-            try revert(request: request, probe: probe)
+            if !nic.isEmpty {
+                for cidr in cidrs {
+                    _ = try? PlatformProcess.run(
+                        path: Self.ipPath,
+                        arguments: ["addr", "add", cidr, "dev", nic],
+                        timeout: 15,
+                    )
+                }
+            }
+            if probe.backend == .networkManager {
+                for port in ports {
+                    _ = try? PlatformProcess.run(
+                        path: "/usr/bin/nmcli",
+                        arguments: [
+                            "connection", "delete",
+                            LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: port),
+                        ],
+                        timeout: 15,
+                    )
+                }
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "delete", "barkvisor-\(request.bridge)"],
+                    timeout: 15,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "delete", request.bridge],
+                    timeout: 15,
+                )
+            }
             _ = try? PlatformProcess.run(
                 path: Self.ipPath,
-                arguments: ["link", "del", request.bridge],
+                arguments: ["link", "delete", request.bridge, "type", "bridge"],
                 timeout: 15,
             )
-            let pending = HostNetworkPendingCommitService.makePending(target: request.bridge)
-            try HostNetworkPendingCommitService.writeLinux(pending)
-            try startRollbackTimer(bridge: request.bridge)
+            try revert(request: request, probe: probe)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/networkctl",
+                arguments: ["reload"],
+                timeout: 15,
+            )
+            if probe.backend == .networkManager, !nic.isEmpty {
+                persistNmFileIfRuntime(connection: nic)
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["connection", "up", nic],
+                    timeout: 30,
+                )
+                _ = try? PlatformProcess.run(
+                    path: "/usr/bin/nmcli",
+                    arguments: ["device", "reapply", nic],
+                    timeout: 15,
+                )
+            }
+            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
+        }
+
+        private func persistDropSystemdBridge(bridge: String, cidrs: [String]) throws {
+            let persist = LinuxHostBridgeApply.systemdBridgePersist(bridge: bridge)
+            for path in persist.remove {
+                try? FileManager.default.removeItem(atPath: path)
+                try? FileManager.default.removeItem(atPath: "\(path).d")
+            }
+            for path in persist.rewrite {
+                guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+                let next = LinuxHostBridgeApply.rewritePortNetworkDroppingBridge(
+                    text,
+                    bridge: bridge,
+                    cidrs: cidrs,
+                )
+                try next.write(toFile: path, atomically: true, encoding: .utf8)
+            }
+        }
+
+        private func unslaveNmPort(nic: String, cidrs: [String]) {
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "connection.slave-type", "",
+                    "connection.master", "",
+                    "connection.port-type", "",
+                    "connection.controller", "",
+                ],
+                timeout: 15,
+            )
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "ipv4.method", "auto",
+                    "connection.autoconnect", "yes",
+                ],
+                timeout: 15,
+            )
+            guard !cidrs.isEmpty else { return }
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: [
+                    "connection", "modify", nic,
+                    "ipv4.addresses", cidrs.joined(separator: ","),
+                ],
+                timeout: 15,
+            )
+            persistNmFileIfRuntime(connection: nic)
+        }
+
+        private func persistNmFileIfRuntime(connection: String) {
+            let listed = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["-t", "-f", "NAME,FILENAME", "connection", "show"],
+                timeout: 15,
+            )
+            guard let listed else { return }
+            var src = ""
+            for raw in listed.stdoutString.split(whereSeparator: \.isNewline) {
+                let line = String(raw)
+                guard let sep = line.firstIndex(of: ":") else { continue }
+                let name = String(line[..<sep])
+                if name == connection {
+                    src = String(line[line.index(after: sep)...])
+                    break
+                }
+            }
+            guard src.contains("/run/"), FileManager.default.fileExists(atPath: src) else { return }
+            let dest = "/etc/NetworkManager/system-connections/\((src as NSString).lastPathComponent)"
+            try? FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: dest).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            try? FileManager.default.removeItem(atPath: dest)
+            try? FileManager.default.copyItem(atPath: src, toPath: dest)
+            _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0600", dest], timeout: 5)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "reload"],
+                timeout: 15,
+            )
+        }
+
+        private func ipv4CIDRs(on device: String) throws -> [String] {
+            let result = try PlatformProcess.run(
+                path: Self.ipPath,
+                arguments: ["-4", "-o", "addr", "show", "dev", device],
+                timeout: 10,
+            )
+            guard result.succeeded else { return [] }
+            var cidrs: [String] = []
+            for raw in result.stdoutString.split(whereSeparator: \.isNewline) {
+                let parts = String(raw).split(whereSeparator: \.isWhitespace).map(String.init)
+                guard let inet = parts.firstIndex(of: "inet"), inet + 1 < parts.count else { continue }
+                let cidr = parts[inet + 1]
+                if cidr.hasPrefix("127.") { continue }
+                cidrs.append(cidr)
+            }
+            return cidrs
         }
 
         private static var ipPath: String {
@@ -418,20 +814,50 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     "nmcli failed: \(added.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
                 )
             }
-            _ = try PlatformProcess.run(
+            let slave = LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic)
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "delete", slave],
+                timeout: 15,
+            )
+            let addedSlave = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: [
                     "connection", "add", "type", "bridge-slave", "ifname", nic,
-                    "master", request.bridge, "con-name",
-                    LinuxHostBridgeApply.nmSlaveConnectionName(bridge: request.bridge, nic: nic),
+                    "master", request.bridge, "con-name", slave,
                 ],
                 timeout: 30,
             )
+            if !addedSlave.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli failed: \(addedSlave.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
             _ = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "modify", name, "connection.autoconnect-ports", "1"],
+                timeout: 15,
+            )
+            let upBridge = try PlatformProcess.run(
                 path: "/usr/bin/nmcli",
                 arguments: ["connection", "up", name],
                 timeout: 30,
             )
+            if !upBridge.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli connection up \(name) failed: \(upBridge.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
+            let upSlave = try PlatformProcess.run(
+                path: "/usr/bin/nmcli",
+                arguments: ["connection", "up", slave],
+                timeout: 30,
+            )
+            if !upSlave.succeeded {
+                throw BarkVisorError.internalError(
+                    "nmcli connection up \(slave) failed: \(upSlave.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                )
+            }
         }
 
         /// Start `netplan try` without waiting. Persist needs SIGUSR1 (netplan-try(8));
@@ -494,7 +920,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 atPath: "/run/barkvisor",
                 withIntermediateDirectories: true,
             )
-            try? FileManager.default.removeItem(atPath: stamp)
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
             let helper = "/run/barkvisor/\(bridge)-rollback.sh"
             try writeAtomically(
                 helper,
@@ -504,7 +933,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ),
             )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
-            _ = try? PlatformProcess.run(
+            let armed = try PlatformProcess.run(
                 path: "/usr/bin/systemd-run",
                 arguments: [
                     "--on-active=\(LinuxHostBridgeApply.rollbackSeconds)s",
@@ -513,6 +942,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ],
                 timeout: 15,
             )
+            if !armed.succeeded {
+                throw BarkVisorError.internalError(
+                    "Could not arm \(LinuxHostBridgeApply.rollbackSeconds)s revert timer: \(armed.stderrString)",
+                )
+            }
+            try? FileManager.default.removeItem(atPath: stamp)
         }
 
         private func stopRollbackTimer(bridge: String) {

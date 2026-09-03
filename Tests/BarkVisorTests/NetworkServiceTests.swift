@@ -276,6 +276,68 @@ final class NetworkServiceTests {
         #expect(error?.httpStatus == 409)
     }
 
+    @Test func `deleteUnattached removes bridged networks with no Workloads`() async throws {
+        try await dbPool.write { db in
+            let net = Network(
+                id: "net-br1",
+                name: "Bridged (br1)",
+                mode: "bridged",
+                bridge: "br1",
+                macAddress: nil,
+                dnsServer: nil,
+                autoCreated: false,
+                isDefault: false,
+            )
+            try net.insert(db)
+        }
+        try await NetworkService.deleteUnattached(bridge: "br1", db: dbPool)
+        let fetched = try await dbPool.read { db in try Network.fetchOne(db, key: "net-br1") }
+        #expect(fetched == nil)
+    }
+
+    @Test func `deleteUnattached refuses when a Workload still uses the bridge`() async throws {
+        try await dbPool.write { db in
+            let net = Network(
+                id: "net-br2",
+                name: "Bridged (br2)",
+                mode: "bridged",
+                bridge: "br2",
+                macAddress: nil,
+                dnsServer: nil,
+                autoCreated: false,
+                isDefault: false,
+            )
+            try net.insert(db)
+            let disk = Disk(
+                id: "d-br2",
+                name: "boot",
+                path: "/tmp/d-br2.qcow2",
+                sizeBytes: 1_000_000,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2025-01-01T00:00:00Z",
+            )
+            try disk.insert(db)
+            let vm = VM(
+                id: "vm-br2", name: "test", vmType: "linux-arm64", state: "stopped",
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d-br2",
+                networkId: "net-br2", cloudInitPath: nil,
+                description: nil, bootOrder: "cd", displayResolution: "1280x800",
+                additionalDiskIds: nil, uefi: true, tpmEnabled: false,
+                macAddress: "52:54:00:12:34:57", sharedPaths: nil, portForwards: nil,
+                autoCreated: false, pendingChanges: false,
+                createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+            )
+            try vm.insert(db)
+        }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.deleteUnattached(bridge: "br2", db: self.dbPool)
+        }
+        #expect(error?.httpStatus == 409)
+    }
+
     // MARK: - Update
 
     @Test func `update default network forbidden`() async throws {

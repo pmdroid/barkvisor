@@ -25,6 +25,15 @@ public enum SocketVmnetLaunchd {
         "/var/run/socket_vmnet.bridged.\(interface)"
     }
 
+    public static func socketPathsToRemove(interface: String) -> [String] {
+        var paths = SocketVmnetDiscovery.perInterfaceSocketPaths(interface)
+        let primary = socketPath(interface: interface)
+        if !paths.contains(primary) {
+            paths.insert(primary, at: 0)
+        }
+        return paths
+    }
+
     public static func plistXML(
         interface: String,
         binary: String,
@@ -150,6 +159,9 @@ public enum SocketVmnetLaunchd {
             let plist = plistURL(interface: interface)
             if FileManager.default.fileExists(atPath: plist.path) {
                 try FileManager.default.removeItem(at: plist)
+            }
+            for path in socketPathsToRemove(interface: interface) where FileManager.default.fileExists(atPath: path) {
+                try? FileManager.default.removeItem(atPath: path)
             }
         }
 

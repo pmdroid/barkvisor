@@ -24,7 +24,7 @@ struct BarkVisorCLI: AsyncParsableCommand {
             abstract: role.serveFrontend
                 ? "BarkVisor Device daemon"
                 : "BarkVisor Device daemon (API-only, no SPA)",
-            subcommands: [Serve.self, Join.self, Doctor.self],
+            subcommands: [Serve.self, Join.self, Doctor.self, HostnetExpire.self],
             defaultSubcommand: Serve.self,
         )
     }()
@@ -96,6 +96,20 @@ struct Doctor: AsyncParsableCommand {
         if !report.ok {
             throw ExitCode(1)
         }
+    }
+}
+
+struct HostnetExpire: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "hostnet-expire",
+        abstract: "Revert expired host-network Keep windows.",
+    )
+
+    func run() async throws {
+        try Config.ensureDirectories()
+        let database = try AppDatabase(path: Config.dbPath.path)
+        try database.migrate()
+        await HostNetworkPendingReaper.expire(db: database.pool)
     }
 }
 

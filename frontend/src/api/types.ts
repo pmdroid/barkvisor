@@ -1025,6 +1025,7 @@ export type HostBridgePendingCommit = {
   target: string
   commitDeadline: string
   rollbackSeconds: number
+  createdBridge?: boolean
 }
 
 export type HostBridgeReadiness = {

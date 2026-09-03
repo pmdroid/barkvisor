@@ -131,7 +131,7 @@ describe('useFeature (PAS-38)', () => {
     expect(bridgeManagementMode({ platform: '', supportsHostBridgeManagement: false })).toBe('hidden')
   })
 
-  test('macos-guide and linux-guide use Apply/Revert in the UI; mutation action keys stay internal', () => {
+  test('macos-guide and linux-guide keep mutation action keys internal', () => {
     expect(bridgeGuideActionKeys('macos-guide')).toEqual([])
     expect(bridgeGuideActionKeys('linux-guide')).toEqual([])
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
@@ -140,21 +140,31 @@ describe('useFeature (PAS-38)', () => {
     }
   })
 
-  test('NetworkView renders interface-first tabs with Apply/Revert on interface drawer', () => {
+  test('NetworkView renders interface-first tabs with Apply on interface drawer', () => {
     const src = readFileSync(join(here, '../views/NetworkView.vue'), 'utf8')
     expect(src).toContain('bridgeManagementMode')
-    expect(src).toContain('macosSocketVmnetSetupGroups')
-    expect(src).toContain('linuxBridgeSetupGroups')
-    expect(src).toContain('GuestCommandAccordion')
+    expect(src).toContain('canCreateHostBridge')
+    expect(src).toContain('hostBridgeDevices')
+    expect(src).toContain('canGuideCreateBridge')
+    expect(src).toContain('createBridgeDeviceOptions')
     expect(src).toContain('HostInterfaceAddressList')
     expect(src).toContain("activeTab = 'interfaces'")
     expect(src).toContain('Host interfaces')
     expect(src).toContain('VM networks')
     expect(src).not.toContain('Bridge setup')
     expect(src).toContain('canApplySelectedInterface')
+    expect(src).toContain('canDeleteSelectedInterface')
     expect(src).toContain('runInterfaceHostBridge')
+    expect(src).toContain('data.needsConfirm || data.success')
     expect(src).toContain('applySelectedInterface')
-    expect(src).toContain('revertSelectedInterface')
+    expect(src).not.toContain('revertSelectedInterface')
+    expect(src).not.toContain('recheckSelectedInterface')
+    expect(src).not.toContain('createBridgeVmNetwork')
+    expect(src).not.toContain('Create VM network')
+    expect(src).not.toContain('GuestCommandAccordion')
+    expect(src).not.toContain('Advanced CLI')
+    expect(src).not.toContain('macosSocketVmnetSetupGroups')
+    expect(src).not.toContain('linuxBridgeSetupGroups')
     expect(src).toContain('interfaceOwnsAddressApply')
     expect(src).toContain('deleteSelectedInterface')
     expect(src).toContain('selectedInterfaceShowsDelete')
@@ -169,9 +179,8 @@ describe('useFeature (PAS-38)', () => {
     expect(src).not.toContain('interfaceBridgeRoleDetail')
     expect(src).toContain('openBridgeSetupForPending')
     expect(src).toContain('bridgeSetupInterfaceKey')
-    expect(src).toContain('Advanced CLI')
     expect(src).toContain('applyButtonLabel')
-    expect(src).toContain('>Revert</AppButton>')
+    expect(src).not.toContain('>Revert</AppButton>')
     expect(src).toContain('>Delete</AppButton>')
     expect(src).not.toContain('>Setup</AppButton>')
     expect(src).not.toContain('>Start</AppButton>')
@@ -189,8 +198,15 @@ describe('useFeature (PAS-38)', () => {
     expect(src).toContain('interfaceAddressColumn')
     expect(src).toContain('pendingCommitBridgeName')
     expect(src).toContain('pendingCommitMatchesInterface')
-    expect(src).toContain('recheckSelectedInterface')
+    expect(src).toContain('showPendingCommitModal')
+    expect(src).toContain('Keep network changes')
+    expect(src).toContain('Apply these network changes?')
+    expect(src).toContain(':details="linuxApplyResult?.changes ?? []"')
+    expect(src).toContain(':commands="linuxApplyResult?.commands ?? []"')
+    expect(src).not.toContain('linuxApplyResult && activeTab')
+    expect(src).not.toContain('showPendingCommitBanner')
     expect(src).toContain('bridge: existingBridge ?? undefined')
+    expect(src).not.toContain('bridge: existingBridge ?? (targets.bridge || undefined)')
   })
 
   test('NetworkView VM tab distinguishes Workload network from Device address (#432)', () => {

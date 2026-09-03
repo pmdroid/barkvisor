@@ -45,6 +45,14 @@ public enum SocketVmnetDiscovery {
            !uplink.isEmpty {
             return uplink
         }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = "-bridge"
+        if trimmed.hasSuffix(suffix) {
+            let base = String(trimmed.dropLast(suffix.count))
+            if !base.isEmpty {
+                return base
+            }
+        }
         return name
     }
 
@@ -142,9 +150,12 @@ public enum SocketVmnetDiscovery {
                 )
             }
         }
-        return sockets.map { item in
-            BridgeStateDTO(
-                interface: item.interface,
+        return sockets.compactMap { item in
+            if isSharedSocketPath(item.path) { return nil }
+            let name = HostBridgeFactsService.syntheticMacBridgeName(uplink: item.interface)
+            guard !name.isEmpty else { return nil }
+            return BridgeStateDTO(
+                interface: name,
                 socketPath: item.path,
                 plistExists: false,
                 daemonRunning: true,

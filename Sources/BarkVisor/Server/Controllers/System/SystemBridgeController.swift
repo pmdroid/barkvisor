@@ -12,6 +12,10 @@ struct SystemBridgeController: RouteCollection {
         system.post("bridges", ":interface", "start", use: startBridge)
         system.post("bridges", ":interface", "stop", use: stopBridge)
         system.delete("bridges", ":interface", use: removeBridge)
+        system.post("interfaces", use: installBridge)
+        system.post("interfaces", ":interface", "start", use: startBridge)
+        system.post("interfaces", ":interface", "stop", use: stopBridge)
+        system.delete("interfaces", ":interface", use: removeBridge)
     }
 
     @Sendable
@@ -35,8 +39,15 @@ struct SystemBridgeController: RouteCollection {
     }
 
     @Sendable
-    func nextBridge(req _: Vapor.Request) async throws -> NextBridgeResponse {
-        NextBridgeResponse(bridge: LinuxHostBridgeApply.nextFreeBridgeLive())
+    func nextBridge(req: Vapor.Request) async throws -> NextBridgeResponse {
+        let occupied = try await req.db.read { db in
+            try Set(
+                Network.fetchAll(db)
+                    .compactMap(\.bridge)
+                    .filter { !$0.isEmpty },
+            )
+        }
+        return NextBridgeResponse(bridge: LinuxHostBridgeApply.nextFreeBridgeLive(extraTaken: occupied))
     }
 
     private static func bridgeInfo(from dto: BridgeStateDTO) -> BridgeInfo {
@@ -60,11 +71,7 @@ struct SystemBridgeController: RouteCollection {
             return try await Self.linuxApply(req: req, defaultAction: .apply)
         }
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            let response = try await Self.macHostApply(req: req, defaultAction: .apply)
-            if response.applied == true {
-                await Self.syncMacBridgedNetwork(req: req, body: (try? req.content.decode(BridgeRequest.self)))
-            }
-            return response
+            return try await Self.macHostApply(req: req, defaultAction: .apply)
         }
         try Self.requireManagedBridgeDaemon()
         throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
@@ -123,11 +130,19 @@ struct SystemBridgeController: RouteCollection {
                 db: req.db,
             )
         }
+        let createdBefore = Self.createdBridgePending(bridge: request.bridge, nic: request.nic)
         let result = try LinuxHostBridgeApplyLive.run(request: request)
         if result.conflict {
             throw BarkVisorError.conflict(result.message)
         }
         if result.applied {
+            try await Self.syncWorkloadNetwork(
+                action: request.action,
+                bridge: request.bridge,
+                createdBridge: request.action == .apply ? result.createdBridge : createdBefore,
+                db: req.db,
+                req: req,
+            )
             let auditAction = switch request.action {
             case .revert: "host-bridge.revert"
             case .delete: "host-bridge.delete"
@@ -142,7 +157,11 @@ struct SystemBridgeController: RouteCollection {
                 req: req,
             )
         }
-        return Self.bridgeActionResponse(from: result, target: request.bridge)
+        let target = request.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.bridgeActionResponse(
+            from: result,
+            target: target.isEmpty ? request.nic : target,
+        )
     }
 
     private static func bridgeActionResponse(
@@ -181,11 +200,19 @@ struct SystemBridgeController: RouteCollection {
                     db: req.db,
                 )
             }
+            let createdBefore = Self.createdBridgePending(bridge: request.bridge, nic: request.nic)
             let result = try MacHostBridgeApplyLive.run(request: request)
             if result.conflict {
                 throw BarkVisorError.conflict(result.message)
             }
             if result.applied {
+                try await Self.syncWorkloadNetwork(
+                    action: request.action,
+                    bridge: request.bridge,
+                    createdBridge: request.action == .apply ? result.createdBridge : createdBefore,
+                    db: req.db,
+                    req: req,
+                )
                 let auditAction = switch request.action {
                 case .revert: "host-bridge.revert"
                 case .delete: "host-bridge.delete"
@@ -223,7 +250,9 @@ struct SystemBridgeController: RouteCollection {
         )
         if PlatformCapabilities.supportsHostBridgeManagement {
             let bridge = names.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
-            if bridge.isEmpty {
+            let nic = names.nic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let addressOnly = action == .apply || action == .dryRun || action == .check
+            if bridge.isEmpty, !addressOnly || nic.isEmpty {
                 throw BarkVisorError.badRequest(
                     "Bridge name required. Create a Bridge; uplink Apply does not imply br0.",
                 )
@@ -269,6 +298,7 @@ struct SystemBridgeController: RouteCollection {
     ) -> LinuxHostBridgeApplyAction {
         if body.dryRun == true { return .dryRun }
         if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            if raw == "dryRun" { return .dryRun }
             return LinuxHostBridgeApplyAction(rawValue: raw) ?? defaultAction
         }
         return defaultAction
@@ -322,28 +352,53 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    private static func syncMacBridgedNetwork(req: Vapor.Request, body: BridgeRequest?) async {
-        let names = LinuxHostBridgeApply.resolveNames(
-            bodyBridge: body?.bridge,
-            bodyInterface: body?.interface,
-            pathInterface: req.parameters.get("interface"),
-            linuxHost: false,
-        )
-        let name = names.bridge
-        guard !name.isEmpty else { return }
-        await BridgeSyncService.syncOnce(db: req.db)
-        let before = try? await req.db.read { db in
-            try Network.filter(Column("bridge") == name).fetchOne(db)
+    private static func createdBridgePending(bridge: String, nic: String?) -> Bool {
+        if LinuxHostBridgeApply.readOwnerMarker(bridge: bridge)?.createdBridge == true {
+            return true
         }
-        if let network = try? await NetworkService.ensureBridgedNetwork(for: name, db: req.db),
-           before == nil {
-            AuditService.log(
-                action: "network.create",
-                resourceType: "network",
-                resourceId: network.id,
-                resourceName: network.name,
-                req: req,
-            )
+        if HostNetworkPendingCommitService.readLinux(bridge: bridge)?.createdBridge == true {
+            return true
+        }
+        guard let nic, !nic.isEmpty else { return false }
+        #if os(macOS)
+            if HostNetworkPendingCommitService.readMac(device: nic)?.createdBridge == true {
+                return true
+            }
+        #endif
+        return LinuxHostBridgeApply.readOwnerMarker(bridge: nic)?.createdBridge == true
+    }
+
+    private static func syncWorkloadNetwork(
+        action: LinuxHostBridgeApplyAction,
+        bridge: String,
+        createdBridge: Bool,
+        db: DatabasePool,
+        req: Vapor.Request,
+    ) async throws {
+        let name = bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        switch action {
+        case .apply:
+            guard createdBridge else { return }
+            await BridgeSyncService.syncOnce(db: db)
+            let before = try await db.read { db in
+                try Network.filter(Column("bridge") == name).fetchOne(db)
+            }
+            let network = try await NetworkService.ensureBridgedNetwork(for: name, db: db)
+            if before == nil {
+                AuditService.log(
+                    action: "network.create",
+                    resourceType: "network",
+                    resourceId: network.id,
+                    resourceName: network.name,
+                    req: req,
+                )
+            }
+        case .delete, .revert:
+            guard action == .delete || createdBridge else { return }
+            try await NetworkService.deleteUnattached(bridge: name, db: db)
+        case .commit, .check, .dryRun:
+            break
         }
     }
 

@@ -195,4 +195,15 @@ public enum NetworkService {
             return try VM.filter(ids.contains(Column("networkId"))).fetchCount(db)
         }
     }
+
+    public static func deleteUnattached(bridge: String, db: DatabasePool) async throws {
+        let name = bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let nets = try await db.read { db in
+            try Network.filter(Column("bridge") == name).fetchAll(db)
+        }
+        for net in nets {
+            _ = try await delete(id: net.id, db: db)
+        }
+    }
 }

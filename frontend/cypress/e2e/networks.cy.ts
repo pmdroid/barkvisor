@@ -20,7 +20,6 @@ describe('Network Management', () => {
     cy.contains('button', 'Bridge setup').should('not.exist')
     cy.get('.iface-row').should('exist')
     cy.contains('button', 'Create Network').should('not.exist')
-    cy.contains('button', 'Create').should('be.visible')
   })
 
   it('VM networks tab shows Create Network and Workload network copy', () => {
@@ -197,25 +196,42 @@ describe('Network Management', () => {
     cy.get('.iface-row').should('have.length.gte', 1)
     cy.get('.iface-drawer').should('exist')
     cy.get('.iface-drawer').contains('button', 'Apply').should('exist')
-    cy.get('.iface-drawer').contains('button', 'Revert').should('exist')
-    cy.get('.iface-drawer').contains('button', 'Re-check').should('exist')
-    cy.get('.iface-drawer').contains('VM network records').should('exist')
+    cy.get('.iface-drawer').contains('button', 'Revert').should('not.exist')
+    cy.get('.iface-drawer').contains('button', 'Re-check').should('not.exist')
+    cy.get('.iface-drawer').contains('VM network records').should('not.exist')
+    cy.contains('DHCP is always on').should('not.exist')
+    cy.contains('Advanced CLI').should('not.exist')
   })
+
+  function stubLinuxHost() {
+    cy.intercept('GET', '**/system/capabilities', (req) => {
+      req.continue((res) => {
+        if (res.body && typeof res.body === 'object') {
+          res.body.platform = 'Linux'
+          res.body.supportsHostBridgeManagement = true
+          res.body.supportsManagedBridgeDaemon = false
+        }
+      })
+    })
+  }
 
   function stubCreateBridge(opts: { vmNetwork: boolean; bridge?: string }) {
     const bridge = opts.bridge ?? 'br1'
     cy.intercept('GET', '**/system/bridges/next', { bridge }).as('nextBridge')
-    cy.intercept('POST', '**/system/bridges', (req) => {
+    cy.intercept('POST', '**/system/interfaces', (req) => {
       expect(req.body.bridge).to.eq(bridge)
       expect(req.body.interface).to.be.a('string').and.not.be.empty
+      const checking = req.body.action === 'check' || req.body.action === 'dry-run' || req.body.action === 'dryRun' || req.body.dryRun === true
       req.reply({
         success: true,
-        applied: true,
-        pendingCommit: true,
-        commitDeadline: new Date(Date.now() + 30_000).toISOString(),
+        applied: !checking,
+        pendingCommit: !checking,
+        commitDeadline: checking ? undefined : new Date(Date.now() + 30_000).toISOString(),
         rollbackSeconds: 30,
         target: bridge,
-        message: `Created Bridge ${bridge}.`,
+        changes: [`Create Bridge ${bridge}`],
+        commands: [`nmcli connection add type bridge ifname ${bridge}`],
+        message: checking ? `Ready to create Bridge ${bridge}.` : `Created Bridge ${bridge}.`,
       })
     }).as('createBridgeApply')
     cy.intercept('POST', '**/networks', (req) => {
@@ -231,21 +247,25 @@ describe('Network Management', () => {
     }).as('createVmNetwork')
   }
 
-  it('Create Bridge modal has next-free name, port, and VM network default on', () => {
+  it('Create Bridge modal has next-free name and port, no VM network checkbox', () => {
+    stubLinuxHost()
     stubCreateBridge({ vmNetwork: true })
+    cy.visit('/networks')
     cy.contains('button', 'Create').click()
     cy.contains('button', 'Bridge').click()
     cy.wait('@nextBridge')
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Create Bridge').should('be.visible')
-    cy.contains('.form-group', 'Name').find('input').should('have.value', 'br1').and('have.attr', 'readonly')
-    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').should('be.checked')
+    cy.contains('.form-group', 'Name').find('input').should('have.value', 'br1').and('not.have.attr', 'readonly')
+    cy.contains('Create VM network').should('not.exist')
     cy.get('.modal-overlay').contains('button', 'Apply').should('exist')
     cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
-  it('Create Bridge Apply with VM network posts bridge plus nic and creates Workload network', () => {
+  it('Create Bridge Apply posts bridge plus nic and creates Workload network', () => {
+    stubLinuxHost()
     stubCreateBridge({ vmNetwork: true })
+    cy.visit('/networks')
     cy.contains('button', 'Create').click()
     cy.contains('button', 'Bridge').click()
     cy.wait('@nextBridge')
@@ -253,32 +273,61 @@ describe('Network Management', () => {
       const values = [...$sel.find('option')].map((o) => o.value).filter((v) => v)
       if (values[0]) cy.wrap($sel).select(values[0], { force: true })
     })
+    cy.get('.modal-overlay').contains('button', 'Apply').click()
+    cy.wait('@createBridgeApply')
+    cy.contains('Apply these network changes').should('be.visible')
+    cy.contains('summary', 'Changes').click()
     cy.get('.modal-overlay').contains('button', 'Apply').click()
     cy.wait('@createBridgeApply')
     cy.wait('@createVmNetwork')
-    cy.get('.modal-overlay').should('not.exist')
   })
 
-  it('Create Bridge Apply with VM network unchecked does not create Workload network', () => {
-    stubCreateBridge({ vmNetwork: false })
+  it('Create Bridge on macOS lists Wi-Fi en0 as a port', () => {
+    cy.intercept('GET', '**/system/capabilities', (req) => {
+      req.continue((res) => {
+        if (res.body && typeof res.body === 'object') {
+          res.body.platform = 'macOS'
+          res.body.supportsHostBridgeManagement = false
+          res.body.supportsManagedBridgeDaemon = true
+        }
+      })
+    }).as('macCaps')
+    cy.intercept('GET', '**/system/bridges/next', { bridge: 'br0' }).as('nextBridge')
+    cy.intercept('GET', '**/system/host-bridge-readiness', {
+      helperPath: null,
+      helperSetuid: false,
+      suggestedBridge: 'br0',
+      aclAllowsSuggested: null,
+      bridges: [{ name: 'en0', enslaved: [] }],
+      defaultRouteInterface: 'en0',
+      onlyUplink: false,
+      ready: true,
+    }).as('ready')
+    cy.intercept('GET', '**/system/interfaces', [
+      {
+        name: 'en0',
+        displayName: 'en0 (Wi-Fi)',
+        ipAddress: '192.168.1.10',
+        dhcpEnabled: true,
+        addresses: [{ cidr: '192.168.1.10/24', source: 'dhcp', primary: true }],
+      },
+    ]).as('ifaces')
+    cy.visit('/networks')
+    cy.wait('@macCaps')
     cy.contains('button', 'Create').click()
     cy.contains('button', 'Bridge').click()
-    cy.wait('@nextBridge')
-    cy.contains('label', 'Create VM network').find('input[type="checkbox"]').uncheck()
-    cy.contains('.form-group', 'Port').find('select').then(($sel) => {
-      const values = [...$sel.find('option')].map((o) => o.value).filter((v) => v)
-      if (values[0]) cy.wrap($sel).select(values[0], { force: true })
-    })
-    cy.get('.modal-overlay').contains('button', 'Apply').click()
-    cy.wait('@createBridgeApply')
-    cy.get('@createVmNetwork.all').should('have.length', 0)
-    cy.get('.modal-overlay').should('not.exist')
+    cy.get('.modal-overlay').should('be.visible')
+    cy.contains('h2', 'Create Bridge').should('be.visible')
+    cy.contains('.form-group', 'Port').find('select').should('contain', 'en0')
+    cy.contains('.form-group', 'Name').find('input').should('have.value', 'en0-bridge').and('not.have.attr', 'readonly')
+    cy.get('.modal-overlay').contains('button', 'Cancel').click()
   })
 
   it('Host interfaces drawer shows multi-address editor', () => {
     cy.get('.iface-drawer').within(() => {
       cy.contains('Addresses').should('be.visible')
-      cy.contains('Use DHCP for primary address').should('exist')
+      cy.contains('DHCP').should('exist')
+      cy.contains('Use DHCP for primary address').should('not.exist')
       cy.contains('Gateway').should('exist')
       cy.contains('DNS').should('exist')
       cy.contains('button', 'Add address').should('exist')
@@ -318,12 +367,13 @@ describe('Network Management', () => {
     })
     cy.contains('.iface-row', 'eth0').click()
     cy.get('.iface-drawer').within(() => {
-      cy.contains('Use DHCP for primary address').should('exist')
-      cy.get('input[type="checkbox"]').first().should('not.be.disabled')
+      cy.contains('Use DHCP for primary address').should('not.exist')
+      cy.contains('DHCP').should('exist')
+      cy.get('input[placeholder="from router"]').should('be.disabled')
     })
   })
 
-  it('Keep banner shows on the NIC row when pending nic is the uplink', () => {
+  it('Keep modal shows when pending nic is the uplink', () => {
     const readiness = {
       helperPath: null,
       helperSetuid: true,
@@ -347,7 +397,8 @@ describe('Network Management', () => {
     cy.visit('/networks')
     cy.wait('@ifaces')
     cy.wait('@ready')
-    cy.contains('.iface-row', 'en0').click()
-    cy.get('.iface-drawer').contains('Keep changes').should('be.visible')
+    cy.get('.modal-overlay').contains('Keep network changes').should('be.visible')
+    cy.get('.modal-overlay').contains('Keep changes').should('be.visible')
+    cy.get('.iface-drawer').contains('Keep changes').should('not.exist')
   })
 })

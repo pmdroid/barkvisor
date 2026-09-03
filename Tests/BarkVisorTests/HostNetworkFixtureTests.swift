@@ -206,17 +206,10 @@ struct HostNetworkFixtureTests {
             BridgeRequest.self,
             from: Data(#"{ "action": "apply", "interface": "eth0", "confirm": true }"#.utf8),
         )
-        do {
-            _ = try Self.bridgeApplyRequest(from: body, defaultAction: .apply)
-            Issue.record("expected missing bridge name to fail")
-        } catch let error as BarkVisorError {
-            guard case let .badRequest(message) = error else {
-                Issue.record("expected badRequest, got \(error)")
-                return
-            }
-            #expect(message.contains("Bridge name required"))
-            #expect(message.contains("br0"))
-        }
+        let request = try Self.bridgeApplyRequest(from: body, defaultAction: .apply)
+        #expect(request.bridge.isEmpty)
+        #expect(request.nic == "eth0")
+        #expect(request.bridge != HostBridgeFactsService.suggestedBridgeName)
     }
 
     @Test func `interfaces snapshot fixture matches HostInterface JSON contract`() throws {
@@ -323,7 +316,10 @@ struct HostNetworkFixtureTests {
             pathInterface: nil,
             linuxHost: true,
         )
-        if names.bridge.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let bridge = names.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nic = names.nic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let addressOnly = action == .apply || action == .dryRun || action == .check
+        if bridge.isEmpty, !addressOnly || nic.isEmpty {
             throw BarkVisorError.badRequest(
                 "Bridge name required. Create a Bridge; uplink Apply does not imply br0.",
             )

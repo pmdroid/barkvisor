@@ -381,6 +381,7 @@ struct QEMUBuilderValidationTests {
         )
         #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "br0", dataDir: dir) == "en0")
         #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "en0", dataDir: dir) == "en0")
+        #expect(SocketVmnetDiscovery.resolveUplink(forBridge: "en0-bridge", dataDir: dir) == "en0")
         #expect(SocketVmnetDiscovery.bridgeName(forUplink: "en0", dataDir: dir) == "br0")
         let states = SocketVmnetDiscovery.bridgeStates(
             fileExists: { $0.hasSuffix("socket_vmnet.bridged.en0") },

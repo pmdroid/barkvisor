@@ -112,6 +112,7 @@ export function inferInterfaceRole(
 ): HostInterfaceRole {
   const name = iface.name.toLowerCase()
   if (name === 'lo' || name === 'lo0') return 'loopback'
+  if (name.endsWith('-bridge')) return 'bridge'
   // Linux readiness.bridges lists kernel masters (br0). macOS lists socket_vmnet uplinks (en0).
   if (
     mode !== 'macos-guide'
@@ -196,7 +197,7 @@ export function interfaceOwnsBridgeSetupApply(
   mode: string,
 ): boolean {
   if (role === 'external' || role === 'loopback' || role === 'tailscale') return false
-  if (mode === 'macos-guide') return role === 'uplink'
+  if (mode === 'macos-guide') return role === 'uplink' || role === 'bridge'
   if (role === 'bridge') return true
   if (role === 'uplink' && !interfaceEnslavedToBridge(iface, readiness)) return true
   return false
@@ -300,7 +301,7 @@ export function existingBridgeForInterfaceApply(
   return interfaceEnslavedToBridge(iface, readiness)
 }
 
-/** Uplink NIC sent to POST /api/system/bridges when the drawer targets a bridge master. */
+/** Uplink NIC sent to POST /api/system/interfaces when the drawer targets a bridge master. */
 export function resolveBridgeApplyNic(
   iface: HostInterface,
   readiness?: HostBridgeReadiness | null,
@@ -427,4 +428,25 @@ export function interfaceShowsDelete(
   readiness?: HostBridgeReadiness | null,
 ): boolean {
   return interfaceAssociatedBridge(iface, readiness)?.createdBridge === true
+}
+
+export function syntheticMacBridgeIfaces(
+  ifaces: HostInterface[],
+  readiness: HostBridgeReadiness | null | undefined,
+  mode: string,
+): HostInterface[] {
+  if (mode !== 'macos-guide' || !readiness) return []
+  const seen = new Set(ifaces.map((iface) => iface.name))
+  const extra: HostInterface[] = []
+  for (const bridge of readiness.bridges) {
+    if (!bridge.name || seen.has(bridge.name)) continue
+    seen.add(bridge.name)
+    extra.push({
+      name: bridge.name,
+      displayName: bridge.name,
+      ipAddress: '',
+      managedByBarkvisor: true,
+    })
+  }
+  return extra
 }

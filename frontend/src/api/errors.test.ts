@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { apiErrorCode, apiErrorMessage, isNotFoundError } from './errors'
+import { apiErrorCode, apiErrorMessage, isNotFoundError, isOccupiedBridgeConflict } from './errors'
 
 function axiosResponse(status: number, reason?: string, code?: string) {
   return {
@@ -43,5 +43,24 @@ describe('apiErrorCode (GH-461)', () => {
     expect(apiErrorCode({ isAxiosError: true, message: 'Network Error' })).toBe(null)
     expect(apiErrorCode(new Error('boom'))).toBe(null)
     expect(apiErrorCode('boom')).toBe(null)
+  })
+})
+
+describe('isOccupiedBridgeConflict', () => {
+  test('matches this Device already having that brN Workload network', () => {
+    expect(isOccupiedBridgeConflict(
+      axiosResponse(
+        409,
+        'Interface \'br0\' is already used by network "Bridged (br0)". Each interface can only have one bridge.',
+        'conflict',
+      ),
+      'br0',
+    )).toBe(true)
+    expect(isOccupiedBridgeConflict(
+      axiosResponse(409, 'Interface \'br0\' is already used by network "Bridged (br0)".', 'conflict'),
+      'br1',
+    )).toBe(false)
+    expect(isOccupiedBridgeConflict(axiosResponse(409, 'other', 'conflict'), 'br0')).toBe(false)
+    expect(isOccupiedBridgeConflict(axiosResponse(500, 'Interface \'br0\' is already used'), 'br0')).toBe(false)
   })
 })

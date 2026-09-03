@@ -40,6 +40,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
     public var helperSetuidPaths: Set<String>
     public var aclContents: String?
     public var listenPort: Int
+    public var liveIPv4CIDRs: [String]
+    public var keepIPv4CIDRs: [String]
 
     public init(
         facts: HostBridgeFacts,
@@ -54,6 +56,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
         helperSetuidPaths: Set<String> = [],
         aclContents: String? = nil,
         listenPort: Int = 7_777,
+        liveIPv4CIDRs: [String] = [],
+        keepIPv4CIDRs: [String] = [],
     ) {
         self.facts = facts
         self.backend = backend
@@ -67,6 +71,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
         self.helperSetuidPaths = helperSetuidPaths
         self.aclContents = aclContents
         self.listenPort = listenPort
+        self.liveIPv4CIDRs = liveIPv4CIDRs
+        self.keepIPv4CIDRs = keepIPv4CIDRs
     }
 }
 
@@ -125,6 +131,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
     public var message: String
     public var refused: Bool
     public var conflict: Bool
+    public var createdBridge: Bool
 
     public init(
         success: Bool,
@@ -140,6 +147,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         message: String,
         refused: Bool = false,
         conflict: Bool = false,
+        createdBridge: Bool = false,
     ) {
         self.success = success
         self.applied = applied
@@ -154,6 +162,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         self.message = message
         self.refused = refused
         self.conflict = conflict
+        self.createdBridge = createdBridge
     }
 }
 
@@ -171,13 +180,49 @@ public struct LinuxHostBridgeChange: Sendable, Equatable {
 public enum LinuxHostBridgeApply {
     public static let aclMarker = "# barkvisor:allow-br0"
     public static let ownedMarkerName = "host-bridge"
-    public static let rollbackSeconds = 30
+    public static let rollbackSeconds = 60
+
+    public static func dropsManagementSession(
+        nic: String,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> Bool {
+        if probe.sessionRiskNics.contains(nic) { return true }
+        return probe.facts.onlyUplink
+    }
     public static let netplanPath = "/etc/netplan/90-barkvisor-br0.yaml"
     public static let networkdNetdevPath = "/etc/systemd/network/90-barkvisor-br0.netdev"
     public static let networkdNetworkPath = "/etc/systemd/network/90-barkvisor-br0.network"
 
     public static func aclMarker(for bridge: String) -> String {
         "# barkvisor:allow-\(bridge)"
+    }
+
+    public static func aclTagged(bridge: String, acl: String?) -> Bool {
+        let name = bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let acl, !name.isEmpty else { return false }
+        return acl.contains(aclMarker(for: name))
+    }
+
+    public static func leftoverHostBridge(
+        bridge: String,
+        dir: String = systemdNetworkDir,
+    ) -> Bool {
+        let persist = systemdBridgePersist(bridge: bridge, dir: dir)
+        return !persist.remove.isEmpty || !persist.rewrite.isEmpty
+    }
+
+    public static func ownership(
+        bridge: String,
+        marker: OwnerMarker?,
+        acl: String?,
+        leftoverPersist: Bool = false,
+    ) -> (owned: Bool, createdBridge: Bool) {
+        let tagged = aclTagged(bridge: bridge, acl: acl)
+        let leftover = leftoverPersist
+        return (
+            owned: marker != nil || tagged || leftover,
+            createdBridge: marker?.createdBridge == true || (marker == nil && (tagged || leftover)),
+        )
     }
 
     public static func netplanPath(bridge: String) -> String {
@@ -200,8 +245,71 @@ public enum LinuxHostBridgeApply {
         "barkvisor-\(bridge)-\(nic)"
     }
 
-    public static func commitStampPath(bridge: String) -> String {
-        "/run/barkvisor/\(bridge)-commit"
+    public static let systemdNetworkDir = "/etc/systemd/network"
+
+    public struct SystemdBridgePersist: Sendable, Equatable {
+        public var remove: [String]
+        public var rewrite: [String]
+
+        public init(remove: [String] = [], rewrite: [String] = []) {
+            self.remove = remove
+            self.rewrite = rewrite
+        }
+    }
+
+    public static func systemdBridgePersist(
+        bridge: String,
+        dir: String = systemdNetworkDir,
+    ) -> SystemdBridgePersist {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        var remove: [String] = []
+        var rewrite: [String] = []
+        for name in names.sorted() {
+            let path = "\(dir)/\(name)"
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            if name.hasSuffix(".netdev"),
+               hasNetworkAssignment(text, key: "Name", value: bridge),
+               hasNetworkAssignment(text, key: "Kind", value: "bridge") {
+                remove.append(path)
+            } else if name.hasSuffix(".network"), hasNetworkAssignment(text, key: "Bridge", value: bridge) {
+                rewrite.append(path)
+            } else if name.hasSuffix(".network"),
+                      hasNetworkAssignment(text, key: "Name", value: bridge) {
+                remove.append(path)
+            }
+        }
+        return SystemdBridgePersist(remove: remove, rewrite: rewrite)
+    }
+
+    public static func rewritePortNetworkDroppingBridge(_ text: String, bridge: String, cidrs: [String]) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        lines.removeAll { $0.trimmingCharacters(in: .whitespaces) == "Bridge=\(bridge)" }
+        let hasAddress = lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("Address=") }
+        if !hasAddress {
+            for cidr in cidrs {
+                lines.append("Address=\(cidr)")
+            }
+        }
+        let hasDHCP = lines.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("DHCP=") }
+        if !hasDHCP, !cidrs.isEmpty {
+            lines.append("DHCP=yes")
+        }
+        var body = lines.joined(separator: "\n")
+        if !body.hasSuffix("\n") { body += "\n" }
+        return body
+    }
+
+    public static func hasNetworkAssignment(_ text: String, key: String, value: String) -> Bool {
+        let want = "\(key)=\(value)"
+        for raw in text.split(whereSeparator: \.isNewline) {
+            if raw.trimmingCharacters(in: .whitespaces) == want { return true }
+        }
+        return false
+    }
+
+    public static func commitStampPath(bridge: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(bridge)-commit").path
     }
 
     public static func createdBridge(
@@ -245,9 +353,11 @@ public enum LinuxHostBridgeApply {
     public static func nextFreeBridgeLive(
         facts: HostBridgeFacts = HostBridgeFactsService.probe(),
         dataDir: URL = Config.dataDir,
+        extraTaken: Set<String> = [],
     ) -> String {
         var existing = Set(facts.bridges.map(\.name))
         existing.formUnion(existingInterfaceNames())
+        existing.formUnion(extraTaken)
         return nextFreeBridge(existingInterfaces: existing, markerBridges: listedMarkerBridges(dataDir: dataDir))
     }
 
@@ -269,10 +379,13 @@ public enum LinuxHostBridgeApply {
     public static func rollbackHelperScript(bridge: String, dataDir: String) -> String {
         let stamp = commitStampPath(bridge: bridge)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
+        let claim = HostNetworkPendingCommitService.claimPath(bridge)
         let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
+        if ! mkdir \(claim) 2>/dev/null; then exit 0; fi
+        if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
         rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
@@ -287,7 +400,11 @@ public enum LinuxHostBridgeApply {
           /usr/bin/networkctl reapply "$uplink" >/dev/null 2>&1 || true
         fi
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
+        if grep -q '"createdBridge"[[:space:]]*:[[:space:]]*true' \(pending) 2>/dev/null; then
+          /sbin/ip link del \(bridge) >/dev/null 2>&1 || /usr/sbin/ip link del \(bridge) >/dev/null 2>&1 || true
+        fi
         rm -f \(marker) \(pending) || true
+        rmdir \(claim) 2>/dev/null || true
         """
     }
 
@@ -314,8 +431,8 @@ public enum LinuxHostBridgeApply {
         facts: HostBridgeFacts = HostBridgeFactsService.probe(),
         listenPort: Int = Config.port,
         bridge: String = HostBridgeFactsService.suggestedBridgeName,
+        nic: String? = nil,
     ) -> LinuxHostBridgeApplyProbe {
-        let backend = detectBackend()
         let wireless = Set(existingInterfaceNames().filter { LinuxHostNetwork.isWirelessInterface($0) })
         let session = sessionRisk(facts: facts, listenPort: listenPort)
         let helperPaths = HostBridgeFactsService.qemuBridgeHelperCandidates.filter {
@@ -327,14 +444,40 @@ public enum LinuxHostBridgeApply {
             encoding: .utf8,
         )
         let marker = readOwnerMarker(bridge: bridge)
+        let claim = ownership(
+            bridge: bridge,
+            marker: marker,
+            acl: acl,
+            leftoverPersist: leftoverHostBridge(bridge: bridge),
+        )
+        let target = (nic ?? facts.defaultRouteInterface ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let backend = target.isEmpty
+            ? detectBackend()
+            : detectActiveBackend(nic: target)
+        var liveIPv4: [String] = []
+        var keepIPv4: [String] = []
+        if !target.isEmpty {
+            let addressing = HostInterfaceAddressDiscovery.discoverByInterface(interfaceNames: [target])[target]
+            liveIPv4 = addressing?.addresses.map(\.cidr) ?? []
+            keepIPv4 = addressing?.addresses.filter { $0.source == .dhcp }.map(\.cidr) ?? []
+            if keepIPv4.isEmpty {
+                let kernel = HostInfoService.listInterfaceAddresses().first { row in
+                    row.name == target && !row.ipAddress.contains(":")
+                }
+                if let kernel {
+                    let cidr = kernel.prefixLength.map { "\(kernel.ipAddress)/\($0)" } ?? kernel.ipAddress
+                    keepIPv4 = [cidr]
+                }
+            }
+        }
         return LinuxHostBridgeApplyProbe(
             facts: facts,
             backend: backend,
             wirelessNics: wireless,
             sessionRiskNics: session.nics,
             sessionWarnings: session.warnings,
-            owned: marker != nil,
-            createdBridge: marker?.createdBridge == true,
+            owned: claim.owned,
+            createdBridge: claim.createdBridge,
             existingInterfaces: Set(existingInterfaceNames()),
             helperPaths: helperPaths.isEmpty
                 ? HostBridgeFactsService.qemuBridgeHelperCandidates
@@ -342,6 +485,8 @@ public enum LinuxHostBridgeApply {
             helperSetuidPaths: setuid,
             aclContents: acl,
             listenPort: listenPort,
+            liveIPv4CIDRs: liveIPv4,
+            keepIPv4CIDRs: keepIPv4,
         )
     }
 
@@ -365,6 +510,54 @@ public enum LinuxHostBridgeApply {
             return .ifupdown
         }
         return .unknown
+    }
+
+    public static func detectActiveBackend(
+        nic: String,
+        nmManaged: Bool? = nil,
+        networkdManages: Bool? = nil,
+        installed: () -> LinuxNetworkBackend = { detectBackend() },
+    ) -> LinuxNetworkBackend {
+        let nm = nmManaged ?? nicManagedByNetworkManager(nic)
+        if nm == true { return .networkManager }
+        let networkd = networkdManages ?? nicManagedByNetworkd(nic)
+        if networkd == true { return .systemdNetworkd }
+        return installed()
+    }
+
+    public static func nicManagedByNetworkManager(_ nic: String) -> Bool? {
+        let name = nic.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/nmcli") else { return nil }
+        let result = try? PlatformProcess.run(
+            path: "/usr/bin/nmcli",
+            arguments: ["-g", "GENERAL.NM-MANAGED", "device", "show", name],
+            timeout: 5,
+        )
+        guard let result, result.succeeded else { return nil }
+        switch result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "yes": return true
+        case "no": return false
+        default: return nil
+        }
+    }
+
+    public static func nicManagedByNetworkd(_ nic: String) -> Bool? {
+        let name = nic.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let path = ["/usr/bin/networkctl", "/bin/networkctl"].first {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+        guard let path else { return nil }
+        let result = try? PlatformProcess.run(
+            path: path,
+            arguments: ["status", name],
+            timeout: 5,
+        )
+        guard let result, result.succeeded else { return nil }
+        let text = result.stdoutString.lowercased()
+        if text.contains("unmanaged") { return false }
+        return true
     }
 
     public static func mergeACL(existing: String?, bridge: String) -> String {
@@ -442,6 +635,9 @@ public enum LinuxHostBridgeApply {
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
     ) -> LinuxHostBridgeApplyResult {
+        if isAddressOnlyApply(request: request, probe: probe) {
+            return addressOnlyPlan(request: request, probe: probe)
+        }
         if probe.backend == .ifupdown || probe.backend == .unknown {
             return refuse(
                 backend: probe.backend,
@@ -493,13 +689,13 @@ public enum LinuxHostBridgeApply {
         var warnings = probe.sessionWarnings
         if probe.facts.onlyUplink {
             warnings.append(
-                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Keep changes in the SPA within \(rollbackSeconds)s or they auto-revert.",
+                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Keep changes within \(rollbackSeconds)s or they auto-revert.",
             )
         }
         let sessionHit = probe.sessionRiskNics.contains(nic)
         if sessionHit {
             warnings.append(
-                "'\(nic)' carries SSH or the SPA session. Pass --confirm. After Apply, click Keep changes within \(rollbackSeconds)s or the host auto-reverts.",
+                "'\(nic)' carries SSH or the SPA session. Pass --confirm. Keep changes within \(rollbackSeconds)s or they auto-revert.",
             )
         }
 
@@ -535,10 +731,70 @@ public enum LinuxHostBridgeApply {
         )
     }
 
+    private static func addressOnlyPlan(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> LinuxHostBridgeApplyResult {
+        let nic = resolvedNic(request: request, probe: probe)
+        if nic.isEmpty {
+            return refuse(
+                backend: probe.backend,
+                message: "No interface. Select a NIC.",
+            )
+        }
+        if !validInterfaceName(nic) {
+            return refuse(backend: probe.backend, message: "Invalid interface name '\(nic)'.")
+        }
+        if !probe.existingInterfaces.isEmpty, !probe.existingInterfaces.contains(nic) {
+            return refuse(backend: probe.backend, message: "Interface '\(nic)' is not on this Device.")
+        }
+        let planResult = HostInterfaceAddressApply.resolve(from: request)
+        guard case let .success(plan) = planResult else {
+            if case let .failure(error) = planResult {
+                return refuse(backend: probe.backend, message: error.message)
+            }
+            return refuse(backend: probe.backend, message: "Invalid address plan.")
+        }
+        let target = addressApplyDevice(request: request, probe: probe)
+        let changes = addressOnlyChanges(
+            target: target,
+            plan: plan,
+            backend: probe.backend,
+            liveCIDRs: probe.liveIPv4CIDRs,
+            keepCIDRs: probe.keepIPv4CIDRs,
+        )
+        let dry = request.action == .dryRun
+        return LinuxHostBridgeApplyResult(
+            success: true,
+            applied: false,
+            needsConfirm: false,
+            backend: probe.backend.rawValue,
+            changes: changes.map(\.description),
+            warnings: [],
+            commands: changes.map(\.command).filter { !$0.isEmpty },
+            message: dry
+                ? "Dry run: Device address apply plan."
+                : "Apply Device addresses on \(target).",
+        )
+    }
+
     private static func revertPlan(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
     ) -> LinuxHostBridgeApplyResult {
+        if isAddressOnlyApply(request: request, probe: probe), !probe.owned {
+            let target = addressApplyDevice(request: request, probe: probe)
+            return LinuxHostBridgeApplyResult(
+                success: true,
+                applied: false,
+                needsConfirm: false,
+                backend: probe.backend.rawValue,
+                changes: ["Remove BarkVisor-owned extra addresses on \(target)"],
+                warnings: [],
+                commands: ["sudo /run/barkvisor/\(target)-rollback.sh"],
+                message: "Revert BarkVisor-owned Device addresses. Bridge stays.",
+            )
+        }
         if !probe.owned {
             return refuse(
                 backend: probe.backend,
@@ -677,10 +933,9 @@ public enum LinuxHostBridgeApply {
         plan: HostInterfaceAddressApplyPlan,
     ) -> [LinuxHostBridgeChange] {
         var changes: [LinuxHostBridgeChange] = []
-        let addrParts = addressCLIFlags(plan: plan)
         changes.append(LinuxHostBridgeChange(
             description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device addresses on \(request.bridge), not the guest)",
-            command: "POST /api/system/bridges (interface: \(nic), action: apply, confirm: true)",
+            command: "POST /api/system/interfaces (interface: \(nic), action: apply, confirm: true)",
         ))
         switch probe.backend {
         case .netplan:
@@ -689,9 +944,18 @@ public enum LinuxHostBridgeApply {
                 command: "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
+            let slave = nmSlaveConnectionName(bridge: request.bridge, nic: nic)
             changes.append(LinuxHostBridgeChange(
                 description: "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo nmcli connection add type bridge ifname \(request.bridge) con-name barkvisor-\(request.bridge)",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Attach \(nic) as bridge port",
+                command: "sudo nmcli connection add type bridge-slave ifname \(nic) master \(request.bridge) con-name \(slave)",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Bring up \(request.bridge) and \(nic)",
+                command: "sudo nmcli connection up barkvisor-\(request.bridge) && sudo nmcli connection up \(slave)",
             ))
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
@@ -717,24 +981,6 @@ public enum LinuxHostBridgeApply {
         return changes
     }
 
-    private static func addressCLIFlags(plan: HostInterfaceAddressApplyPlan) -> String {
-        var parts: [String] = []
-        if plan.dhcpEnabled { parts.append("--dhcp") }
-        if !plan.dhcpEnabled, plan.staticCIDRs.isEmpty == false {
-            parts.append("--static")
-        }
-        for cidr in plan.staticCIDRs {
-            parts.append("--address \(cidr)")
-        }
-        if let gateway = plan.gateway, !gateway.isEmpty {
-            parts.append("--gateway \(gateway)")
-        }
-        if !plan.dns.isEmpty {
-            parts.append("--dns \(plan.dns.joined(separator: ","))")
-        }
-        return parts.isEmpty ? "--dhcp" : parts.joined(separator: " ")
-    }
-
     private static func equivalentCommands(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
@@ -746,7 +992,12 @@ public enum LinuxHostBridgeApply {
         guard let plan = resolvedPlan(from: request) else {
             return ["# invalid address plan"]
         }
-        return plannedChanges(request: request, probe: probe, nic: nic, plan: plan).map(\.command)
+        return plannedChanges(
+            request: request,
+            probe: probe,
+            nic: nic,
+            plan: plan,
+        ).map(\.command)
     }
 
     private static func resolvedPlan(from request: LinuxHostBridgeApplyRequest) -> HostInterfaceAddressApplyPlan? {
@@ -846,6 +1097,105 @@ public enum LinuxHostBridgeApply {
             .compactMap { readOwnerMarker(bridge: $0, dataDir: dataDir) }
     }
 
+    public static func isAddressOnlyApply(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> Bool {
+        let bridge = request.bridge.trimmingCharacters(in: .whitespacesAndNewlines)
+        if bridge.isEmpty { return true }
+        if probe.owned { return false }
+        let nic = resolvedNic(request: request, probe: probe)
+        if nic == bridge { return true }
+        return probe.facts.bridges.contains { $0.name == bridge && $0.enslaved.contains(nic) }
+    }
+
+    public static func addressApplyDevice(
+        request: LinuxHostBridgeApplyRequest,
+        probe: LinuxHostBridgeApplyProbe,
+    ) -> String {
+        let nic = resolvedNic(request: request, probe: probe)
+        if let master = probe.facts.bridges.first(where: { $0.enslaved.contains(nic) }) {
+            return master.name
+        }
+        return nic
+    }
+
+    public static func addressOnlyChanges(
+        target: String,
+        plan: HostInterfaceAddressApplyPlan,
+        backend: LinuxNetworkBackend = .netplan,
+        liveCIDRs: [String] = [],
+        keepCIDRs: [String] = [],
+    ) -> [LinuxHostBridgeChange] {
+        let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
+        return LinuxHostAddressPersist.previewCommands(
+            interface: target,
+            cidrs: cidrs,
+            backend: backend,
+            liveCIDRs: liveCIDRs,
+            keepCIDRs: keepCIDRs,
+        )
+    }
+
+    public static func addressRollbackHelperScript(
+        device: String,
+        iface: String,
+        cidrs: [String],
+        persistFiles: [String] = [],
+        restoreCIDRs: [String] = [],
+        persistRestore: [(path: String, previous: String?)] = [],
+        nmConnection: String = "",
+    ) -> String {
+        let stamp = commitStampPath(bridge: device)
+        let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
+        let claim = HostNetworkPendingCommitService.claimPath(device)
+        let nm = nmConnection.trimmingCharacters(in: .whitespacesAndNewlines)
+        var lines: [String] = [
+            "#!/bin/sh",
+            "if [ -f \(stamp) ]; then exit 0; fi",
+            "if ! mkdir \(claim) 2>/dev/null; then exit 0; fi",
+            "if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi",
+        ]
+        if !nm.isEmpty {
+            for cidr in restoreCIDRs {
+                lines.append(
+                    "/usr/bin/nmcli connection modify \"\(nm)\" +ipv4.addresses \(cidr) >/dev/null 2>&1 || true",
+                )
+            }
+            for cidr in cidrs {
+                lines.append(
+                    "/usr/bin/nmcli connection modify \"\(nm)\" -ipv4.addresses \(cidr) >/dev/null 2>&1 || true",
+                )
+            }
+            lines.append("/usr/bin/nmcli connection reload >/dev/null 2>&1 || true")
+        }
+        if persistRestore.isEmpty {
+            lines.append(contentsOf: persistFiles.map { "rm -rf \($0) || true" })
+        } else {
+            for (path, previous) in persistRestore {
+                if let previous {
+                    let dir = (path as NSString).deletingLastPathComponent
+                    lines.append("mkdir -p \(dir) || true")
+                    lines.append("cat > \(path) <<'BARKVISOR_PERSIST_RESTORE'")
+                    lines.append(previous)
+                    lines.append("BARKVISOR_PERSIST_RESTORE")
+                } else {
+                    lines.append("rm -rf \(path) || true")
+                }
+            }
+        }
+        lines.append(contentsOf: cidrs.map { cidr in
+            "/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || true"
+        })
+        lines.append(contentsOf: restoreCIDRs.map { cidr in
+            "/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || true"
+        })
+        lines.append("/usr/bin/networkctl reload >/dev/null 2>&1 || true")
+        lines.append("rm -f \(pending) || true")
+        lines.append("rmdir \(claim) 2>/dev/null || true")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     public static func createdBridgeForApply(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,
@@ -897,50 +1247,94 @@ extension LinuxHostBridgeApply {
         }
         let nic = resolvedNic(request: request, probe: probe)
         let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
+        let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
         var changes: [LinuxHostBridgeChange] = []
-        for port in members {
+        let persist = systemdBridgePersist(bridge: request.bridge)
+        for path in persist.remove {
             changes.append(LinuxHostBridgeChange(
-                description: "Detach \(port) from \(request.bridge)",
-                command: "sudo ip link set \(port) nomaster",
+                description: "Remove \(path) so \(request.bridge) is not recreated on boot",
+                command: "sudo rm -f \(path)",
             ))
         }
-        if !nic.isEmpty {
-            let restore = switch probe.backend {
-            case .netplan:
-                "sudo netplan try --timeout \(rollbackSeconds)"
-            case .networkManager:
-                "sudo nmcli device reapply \(nic)"
-            case .systemdNetworkd:
-                "sudo networkctl reapply \(nic)"
-            case .ifupdown, .unknown:
-                "sudo ip addr flush \(request.bridge)"
-            }
+        for path in persist.rewrite {
             changes.append(LinuxHostBridgeChange(
-                description: "Restore L3 on \(nic)",
-                command: restore,
+                description: "Stop enslaving the NIC in \(path)",
+                command: "sudo sed -i '/^Bridge=\(request.bridge)$/d' \(path)",
             ))
         }
-        changes.append(LinuxHostBridgeChange(
-            description: "Delete \(request.bridge)",
-            command: "sudo ip link del \(request.bridge)",
-        ))
+        if !persist.remove.isEmpty || !persist.rewrite.isEmpty {
+            changes.append(LinuxHostBridgeChange(
+                description: "Reload systemd-networkd",
+                command: "sudo networkctl reload",
+            ))
+        }
         switch probe.backend {
-        case .netplan:
-            changes.append(LinuxHostBridgeChange(
-                description: "Remove \(netplanPath(bridge: request.bridge))",
-                command: "sudo rm -f \(netplanPath(bridge: request.bridge)) && sudo netplan try --timeout \(rollbackSeconds)",
-            ))
         case .networkManager:
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Move Device addresses from \(request.bridge) onto \(nic)",
+                    command: "sudo bash -c 'ip -4 -o addr show dev \(request.bridge) | awk \"{print \\$4}\" | while read -r c; do ip addr add \"$c\" dev \(nic); done'",
+                ))
+            }
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: port))",
+                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: port))",
+                ))
+            }
             changes.append(LinuxHostBridgeChange(
                 description: "Delete NetworkManager connection barkvisor-\(request.bridge)",
                 command: "sudo nmcli connection delete barkvisor-\(request.bridge)",
             ))
-            if !nic.isEmpty {
+            if request.bridge != "barkvisor-\(request.bridge)" {
                 changes.append(LinuxHostBridgeChange(
-                    description: "Delete NetworkManager slave \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
-                    command: "sudo nmcli connection delete \(nmSlaveConnectionName(bridge: request.bridge, nic: nic))",
+                    description: "Delete NetworkManager connection \(request.bridge)",
+                    command: "sudo nmcli connection delete \(request.bridge)",
                 ))
             }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Keep DHCP plus moved addresses on \(nic)",
+                    command: "sudo nmcli connection modify \(nic) ipv4.method auto",
+                ))
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo nmcli connection up \(nic)",
+                ))
+                changes.append(LinuxHostBridgeChange(
+                    description: "Reapply \(nic)",
+                    command: "sudo nmcli device reapply \(nic)",
+                ))
+            }
+        case .netplan:
+            changes.append(LinuxHostBridgeChange(
+                description: "Remove \(netplanPath(bridge: request.bridge))",
+                command: "sudo rm -f \(netplanPath(bridge: request.bridge))",
+            ))
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            changes.append(LinuxHostBridgeChange(
+                description: "Restore L3 with netplan",
+                command: "sudo netplan try --timeout \(rollbackSeconds)",
+            ))
         case .systemdNetworkd:
             var units = "\(networkdNetdevPath(bridge: request.bridge)) \(networkdNetworkPath(bridge: request.bridge))"
             if !nic.isEmpty {
@@ -950,6 +1344,22 @@ extension LinuxHostBridgeApply {
                 description: "Remove systemd-networkd barkvisor units",
                 command: "sudo rm -f \(units) && sudo networkctl reload",
             ))
+            for port in ports {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Detach \(port) from \(request.bridge)",
+                    command: "sudo ip link set \(port) nomaster",
+                ))
+            }
+            changes.append(LinuxHostBridgeChange(
+                description: "Delete \(request.bridge)",
+                command: "sudo ip link delete \(request.bridge) type bridge",
+            ))
+            if !nic.isEmpty {
+                changes.append(LinuxHostBridgeChange(
+                    description: "Restore L3 on \(nic)",
+                    command: "sudo networkctl reapply \(nic)",
+                ))
+            }
         case .ifupdown, .unknown:
             break
         }
@@ -957,16 +1367,18 @@ extension LinuxHostBridgeApply {
             description: "Remove marker-tagged allow \(request.bridge) from \(HostBridgeFactsService.defaultACLPath)",
             command: "# strip \(aclMarker(for: request.bridge)) + allow \(request.bridge)",
         ))
-        if probe.facts.onlyUplink || !probe.sessionRiskNics.isEmpty, !request.confirm {
+        changes.append(LinuxHostBridgeChange(
+            description: "Delete Workload networks that use \(request.bridge)",
+            command: "DELETE /api/networks (bridge=\(request.bridge))",
+        ))
+        if !request.confirm {
             return LinuxHostBridgeApplyResult(
-                success: false,
+                success: true,
                 applied: false,
                 needsConfirm: true,
                 backend: probe.backend.rawValue,
                 changes: changes.map(\.description),
-                warnings: probe.sessionWarnings + [
-                    "Delete moves the Device address off \(request.bridge). Confirm before applying.",
-                ],
+                warnings: probe.sessionWarnings,
                 commands: changes.map(\.command),
                 message: "Confirm required before delete.",
             )
@@ -979,7 +1391,7 @@ extension LinuxHostBridgeApply {
             changes: changes.map(\.description),
             warnings: probe.sessionWarnings,
             commands: changes.map(\.command),
-            message: "Ready to delete owned \(request.bridge). Keep changes within \(rollbackSeconds)s or they auto-revert.",
+            message: "Ready to delete owned \(request.bridge).",
         )
     }
 

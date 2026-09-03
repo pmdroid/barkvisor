@@ -37,3 +37,16 @@ export function apiErrorCode(error: unknown): string | null {
 export function isNotFoundError(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404
 }
+
+export function isTransientHostApplyError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+  const status = error.response?.status
+  if (status === 502 || status === 503 || status === 504) return true
+  if (!error.response) return true
+  return error.code === 'ECONNABORTED'
+}
+
+export function isOccupiedBridgeConflict(error: unknown, bridge: string): boolean {
+  if (apiErrorCode(error) !== 'conflict') return false
+  return apiErrorMessage(error).includes(`Interface '${bridge}' is already used`)
+}
