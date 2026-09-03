@@ -26,8 +26,8 @@ import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
   deviceBridgesNextPath,
-  deviceBridgesPath,
   deviceHostBridgeReadinessPath,
+  deviceInterfacesPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import {
@@ -560,7 +560,7 @@ async function keepPendingCommit() {
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
-    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
     const { data } = await api.post<BridgeActionResponse>(path, {
       action: 'commit',
       interface: pending.nic,
@@ -589,7 +589,7 @@ async function autoRevertPendingCommit() {
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
-    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
     const undo = pending.createdBridge ? 'delete' : 'revert'
     const { data } = undo === 'delete'
       ? await api.post<BridgeActionResponse>(path, {
@@ -628,7 +628,7 @@ function hostBridgeRevertPath(
   device?: HomeDeviceHealthSnapshot | null,
   target?: string | null,
 ) {
-  const base = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+  const base = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
   const mode = device ? deviceBridgeGuideMode(device) : 'hidden'
   return hostBridgeActionPath(base, nic, mode, target)
 }
@@ -809,7 +809,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         }
     const nic = targets.nic
     const payload = applyPayloadForSelectedInterface()
-    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
     const targetBridge = pendingCommit.value?.target
       ?? interfaceAssociatedBridge(row.iface, selectedInterfaceReadiness.value)?.name
       ?? targets.bridge
@@ -1326,7 +1326,7 @@ async function applyCreateBridge(confirm = false) {
   linuxApplyResult.value = null
   linuxApplyLoading.value = true
   try {
-    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
     const { data } = await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
       nic,
       bridge,

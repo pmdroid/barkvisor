@@ -929,7 +929,7 @@ public enum LinuxHostBridgeApply {
         var changes: [LinuxHostBridgeChange] = []
         changes.append(LinuxHostBridgeChange(
             description: "Persist \(request.bridge) via \(probe.backend.rawValue) (Device addresses on \(request.bridge), not the guest)",
-            command: "POST /api/system/bridges (interface: \(nic), action: apply, confirm: true)",
+            command: "POST /api/system/interfaces (interface: \(nic), action: apply, confirm: true)",
         ))
         switch probe.backend {
         case .netplan:

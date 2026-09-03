@@ -400,12 +400,12 @@ describe('hostInterfaceDisplay', () => {
     expect(pendingCommitMatchesInterface(pending, 'br1', 'linux-guide')).toBe(true)
     expect(pendingCommitMatchesInterface(pending, 'eth0', 'linux-guide')).toBe(false)
     expect(pendingCommitMatchesInterface({ target: 'en0', nic: 'en0' }, 'en0', 'macos-guide')).toBe(true)
-    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br1'))
-      .toBe('/system/bridges/br1')
-    expect(hostBridgeActionPath('/system/bridges', 'eth1', 'linux-guide', 'br0'))
-      .not.toBe('/system/bridges/br1')
-    expect(hostBridgeActionPath('/system/bridges', 'en0', 'macos-guide', 'br1'))
-      .toBe('/system/bridges/en0')
+    expect(hostBridgeActionPath('/system/interfaces', 'eth1', 'linux-guide', 'br1'))
+      .toBe('/system/interfaces/br1')
+    expect(hostBridgeActionPath('/system/interfaces', 'eth1', 'linux-guide', 'br0'))
+      .not.toBe('/system/interfaces/br1')
+    expect(hostBridgeActionPath('/system/interfaces', 'en0', 'macos-guide', 'br1'))
+      .toBe('/system/interfaces/en0')
   })
 
   test('Mac Keep follows the NIC row when Apply sent nic en0', () => {

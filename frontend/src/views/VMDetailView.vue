@@ -508,7 +508,7 @@ async function setupBridgeFromDetail() {
   if (isMemberDetail.value || !currentNetwork.value?.bridge) return
   bridgeLoading.value = currentNetwork.value.bridge
   try {
-    await api.post('/system/bridges', { interface: currentNetwork.value.bridge })
+    await api.post('/system/interfaces', { interface: currentNetwork.value.bridge })
     toast.success(`Bridge installed for ${currentNetwork.value.bridge}`)
     await fetchBridges()
   } catch (e: any) {

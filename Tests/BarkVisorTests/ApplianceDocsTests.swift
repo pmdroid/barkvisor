@@ -57,7 +57,7 @@ struct ApplianceDocsTests {
         #expect(text.contains("Revert"))
         #expect(text.contains("Keep changes"))
         #expect(text.contains("auto-reverts"))
-        #expect(text.contains("POST /api/system/bridges"))
+        #expect(text.contains("POST /api/system/interfaces"))
         #expect(text.contains("Keep changes"))
         #expect(text.contains("brew install socket_vmnet"))
         #expect(text.contains("Do not `sudo brew install`"))

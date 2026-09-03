@@ -301,7 +301,7 @@ export function existingBridgeForInterfaceApply(
   return interfaceEnslavedToBridge(iface, readiness)
 }
 
-/** Uplink NIC sent to POST /api/system/bridges when the drawer targets a bridge master. */
+/** Uplink NIC sent to POST /api/system/interfaces when the drawer targets a bridge master. */
 export function resolveBridgeApplyNic(
   iface: HostInterface,
   readiness?: HostBridgeReadiness | null,

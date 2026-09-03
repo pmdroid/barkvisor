@@ -273,7 +273,7 @@ public enum SocketVmnetApply {
             backend: backend.rawValue,
             changes: changes,
             commands: commands.isEmpty
-                ? ["POST /api/system/bridges (interface: \(probe.interface), action: revert, confirm: true)"]
+                ? ["POST /api/system/interfaces (interface: \(probe.interface), action: revert, confirm: true)"]
                 : commands,
             message: "Stop socket_vmnet (\(backend.rawValue))",
         )

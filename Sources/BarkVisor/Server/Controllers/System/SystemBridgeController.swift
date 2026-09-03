@@ -12,6 +12,10 @@ struct SystemBridgeController: RouteCollection {
         system.post("bridges", ":interface", "start", use: startBridge)
         system.post("bridges", ":interface", "stop", use: stopBridge)
         system.delete("bridges", ":interface", use: removeBridge)
+        system.post("interfaces", use: installBridge)
+        system.post("interfaces", ":interface", "start", use: startBridge)
+        system.post("interfaces", ":interface", "stop", use: stopBridge)
+        system.delete("interfaces", ":interface", use: removeBridge)
     }
 
     @Sendable

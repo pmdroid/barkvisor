@@ -446,7 +446,7 @@ struct APIClient {
         on device: HomeDeviceHealthSnapshot? = nil,
     ) async throws -> HostBridgeApplyResponse {
         try await post(
-            scoped("/system/bridges", on: device),
+            scoped("/system/interfaces", on: device),
             body: HostBridgeApplyBody(
                 interface: interface,
                 action: action,

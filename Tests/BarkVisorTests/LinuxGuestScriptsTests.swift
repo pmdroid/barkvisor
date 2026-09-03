@@ -648,7 +648,7 @@ struct LinuxGuestScriptsTests {
         let bddBody = try String(contentsOf: bdd, encoding: .utf8)
         for needle in [
             "features/host-network-extra-ip.feature",
-            "/api/system/bridges",
+            "/api/system/interfaces",
             "ip addr del",
             "action:\"commit\"",
             "linux-smoke-common.sh",

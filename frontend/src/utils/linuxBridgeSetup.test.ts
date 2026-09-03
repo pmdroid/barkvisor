@@ -51,7 +51,7 @@ describe('linuxBridgeSetup (PAS-222)', () => {
   test('missing pieces get copyable steps', () => {
     const groups = linuxBridgeSetupGroups(base())
     expect(groups.map((g) => g.id)).toEqual(['create-bridge', 'allow-acl', 'setuid-helper'])
-    expect(groups[0].commands).toContain('/api/system/bridges')
+    expect(groups[0].commands).toContain('/api/system/interfaces')
     expect(groups[0].commands).toContain('Apply')
     expect(groups[0].commands).not.toContain('ip link add')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
@@ -81,7 +81,7 @@ describe('macosSocketVmnetSetup', () => {
     const groups = macosSocketVmnetSetupGroups(null)
     expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet', 'device-address'])
     expect(groups[0].commands).toContain('brew install socket_vmnet')
-    expect(groups[1].commands).toContain('/api/system/bridges')
+    expect(groups[1].commands).toContain('/api/system/interfaces')
     expect(groups[1].commands).toContain('networksetup -listallhardwareports')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
@@ -131,7 +131,7 @@ describe('macosSocketVmnetSetup', () => {
 describe('linuxBridgeApply', () => {
   test('apply hints stay API-first (not guest addressing)', () => {
     const cmds = linuxBridgeApplyCommands(base())
-    expect(cmds.join('\n')).toContain('/api/system/bridges')
+    expect(cmds.join('\n')).toContain('/api/system/interfaces')
     expect(cmds.join('\n')).toContain('Keep changes')
     expect(cmds.join('\n')).toContain('"bridge"')
     expect(cmds.join('\n')).toContain('Create → Bridge')

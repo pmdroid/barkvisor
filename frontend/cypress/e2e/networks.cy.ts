@@ -218,7 +218,7 @@ describe('Network Management', () => {
   function stubCreateBridge(opts: { vmNetwork: boolean; bridge?: string }) {
     const bridge = opts.bridge ?? 'br1'
     cy.intercept('GET', '**/system/bridges/next', { bridge }).as('nextBridge')
-    cy.intercept('POST', '**/system/bridges', (req) => {
+    cy.intercept('POST', '**/system/interfaces', (req) => {
       expect(req.body.bridge).to.eq(bridge)
       expect(req.body.interface).to.be.a('string').and.not.be.empty
       const checking = req.body.action === 'check' || req.body.action === 'dry-run' || req.body.action === 'dryRun' || req.body.dryRun === true

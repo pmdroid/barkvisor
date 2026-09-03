@@ -90,13 +90,13 @@ make_nic() {
 
 post_bridges() {
   local body="$1"
-  api_code POST /api/system/bridges -d "$body"
+  api_code POST /api/system/interfaces -d "$body"
 }
 
 require_http() {
   local code="$1"
   local want="$2"
-  [[ "$code" == "$want" ]] || fail "POST /api/system/bridges HTTP $code want $want: $(cat "${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}" 2>/dev/null || true)"
+  [[ "$code" == "$want" ]] || fail "POST /api/system/interfaces HTTP $code want $want: $(cat "${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}" 2>/dev/null || true)"
 }
 
 require_success() {

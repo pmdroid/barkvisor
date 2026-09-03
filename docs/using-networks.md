@@ -50,7 +50,7 @@ The drawer keeps DHCP on. The router lease is shown and is not editable or remov
 
 **Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Add extra static IPs on the NIC, then **Apply** and **Keep changes** within the keep window. DHCP stays on.
 
-**Apply** persists the address plan on the host. Linux Bridge rows can **Delete**.
+**Apply** persists the address plan on the host. **Revert** undoes BarkVisor files without deleting a shared Bridge. Linux Bridge rows can **Delete**.
 
 ### Multi-address examples
 
@@ -79,7 +79,7 @@ The drawer keeps DHCP on. The router lease is shown and is not editable or remov
 }
 ```
 
-Use **Apply** in the drawer, or `POST /api/system/bridges` with `"action": "check"` to preview planned diffs without changing the host.
+Use **Apply** in the drawer, or `POST /api/system/interfaces` with `"action": "check"` to preview planned diffs without changing the host.
 
 ### Mac vs Linux — gateway and DNS
 
@@ -108,13 +108,13 @@ Use **Create → Bridge**, or the API (include `bridge` and `nic`):
 
 ```sh
 curl -sS http://127.0.0.1:7777/api/system/bridges/next
-curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
   -H 'Content-Type: application/json' \
   -d '{"interface":"<wired-uplink>","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
-curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
   -H 'Content-Type: application/json' \
   -d '{"interface":"<wired-uplink>","bridge":"br0","action":"commit","confirm":true}'
-curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/br0 \
+curl -sS -X DELETE http://127.0.0.1:7777/api/system/interfaces/br0 \
   -H 'Content-Type: application/json' \
   -d '{"confirm":true,"action":"revert","interface":"<wired-uplink>","bridge":"br0"}'
 ```
@@ -130,13 +130,13 @@ After Apply, the same **30 second keep window** applies: the Keep modal or POST 
 API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
 
 ```sh
-curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
   -H 'Content-Type: application/json' \
   -d '{"interface":"en0","bridge":"br0","action":"apply","confirm":true,"addressing":"dhcp"}'
-curl -sS -X POST http://127.0.0.1:7777/api/system/bridges \
+curl -sS -X POST http://127.0.0.1:7777/api/system/interfaces \
   -H 'Content-Type: application/json' \
   -d '{"interface":"en0","bridge":"br0","action":"commit","confirm":true}'
-curl -sS -X DELETE http://127.0.0.1:7777/api/system/bridges/en0 \
+curl -sS -X DELETE http://127.0.0.1:7777/api/system/interfaces/en0 \
   -H 'Content-Type: application/json' \
   -d '{"confirm":true,"action":"revert","interface":"en0"}'
 ```
