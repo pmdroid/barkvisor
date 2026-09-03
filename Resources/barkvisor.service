@@ -55,6 +55,7 @@ ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/Network
 # /usr/local/{bin,share,lib} and the systemd unit. Do not mark those ReadOnly.
 ReadWritePaths=/usr/local /var/lib/dpkg /var/cache/apt /var/lib/apt /var/cache/debconf /var/log/apt -/var/log/dpkg.log /usr/lib/systemd/system /etc/barkvisor -/etc/systemd/system
 LimitNOFILE=65536
+LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target

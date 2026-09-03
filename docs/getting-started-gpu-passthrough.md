@@ -71,6 +71,10 @@ If this Device lists one GPU, passing it through can blank the host display. The
 
 **In use by host** means the host GPU driver still owns the card. Occupancy is information, not a blocker. Attach still works. The same card cannot stay host and guest after the Workload starts.
 
+## Locked memory
+
+`qemu-system-x86_64: vfio … vfio_container_dma_map(…) = -12 (Cannot allocate memory)` with kernel `vfio_pin_pages_remote: RLIMIT_MEMLOCK (8388608) exceeded` means the QEMU process cannot lock guest RAM (systemd default is 8M). The BarkVisor unit sets `LimitMEMLOCK=infinity`. After an upgrade: `systemctl daemon-reload && systemctl try-restart barkvisor.service`. New Workloads inherit the limit; already-running QEMU does not.
+
 ## Attach
 
 On a Linux Device, open a Workload → **GPU passthrough** → **Attach GPU**. Fail closed if IOMMU, vfio-pci, or KVM is missing. The UI states why. macOS always says GPU passthrough is unavailable.
