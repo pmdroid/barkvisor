@@ -288,6 +288,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.applied)
         #expect(result.success)
         #expect(result.pendingCommit)
+        #expect(result.createdBridge)
         #expect(result.rollbackSeconds == 60)
         #expect(result.message.contains("auto-revert"))
         #expect(!result.message.contains("kept it"))

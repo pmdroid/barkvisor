@@ -1457,6 +1457,7 @@ async function applyCreateBridge(confirm = false) {
       }
       toast.success(data.message || `Created Bridge ${bridge}.`)
       showCreateBridge.value = false
+      await refreshHomeNetworks()
       const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
       if (hostId) {
         selectedInterfaceKey.value = `${hostId}:${nic}`
@@ -1489,6 +1490,7 @@ async function applyCreateBridge(confirm = false) {
           if (!isOccupiedBridgeConflict(err, bridge)) throw err
         }
         showCreateBridge.value = false
+        await refreshHomeNetworks()
         return
       }
       createBridgeError.value = outcome === 'unreachable'

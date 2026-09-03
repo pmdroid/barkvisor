@@ -131,6 +131,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
     public var message: String
     public var refused: Bool
     public var conflict: Bool
+    public var createdBridge: Bool
 
     public init(
         success: Bool,
@@ -146,6 +147,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         message: String,
         refused: Bool = false,
         conflict: Bool = false,
+        createdBridge: Bool = false,
     ) {
         self.success = success
         self.applied = applied
@@ -160,6 +162,7 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         self.message = message
         self.refused = refused
         self.conflict = conflict
+        self.createdBridge = createdBridge
     }
 }
 

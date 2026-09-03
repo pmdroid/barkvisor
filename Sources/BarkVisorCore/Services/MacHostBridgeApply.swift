@@ -457,6 +457,7 @@ import Foundation
                 plan.pendingCommit = true
                 plan.commitDeadline = pending.commitDeadline
                 plan.rollbackSeconds = pending.rollbackSeconds
+                plan.createdBridge = createdNow
                 plan.message =
                     "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
             case .commit:

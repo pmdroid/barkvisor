@@ -69,6 +69,7 @@ public enum LinuxHostBridgeApplyLive {
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
+            plan.createdBridge = createdNow
             plan.message =
                 "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .commit:
