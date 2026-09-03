@@ -88,7 +88,7 @@ Use **Create → Bridge** in the toolbar — it walks you through NIC selection 
 
 After Apply, the same **60 second keep window** applies: click **Keep changes** in the modal. If the timer expires, the Device auto-reverts.
 
-Automating host networking (scripts, onboarding)? The same operations live in `docs/api/openapi.yaml` under `/api/system/interfaces`.
+Automating host networking (scripts, onboarding)? The same operations live in `docs/api/openapi.yaml` as `POST /api/system/interfaces`.
 
 ## VM networks tab
 
