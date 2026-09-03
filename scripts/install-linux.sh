@@ -112,8 +112,15 @@ fi
 
 need_root
 
-run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST" /etc/qemu
+run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST" /etc/qemu /usr/lib/udev/rules.d
 run install -m 0755 "$BIN_SRC" "$BIN_DST"
+run install -m 0644 "$ROOT/packaging/linux/udev/99-barkvisor-vfio.rules" /usr/lib/udev/rules.d/99-barkvisor-vfio.rules
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: udevadm control --reload; udevadm trigger --subsystem-match=vfio"
+elif command -v udevadm >/dev/null 2>&1; then
+  udevadm control --reload || true
+  udevadm trigger --subsystem-match=vfio || true
+fi
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: ln -sfn barkvisor $AGENT_BIN_DST"
 else
@@ -146,11 +153,13 @@ fi
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: create system user barkvisor if missing"
   echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
+  echo "DRY_RUN: usermod -aG vfio barkvisor (if group exists)"
   echo "DRY_RUN: usermod -aG disk barkvisor and write service.d/disk.conf (if group exists)"
   echo "DRY_RUN: chown barkvisor:barkvisor $DATA_DIR $RUN_DIR"
 else
   id barkvisor &>/dev/null || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin barkvisor
   getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
+  getent group vfio &>/dev/null && usermod -aG vfio barkvisor || true
   if getent group disk &>/dev/null; then
     usermod -aG disk barkvisor || true
     for unit in barkvisor.service barkvisor-agent.service; do
