@@ -591,7 +591,9 @@ private final class RecordingProxyClient: HomeDeviceProxyClient, @unchecked Send
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
         let recorded = record(request)
         if recorded.hang {
-            try await Task.sleep(nanoseconds: 60_000_000_000)
+            while !Task.isCancelled {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
             throw CancellationError()
         }
         switch recorded.response {
