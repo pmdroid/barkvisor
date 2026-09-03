@@ -43,7 +43,7 @@ describe('appliance getting-started (#382)', () => {
   test('Networks docs apply host bridge and keep equivalent commands', () => {
     const text = read('using-networks.md')
     expect(text).toContain('Apply')
-    expect(text).toContain('/api/system/bridges')
+    expect(text).toContain('/api/system/interfaces')
     expect(text).toContain('Keep changes')
     expect(text).toContain('Keep changes')
     expect(text).toContain('auto-reverts')
