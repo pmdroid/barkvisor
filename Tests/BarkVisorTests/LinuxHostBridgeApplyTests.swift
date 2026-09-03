@@ -702,7 +702,8 @@ struct LinuxHostBridgeApplyTests {
         let target = "bv-claim-\(UUID().uuidString.prefix(8))"
         defer { HostNetworkPendingCommitService.releaseRevert(target) }
         #expect(HostNetworkPendingCommitService.claimRevert(target))
-        #expect(!HostNetworkPendingCommitService.claimRevert(target))
+        #expect(HostNetworkPendingCommitService.claimRevert(target))
+        HostNetworkPendingCommitService.releaseRevert(target)
         HostNetworkPendingCommitService.releaseRevert(target)
         #expect(HostNetworkPendingCommitService.claimRevert(target))
     }
@@ -924,21 +925,21 @@ struct LinuxHostBridgeApplyTests {
             LinuxHostBridgeApply.netplanExpireAction(
                 pidAlive: true,
                 pidIsNetplan: true,
-                yamlExists: true,
+                keeping: false,
             ) == .waitForTry,
         )
         #expect(
             LinuxHostBridgeApply.netplanExpireAction(
                 pidAlive: false,
                 pidIsNetplan: false,
-                yamlExists: true,
+                keeping: true,
             ) == .stampKeep,
         )
         #expect(
             LinuxHostBridgeApply.netplanExpireAction(
                 pidAlive: false,
                 pidIsNetplan: false,
-                yamlExists: false,
+                keeping: false,
             ) == .alreadyReverted,
         )
         #expect(LinuxHostBridgeApply.isNetplanProcess(pid: 1) { _ in "/usr/sbin/netplan\0try" })

@@ -190,6 +190,15 @@ public enum HostNetworkPendingCommitService {
             .appendingPathComponent("\(target)-reverting").path
     }
 
+    public static func keepingPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(target)-keeping").path
+    }
+
+    public static func keepingExists(_ target: String) -> Bool {
+        FileManager.default.fileExists(atPath: keepingPath(target))
+    }
+
     public static func claimRevert(_ target: String) -> Bool {
         let path = claimPath(target)
         let fm = FileManager.default
@@ -197,7 +206,15 @@ public enum HostNetworkPendingCommitService {
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
+        let myPid = String(ProcessInfo.processInfo.processIdentifier)
         if fm.fileExists(atPath: path) {
+            let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if owner == myPid {
+                let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) + 1
+                try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
+                return true
+            }
             let attrs = try? fm.attributesOfItem(atPath: path)
             let created = (attrs?[.modificationDate] as? Date)
                 ?? (attrs?[.creationDate] as? Date)
@@ -209,6 +226,8 @@ public enum HostNetworkPendingCommitService {
         }
         do {
             try fm.createDirectory(atPath: path, withIntermediateDirectories: false)
+            try? myPid.write(toFile: "\(path)/pid", atomically: true, encoding: .utf8)
+            try? "1".write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
             return true
         } catch {
             return false
@@ -216,7 +235,18 @@ public enum HostNetworkPendingCommitService {
     }
 
     public static func releaseRevert(_ target: String) {
-        try? FileManager.default.removeItem(atPath: claimPath(target))
+        let path = claimPath(target)
+        let myPid = String(ProcessInfo.processInfo.processIdentifier)
+        let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if owner == myPid {
+            let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) - 1
+            if n > 0 {
+                try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
+                return
+            }
+        }
+        try? FileManager.default.removeItem(atPath: path)
     }
 
     public static func activePending() -> HostNetworkPendingCommit? {
@@ -236,6 +266,7 @@ public enum HostNetworkPendingCommitService {
             withIntermediateDirectories: true,
         )
         try Data().write(to: URL(fileURLWithPath: stamp), options: .atomic)
+        try? FileManager.default.removeItem(atPath: keepingPath(target))
         #if os(Linux)
             let unit = "barkvisor-\(target)-rollback"
             _ = try? PlatformProcess.run(

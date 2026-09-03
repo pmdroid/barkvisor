@@ -142,9 +142,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         ) throws {
             if request.action == .revert {
                 try withClaim(pendingKey(request: request, probe: probe)) {
-                    if HostNetworkPendingCommitService.stampExists(pendingKey(request: request, probe: probe)) {
-                        return
-                    }
                     if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
                         try revertAddresses(request: request, probe: probe)
                         return
@@ -155,9 +152,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             if request.action == .delete {
                 try withClaim(pendingKey(request: request, probe: probe)) {
-                    if HostNetworkPendingCommitService.stampExists(pendingKey(request: request, probe: probe)) {
-                        return
-                    }
                     try deleteOwned(request: request, probe: probe)
                 }
                 return
@@ -195,6 +189,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 }
                 try confirmNetplanKeep(pending: pending, target: target, probe: probe)
                 try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: target), "")
+                try? FileManager.default.removeItem(
+                    atPath: HostNetworkPendingCommitService.keepingPath(target),
+                )
                 stopRollbackTimer(bridge: target)
                 HostNetworkPendingCommitService.clearLinux(bridge: target)
             }
@@ -668,7 +665,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             switch probe.backend {
             case .netplan:
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath(bridge: request.bridge))
-                try commitNetplanTry(beginNetplanTry())
+                _ = try? PlatformProcess.run(
+                    path: "/usr/sbin/netplan",
+                    arguments: ["apply"],
+                    timeout: 30,
+                )
             case .networkManager:
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/nmcli",
@@ -935,14 +936,30 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
             let isNetplan = LinuxHostBridgeApply.isNetplanProcess(pid: pid)
             if isNetplan {
+                try Data().write(
+                    to: URL(fileURLWithPath: HostNetworkPendingCommitService.keepingPath(target)),
+                    options: .atomic,
+                )
                 if kill(pid_t(pid), SIGUSR1) != 0 {
+                    try? FileManager.default.removeItem(
+                        atPath: HostNetworkPendingCommitService.keepingPath(target),
+                    )
                     if yamlExists { return }
                     throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
                 }
+                let deadline = Date().addingTimeInterval(30)
                 var status: Int32 = 0
-                let waited = waitpid(pid_t(pid), &status, 0)
+                var waited: pid_t = 0
+                while Date() < deadline {
+                    waited = waitpid(pid_t(pid), &status, WNOHANG)
+                    if waited != 0 { break }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
                 if waited > 0, status == 0 { return }
                 if yamlExists { return }
+                try? FileManager.default.removeItem(
+                    atPath: HostNetworkPendingCommitService.keepingPath(target),
+                )
                 throw BarkVisorError.internalError("netplan try did not keep the config.")
             }
             if yamlExists { return }

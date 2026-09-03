@@ -456,6 +456,7 @@ import Foundation
                     try HostNetworkPendingCommitService.writeMac(pending)
                     try HostNetworkRollbackLaunchd.arm(target: resolved.device)
                 } catch {
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                     HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     if createdNow {
                         try? SocketVmnetLaunchd.remove(interface: resolved.device)
@@ -504,12 +505,6 @@ import Foundation
                 }
             case .revert:
                 try withClaim(resolved.device) {
-                    if HostNetworkPendingCommitService.stampExists(resolved.device) {
-                        plan.applied = true
-                        plan.pendingCommit = false
-                        plan.message = "Kept host network changes for \(resolved.device)."
-                        return
-                    }
                     let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
                         || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
                         && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
@@ -538,12 +533,6 @@ import Foundation
                 }
             case .delete:
                 try withClaim(resolved.device) {
-                    if HostNetworkPendingCommitService.stampExists(resolved.device) {
-                        plan.applied = true
-                        plan.pendingCommit = false
-                        plan.message = "Kept host network changes for \(resolved.device)."
-                        return
-                    }
                     HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                     HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink

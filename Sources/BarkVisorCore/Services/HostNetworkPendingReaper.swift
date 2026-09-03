@@ -45,15 +45,10 @@ public enum HostNetworkPendingReaper {
         #if os(Linux)
             guard let pid = pending.netplanPid, pid > 0 else { return false }
             let alive = kill(pid_t(pid), 0) == 0
-            let yamlExists = FileManager.default.fileExists(
-                atPath: LinuxHostBridgeApply.netplanPath(bridge: pending.target),
-            ) || FileManager.default.fileExists(
-                atPath: LinuxHostAddressPersist.netplanAliasPath(interface: pending.target),
-            )
             switch LinuxHostBridgeApply.netplanExpireAction(
                 pidAlive: alive,
                 pidIsNetplan: LinuxHostBridgeApply.isNetplanProcess(pid: pid),
-                yamlExists: yamlExists,
+                keeping: HostNetworkPendingCommitService.keepingExists(pending.target),
             ) {
             case .waitForTry:
                 return true

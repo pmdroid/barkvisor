@@ -321,10 +321,10 @@ public enum LinuxHostBridgeApply {
     public static func netplanExpireAction(
         pidAlive: Bool,
         pidIsNetplan: Bool,
-        yamlExists: Bool,
+        keeping: Bool,
     ) -> NetplanExpireAction {
         if pidAlive, pidIsNetplan { return .waitForTry }
-        if yamlExists { return .stampKeep }
+        if keeping { return .stampKeep }
         return .alreadyReverted
     }
 
@@ -343,11 +343,13 @@ public enum LinuxHostBridgeApply {
         return text.contains("netplan")
     }
 
-    public static func rollbackClaimShell(claim: String, stamp: String) -> String {
+    public static func rollbackClaimShell(claim: String, stamp: String, keeping: String) -> String {
         """
         if [ -f \(stamp) ]; then exit 0; fi
+        if [ -f \(keeping) ]; then exit 0; fi
         if ! mkdir \(claim) 2>/dev/null; then
           if [ -f \(stamp) ]; then exit 0; fi
+          if [ -f \(keeping) ]; then exit 0; fi
           age=$(stat -c %Y \(claim) 2>/dev/null || echo 0)
           now=$(date +%s)
           if [ $((now - age)) -lt 30 ]; then exit 0; fi
@@ -355,6 +357,7 @@ public enum LinuxHostBridgeApply {
           mkdir \(claim) 2>/dev/null || exit 0
         fi
         if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
+        if [ -f \(keeping) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
         """
     }
 
@@ -426,10 +429,11 @@ public enum LinuxHostBridgeApply {
         let stamp = commitStampPath(bridge: bridge)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
         let claim = HostNetworkPendingCommitService.claimPath(bridge)
+        let keeping = HostNetworkPendingCommitService.keepingPath(bridge)
         let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
-        \(rollbackClaimShell(claim: claim, stamp: stamp))
+        \(rollbackClaimShell(claim: claim, stamp: stamp, keeping: keeping))
         rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
@@ -1193,10 +1197,11 @@ public enum LinuxHostBridgeApply {
         let stamp = commitStampPath(bridge: device)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
         let claim = HostNetworkPendingCommitService.claimPath(device)
+        let keeping = HostNetworkPendingCommitService.keepingPath(device)
         let nm = nmConnection.trimmingCharacters(in: .whitespacesAndNewlines)
         var lines: [String] = [
             "#!/bin/sh",
-            rollbackClaimShell(claim: claim, stamp: stamp),
+            rollbackClaimShell(claim: claim, stamp: stamp, keeping: keeping),
         ]
         if !nm.isEmpty {
             for cidr in restoreCIDRs {
