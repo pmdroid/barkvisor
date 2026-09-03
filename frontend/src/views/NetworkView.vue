@@ -441,6 +441,7 @@ const formBridgePickerInterfaces = computed(() =>
 )
 
 const linuxApplyLoading = ref(false)
+const linuxApplyPreviewing = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
 const linuxApplyConfirm = ref<'apply' | 'revert' | 'delete' | null>(null)
 const linuxApplySource = ref<'drawer' | 'create-bridge'>('drawer')
@@ -468,6 +469,14 @@ type PendingCommitState = {
 
 const pendingCommit = ref<PendingCommitState | null>(null)
 const pendingCommitSecondsLeft = ref(0)
+
+const hostNetSurface = computed(() => {
+  if (linuxApplyLoading.value) return 'working'
+  if (pendingCommit.value) return 'keep'
+  if (linuxApplyConfirm.value) return 'confirm'
+  if (showCreateBridge.value) return 'create'
+  return 'none'
+})
 let pendingCommitTimer: ReturnType<typeof setInterval> | null = null
 let pendingCommitAutoRevert = false
 
@@ -863,7 +872,8 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
   )
   linuxApplySource.value = 'drawer'
   linuxApplyResult.value = null
-  linuxApplyLoading.value = true
+  if (confirm) linuxApplyLoading.value = true
+  else linuxApplyPreviewing.value = true
   const mode = selectedInterfaceMode.value
   const role = selectedInterfaceRole.value
   const ownsAddresses = interfaceOwnsAddressApply(role, row.iface, ready, mode)
@@ -963,6 +973,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
     toast.error(apiErrorMessage(e))
   } finally {
     linuxApplyLoading.value = false
+    linuxApplyPreviewing.value = false
   }
 }
 
@@ -1404,7 +1415,8 @@ async function applyCreateBridge(confirm = false) {
   }
   linuxApplySource.value = 'create-bridge'
   linuxApplyResult.value = null
-  linuxApplyLoading.value = true
+  if (confirm) linuxApplyLoading.value = true
+  else linuxApplyPreviewing.value = true
   try {
     const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
     const { data } = await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
@@ -1489,6 +1501,7 @@ async function applyCreateBridge(confirm = false) {
     createBridgeError.value = apiErrorMessage(e)
   } finally {
     linuxApplyLoading.value = false
+    linuxApplyPreviewing.value = false
   }
 }
 
@@ -1722,15 +1735,15 @@ async function doDeleteNetwork() {
               v-if="showAddressEditor"
               variant="primary"
               size="sm"
-              :disabled="!canApplyAddresses || linuxApplyLoading || !interfaceAddressValidation.ok"
-              :loading="linuxApplyLoading"
+              :disabled="!canApplyAddresses || linuxApplyLoading || linuxApplyPreviewing || !interfaceAddressValidation.ok"
+              :loading="linuxApplyLoading || linuxApplyPreviewing"
               @click="applySelectedInterface"
             >{{ applyButtonLabel }}</AppButton>
             <AppButton
               v-if="selectedInterfaceShowsDelete"
               size="sm"
               variant="danger"
-              :disabled="!canDeleteSelectedInterface || linuxApplyLoading"
+              :disabled="!canDeleteSelectedInterface || linuxApplyLoading || linuxApplyPreviewing"
               @click="deleteSelectedInterface"
             >Delete</AppButton>
             <p
@@ -1878,7 +1891,7 @@ async function doDeleteNetwork() {
   </div>
 
   <AppModal
-    v-if="showCreateBridge"
+    v-if="hostNetSurface === 'create'"
     title="Create Bridge"
     :subtitle="createBridgeIsMac
       ? 'Name is a label for the Workload network. Default is the port plus -bridge. One unused NIC is the port.'
@@ -1921,9 +1934,9 @@ async function doDeleteNetwork() {
       <AppButton :disabled="linuxApplyLoading" @click="showCreateBridge = false">Cancel</AppButton>
       <AppButton
         variant="primary"
-        :loading="linuxApplyLoading"
-        :disabled="!createBridgeNic"
-        :loading-text="'Working — Device may drop…'"
+        :loading="linuxApplyPreviewing"
+        :disabled="!createBridgeNic || linuxApplyPreviewing"
+        :loading-text="'Working…'"
         @click="applyCreateBridge()"
       >Apply</AppButton>
     </template>
@@ -2011,7 +2024,7 @@ async function doDeleteNetwork() {
   </AppModal>
 
   <AppModal
-    v-if="showPendingCommitModal"
+    v-if="hostNetSurface === 'keep'"
     title="Keep network changes"
     subtitle="Network changes are live but not permanent."
   >
@@ -2029,19 +2042,18 @@ async function doDeleteNetwork() {
   </AppModal>
 
   <ConfirmDialog
-    v-if="linuxApplyConfirm"
+    v-if="hostNetSurface === 'confirm'"
     :title="linuxApplySource === 'create-bridge' ? 'Create this Bridge?' : linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
     :message="[linuxApplyResult?.message, ...(linuxApplyResult?.warnings || [])].filter(Boolean).join(' ') || (linuxApplyConfirm === 'delete' ? 'Removes the Bridge and restores the NIC. Review the commands first.' : linuxApplyConfirm === 'apply' ? 'These changes go live for 60 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
     :details="linuxApplyResult?.changes ?? []"
     :commands="linuxApplyResult?.commands ?? []"
     :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete' : linuxApplyConfirm === 'revert' ? 'Revert' : 'Apply'"
     :danger="linuxApplyConfirm === 'delete' || linuxApplyConfirm === 'revert'"
-    :loading="linuxApplyLoading"
     @confirm="confirmLinuxBridge"
-    @cancel="!linuxApplyLoading && (linuxApplyConfirm = null)"
+    @cancel="linuxApplyConfirm = null"
   />
 
-  <div v-if="linuxApplyLoading" class="host-net-working" role="status">
+  <div v-if="hostNetSurface === 'working'" class="host-net-working" role="status">
     <div class="host-net-working-card">
       <p>Working… the Device may drop. Wait — do not retry.</p>
     </div>
@@ -2064,7 +2076,7 @@ async function doDeleteNetwork() {
 .host-net-working {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: center;
