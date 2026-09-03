@@ -523,6 +523,7 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(!result.applied)
             #expect(result.commands.contains { $0.contains("launchctl bootout") })
             #expect(result.commands.contains { $0.contains("rm -f") && $0.contains("socket-vmnet") })
+            #expect(result.commands.contains { $0.contains("socket_vmnet.bridged.en0") })
             #expect(!result.commands.contains { $0.contains("networksetup") })
             #expect(!result.commands.contains { $0.contains("ifconfig") })
             let device = "en0-delete-ignores-aliases"

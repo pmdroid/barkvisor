@@ -145,11 +145,23 @@ public enum SocketVmnetLaunchd {
             )
         }
 
+        public static func socketPathsToRemove(interface: String) -> [String] {
+            var paths = SocketVmnetDiscovery.perInterfaceSocketPaths(interface)
+            let primary = socketPath(interface: interface)
+            if !paths.contains(primary) {
+                paths.insert(primary, at: 0)
+            }
+            return paths
+        }
+
         public static func remove(interface: String) throws {
             try stop(interface: interface)
             let plist = plistURL(interface: interface)
             if FileManager.default.fileExists(atPath: plist.path) {
                 try FileManager.default.removeItem(at: plist)
+            }
+            for path in socketPathsToRemove(interface: interface) where FileManager.default.fileExists(atPath: path) {
+                try? FileManager.default.removeItem(atPath: path)
             }
         }
 

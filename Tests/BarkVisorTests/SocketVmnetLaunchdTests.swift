@@ -7,6 +7,10 @@ struct SocketVmnetLaunchdTests {
         try validateBridgeName("en0")
         #expect(SocketVmnetLaunchd.label(interface: "en0") == "dev.barkvisor.socket-vmnet.en0")
         #expect(SocketVmnetLaunchd.socketPath(interface: "en0") == "/var/run/socket_vmnet.bridged.en0")
+        #expect(SocketVmnetLaunchd.socketPathsToRemove(interface: "en0").contains("/var/run/socket_vmnet.bridged.en0"))
+        #expect(SocketVmnetLaunchd.socketPathsToRemove(interface: "en0").contains(
+            "/opt/homebrew/var/run/socket_vmnet.bridged.en0",
+        ))
         #expect(
             SocketVmnetLaunchd.plistURL(interface: "en1").path
                 == "/Library/LaunchDaemons/dev.barkvisor.socket-vmnet.en1.plist",

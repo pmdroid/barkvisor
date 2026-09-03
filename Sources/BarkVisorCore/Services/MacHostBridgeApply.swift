@@ -252,6 +252,7 @@ import Foundation
             if undoCreate {
                 let label = SocketVmnetLaunchd.label(interface: device)
                 let plist = SocketVmnetLaunchd.plistURL(interface: device).path
+                let socket = SocketVmnetLaunchd.socketPath(interface: device)
                 return LinuxHostBridgeApplyResult(
                     success: true,
                     applied: false,
@@ -260,11 +261,13 @@ import Foundation
                     changes: [
                         "Stop BarkVisor-managed socket_vmnet for \(device)",
                         "Remove \(plist)",
+                        "Remove \(socket)",
                     ],
                     warnings: [],
                     commands: [
                         "sudo launchctl bootout system/\(label)",
                         "sudo rm -f \(plist)",
+                        "sudo rm -f \(socket)",
                     ],
                     message: "Revert removes the new Bridge. Device addresses stay.",
                 )
@@ -327,14 +330,17 @@ import Foundation
             }
             let label = SocketVmnetLaunchd.label(interface: device)
             let plist = SocketVmnetLaunchd.plistURL(interface: device).path
+            let socket = SocketVmnetLaunchd.socketPath(interface: device)
             let changes = [
                 "Stop BarkVisor-managed socket_vmnet for \(device)",
                 "Remove \(plist)",
+                "Remove \(socket)",
                 "Delete Workload networks that use \(request.bridge)",
             ]
             let commands = [
                 "sudo launchctl bootout system/\(label)",
                 "sudo rm -f \(plist)",
+                "sudo rm -f \(socket)",
                 "DELETE /api/networks (bridge=\(request.bridge))",
             ]
             return LinuxHostBridgeApplyResult(
