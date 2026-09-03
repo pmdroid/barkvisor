@@ -483,6 +483,7 @@ import Foundation
             case .commit:
                 try withClaim(resolved.device) {
                     if HostNetworkPendingCommitService.stampExists(resolved.device) {
+                        HostNetworkPendingCommitService.clearMac(device: resolved.device)
                         plan.applied = true
                         plan.pendingCommit = false
                         plan.message = "Kept host network changes for \(resolved.device)."

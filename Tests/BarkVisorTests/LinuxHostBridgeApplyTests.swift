@@ -723,7 +723,7 @@ struct LinuxHostBridgeApplyTests {
             rollbackSeconds: 60,
         )
         #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [expired]) == nil)
-        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [expired])?.target == "br0")
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [expired]) == nil)
     }
 
     @Test func `ACL merge for br1 leaves br0 marker`() {

@@ -161,6 +161,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     try persist(request: request, probe: probe)
                 }
             } catch {
+                if case BarkVisorError.conflict = error {
+                    throw error
+                }
                 if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
                     try? revertAddresses(request: request, probe: probe)
                 } else {
@@ -177,6 +180,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let target = pendingKey(request: request, probe: probe)
             try withClaim(target) {
                 if HostNetworkPendingCommitService.stampExists(target) {
+                    HostNetworkPendingCommitService.clearLinux(bridge: target)
                     return
                 }
                 guard let pending = HostNetworkPendingCommitService.readLinux(bridge: target)

@@ -105,7 +105,7 @@ public enum HostNetworkPendingCommitService {
         target: String,
         existing: [HostNetworkPendingCommit],
     ) -> HostNetworkPendingCommit? {
-        existing.first { $0.target == target || !$0.expired }
+        existing.first { !$0.expired }
     }
 
     public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
