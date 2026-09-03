@@ -2,11 +2,11 @@
 
 ## Sub-features
 
-- Incident rows for Failed Workloads / Unreachable Devices with **Open** buttons
-- Feed columns **Needs you / Running / Failed / Stopped** (`.section-label`)
-- Vitals rail: CPU, Memory, Temperature, Storage meters
+- Attention strip: Failed Workloads (**Open**) and Unreachable Devices (**Device**)
+- Feed columns **Needs you / Running / Stopped** (`.section-label`). **Failed** exists in Customize but is off by default
+- Home rail of Device cards (`.triage-home-dev`)
 - **Customize** drawer ("Customize Home": reorder/hide modules)
-- **Create VM** toolbar shortcut → navigates to `/vms`
+- **Create VM** toolbar shortcut → `/vms?create=1` (opens the magazine, then strips the query)
 
 ## How to get to it (user POV)
 
@@ -21,12 +21,13 @@ bun helpers/shot.mjs --base "$URL" --user admin --pass "$PASS" \
 
 Assertions worth making against the page:
 
-- `.ops-ticker` text matches /running/ and shows the Home-wide counts
+- `.ops-ticker` (app chrome on every admin page) matches /running/ and shows Home-wide counts
+- `.ops-sub` on this page is Device/workload counts, not the ticker
 - `.triage-home-dev` contains at least one Device card
-- `.section-label` texts include "Needs you", "Running", "Stopped"
+- `.section-label` texts include "Needs you", "Running", "Stopped" (not Failed, unless Customize turned it on)
 - Clicking **Customize** opens `.dash-drawer.open` containing "Customize Home"
 
-Cross-check ticker numbers against `GET /api/home/devices/health` totals (same data source).
+Cross-check ticker numbers against `GET /api/home/devices/health` totals (same data source). There is no vitals rail on Dashboard — CPU/Memory/Temperature/Storage live on Device detail.
 
 ## Gotchas
 

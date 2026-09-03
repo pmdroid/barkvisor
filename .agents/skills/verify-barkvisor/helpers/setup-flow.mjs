@@ -72,26 +72,25 @@ try {
 
   await page.goto(`${site}/setup`, { waitUntil: 'networkidle' })
   await page.waitForSelector('.shell', { timeout: 15000 })
-  await shot('01-welcome')
-
-  await page.click('button:has-text("Continue")')
-  await page.waitForSelector('h1:has-text("Add a passkey")', { timeout: 10000 })
-  await shot('02-admin')
-  await page.click('button:has-text("Add passkey")')
+  const resumedLibrary = await page.locator('h1:has-text("Image Library")').count() > 0
+  if (!resumedLibrary) {
+    await shot('01-welcome')
+    await page.click('button:has-text("Continue")')
+    await page.waitForSelector('h1:has-text("Add a passkey")', { timeout: 10000 })
+    await shot('02-admin')
+    await page.click('button:has-text("Add passkey")')
+  }
 
   await page.waitForSelector('h1:has-text("Image Library")', { timeout: 15000 })
   await shot('03-library')
-  await page.click('button:has-text("Browse")')
-  await page.waitForSelector('h2:has-text("Select Folder")', { timeout: 10000 })
-  const folder = page.locator('.folder-item').filter({ hasNotText: '..' }).first()
-  await folder.click()
   await page.waitForFunction(() => {
+    const input = document.querySelector('input[placeholder="/var/lib/barkvisor/images"]')
     const btn = [...document.querySelectorAll('button')].find((el) =>
-      (el.textContent || '').includes('Select This Folder'),
+      (el.textContent || '').includes('Save folder'),
     )
-    return btn instanceof HTMLButtonElement && !btn.disabled
+    return input instanceof HTMLInputElement && input.value.trim().length > 0
+      && btn instanceof HTMLButtonElement && !btn.disabled
   })
-  await page.click('button:has-text("Select This Folder")')
   await page.click('button:has-text("Save folder")')
   await page.waitForFunction(() => {
     const btn = [...document.querySelectorAll('button')].find((el) =>

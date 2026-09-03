@@ -14,7 +14,7 @@ cd /Users/pascal/work/barkvisor
 .agents/skills/verify-barkvisor/helpers/up.sh --seed
 ```
 
-`up.sh` calls `scripts/dev-instance.sh start --name verify --seed`, waits for `/api/health` + headless setup, and prints the instance meta as **one JSON line on stdout** (logs go to stderr). The same JSON is saved to `.agents/skills/verify-barkvisor/current/meta.json`. Ready means: that line exists and `doctor.sh` passes.
+`up.sh` calls `scripts/dev-instance.sh start --name verify-<hex> --seed` (or `--name TAG`), waits for `/api/health` + headless setup, and prints the instance meta as **one JSON line on stdout** (logs go to stderr). The same JSON is saved to `.agents/skills/verify-barkvisor/current/meta.json` (last `up.sh` wins — pass `--name` and keep the JSON line when running two instances). Ready means: that line exists and `doctor.sh` passes.
 
 ```json
 {"name":"verify","url":"http://127.0.0.1:50190","port":50190,"agentPort":50191,"pid":1234,"dataDir":"/var/folders/…/barkvisor-dev-verify.XXXX","logFile":"…/server.log","adminUser":"admin","adminPass":"dev-instance-pass","seeded":true}
@@ -41,11 +41,13 @@ Checks, in order: not port 7777 (refuses without `BARKVISOR_ALLOW_7777=1`) → `
 
 Harness is Playwright over Chromium from this skill's own `node_modules/playwright-core` (browsers resolve from `~/Library/Caches/ms-playwright`). Run helpers with `bun` or `node`.
 
-Plain page screenshot (real login path every time):
+Plain page screenshot. `POST /api/auth/login` is rate-limited (default 10 / 5 min) — log in once, then pass `--token`:
 
 ```sh
+TOKEN=$(curl -sf -X POST "$URL/api/auth/login" -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"dev-instance-pass"}' | jq -r .token)
 bun .agents/skills/verify-barkvisor/helpers/shot.mjs \
-  --base "$URL" --user admin --pass dev-instance-pass \
+  --base "$URL" --token "$TOKEN" \
   --route "/settings?tab=audit" \
   --out ".agents/skills/verify-barkvisor/evidence/run-$(date +%s)/settings-audit.png"
 ```
@@ -65,7 +67,7 @@ Stable handles (prefer these, never coordinates):
 |---|---|
 | Login | **Sign in with passkey** on `.login-card` (no username/password). Helpers inject a JWT from `POST /api/auth/login` on headless instances. |
 | Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Images, Disks, Networks, Logs, Settings |
-| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|disks\|apikeys\|sshkeys\|passkeys\|audit` |
+| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|apikeys\|sshkeys\|passkeys\|audit\|updates` (`?tab=disks` redirects to Devices) |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
 | Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
@@ -120,8 +122,8 @@ Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 
 | `up.sh` | `helpers/up.sh [--seed] [--name TAG] [--data-dir DIR] [--keep]` | launch instance, save meta to `current/meta.json` |
 | `doctor.sh` | `helpers/doctor.sh URL [USER] [PASS]` | read-only "worth driving?" check |
 | `shot.mjs` | `helpers/shot.mjs --base URL [--token T \| --user U --pass P] --route R --out F.png [--raw] [--wait-ms N] [--scrub /from/to]…` | login (or token inject) + navigate + full-page screenshot, with DOM redaction |
-| `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL --user U --pass P --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
-| `create-vm-flow.mjs` | `helpers/create-vm-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR` | magazine Create VM flows + template deploy |
-| `networks-interfaces-flow.mjs` | `helpers/networks-interfaces-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR [--check]` | Host interfaces tab: drawer, multi-address editor, optional mocked Apply + real check |
-| `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR [--join-payload URI]` | drive the first-run wizard step by step; asserts `setup/status complete` |
+| `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL [--token T \| --user U --pass P] --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
+| `create-vm-flow.mjs` | `helpers/create-vm-flow.mjs --base URL [--token T \| --user U --pass P] --dir EVIDENCE_DIR` | magazine Create VM flows + template deploy |
+| `networks-interfaces-flow.mjs` | `helpers/networks-interfaces-flow.mjs --base URL [--token T \| --user U --pass P] --dir EVIDENCE_DIR [--check]` | Host interfaces tab: drawer, multi-address editor, optional mocked Apply + real check |
+| `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR` | drive the first-run wizard (`--no-provision` instance; use `http://localhost`) |
 | `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |

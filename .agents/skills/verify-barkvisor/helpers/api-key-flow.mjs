@@ -12,7 +12,7 @@ function arg(name, fallback) {
 
 const base = arg('base').replace(/\/$/, '')
 const user = arg('user', 'admin')
-const pass = arg('pass')
+const pass = arg('pass', '')
 const keyName = arg('key-name', 'verify-proof')
 const dir = arg('dir')
 const token = arg('token', '')
