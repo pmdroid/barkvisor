@@ -768,6 +768,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.changes.contains { $0.contains("Detach eth0") })
         #expect(result.changes.contains { $0.contains("Restore L3") })
         #expect(result.commands.contains { $0.contains("ip link delete br0 type bridge") })
+        #expect(result.commands.contains { $0.contains("DELETE /api/networks (bridge=br0)") })
         #expect(result.message.contains("Ready to delete"))
         #expect(!result.message.contains("Keep changes"))
     }

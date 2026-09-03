@@ -330,10 +330,12 @@ import Foundation
             let changes = [
                 "Stop BarkVisor-managed socket_vmnet for \(device)",
                 "Remove \(plist)",
+                "Delete Workload networks that use \(request.bridge)",
             ]
             let commands = [
                 "sudo launchctl bootout system/\(label)",
                 "sudo rm -f \(plist)",
+                "DELETE /api/networks (bridge=\(request.bridge))",
             ]
             return LinuxHostBridgeApplyResult(
                 success: true,

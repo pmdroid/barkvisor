@@ -865,6 +865,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
     }
     if (data.success) {
       toast.success(data.message || (action === 'revert' ? 'Reverted host network.' : action === 'delete' ? 'Deleted host Bridge.' : 'Applied host network.'))
+      if (action === 'delete') await refreshHomeNetworks()
       await fetchHostReadiness(device)
       await refreshInterfaceContext(row.hostId)
       const refreshed = interfaceTableRows.value.find((item) => item.key === row.key)

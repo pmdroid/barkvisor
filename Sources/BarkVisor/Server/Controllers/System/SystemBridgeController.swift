@@ -135,6 +135,9 @@ struct SystemBridgeController: RouteCollection {
             throw BarkVisorError.conflict(result.message)
         }
         if result.applied {
+            if request.action == .delete {
+                try await NetworkService.deleteUnattached(bridge: request.bridge, db: req.db)
+            }
             let auditAction = switch request.action {
             case .revert: "host-bridge.revert"
             case .delete: "host-bridge.delete"
@@ -197,6 +200,9 @@ struct SystemBridgeController: RouteCollection {
                 throw BarkVisorError.conflict(result.message)
             }
             if result.applied {
+                if request.action == .delete {
+                    try await NetworkService.deleteUnattached(bridge: request.bridge, db: req.db)
+                }
                 let auditAction = switch request.action {
                 case .revert: "host-bridge.revert"
                 case .delete: "host-bridge.delete"

@@ -571,7 +571,10 @@ struct MacHostBridgeApplyPlannerTests {
             #expect(result.message.contains("delete") || result.message.contains("socket_vmnet"))
             #expect(!result.commands.contains { $0.contains("networksetup") })
             #expect(!result.commands.contains { $0.contains("ifconfig") })
-            #expect(result.commands.allSatisfy { $0.contains("launchctl bootout") || $0.contains("rm -f") })
+            #expect(result.commands.contains { $0.contains("DELETE /api/networks") })
+            #expect(result.commands.allSatisfy {
+                $0.contains("launchctl bootout") || $0.contains("rm -f") || $0.contains("DELETE /api/networks")
+            })
         }
 
         @Test func `mac revert of created brN stops socket_vmnet`() {

@@ -1366,6 +1366,10 @@ extension LinuxHostBridgeApply {
             description: "Remove marker-tagged allow \(request.bridge) from \(HostBridgeFactsService.defaultACLPath)",
             command: "# strip \(aclMarker(for: request.bridge)) + allow \(request.bridge)",
         ))
+        changes.append(LinuxHostBridgeChange(
+            description: "Delete Workload networks that use \(request.bridge)",
+            command: "DELETE /api/networks (bridge=\(request.bridge))",
+        ))
         if !request.confirm {
             return LinuxHostBridgeApplyResult(
                 success: true,
