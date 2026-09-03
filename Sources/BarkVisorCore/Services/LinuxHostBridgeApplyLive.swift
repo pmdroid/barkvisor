@@ -60,12 +60,12 @@ public enum LinuxHostBridgeApplyLive {
                 ? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
                 : request.bridge
             let nic = request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
-            let pending = HostNetworkPendingCommitService.makePending(
-                target: addressOnly
-                    ? nic
-                    : request.bridge,
-                createdBridge: createdNow,
-            )
+            let target = addressOnly ? nic : request.bridge
+            let pending = HostNetworkPendingCommitService.readLinux(bridge: target)
+                ?? HostNetworkPendingCommitService.makePending(
+                    target: target,
+                    createdBridge: createdNow,
+                )
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
@@ -174,8 +174,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
                 )
             }
-            stopRollbackTimer(bridge: request.bridge)
             try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
+            stopRollbackTimer(bridge: request.bridge)
             if probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 {
                 _ = kill(pid_t(pid), SIGUSR1)
                 let deadline = Date().addingTimeInterval(30)
@@ -213,10 +213,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 pendingNetplan = try beginNetplanTry()
             case .networkManager:
                 try applyNetworkManager(request: request, nic: nic, plan: plan)
-                try startRollbackTimer(bridge: request.bridge)
             case .systemdNetworkd:
                 try writeNetworkd(request: request, nic: nic, plan: plan)
-                try startRollbackTimer(bridge: request.bridge)
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
                     arguments: ["reload"],
@@ -245,7 +243,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
-            if probe.backend == .netplan {
+            if probe.backend != .netplan {
                 try startRollbackTimer(bridge: request.bridge)
             }
         }
@@ -319,6 +317,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     timeout: 15,
                 )
             }
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: nic,
+                createdBridge: false,
+            )
+            try HostNetworkPendingCommitService.writeLinux(pending)
             try startAddressRollbackTimer(
                 device: nic,
                 iface: iface,
@@ -328,11 +331,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 persistRestore: persistRestore,
                 nmConnection: nmConnection,
             )
-            let pending = HostNetworkPendingCommitService.makePending(
-                target: nic,
-                createdBridge: false,
-            )
-            try HostNetworkPendingCommitService.writeLinux(pending)
         }
 
         private func nmConnectionName(interface: String) -> String {
@@ -416,7 +414,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 atPath: "/run/barkvisor",
                 withIntermediateDirectories: true,
             )
-            try? FileManager.default.removeItem(atPath: stamp)
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
             let helper = "/run/barkvisor/\(device)-rollback.sh"
             try writeAtomically(
                 helper,
@@ -431,7 +432,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ),
             )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
-            _ = try? PlatformProcess.run(
+            let armed = try PlatformProcess.run(
                 path: "/usr/bin/systemd-run",
                 arguments: [
                     "--on-active=\(LinuxHostBridgeApply.rollbackSeconds)s",
@@ -440,6 +441,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ],
                 timeout: 15,
             )
+            if !armed.succeeded {
+                throw BarkVisorError.internalError(
+                    "Could not arm \(LinuxHostBridgeApply.rollbackSeconds)s revert timer: \(armed.stderrString)",
+                )
+            }
+            try? FileManager.default.removeItem(atPath: stamp)
         }
 
         private func deleteOwned(
@@ -911,7 +918,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 atPath: "/run/barkvisor",
                 withIntermediateDirectories: true,
             )
-            try? FileManager.default.removeItem(atPath: stamp)
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
             let helper = "/run/barkvisor/\(bridge)-rollback.sh"
             try writeAtomically(
                 helper,
@@ -921,7 +931,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ),
             )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
-            _ = try? PlatformProcess.run(
+            let armed = try PlatformProcess.run(
                 path: "/usr/bin/systemd-run",
                 arguments: [
                     "--on-active=\(LinuxHostBridgeApply.rollbackSeconds)s",
@@ -930,6 +940,12 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ],
                 timeout: 15,
             )
+            if !armed.succeeded {
+                throw BarkVisorError.internalError(
+                    "Could not arm \(LinuxHostBridgeApply.rollbackSeconds)s revert timer: \(armed.stderrString)",
+                )
+            }
+            try? FileManager.default.removeItem(atPath: stamp)
         }
 
         private func stopRollbackTimer(bridge: String) {

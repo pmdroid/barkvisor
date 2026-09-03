@@ -396,6 +396,7 @@ public final class VaporServer: @unchecked Sendable {
             BackupService.performBackup(pool: pool)
         }
         await BridgeSyncService.syncOnce(db: pool)
+        await HostNetworkPendingReaper.expire(db: pool)
         do {
             try await ImageService.failInterruptedDownloads(db: pool)
         } catch {
@@ -460,6 +461,12 @@ public final class VaporServer: @unchecked Sendable {
             await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: bridgeSyncNs) {
                 await BridgeSyncService.syncOnce(db: pool)
             }
+        }
+        await backgroundTasks.schedulePeriodicTask(
+            id: "host-network-pending",
+            interval: 2 * 1_000_000_000,
+        ) {
+            await HostNetworkPendingReaper.expire(db: pool)
         }
         if let healthProbes {
             await backgroundTasks.schedulePeriodicTask(

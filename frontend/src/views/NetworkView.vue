@@ -679,6 +679,14 @@ async function autoRevertPendingCommit() {
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
+    const ready = await fetchHostReadiness(device)
+    if (!ready?.pendingCommit) {
+      clearPendingCommitState()
+      toast.info('Host network changes auto-reverted.')
+      await refreshHomeNetworks()
+      await refreshInterfaceContext(pending.hostId)
+      return
+    }
     const data = await undoHostApply({
       device,
       nic: pending.nic,
@@ -689,6 +697,7 @@ async function autoRevertPendingCommit() {
     if (data.success) {
       toast.info(data.message || 'Host network changes auto-reverted.')
       await fetchHostReadiness(device)
+      await refreshHomeNetworks()
       await refreshInterfaceContext(pending.hostId)
     }
   } catch {

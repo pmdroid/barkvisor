@@ -81,9 +81,9 @@ struct LinuxHostBridgeApplyTests {
     }
 
     @Test func `rollback helper keeps config only after commit stamp`() {
-        #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0") == "/run/barkvisor/br0-commit")
+        #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0").hasSuffix("host-network/br0-commit"))
         let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
-        #expect(script.contains("/run/barkvisor/br0-commit"))
+        #expect(script.contains("host-network/br0-commit"))
         #expect(script.contains("then exit 0"))
         #expect(script.contains("nmcli connection delete barkvisor-br0"))
         #expect(script.contains("grep \"^barkvisor-br0-\""))
@@ -352,7 +352,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(LinuxHostBridgeApply.netplanPath(bridge: "br1") == "/etc/netplan/90-barkvisor-br1.yaml")
         #expect(LinuxHostBridgeApply.networkdPortPath(nic: "eth1") == "/etc/systemd/network/90-barkvisor-eth1.network")
         #expect(LinuxHostBridgeApply.nmSlaveConnectionName(bridge: "br1", nic: "eth1") == "barkvisor-br1-eth1")
-        #expect(HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1") == "/run/barkvisor/br1-pending.json")
+        #expect(HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1").hasSuffix("host-network/br1-pending.json"))
         #expect(LinuxHostBridgeApply.aclMarker(for: "br1") == "# barkvisor:allow-br1")
     }
 
@@ -694,6 +694,11 @@ struct LinuxHostBridgeApplyTests {
         #expect(!LinuxHostBridgeApply.dropsManagementSession(nic: "eth1", probe: safe))
     }
 
+    @Test func `pending path lives in dataDir host-network`() {
+        #expect(HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1").contains("/host-network/br1-pending.json"))
+        #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br1").contains("/host-network/br1-commit"))
+    }
+
     @Test func `one pending commit per Device`() {
         let br0 = HostNetworkPendingCommitService.makePending(target: "br0")
         let br1 = HostNetworkPendingCommitService.makePending(target: "br1")
@@ -754,7 +759,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(script.contains("/etc/netplan/90-barkvisor-br1.yaml"))
         #expect(script.contains("barkvisor-br1"))
         #expect(script.contains("host-bridge-br1.json"))
-        #expect(script.contains("/run/barkvisor/br1-pending.json"))
+        #expect(script.contains("host-network/br1-pending.json"))
         #expect(script.contains("grep \"^barkvisor-br1-\""))
         #expect(script.contains("90-barkvisor-\"$uplink\".network"))
         #expect(script.contains("nmcli device reapply"))

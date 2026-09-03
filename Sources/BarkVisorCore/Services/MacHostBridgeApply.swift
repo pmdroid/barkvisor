@@ -469,6 +469,15 @@ import Foundation
                         "Pending apply expired. Run Revert to restore the saved network profile.",
                     )
                 }
+                try FileManager.default.createDirectory(
+                    at: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device))
+                        .deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try Data().write(
+                    to: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device)),
+                    options: .atomic,
+                )
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 plan.applied = true
                 plan.pendingCommit = false

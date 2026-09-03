@@ -307,8 +307,9 @@ public enum LinuxHostBridgeApply {
         return false
     }
 
-    public static func commitStampPath(bridge: String) -> String {
-        "/run/barkvisor/\(bridge)-commit"
+    public static func commitStampPath(bridge: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(bridge)-commit").path
     }
 
     public static func createdBridge(
