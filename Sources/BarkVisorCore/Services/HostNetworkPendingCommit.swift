@@ -206,7 +206,7 @@ public enum HostNetworkPendingCommitService {
 
     private static let applyGate = NSLock()
     private static let gateTableLock = NSLock()
-    nonisolated(unsafe) private static var gates: [String: NSRecursiveLock] = [:]
+    private nonisolated(unsafe) static var gates: [String: NSRecursiveLock] = [:]
 
     public static func withApplyGate(_ body: () throws -> Void) throws {
         applyGate.lock()

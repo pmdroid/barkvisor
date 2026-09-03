@@ -415,72 +415,72 @@ import Foundation
             switch request.action {
             case .apply:
                 try HostNetworkPendingCommitService.withApplyGate {
-                if let other = HostNetworkPendingCommitService.blockingPending(
-                    target: resolved.device,
-                    existing: HostNetworkPendingCommitService.listMacPending(),
-                ) {
-                    throw BarkVisorError.conflict(
-                        "A host network apply is already pending for \(other.target). Keep or Revert it first.",
-                    )
-                }
-                guard let service = resolved.serviceName else {
-                    throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
-                }
-                if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
-                    let socket = try SocketVmnetApplyLive.run(
-                        request: SocketVmnetApplyRequest(action: .setup, interface: resolved.device),
-                        probe: resolved.socketProbe,
-                    )
-                    if !socket.success {
-                        throw BarkVisorError.preconditionFailed(socket.message)
+                    if let other = HostNetworkPendingCommitService.blockingPending(
+                        target: resolved.device,
+                        existing: HostNetworkPendingCommitService.listMacPending(),
+                    ) {
+                        throw BarkVisorError.conflict(
+                            "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                        )
                     }
-                    plan.changes.append(contentsOf: socket.changes)
-                } else {
-                    try MacHostNetworkApply.apply(
-                        device: resolved.device,
-                        service: service,
-                        plan: {
-                            guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
-                                throw BarkVisorError.badRequest("Invalid host address plan.")
-                            }
-                            return plan
-                        }(),
-                    )
-                }
-                let createdNow = MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
-                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge) == nil
-                if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
-                    let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
-                    try LinuxHostBridgeApply.writeOwnerMarker(
-                        bridge: request.bridge,
-                        uplink: resolved.device,
-                        createdBridge: created,
-                    )
-                }
-                let pending = HostNetworkPendingCommitService.makePending(
-                    target: resolved.device,
-                    createdBridge: createdNow,
-                )
-                do {
-                    try HostNetworkPendingCommitService.writeMac(pending)
-                    try HostNetworkRollbackLaunchd.arm(target: resolved.device)
-                } catch {
-                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                    if createdNow {
-                        try? SocketVmnetLaunchd.remove(interface: resolved.device)
+                    guard let service = resolved.serviceName else {
+                        throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
+                    }
+                    if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
+                        let socket = try SocketVmnetApplyLive.run(
+                            request: SocketVmnetApplyRequest(action: .setup, interface: resolved.device),
+                            probe: resolved.socketProbe,
+                        )
+                        if !socket.success {
+                            throw BarkVisorError.preconditionFailed(socket.message)
+                        }
+                        plan.changes.append(contentsOf: socket.changes)
                     } else {
-                        _ = try? MacHostNetworkApply.revert(device: resolved.device)
+                        try MacHostNetworkApply.apply(
+                            device: resolved.device,
+                            service: service,
+                            plan: {
+                                guard case let .success(plan) = HostInterfaceAddressApply.resolve(from: request) else {
+                                    throw BarkVisorError.badRequest("Invalid host address plan.")
+                                }
+                                return plan
+                            }(),
+                        )
                     }
-                    throw error
-                }
-                plan.applied = true
-                plan.pendingCommit = true
-                plan.commitDeadline = pending.commitDeadline
-                plan.rollbackSeconds = pending.rollbackSeconds
-                plan.createdBridge = createdNow
-                plan.message =
-                    "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                    let createdNow = MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                        && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge) == nil
+                    if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
+                        let created = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge ?? true
+                        try LinuxHostBridgeApply.writeOwnerMarker(
+                            bridge: request.bridge,
+                            uplink: resolved.device,
+                            createdBridge: created,
+                        )
+                    }
+                    let pending = HostNetworkPendingCommitService.makePending(
+                        target: resolved.device,
+                        createdBridge: createdNow,
+                    )
+                    do {
+                        try HostNetworkPendingCommitService.writeMac(pending)
+                        try HostNetworkRollbackLaunchd.arm(target: resolved.device)
+                    } catch {
+                        HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                        HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                        if createdNow {
+                            try? SocketVmnetLaunchd.remove(interface: resolved.device)
+                        } else {
+                            _ = try? MacHostNetworkApply.revert(device: resolved.device)
+                        }
+                        throw error
+                    }
+                    plan.applied = true
+                    plan.pendingCommit = true
+                    plan.commitDeadline = pending.commitDeadline
+                    plan.rollbackSeconds = pending.rollbackSeconds
+                    plan.createdBridge = createdNow
+                    plan.message =
+                        "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
                 }
             case .commit:
                 try withClaim(resolved.device) {
