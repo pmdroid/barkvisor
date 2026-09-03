@@ -1,4 +1,9 @@
 import Foundation
+#if os(Linux)
+    import Glibc
+#elseif os(macOS)
+    import Darwin
+#endif
 
 /// Post-apply confirmation window before host network changes are permanent.
 public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
@@ -229,6 +234,10 @@ public enum HostNetworkPendingCommitService {
                 try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
                 return true
             }
+            if ownerPidIsAlive(owner) {
+                lock.unlock()
+                return false
+            }
             let attrs = try? fm.attributesOfItem(atPath: path)
             let created = (attrs?[.modificationDate] as? Date)
                 ?? (attrs?[.creationDate] as? Date)
@@ -255,7 +264,10 @@ public enum HostNetworkPendingCommitService {
         let myPid = String(ProcessInfo.processInfo.processIdentifier)
         let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard owner == myPid else { return }
+        guard owner == myPid else {
+            gate(for: target).unlock()
+            return
+        }
         let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) - 1
         if n > 0 {
             try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
@@ -264,6 +276,15 @@ public enum HostNetworkPendingCommitService {
         }
         try? FileManager.default.removeItem(atPath: path)
         gate(for: target).unlock()
+    }
+
+    private static func ownerPidIsAlive(_ owner: String?) -> Bool {
+        guard let owner, let pid = Int32(owner), pid > 0 else { return false }
+        #if os(Windows)
+            return false
+        #else
+            return kill(pid_t(pid), 0) == 0
+        #endif
     }
 
     public static func activePending() -> HostNetworkPendingCommit? {

@@ -414,6 +414,14 @@ import Foundation
 
             switch request.action {
             case .apply:
+                if let other = HostNetworkPendingCommitService.blockingPending(
+                    target: resolved.device,
+                    existing: HostNetworkPendingCommitService.listMacPending(),
+                ) {
+                    throw BarkVisorError.conflict(
+                        "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                    )
+                }
                 guard let service = resolved.serviceName else {
                     throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
                 }

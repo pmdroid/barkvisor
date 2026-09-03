@@ -200,6 +200,15 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         }
 
         private func persist(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
+            let target = pendingKey(request: request, probe: probe)
+            if let other = HostNetworkPendingCommitService.blockingPending(
+                target: target,
+                existing: HostNetworkPendingCommitService.listLinuxPending(),
+            ) {
+                throw BarkVisorError.conflict(
+                    "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                )
+            }
             let nic = request.nic ?? probe.facts.defaultRouteInterface ?? ""
             guard !nic.isEmpty else {
                 throw BarkVisorError.badRequest("No wired uplink for \(request.bridge).")
