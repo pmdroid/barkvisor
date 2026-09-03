@@ -312,6 +312,52 @@ public enum LinuxHostBridgeApply {
             .appendingPathComponent("\(bridge)-commit").path
     }
 
+    public enum NetplanExpireAction: String, Sendable, Equatable {
+        case waitForTry
+        case stampKeep
+        case alreadyReverted
+    }
+
+    public static func netplanExpireAction(
+        pidAlive: Bool,
+        pidIsNetplan: Bool,
+        yamlExists: Bool,
+    ) -> NetplanExpireAction {
+        if pidAlive, pidIsNetplan { return .waitForTry }
+        if yamlExists { return .stampKeep }
+        return .alreadyReverted
+    }
+
+    public static func shouldDeleteWorkloadNetwork(createdBridge: Bool, attached: Int) -> Bool {
+        createdBridge && attached == 0
+    }
+
+    public static func isNetplanProcess(pid: Int32) -> Bool {
+        isNetplanProcess(pid: pid) { candidate in
+            try? String(contentsOfFile: "/proc/\(candidate)/cmdline", encoding: .utf8)
+        }
+    }
+
+    public static func isNetplanProcess(pid: Int32, readCmdline: (Int32) -> String?) -> Bool {
+        let text = readCmdline(pid)?.replacingOccurrences(of: "\0", with: " ") ?? ""
+        return text.contains("netplan")
+    }
+
+    public static func rollbackClaimShell(claim: String, stamp: String) -> String {
+        """
+        if [ -f \(stamp) ]; then exit 0; fi
+        if ! mkdir \(claim) 2>/dev/null; then
+          if [ -f \(stamp) ]; then exit 0; fi
+          age=$(stat -c %Y \(claim) 2>/dev/null || echo 0)
+          now=$(date +%s)
+          if [ $((now - age)) -lt 30 ]; then exit 0; fi
+          rm -rf \(claim)
+          mkdir \(claim) 2>/dev/null || exit 0
+        fi
+        if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
+        """
+    }
+
     public static func createdBridge(
         named bridge: String,
         existingInterfaces: Set<String>,
@@ -383,9 +429,7 @@ public enum LinuxHostBridgeApply {
         let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
-        if [ -f \(stamp) ]; then exit 0; fi
-        if ! mkdir \(claim) 2>/dev/null; then exit 0; fi
-        if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
+        \(rollbackClaimShell(claim: claim, stamp: stamp))
         rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
@@ -1152,9 +1196,7 @@ public enum LinuxHostBridgeApply {
         let nm = nmConnection.trimmingCharacters(in: .whitespacesAndNewlines)
         var lines: [String] = [
             "#!/bin/sh",
-            "if [ -f \(stamp) ]; then exit 0; fi",
-            "if ! mkdir \(claim) 2>/dev/null; then exit 0; fi",
-            "if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi",
+            rollbackClaimShell(claim: claim, stamp: stamp),
         ]
         if !nm.isEmpty {
             for cidr in restoreCIDRs {

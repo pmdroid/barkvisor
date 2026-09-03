@@ -100,7 +100,7 @@ public enum HostNetworkPendingCommitService {
         target: String,
         existing: [HostNetworkPendingCommit],
     ) -> HostNetworkPendingCommit? {
-        existing.first { $0.target != target && !$0.expired }
+        existing.first { $0.target == target || !$0.expired }
     }
 
     public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
@@ -148,6 +148,11 @@ public enum HostNetworkPendingCommitService {
         }
 
         public static func writeMac(_ pending: HostNetworkPendingCommit) throws {
+            if let other = blockingPending(target: pending.target, existing: listMacPending()) {
+                throw BarkVisorError.conflict(
+                    "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                )
+            }
             let url = macPendingURL(device: pending.target)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -194,7 +199,9 @@ public enum HostNetworkPendingCommitService {
         )
         if fm.fileExists(atPath: path) {
             let attrs = try? fm.attributesOfItem(atPath: path)
-            let created = attrs?[.creationDate] as? Date ?? .distantPast
+            let created = (attrs?[.modificationDate] as? Date)
+                ?? (attrs?[.creationDate] as? Date)
+                ?? .distantPast
             if Date().timeIntervalSince(created) < 30 {
                 return false
             }
@@ -219,6 +226,32 @@ public enum HostNetworkPendingCommitService {
             return listMacPending().first { !stampExists($0.target) }
         #else
             return nil
+        #endif
+    }
+
+    public static func keepNow(target: String) throws {
+        let stamp = LinuxHostBridgeApply.commitStampPath(bridge: target)
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data().write(to: URL(fileURLWithPath: stamp), options: .atomic)
+        #if os(Linux)
+            let unit = "barkvisor-\(target)-rollback"
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).timer"],
+                timeout: 10,
+            )
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).service"],
+                timeout: 10,
+            )
+            clearLinux(bridge: target)
+        #elseif os(macOS)
+            HostNetworkRollbackLaunchd.disarm(target: target)
+            clearMac(device: target)
         #endif
     }
 

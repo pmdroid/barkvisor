@@ -24,7 +24,7 @@ public enum LinuxHostAddressPersist {
         interface: String,
         dir: String = LinuxHostBridgeApply.systemdNetworkDir,
     ) -> String {
-        "\(dir)/90-barkvisor-\(interface).network"
+        "\(dir)/90-barkvisor-\(interface)-aliases.network"
     }
 
     public static func networkdAliasDropInBody(cidrs: [String]) -> String {
@@ -81,6 +81,38 @@ public enum LinuxHostAddressPersist {
         case .netplan:
             return [(netplanAliasPath(interface: interface), netplanAliasYAML(interface: interface, cidrs: cidrs))]
         }
+    }
+
+    public static func migrateAliasUnitOntoPort(
+        interface: String,
+        dir: String = LinuxHostBridgeApply.systemdNetworkDir,
+    ) throws {
+        let alias = networkdAliasUnitPath(interface: interface, dir: dir)
+        let port = "\(dir)/90-barkvisor-\(interface).network"
+        guard FileManager.default.fileExists(atPath: alias) else { return }
+        guard FileManager.default.fileExists(atPath: port) else { return }
+        let body = (try? String(contentsOfFile: alias, encoding: .utf8)) ?? ""
+        var cidrs: [String] = []
+        for raw in body.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("Address=") {
+                let value = String(line.dropFirst("Address=".count))
+                if !value.isEmpty { cidrs.append(value) }
+            }
+        }
+        if !cidrs.isEmpty {
+            let drop = networkdAliasDropInPath(matchFile: port)
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: drop).deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            try networkdAliasDropInBody(cidrs: cidrs).write(
+                toFile: drop,
+                atomically: true,
+                encoding: .utf8,
+            )
+        }
+        try FileManager.default.removeItem(atPath: alias)
     }
 
     public static func ipAddrAddAlreadyPresent(_ stderr: String) -> Bool {

@@ -1,5 +1,8 @@
 import Foundation
 import GRDB
+#if os(Linux)
+    import Glibc
+#endif
 
 public enum HostNetworkPendingReaper {
     public static func expire(db: DatabasePool) async {
@@ -11,13 +14,62 @@ public enum HostNetworkPendingReaper {
                 continue
             }
             do {
-                try revertHost(pending)
+                if try await settleExpired(pending, db: db) {
+                    continue
+                }
                 let bridge = workloadBridgeName(pending)
-                try await NetworkService.deleteUnattached(bridge: bridge, db: db)
+                let attached = pending.createdBridge
+                    ? (try await NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                    : 0
+                if attached > 0 {
+                    try HostNetworkPendingCommitService.keepNow(target: pending.target)
+                    continue
+                }
+                try revertHost(pending)
+                if LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(
+                    createdBridge: pending.createdBridge,
+                    attached: attached,
+                ) {
+                    try await NetworkService.deleteUnattached(bridge: bridge, db: db)
+                }
             } catch {
                 continue
             }
         }
+    }
+
+    public static func settleExpired(
+        _ pending: HostNetworkPendingCommit,
+        db _: DatabasePool,
+    ) async throws -> Bool {
+        #if os(Linux)
+            guard let pid = pending.netplanPid, pid > 0 else { return false }
+            let alive = kill(pid_t(pid), 0) == 0
+            let yamlExists = FileManager.default.fileExists(
+                atPath: LinuxHostBridgeApply.netplanPath(bridge: pending.target),
+            ) || FileManager.default.fileExists(
+                atPath: LinuxHostAddressPersist.netplanAliasPath(interface: pending.target),
+            )
+            switch LinuxHostBridgeApply.netplanExpireAction(
+                pidAlive: alive,
+                pidIsNetplan: LinuxHostBridgeApply.isNetplanProcess(pid: pid),
+                yamlExists: yamlExists,
+            ) {
+            case .waitForTry:
+                return true
+            case .stampKeep:
+                try HostNetworkPendingCommitService.keepNow(target: pending.target)
+                return true
+            case .alreadyReverted:
+                if !pending.createdBridge {
+                    HostNetworkPendingCommitService.clearLinux(bridge: pending.target)
+                    return true
+                }
+                return false
+            }
+        #else
+            return false
+        #endif
     }
 
     public static func pendingWithoutStamp() -> [HostNetworkPendingCommit] {

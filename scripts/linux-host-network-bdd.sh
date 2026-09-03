@@ -49,7 +49,9 @@ cleanup_nic() {
   ip link del "$NIC" 2>/dev/null || true
   ip link del "${NIC}p" 2>/dev/null || true
   rm -rf "/etc/systemd/network/20-${NIC}.network" "/etc/systemd/network/20-${NIC}.network.d" \
-    "/etc/systemd/network/90-barkvisor-${NIC}.network" "/etc/netplan/90-barkvisor-${NIC}-aliases.yaml" \
+    "/etc/systemd/network/90-barkvisor-${NIC}.network" \
+    "/etc/systemd/network/90-barkvisor-${NIC}-aliases.network" \
+    "/etc/netplan/90-barkvisor-${NIC}-aliases.yaml" \
     2>/dev/null || true
   rmdir /etc/netplan 2>/dev/null || true
 }

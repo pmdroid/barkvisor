@@ -80,6 +80,24 @@ struct SocketVmnetLaunchdTests {
         #expect(xml.contains("/bin/sh"))
         #expect(xml.contains("<false/>"))
         #expect(!xml.contains("MachServices"))
+        #expect(
+            HostNetworkRollbackLaunchd.binaryPath(
+                launched: "barkvisor",
+                bundlePath: nil,
+                fileExists: { $0 == "/opt/homebrew/bin/barkvisor" },
+            ) == "/opt/homebrew/bin/barkvisor",
+        )
+        #expect(
+            HostNetworkRollbackLaunchd.binaryPath(
+                launched: "/usr/local/bin/barkvisor",
+                bundlePath: nil,
+                fileExists: { _ in false },
+            ) == "/usr/local/bin/barkvisor",
+        )
+        #expect(
+            HostNetworkRollbackLaunchd.helperPath(target: "en0")
+                .hasSuffix("host-network/en0-rollback.sh"),
+        )
     }
 
     @Test func `install hint never says sudo brew install`() {

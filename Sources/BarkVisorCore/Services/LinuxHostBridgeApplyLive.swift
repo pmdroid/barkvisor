@@ -141,21 +141,33 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             plan _: LinuxHostBridgeApplyResult,
         ) throws {
             if request.action == .revert {
-                if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
-                    try revertAddresses(request: request, probe: probe)
-                    return
+                try withClaim(pendingKey(request: request, probe: probe)) {
+                    if HostNetworkPendingCommitService.stampExists(pendingKey(request: request, probe: probe)) {
+                        return
+                    }
+                    if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                        try revertAddresses(request: request, probe: probe)
+                        return
+                    }
+                    try revert(request: request, probe: probe)
                 }
-                try revert(request: request, probe: probe)
                 return
             }
             if request.action == .delete {
-                try deleteOwned(request: request, probe: probe)
+                try withClaim(pendingKey(request: request, probe: probe)) {
+                    if HostNetworkPendingCommitService.stampExists(pendingKey(request: request, probe: probe)) {
+                        return
+                    }
+                    try deleteOwned(request: request, probe: probe)
+                }
                 return
             }
             do {
                 try persist(request: request, probe: probe)
             } catch {
-                if !LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try? revertAddresses(request: request, probe: probe)
+                } else {
                     try? revert(request: request, probe: probe)
                 }
                 throw error
@@ -166,27 +178,26 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             request: LinuxHostBridgeApplyRequest,
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
-            guard let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge) else {
-                throw BarkVisorError.badRequest("No pending host network apply for \(request.bridge).")
-            }
-            if pending.expired {
-                throw BarkVisorError.badRequest(
-                    "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
-                )
-            }
-            if probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 {
-                if kill(pid_t(pid), SIGUSR1) != 0 {
-                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
+            let target = pendingKey(request: request, probe: probe)
+            try withClaim(target) {
+                if HostNetworkPendingCommitService.stampExists(target) {
+                    return
                 }
-                var status: Int32 = 0
-                let waited = waitpid(pid_t(pid), &status, 0)
-                if waited <= 0 || status != 0 {
-                    throw BarkVisorError.internalError("netplan try did not keep the config.")
+                guard let pending = HostNetworkPendingCommitService.readLinux(bridge: target)
+                    ?? HostNetworkPendingCommitService.readLinux(bridge: request.bridge)
+                else {
+                    throw BarkVisorError.badRequest("No pending host network apply for \(target).")
                 }
+                if pending.expired {
+                    throw BarkVisorError.badRequest(
+                        "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
+                    )
+                }
+                try confirmNetplanKeep(pending: pending, target: target, probe: probe)
+                try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: target), "")
+                stopRollbackTimer(bridge: target)
+                HostNetworkPendingCommitService.clearLinux(bridge: target)
             }
-            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
-            stopRollbackTimer(bridge: request.bridge)
-            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
         private func persist(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
@@ -324,15 +335,20 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 createdBridge: false,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
-            try startAddressRollbackTimer(
-                device: nic,
-                iface: iface,
-                cidrs: cidrs,
-                persistFiles: files.map(\.path),
-                restoreCIDRs: removed,
-                persistRestore: persistRestore,
-                nmConnection: nmConnection,
-            )
+            do {
+                try startAddressRollbackTimer(
+                    device: nic,
+                    iface: iface,
+                    cidrs: cidrs,
+                    persistFiles: files.map(\.path),
+                    restoreCIDRs: removed,
+                    persistRestore: persistRestore,
+                    nmConnection: nmConnection,
+                )
+            } catch {
+                try? revertAddresses(request: request, probe: probe)
+                throw error
+            }
         }
 
         private func nmConnectionName(interface: String) -> String {
@@ -777,6 +793,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 LinuxHostBridgeApply.networkdPortPath(nic: nic),
                 portNetwork,
             )
+            try LinuxHostAddressPersist.migrateAliasUnitOntoPort(interface: nic)
         }
 
         private func applyNetworkManager(
@@ -885,29 +902,51 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             return process
         }
 
-        private func commitNetplanTry(_ process: Process) throws {
-            if process.isRunning {
-                if kill(process.processIdentifier, SIGUSR1) != 0 {
-                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
-                }
+        private func pendingKey(
+            request: LinuxHostBridgeApplyRequest,
+            probe: LinuxHostBridgeApplyProbe,
+        ) -> String {
+            if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                return request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
             }
-            let deadline = Date().addingTimeInterval(30)
-            while process.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            if process.isRunning {
-                throw BarkVisorError.timeout("netplan try did not exit after SIGUSR1.")
-            }
-            if process.terminationStatus != 0 {
-                throw BarkVisorError.internalError("netplan try failed after commit.")
-            }
+            return request.bridge
         }
 
-        private func commitApply(bridge: String, netplan: Process?) throws {
-            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: bridge), "")
-            if let netplan {
-                try commitNetplanTry(netplan)
+        private func withClaim(_ target: String, _ body: () throws -> Void) throws {
+            guard HostNetworkPendingCommitService.claimRevert(target) else {
+                throw BarkVisorError.conflict(
+                    "Host network keep or revert already in progress for \(target).",
+                )
             }
+            defer { HostNetworkPendingCommitService.releaseRevert(target) }
+            try body()
+        }
+
+        private func confirmNetplanKeep(
+            pending: HostNetworkPendingCommit,
+            target: String,
+            probe: LinuxHostBridgeApplyProbe,
+        ) throws {
+            guard probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 else { return }
+            let yamlExists = FileManager.default.fileExists(
+                atPath: LinuxHostBridgeApply.netplanPath(bridge: target),
+            ) || FileManager.default.fileExists(
+                atPath: LinuxHostAddressPersist.netplanAliasPath(interface: target),
+            )
+            let isNetplan = LinuxHostBridgeApply.isNetplanProcess(pid: pid)
+            if isNetplan {
+                if kill(pid_t(pid), SIGUSR1) != 0 {
+                    if yamlExists { return }
+                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
+                }
+                var status: Int32 = 0
+                let waited = waitpid(pid_t(pid), &status, 0)
+                if waited > 0, status == 0 { return }
+                if yamlExists { return }
+                throw BarkVisorError.internalError("netplan try did not keep the config.")
+            }
+            if yamlExists { return }
+            throw BarkVisorError.internalError("netplan try did not keep the config.")
         }
 
         /// Host timer. Do not wait for the SPA after the uplink moves.
