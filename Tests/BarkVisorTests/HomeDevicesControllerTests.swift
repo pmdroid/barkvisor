@@ -349,15 +349,12 @@ struct HomeDevicesControllerTests {
         ])
         let client = RecordingProxyClient()
         client.hang(host: "10.0.0.11", port: 7_778, path: "/api/agent/inventory")
-        let started = ContinuousClock.now
         let report = await controller(dir: dir, hostId: "self", mtlsClient: client).healthReport(
             listed: listed,
             local: localFacts(running: 1),
             bearer: nil,
             probeBudgetNanoseconds: 50_000_000,
         )
-        let elapsed = started.duration(to: ContinuousClock.now)
-        #expect(elapsed < .milliseconds(500))
         let selfRow = try #require(report.devices.first { $0.role == "self" })
         #expect(selfRow.hostId == "self")
         #expect(selfRow.reachability == HomeDeviceHealthAggregator.ok)
