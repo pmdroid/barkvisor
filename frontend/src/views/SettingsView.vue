@@ -376,7 +376,7 @@ const advertiseCustom = ref('')
 const advertiseHostOptions = computed(() => {
   const hosts = remoteAccess.value?.advertisedHosts ?? pairingOffer.value?.advertisedHosts ?? []
   return [
-    ...hosts.map((host) => ({ value: host, label: host })),
+    ...hosts.map((host) => ({ value: host, label: formatDeviceURL(host) || host })),
     { value: CUSTOM_ADVERTISED_HOST, label: 'Other / DNS name…' },
   ]
 })

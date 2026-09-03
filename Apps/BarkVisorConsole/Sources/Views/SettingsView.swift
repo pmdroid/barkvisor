@@ -163,7 +163,8 @@ private struct RemoteAccessSection: View {
                 }
                 Picker("Device URL", selection: $selectedHost) {
                     ForEach(status.advertisedHosts, id: \.self) { host in
-                        Text(host).tag(host)
+                        let label = DeviceURL.formatHomeDeviceURL(host)
+                        Text(label.isEmpty ? host : label).tag(host)
                     }
                     Text("Other / DNS name…").tag(PairingAdvertisedHost.customSentinel)
                 }
