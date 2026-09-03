@@ -15,8 +15,8 @@ public enum HostNetworkPendingReaper {
             }
             do {
                 let bridge = workloadBridgeName(pending)
-                let attached = pending.createdBridge
-                    ? (try await NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                let attached = try await pending.createdBridge
+                    ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                     : 0
                 if attached > 0 {
                     keepNetplanTry(pending)
@@ -27,8 +27,8 @@ public enum HostNetworkPendingReaper {
                     continue
                 }
                 try revertHost(pending, attached: attached)
-                let still = pending.createdBridge
-                    ? (try await NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                let still = try await pending.createdBridge
+                    ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                     : 0
                 if LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(
                     createdBridge: pending.createdBridge,
