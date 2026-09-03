@@ -195,7 +195,7 @@ struct WorkloadPrivilegeDropTests {
         #expect((dirMode?.intValue ?? 0) & 0o777 == 0o770)
     }
 
-    @Test func `0600 vfio node is not openable`() {
+    @Test func `mode 0600 vfio node is not openable`() {
         #expect(!WorkloadPrivilegeDrop.canOpenVFIONode(
             mode: 0o600,
             groupName: "root",
@@ -203,7 +203,7 @@ struct WorkloadPrivilegeDropTests {
         ))
     }
 
-    @Test func `0660 kvm vfio node is openable when user is in kvm`() {
+    @Test func `mode 0660 kvm vfio node is openable when user is in kvm`() {
         #expect(WorkloadPrivilegeDrop.canOpenVFIONode(
             mode: 0o660,
             groupName: "kvm",
@@ -233,7 +233,7 @@ struct WorkloadPrivilegeDropTests {
         )
     }
 
-    @Test func `setpriv drop cannot open 0600 vfio with kvm-only groups`() {
+    @Test func `setpriv drop cannot open mode 0600 vfio with kvm-only groups`() {
         let launch = WorkloadPrivilegeDrop.plan(
             executable: qemu,
             arguments: args,
