@@ -40,6 +40,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
     public var helperSetuidPaths: Set<String>
     public var aclContents: String?
     public var listenPort: Int
+    public var liveIPv4CIDRs: [String]
+    public var keepIPv4CIDRs: [String]
 
     public init(
         facts: HostBridgeFacts,
@@ -54,6 +56,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
         helperSetuidPaths: Set<String> = [],
         aclContents: String? = nil,
         listenPort: Int = 7_777,
+        liveIPv4CIDRs: [String] = [],
+        keepIPv4CIDRs: [String] = [],
     ) {
         self.facts = facts
         self.backend = backend
@@ -67,6 +71,8 @@ public struct LinuxHostBridgeApplyProbe: Sendable, Equatable {
         self.helperSetuidPaths = helperSetuidPaths
         self.aclContents = aclContents
         self.listenPort = listenPort
+        self.liveIPv4CIDRs = liveIPv4CIDRs
+        self.keepIPv4CIDRs = keepIPv4CIDRs
     }
 }
 
@@ -417,6 +423,7 @@ public enum LinuxHostBridgeApply {
         facts: HostBridgeFacts = HostBridgeFactsService.probe(),
         listenPort: Int = Config.port,
         bridge: String = HostBridgeFactsService.suggestedBridgeName,
+        nic: String? = nil,
     ) -> LinuxHostBridgeApplyProbe {
         let backend = detectBackend()
         let wireless = Set(existingInterfaceNames().filter { LinuxHostNetwork.isWirelessInterface($0) })
@@ -436,6 +443,14 @@ public enum LinuxHostBridgeApply {
             acl: acl,
             leftoverPersist: leftoverHostBridge(bridge: bridge),
         )
+        let target = (nic ?? facts.defaultRouteInterface ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var liveIPv4: [String] = []
+        var keepIPv4: [String] = []
+        if !target.isEmpty {
+            let addressing = HostInterfaceAddressDiscovery.discoverByInterface(interfaceNames: [target])[target]
+            liveIPv4 = addressing?.addresses.map(\.cidr) ?? []
+            keepIPv4 = addressing?.addresses.filter { $0.source == .dhcp || $0.primary }.map(\.cidr) ?? []
+        }
         return LinuxHostBridgeApplyProbe(
             facts: facts,
             backend: backend,
@@ -451,6 +466,8 @@ public enum LinuxHostBridgeApply {
             helperSetuidPaths: setuid,
             aclContents: acl,
             listenPort: listenPort,
+            liveIPv4CIDRs: liveIPv4,
+            keepIPv4CIDRs: keepIPv4,
         )
     }
 
@@ -673,7 +690,13 @@ public enum LinuxHostBridgeApply {
             return refuse(backend: probe.backend, message: "Invalid address plan.")
         }
         let target = addressApplyDevice(request: request, probe: probe)
-        let changes = addressOnlyChanges(target: target, plan: plan, backend: probe.backend)
+        let changes = addressOnlyChanges(
+            target: target,
+            plan: plan,
+            backend: probe.backend,
+            liveCIDRs: probe.liveIPv4CIDRs,
+            keepCIDRs: probe.keepIPv4CIDRs,
+        )
         let dry = request.action == .dryRun
         return LinuxHostBridgeApplyResult(
             success: true,
@@ -1045,12 +1068,16 @@ public enum LinuxHostBridgeApply {
         target: String,
         plan: HostInterfaceAddressApplyPlan,
         backend: LinuxNetworkBackend = .netplan,
+        liveCIDRs: [String] = [],
+        keepCIDRs: [String] = [],
     ) -> [LinuxHostBridgeChange] {
         let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
         return LinuxHostAddressPersist.previewCommands(
             interface: target,
             cidrs: cidrs,
             backend: backend,
+            liveCIDRs: liveCIDRs,
+            keepCIDRs: keepCIDRs,
         )
     }
 
@@ -1059,17 +1086,22 @@ public enum LinuxHostBridgeApply {
         iface: String,
         cidrs: [String],
         persistFiles: [String] = [],
+        restoreCIDRs: [String] = [],
     ) -> String {
         let stamp = commitStampPath(bridge: device)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
         let dels = cidrs.map { cidr in
             "/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || true"
         }.joined(separator: "\n")
+        let adds = restoreCIDRs.map { cidr in
+            "/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || true"
+        }.joined(separator: "\n")
         let rms = persistFiles.map { "rm -rf \($0) || true" }.joined(separator: "\n")
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
         \(dels)
+        \(adds)
         \(rms)
         /usr/bin/networkctl reload >/dev/null 2>&1 || true
         rm -f \(pending) || true

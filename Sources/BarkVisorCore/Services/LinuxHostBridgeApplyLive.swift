@@ -16,7 +16,7 @@ public enum LinuxHostBridgeApplyLive {
             resolved = probe
         } else {
             #if os(Linux)
-                resolved = LinuxHostBridgeApply.liveProbe(bridge: request.bridge)
+                resolved = LinuxHostBridgeApply.liveProbe(bridge: request.bridge, nic: request.nic)
             #else
                 throw BarkVisorError.forbidden("Linux host-bridge apply runs on a Linux Device.")
             #endif
@@ -273,8 +273,13 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let iface = LinuxHostBridgeApply.addressApplyDevice(request: request, probe: probe)
             let nic = request.nic ?? iface
             let desired = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
-            let live = (try? ipv4CIDRs(on: iface)) ?? []
+            let live = (try? ipv4CIDRs(on: iface)) ?? probe.liveIPv4CIDRs
+            var keep = probe.keepIPv4CIDRs
+            if keep.isEmpty, plan.dhcpEnabled, let primary = live.first {
+                keep = [primary]
+            }
             let cidrs = LinuxHostAddressPersist.cidrsNotOnDevice(desired, live: live)
+            let removed = LinuxHostAddressPersist.cidrsToRemove(desired: desired, live: live, keep: keep)
             let files = LinuxHostAddressPersist.persistFiles(
                 interface: iface,
                 cidrs: desired,
@@ -285,10 +290,15 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     at: URL(fileURLWithPath: file.path).deletingLastPathComponent(),
                     withIntermediateDirectories: true,
                 )
-                try writeAtomically(file.path, file.body)
+                if desired.isEmpty {
+                    try? FileManager.default.removeItem(atPath: file.path)
+                } else {
+                    try writeAtomically(file.path, file.body)
+                }
             }
             if probe.backend == .networkManager {
                 try persistNmAddresses(interface: iface, cidrs: cidrs, add: true)
+                try persistNmAddresses(interface: iface, cidrs: removed, add: false)
             }
             _ = try? PlatformProcess.run(
                 path: "/usr/bin/networkctl",
@@ -307,11 +317,19 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     )
                 }
             }
+            for cidr in removed {
+                _ = try? PlatformProcess.run(
+                    path: Self.ipPath,
+                    arguments: ["addr", "del", cidr, "dev", iface],
+                    timeout: 15,
+                )
+            }
             try startAddressRollbackTimer(
                 device: nic,
                 iface: iface,
                 cidrs: cidrs,
                 persistFiles: files.map(\.path),
+                restoreCIDRs: removed,
             )
             let pending = HostNetworkPendingCommitService.makePending(
                 target: nic,
@@ -384,6 +402,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             iface: String,
             cidrs: [String],
             persistFiles: [String] = [],
+            restoreCIDRs: [String] = [],
         ) throws {
             let unit = "barkvisor-\(device)-rollback"
             stopRollbackTimer(bridge: device)
@@ -401,6 +420,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     iface: iface,
                     cidrs: cidrs,
                     persistFiles: persistFiles,
+                    restoreCIDRs: restoreCIDRs,
                 ),
             )
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)

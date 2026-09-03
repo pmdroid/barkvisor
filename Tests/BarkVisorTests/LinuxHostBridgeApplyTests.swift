@@ -27,6 +27,8 @@ struct LinuxHostBridgeApplyTests {
         nic: String = "eth0",
         ready: Bool = false,
         onlyUplink: Bool = false,
+        liveIPv4CIDRs: [String] = [],
+        keepIPv4CIDRs: [String] = [],
     ) -> LinuxHostBridgeApplyProbe {
         LinuxHostBridgeApplyProbe(
             facts: facts(ready: ready, onlyUplink: onlyUplink, nic: nic),
@@ -37,6 +39,8 @@ struct LinuxHostBridgeApplyTests {
             owned: owned,
             createdBridge: createdBridge,
             existingInterfaces: ready ? [nic, "lo", "br0"] : [nic, "lo"],
+            liveIPv4CIDRs: liveIPv4CIDRs,
+            keepIPv4CIDRs: keepIPv4CIDRs,
         )
     }
 
@@ -411,6 +415,23 @@ struct LinuxHostBridgeApplyTests {
             ["192.168.30.1/16", "192.168.33.13/16"],
             live: ["192.168.30.1/16"],
         ) == ["192.168.33.13/16"])
+        #expect(LinuxHostAddressPersist.cidrsToRemove(
+            desired: ["192.168.30.1/16"],
+            live: ["192.168.8.163/16", "192.168.30.1/16", "192.168.8.201/16"],
+            keep: ["192.168.8.163/16"],
+        ) == ["192.168.8.201/16"])
+        let drop = LinuxHostAddressPersist.previewCommands(
+            interface: "enp2s0",
+            cidrs: ["192.168.30.1/16"],
+            backend: .networkManager,
+            liveCIDRs: ["192.168.8.163/16", "192.168.30.1/16", "192.168.8.201/16"],
+            keepCIDRs: ["192.168.8.163/16"],
+        )
+        #expect(drop.contains { $0.command.contains("ip addr del 192.168.8.201/16 dev enp2s0") })
+        #expect(drop.contains { $0.command.contains("-ipv4.addresses 192.168.8.201/16") })
+        #expect(!drop.contains { $0.command.contains("ip addr add 192.168.30.1/16") })
+        #expect(!drop.contains { $0.command.contains("+ipv4.addresses 192.168.30.1/16") })
+        #expect(!drop.contains { $0.command.contains("192.168.8.163") })
     }
 
     @Test func `acl tag without marker is leftover we can delete`() throws {
@@ -535,6 +556,36 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.commands.contains { $0.contains("ip addr add 10.0.0.2/24 dev eth0") })
         #expect(result.commands.contains { $0.contains("90-barkvisor-eth0-aliases.yaml") })
         #expect(!result.changes.contains { $0.contains("netplan try") })
+    }
+
+    @Test func `uplink apply drops extras removed from the form`() {
+        let result = LinuxHostBridgeApply.evaluate(
+            request: LinuxHostBridgeApplyRequest(
+                action: .dryRun,
+                bridge: "",
+                nic: "enp2s0",
+                addresses: [
+                    HostInterfaceAddressApplyEntry(kind: .dhcp),
+                    HostInterfaceAddressApplyEntry(kind: .alias, cidr: "192.168.30.1/16"),
+                ],
+                confirm: true,
+            ),
+            probe: probe(
+                backend: .networkManager,
+                nic: "enp2s0",
+                liveIPv4CIDRs: [
+                    "192.168.8.163/16",
+                    "192.168.30.1/16",
+                    "192.168.8.201/16",
+                ],
+                keepIPv4CIDRs: ["192.168.8.163/16"],
+            ),
+        )
+        #expect(result.success)
+        #expect(result.commands.contains { $0.contains("ip addr del 192.168.8.201/16 dev enp2s0") })
+        #expect(result.commands.contains { $0.contains("-ipv4.addresses 192.168.8.201/16") })
+        #expect(!result.commands.contains { $0.contains("ip addr add 192.168.30.1/16") })
+        #expect(!result.commands.contains { $0.contains("ip addr del 192.168.8.163") })
     }
 
     @Test func `next-free skips sysfs and markers`() throws {

@@ -100,24 +100,64 @@ public enum LinuxHostAddressPersist {
         }
     }
 
+    public static func cidrsToRemove(
+        desired: [String],
+        live: [String],
+        keep: [String] = [],
+    ) -> [String] {
+        let desiredKeys = Set(desired.flatMap { cidr -> [String] in
+            let ip = cidr.split(separator: "/").first.map(String.init) ?? cidr
+            return [cidr, ip]
+        })
+        let keepKeys = Set(keep.flatMap { cidr -> [String] in
+            let ip = cidr.split(separator: "/").first.map(String.init) ?? cidr
+            return [cidr, ip]
+        })
+        return live.filter { cidr in
+            let ip = cidr.split(separator: "/").first.map(String.init) ?? cidr
+            if desiredKeys.contains(cidr) || desiredKeys.contains(ip) { return false }
+            if keepKeys.contains(cidr) || keepKeys.contains(ip) { return false }
+            return true
+        }
+    }
+
     public static func previewCommands(
         interface: String,
         cidrs: [String],
         backend: LinuxNetworkBackend,
+        liveCIDRs: [String] = [],
+        keepCIDRs: [String] = [],
     ) -> [LinuxHostBridgeChange] {
+        let add = liveCIDRs.isEmpty ? cidrs : cidrsNotOnDevice(cidrs, live: liveCIDRs)
+        let remove = liveCIDRs.isEmpty ? [] : cidrsToRemove(desired: cidrs, live: liveCIDRs, keep: keepCIDRs)
         var rows: [LinuxHostBridgeChange] = []
         let files = persistFiles(interface: interface, cidrs: cidrs, backend: backend)
-        for file in files {
-            rows.append(LinuxHostBridgeChange(
-                description: "Persist extra IPs in \(file.path)",
-                command: "sudo tee \(file.path)",
-            ))
+        if cidrs.isEmpty {
+            for file in files {
+                rows.append(LinuxHostBridgeChange(
+                    description: "Remove extra IP persist file \(file.path)",
+                    command: "sudo rm -f \(file.path)",
+                ))
+            }
+        } else {
+            for file in files {
+                rows.append(LinuxHostBridgeChange(
+                    description: "Persist extra IPs in \(file.path)",
+                    command: "sudo tee \(file.path)",
+                ))
+            }
         }
         if backend == .networkManager {
-            for cidr in cidrs {
+            for cidr in add {
                 rows.append(LinuxHostBridgeChange(
                     description: "Persist \(cidr) on \(interface) via NetworkManager",
                     command: "sudo nmcli connection modify \(interface) +ipv4.addresses \(cidr)",
+                ))
+            }
+            for cidr in remove {
+                rows.append(LinuxHostBridgeChange(
+                    description: "Drop \(cidr) on \(interface) via NetworkManager",
+                    command: "sudo nmcli connection modify \(interface) -ipv4.addresses \(cidr)",
                 ))
             }
         }
@@ -127,10 +167,16 @@ public enum LinuxHostAddressPersist {
                 command: "sudo networkctl reload",
             ))
         }
-        for cidr in cidrs {
+        for cidr in add {
             rows.append(LinuxHostBridgeChange(
                 description: "Add \(interface) address \(cidr)",
                 command: "sudo ip addr add \(cidr) dev \(interface)",
+            ))
+        }
+        for cidr in remove {
+            rows.append(LinuxHostBridgeChange(
+                description: "Remove \(interface) address \(cidr)",
+                command: "sudo ip addr del \(cidr) dev \(interface)",
             ))
         }
         return rows
