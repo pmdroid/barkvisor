@@ -19,3 +19,16 @@ Feature: Extra IPs on a Linux NIC
     When I Apply and Keep
     Then ip addr does not show 10.200.55.50/24
     And the primary IPv4 is still on the NIC
+
+  Scenario: extra-IP auto-revert does not delete a VM network
+    Given the NIC has a primary IPv4
+    When I Apply extra 10.200.55.50/24 and the Keep window expires
+    Then the extra IP is gone
+    And no VM network named after the NIC was deleted
+
+  Scenario: Create Bridge auto-revert keeps the bridge if a VM attached during the window
+    When I Create Bridge br9
+    And a Workload attaches to Bridged (br9) before Keep
+    And the Keep window expires
+    Then br9 is still present
+    And the Workload network still exists

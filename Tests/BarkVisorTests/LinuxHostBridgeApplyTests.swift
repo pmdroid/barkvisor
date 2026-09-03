@@ -82,14 +82,16 @@ struct LinuxHostBridgeApplyTests {
 
     @Test func `rollback helper keeps config only after commit stamp`() {
         #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0").hasSuffix("host-network/br0-commit"))
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
+        let script = LinuxHostBridgeApply.rollbackHelperScript(
+            bridge: "br0",
+            dataDir: "/var/lib/barkvisor",
+            binary: "/usr/local/bin/barkvisor",
+        )
         #expect(script.contains("host-network/br0-commit"))
         #expect(script.contains("then exit 0"))
-        #expect(script.contains("mkdir "))
-        #expect(script.contains("-reverting"))
-        #expect(script.contains("nmcli connection delete barkvisor-br0"))
-        #expect(script.contains("grep \"^barkvisor-br0-\""))
-        #expect(script.contains("netplan apply"))
+        #expect(script.contains("hostnet-expire"))
+        #expect(script.contains("/usr/local/bin/barkvisor"))
+        #expect(!script.contains("ip link del"))
     }
 
     @Test func `static host address is Device not guest`() {
@@ -700,7 +702,8 @@ struct LinuxHostBridgeApplyTests {
         let target = "bv-claim-\(UUID().uuidString.prefix(8))"
         defer { HostNetworkPendingCommitService.releaseRevert(target) }
         #expect(HostNetworkPendingCommitService.claimRevert(target))
-        #expect(!HostNetworkPendingCommitService.claimRevert(target))
+        #expect(HostNetworkPendingCommitService.claimRevert(target))
+        HostNetworkPendingCommitService.releaseRevert(target)
         HostNetworkPendingCommitService.releaseRevert(target)
         #expect(HostNetworkPendingCommitService.claimRevert(target))
     }
@@ -712,15 +715,15 @@ struct LinuxHostBridgeApplyTests {
 
     @Test func `one pending commit per Device`() {
         let br0 = HostNetworkPendingCommitService.makePending(target: "br0")
-        let br1 = HostNetworkPendingCommitService.makePending(target: "br1")
         #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [br0])?.target == "br0")
-        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [br0]) == nil)
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [br0])?.target == "br0")
         let expired = HostNetworkPendingCommit(
             target: "br0",
             commitDeadline: Date().addingTimeInterval(-1),
             rollbackSeconds: 60,
         )
         #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [expired]) == nil)
+        #expect(HostNetworkPendingCommitService.blockingPending(target: "br0", existing: [expired]) == nil)
     }
 
     @Test func `ACL merge for br1 leaves br0 marker`() {
@@ -766,15 +769,16 @@ struct LinuxHostBridgeApplyTests {
     }
 
     @Test func `rollback helper is per-bridge`() {
-        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br1", dataDir: "/var/lib/barkvisor")
-        #expect(script.contains("/etc/netplan/90-barkvisor-br1.yaml"))
-        #expect(script.contains("barkvisor-br1"))
-        #expect(script.contains("host-bridge-br1.json"))
-        #expect(script.contains("host-network/br1-pending.json"))
-        #expect(script.contains("grep \"^barkvisor-br1-\""))
-        #expect(script.contains("90-barkvisor-\"$uplink\".network"))
-        #expect(script.contains("nmcli device reapply"))
+        let script = LinuxHostBridgeApply.rollbackHelperScript(
+            bridge: "br1",
+            dataDir: "/var/lib/barkvisor",
+            binary: "/usr/local/bin/barkvisor",
+        )
+        #expect(script.contains("host-network/br1-commit"))
+        #expect(script.contains("host-network/br1-keeping"))
+        #expect(script.contains("hostnet-expire"))
         #expect(!script.contains("90-barkvisor-br0.yaml"))
+        #expect(!script.contains("ip link del"))
     }
 
     @Test func `owned delete detaches ports and ip link dels`() {
@@ -915,5 +919,72 @@ struct LinuxHostBridgeApplyTests {
         #expect(!result.pendingCommit)
         #expect(recorder.steps.contains { $0.contains("action=delete") })
         #expect(recorder.steps.contains { $0.contains("ip link delete") || $0.contains("Delete br0") })
+    }
+
+    @Test func `netplan expire waits while try lives then stamps kept yaml`() {
+        #expect(
+            LinuxHostBridgeApply.netplanExpireAction(
+                pidAlive: true,
+                pidIsNetplan: true,
+                keeping: false,
+            ) == .waitForTry,
+        )
+        #expect(
+            LinuxHostBridgeApply.netplanExpireAction(
+                pidAlive: false,
+                pidIsNetplan: false,
+                keeping: true,
+            ) == .stampKeep,
+        )
+        #expect(
+            LinuxHostBridgeApply.netplanExpireAction(
+                pidAlive: false,
+                pidIsNetplan: false,
+                keeping: false,
+            ) == .alreadyReverted,
+        )
+        #expect(LinuxHostBridgeApply.isNetplanProcess(pid: 1) { _ in "/usr/sbin/netplan\0try" })
+        #expect(!LinuxHostBridgeApply.isNetplanProcess(pid: 1) { _ in "/usr/sbin/sshd" })
+        #expect(!LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(createdBridge: false, attached: 0))
+        #expect(!LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(createdBridge: true, attached: 1))
+        #expect(LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(createdBridge: true, attached: 0))
+    }
+
+    @Test func `networkd alias unit is not the bridge port file`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let alias = LinuxHostAddressPersist.networkdAliasUnitPath(interface: "eth0", dir: dir.path)
+        #expect(alias.hasSuffix("90-barkvisor-eth0-aliases.network"))
+        #expect(alias != "\(dir.path)/90-barkvisor-eth0.network")
+        let files = LinuxHostAddressPersist.persistFiles(
+            interface: "eth0",
+            cidrs: ["10.1.2.3/24"],
+            backend: .systemdNetworkd,
+            dir: dir.path,
+        )
+        #expect(files.contains { $0.path.hasSuffix("90-barkvisor-eth0-aliases.network") })
+        try "Address=10.1.2.3/24\n".write(toFile: alias, atomically: true, encoding: .utf8)
+        let port = "\(dir.path)/90-barkvisor-eth0.network"
+        try "[Match]\nName=eth0\n[Network]\nBridge=br0\n".write(
+            toFile: port,
+            atomically: true,
+            encoding: .utf8,
+        )
+        try LinuxHostAddressPersist.migrateAliasUnitOntoPort(interface: "eth0", dir: dir.path)
+        #expect(!FileManager.default.fileExists(atPath: alias))
+        let drop = LinuxHostAddressPersist.networkdAliasDropInPath(matchFile: port)
+        let dropBody = try String(contentsOfFile: drop, encoding: .utf8)
+        #expect(dropBody.contains("Address=10.1.2.3/24"))
+    }
+
+    @Test func `address rollback helper steals a stale claim`() {
+        let script = LinuxHostBridgeApply.addressRollbackHelperScript(
+            device: "eth0",
+            iface: "eth0",
+            cidrs: ["10.1.2.3/24"],
+        )
+        #expect(script.contains("stat -c %Y"))
+        #expect(script.contains("-reverting"))
     }
 }

@@ -50,9 +50,18 @@ public enum HostNetworkRollbackLaunchd {
         """
     }
 
-    public static func binaryPath() -> String {
-        let launched = CommandLine.arguments[0]
+    public static func binaryPath(
+        launched: String = CommandLine.arguments[0],
+        bundlePath: String? = Bundle.main.executableURL?.path,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> String {
+        if let bundlePath, bundlePath.hasPrefix("/"), fileExists(bundlePath) {
+            return bundlePath
+        }
         if launched.hasPrefix("/") { return launched }
+        let real = (launched as NSString).standardizingPath
+        if real.hasPrefix("/"), fileExists(real) { return real }
+        if fileExists("/opt/homebrew/bin/barkvisor") { return "/opt/homebrew/bin/barkvisor" }
         return "/usr/local/bin/barkvisor"
     }
 
@@ -96,6 +105,7 @@ public enum HostNetworkRollbackLaunchd {
                 timeout: 15,
             )
             try? FileManager.default.removeItem(at: plistURL(target: target))
+            try? FileManager.default.removeItem(atPath: helperPath(target: target))
         }
     #endif
 }

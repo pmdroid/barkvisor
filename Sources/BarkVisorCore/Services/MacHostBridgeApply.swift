@@ -414,6 +414,15 @@ import Foundation
 
             switch request.action {
             case .apply:
+                try HostNetworkPendingCommitService.withApplyGate {
+                if let other = HostNetworkPendingCommitService.blockingPending(
+                    target: resolved.device,
+                    existing: HostNetworkPendingCommitService.listMacPending(),
+                ) {
+                    throw BarkVisorError.conflict(
+                        "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                    )
+                }
                 guard let service = resolved.serviceName else {
                     throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
                 }
@@ -452,10 +461,11 @@ import Foundation
                     target: resolved.device,
                     createdBridge: createdNow,
                 )
-                try HostNetworkPendingCommitService.writeMac(pending)
                 do {
+                    try HostNetworkPendingCommitService.writeMac(pending)
                     try HostNetworkRollbackLaunchd.arm(target: resolved.device)
                 } catch {
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                     HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     if createdNow {
                         try? SocketVmnetLaunchd.remove(interface: resolved.device)
@@ -471,75 +481,99 @@ import Foundation
                 plan.createdBridge = createdNow
                 plan.message =
                     "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                }
             case .commit:
-                guard let pending = HostNetworkPendingCommitService.readMac(device: resolved.device) else {
-                    throw BarkVisorError.badRequest("No pending host network apply for \(resolved.device).")
-                }
-                if pending.expired {
-                    throw BarkVisorError.badRequest(
-                        "Pending apply expired. Run Revert to restore the saved network profile.",
+                try withClaim(resolved.device) {
+                    if HostNetworkPendingCommitService.stampExists(resolved.device) {
+                        HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                        plan.applied = true
+                        plan.pendingCommit = false
+                        plan.message = "Kept host network changes for \(resolved.device)."
+                        return
+                    }
+                    guard let pending = HostNetworkPendingCommitService.readMac(device: resolved.device) else {
+                        throw BarkVisorError.badRequest("No pending host network apply for \(resolved.device).")
+                    }
+                    if pending.expired {
+                        throw BarkVisorError.badRequest(
+                            "Pending apply expired. Run Revert to restore the saved network profile.",
+                        )
+                    }
+                    try FileManager.default.createDirectory(
+                        at: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device))
+                            .deletingLastPathComponent(),
+                        withIntermediateDirectories: true,
                     )
+                    try Data().write(
+                        to: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device)),
+                        options: .atomic,
+                    )
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                    plan.applied = true
+                    plan.pendingCommit = false
+                    plan.message = "Kept host network changes for \(resolved.device)."
                 }
-                try FileManager.default.createDirectory(
-                    at: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device))
-                        .deletingLastPathComponent(),
-                    withIntermediateDirectories: true,
-                )
-                try Data().write(
-                    to: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device)),
-                    options: .atomic,
-                )
-                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                plan.applied = true
-                plan.pendingCommit = false
-                plan.message = "Kept host network changes for \(resolved.device)."
             case .revert:
-                let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
-                    || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
-                    && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
-                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                if undoCreate {
-                    try SocketVmnetLaunchd.remove(interface: resolved.device)
-                    plan.changes.append("Stopped BarkVisor-managed socket_vmnet for \(resolved.device)")
-                } else if try MacHostNetworkApply.revert(device: resolved.device) {
-                    plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
-                }
-                let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
-                try? FileManager.default.removeItem(
-                    at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
-                )
-                if let uplink {
+                try withClaim(resolved.device) {
+                    let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
+                        || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
+                        && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+                    if undoCreate {
+                        try SocketVmnetLaunchd.remove(interface: resolved.device)
+                        plan.changes.append("Stopped BarkVisor-managed socket_vmnet for \(resolved.device)")
+                    } else if try MacHostNetworkApply.revert(device: resolved.device) {
+                        plan.changes.insert("Restored BarkVisor-owned addresses.", at: 0)
+                    }
+                    let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
                     try? FileManager.default.removeItem(
-                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
                     )
+                    if let uplink {
+                        try? FileManager.default.removeItem(
+                            at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                        )
+                    }
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                    plan.applied = true
+                    plan.pendingCommit = false
+                    plan.message = undoCreate
+                        ? "Reverted host network changes and removed the new Bridge."
+                        : "Reverted BarkVisor host network files. socket_vmnet was not stopped."
                 }
-                plan.applied = true
-                plan.pendingCommit = false
-                plan.message = undoCreate
-                    ? "Reverted host network changes and removed the new Bridge."
-                    : "Reverted BarkVisor host network files. socket_vmnet was not stopped."
             case .delete:
-                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                HostNetworkPendingCommitService.clearMac(device: resolved.device)
-                let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
-                try SocketVmnetLaunchd.remove(interface: resolved.device)
-                try? FileManager.default.removeItem(
-                    at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
-                )
-                if let uplink {
+                try withClaim(resolved.device) {
+                    let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
+                    try SocketVmnetLaunchd.remove(interface: resolved.device)
                     try? FileManager.default.removeItem(
-                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                        at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
                     )
+                    if let uplink {
+                        try? FileManager.default.removeItem(
+                            at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
+                        )
+                    }
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                    plan.applied = true
+                    plan.pendingCommit = false
+                    plan.message = "Deleted owned socket_vmnet on \(resolved.device)."
                 }
-                plan.applied = true
-                plan.pendingCommit = false
-                plan.message = "Deleted owned socket_vmnet on \(resolved.device)."
             case .check, .dryRun:
                 break
             }
             return plan
+        }
+
+        private static func withClaim(_ target: String, _ body: () throws -> Void) throws {
+            guard HostNetworkPendingCommitService.claimRevert(target) else {
+                throw BarkVisorError.conflict(
+                    "Host network keep or revert already in progress for \(target).",
+                )
+            }
+            defer { HostNetworkPendingCommitService.releaseRevert(target) }
+            try body()
         }
 
         private static func overlayLiveAddressCommands(

@@ -1,4 +1,9 @@
 import Foundation
+#if os(Linux)
+    import Glibc
+#elseif os(macOS)
+    import Darwin
+#endif
 
 /// Post-apply confirmation window before host network changes are permanent.
 public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
@@ -100,7 +105,7 @@ public enum HostNetworkPendingCommitService {
         target: String,
         existing: [HostNetworkPendingCommit],
     ) -> HostNetworkPendingCommit? {
-        existing.first { $0.target != target && !$0.expired }
+        existing.first { !$0.expired }
     }
 
     public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
@@ -148,6 +153,11 @@ public enum HostNetworkPendingCommitService {
         }
 
         public static func writeMac(_ pending: HostNetworkPendingCommit) throws {
+            if let other = blockingPending(target: pending.target, existing: listMacPending()) {
+                throw BarkVisorError.conflict(
+                    "A host network apply is already pending for \(other.target). Keep or Revert it first.",
+                )
+            }
             let url = macPendingURL(device: pending.target)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -185,31 +195,103 @@ public enum HostNetworkPendingCommitService {
             .appendingPathComponent("\(target)-reverting").path
     }
 
+    public static func keepingPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(target)-keeping").path
+    }
+
+    public static func keepingExists(_ target: String) -> Bool {
+        FileManager.default.fileExists(atPath: keepingPath(target))
+    }
+
+    private static let applyGate = NSLock()
+    private static let gateTableLock = NSLock()
+    nonisolated(unsafe) private static var gates: [String: NSRecursiveLock] = [:]
+
+    public static func withApplyGate(_ body: () throws -> Void) throws {
+        applyGate.lock()
+        defer { applyGate.unlock() }
+        try body()
+    }
+
+    private static func gate(for target: String) -> NSRecursiveLock {
+        gateTableLock.lock()
+        defer { gateTableLock.unlock() }
+        if let existing = gates[target] { return existing }
+        let lock = NSRecursiveLock()
+        gates[target] = lock
+        return lock
+    }
+
     public static func claimRevert(_ target: String) -> Bool {
+        let lock = gate(for: target)
+        lock.lock()
         let path = claimPath(target)
         let fm = FileManager.default
         try? fm.createDirectory(
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
+        let myPid = String(ProcessInfo.processInfo.processIdentifier)
         if fm.fileExists(atPath: path) {
+            let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if owner == myPid {
+                let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) + 1
+                try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
+                return true
+            }
+            if ownerPidIsAlive(owner) {
+                lock.unlock()
+                return false
+            }
             let attrs = try? fm.attributesOfItem(atPath: path)
-            let created = attrs?[.creationDate] as? Date ?? .distantPast
+            let created = (attrs?[.modificationDate] as? Date)
+                ?? (attrs?[.creationDate] as? Date)
+                ?? .distantPast
             if Date().timeIntervalSince(created) < 30 {
+                lock.unlock()
                 return false
             }
             try? fm.removeItem(atPath: path)
         }
         do {
             try fm.createDirectory(atPath: path, withIntermediateDirectories: false)
+            try? myPid.write(toFile: "\(path)/pid", atomically: true, encoding: .utf8)
+            try? "1".write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
             return true
         } catch {
+            lock.unlock()
             return false
         }
     }
 
     public static func releaseRevert(_ target: String) {
-        try? FileManager.default.removeItem(atPath: claimPath(target))
+        let path = claimPath(target)
+        let myPid = String(ProcessInfo.processInfo.processIdentifier)
+        let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard owner == myPid else {
+            gate(for: target).unlock()
+            return
+        }
+        let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) - 1
+        if n > 0 {
+            try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
+            gate(for: target).unlock()
+            return
+        }
+        try? FileManager.default.removeItem(atPath: path)
+        gate(for: target).unlock()
+    }
+
+    private static func ownerPidIsAlive(_ owner: String?) -> Bool {
+        guard let owner, let pid = Int32(owner), pid > 0 else { return false }
+        #if os(Windows)
+            return false
+        #else
+            return kill(pid_t(pid), 0) == 0
+        #endif
     }
 
     public static func activePending() -> HostNetworkPendingCommit? {
@@ -219,6 +301,33 @@ public enum HostNetworkPendingCommitService {
             return listMacPending().first { !stampExists($0.target) }
         #else
             return nil
+        #endif
+    }
+
+    public static func keepNow(target: String) throws {
+        let stamp = LinuxHostBridgeApply.commitStampPath(bridge: target)
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data().write(to: URL(fileURLWithPath: stamp), options: .atomic)
+        try? FileManager.default.removeItem(atPath: keepingPath(target))
+        #if os(Linux)
+            let unit = "barkvisor-\(target)-rollback"
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).timer"],
+                timeout: 10,
+            )
+            _ = try? PlatformProcess.run(
+                path: "/usr/bin/systemctl",
+                arguments: ["stop", "\(unit).service"],
+                timeout: 10,
+            )
+            clearLinux(bridge: target)
+        #elseif os(macOS)
+            HostNetworkRollbackLaunchd.disarm(target: target)
+            clearMac(device: target)
         #endif
     }
 
