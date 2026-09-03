@@ -4,8 +4,8 @@
 
 - List with health filter chips (All / Running / Failed / Stopped, each with counts) and table Name · Device · OS · CPU·Mem · Ports · Status
 - **Create VM** magazine dialog: Gallery → Configure → Disk (templates, Windows ISO, custom image, optional Coding Agent)
-- Workload detail toolbar: Start, Stop group (**Shutdown** | **Force Stop**), Restart, VNC pop-out window, Delete
-- Detail tabs: Overview (Session/Hardware/Network/Guest/Disks/Shared folders/USB/GPU/PCI/Recent events), Chat (conditional), Console vs Terminal label (agent-class workloads say Terminal), VNC, Metrics (running only), Logs
+- Workload detail toolbar: Start on boot, Start, Stop split (**Stop** + **ACPI Shutdown** / **Force Stop**), Restart, VNC pop-out window, Delete (stopped/error only)
+- Detail tabs: Overview (Session/Hardware/Network/Guest/Disks/Shared folders/USB/GPU passthrough/PCI — no Recent events), Chat (conditional), Console vs Terminal (agent-class workloads say Terminal), VNC, Metrics (running only), Logs. Bare VNC window: `/vms/:id/vnc` (self) or `/devices/:hostId/vms/:id/vnc`
 
 ## How to get to it (user POV)
 
@@ -37,6 +37,6 @@ For a detail page you need an existing workload id from `GET /api/vms` — on a 
 
 ## Gotchas
 
-- Creating a real Workload requires a Library image; without one the create submit is rejected — that rejection toast is itself verifiable behavior.
+- Custom/Windows create stays on Configure until an image is pinned. Template deploy can start a catalog download without a ready local image. API 400s show as `.mag-error`, not a toast.
 - Metrics tab is absent for stopped workloads; do not assert its presence.
-- The VNC button opens a separate chrome-less route (`/vms/:id/vnc`) — screenshotting it without a running guest shows a connection error screen.
+- Toolbar VNC is disabled unless the guest is running. The bare window (`/vms/:id/vnc`) says **VM must be running to use VNC** when stopped — not a generic connection error.

@@ -25,7 +25,9 @@ scripts/dev-instance.sh start --name setup-verify --no-provision
 bun helpers/setup-flow.mjs --base "$URL" --dir evidence/run-setup
 ```
 
-`setup-flow.mjs` walks the real user path (welcome → passkey via Chromium virtual authenticator → library folder → catalog skip → launch), screenshots every step into `--dir`, and exits nonzero unless `/api/setup/status` reports `complete:true`. Use `http://localhost`, not `127.0.0.1`.
+`setup-flow.mjs` walks the real user path (welcome → passkey via Chromium virtual authenticator → **Save folder** on the prefilled Library path → catalog skip → launch). Browse is optional; Continue stays disabled until save. Screenshots go into `--dir`. Exit nonzero unless `/api/setup/status` reports `complete:true`. Use `http://localhost`, not `127.0.0.1`. First finish lands on `/dashboard` with the JWT from `POST /api/setup/complete` — no login screen. If the instance already has a passkey, the helper resumes at Library.
+
+`--join-payload` is not a helper flag. Pairing proof is `scripts/dev-instance.sh pair`, not this wizard.
 
 ## Gotchas
 

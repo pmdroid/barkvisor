@@ -20,10 +20,11 @@ bun helpers/shot.mjs --base "$URL" --user admin --pass "$PASS" \
 
 Assertions:
 
-- Stream renders lines with level classes (seeded daemon activity produces info/warn lines quickly)
-- Toggling **Live Tail** off freezes the feed; Clear empties the view without affecting server-side history (`GET /api/logs` still returns entries)
+- Stream renders lines with level classes (`.line` / `.lv`; seeded daemon activity produces info/warn lines quickly)
+- Toggling **Live Tail** off disconnects SSE and re-fetches `GET /api/logs` (it does not freeze a buffer). **Pause** is the same toggle
+- **Clear** only hides older lines in the UI; `GET /api/logs` is unchanged
 
-Side-effect proof: count entries via `curl -sf -H "Authorization: Bearer $TOKEN" "$URL/api/logs?limit=5"` before and after generating activity (e.g. create an API key through the UI) — the new action appears in the stream.
+Side-effect proof: `curl -sf -H "Authorization: Bearer $TOKEN" "$URL/api/logs?limit=5"`. API-key creates go to the **audit** table, not this stream — use daemon `Log.*` lines (or `POST /api/logs/client-error`) as proof.
 
 ## Gotchas
 

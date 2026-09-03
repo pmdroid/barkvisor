@@ -30,3 +30,7 @@ website/src/content/docs/docs/getting-started/
 website/src/content/docs/docs/linux.md
 .agents/skills/verify-barkvisor/evidence/
 .agents/skills/verify-barkvisor/current/
+
+# Agent runtime (never commit)
+.acpbot/
+.acpbot-inbox/

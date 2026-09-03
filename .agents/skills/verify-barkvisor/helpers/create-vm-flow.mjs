@@ -12,7 +12,7 @@ function arg(name, fallback) {
 
 const base = arg('base').replace(/\/$/, '')
 const user = arg('user', 'admin')
-const pass = arg('pass')
+const pass = arg('pass', '')
 const dir = arg('dir')
 const tokenArg = arg('token', '')
 const vmName = arg('vm-name', `verify-debian-${Date.now()}`)

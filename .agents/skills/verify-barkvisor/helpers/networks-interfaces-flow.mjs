@@ -12,7 +12,7 @@ function arg(name, fallback) {
 
 const base = arg('base').replace(/\/$/, '')
 const user = arg('user', 'admin')
-const pass = arg('pass')
+const pass = arg('pass', '')
 const dir = arg('dir')
 const token = arg('token', '')
 const check = args.includes('--check')
@@ -108,7 +108,8 @@ try {
   await page.waitForTimeout(400)
   const head = await drawer.locator('.sheet-head').innerText()
   if (!/en0|eth0|enp/i.test(head)) fail(`drawer did not select uplink (head=${head})`)
-  if (await drawer.locator('button:has-text("Apply")').count() === 0) fail('Interface drawer missing Apply')
+  const applyBtn = drawer.locator('button:has-text("Apply")')
+  if (await applyBtn.count() === 0) fail('Interface drawer missing Apply')
   if (await drawer.locator('button:has-text("Revert")').count() > 0) fail('Interface drawer should not show Revert')
   if (await drawer.locator('button:has-text("Re-check")').count() > 0) fail('Interface drawer should not show Re-check')
 
@@ -172,6 +173,19 @@ try {
       return m?.[1] ?? ''
     })
 
+    await page.route('**/api/**/interfaces', async (route) => {
+      const req = route.request()
+      if (req.method() === 'POST') {
+        posted = req.postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, message: 'check', applied: false }),
+        })
+        return
+      }
+      await route.continue()
+    })
     await page.route('**/api/**/bridges', async (route) => {
       const req = route.request()
       if (req.method() === 'POST') {
