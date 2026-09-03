@@ -1096,25 +1096,53 @@ public enum LinuxHostBridgeApply {
         cidrs: [String],
         persistFiles: [String] = [],
         restoreCIDRs: [String] = [],
+        persistRestore: [(path: String, previous: String?)] = [],
+        nmConnection: String = "",
     ) -> String {
         let stamp = commitStampPath(bridge: device)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
-        let dels = cidrs.map { cidr in
+        let nm = nmConnection.trimmingCharacters(in: .whitespacesAndNewlines)
+        var lines: [String] = [
+            "#!/bin/sh",
+            "if [ -f \(stamp) ]; then exit 0; fi",
+        ]
+        if !nm.isEmpty {
+            for cidr in restoreCIDRs {
+                lines.append(
+                    "/usr/bin/nmcli connection modify \"\(nm)\" +ipv4.addresses \(cidr) >/dev/null 2>&1 || true",
+                )
+            }
+            for cidr in cidrs {
+                lines.append(
+                    "/usr/bin/nmcli connection modify \"\(nm)\" -ipv4.addresses \(cidr) >/dev/null 2>&1 || true",
+                )
+            }
+            lines.append("/usr/bin/nmcli connection reload >/dev/null 2>&1 || true")
+        }
+        if persistRestore.isEmpty {
+            lines.append(contentsOf: persistFiles.map { "rm -rf \($0) || true" })
+        } else {
+            for (path, previous) in persistRestore {
+                if let previous {
+                    let dir = (path as NSString).deletingLastPathComponent
+                    lines.append("mkdir -p \(dir) || true")
+                    lines.append("cat > \(path) <<'BARKVISOR_PERSIST_RESTORE'")
+                    lines.append(previous)
+                    lines.append("BARKVISOR_PERSIST_RESTORE")
+                } else {
+                    lines.append("rm -rf \(path) || true")
+                }
+            }
+        }
+        lines.append(contentsOf: cidrs.map { cidr in
             "/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr del \(cidr) dev \(iface) >/dev/null 2>&1 || true"
-        }.joined(separator: "\n")
-        let adds = restoreCIDRs.map { cidr in
+        })
+        lines.append(contentsOf: restoreCIDRs.map { cidr in
             "/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || /usr/sbin/ip addr add \(cidr) dev \(iface) >/dev/null 2>&1 || true"
-        }.joined(separator: "\n")
-        let rms = persistFiles.map { "rm -rf \($0) || true" }.joined(separator: "\n")
-        return """
-        #!/bin/sh
-        if [ -f \(stamp) ]; then exit 0; fi
-        \(dels)
-        \(adds)
-        \(rms)
-        /usr/bin/networkctl reload >/dev/null 2>&1 || true
-        rm -f \(pending) || true
-        """
+        })
+        lines.append("/usr/bin/networkctl reload >/dev/null 2>&1 || true")
+        lines.append("rm -f \(pending) || true")
+        return lines.joined(separator: "\n") + "\n"
     }
 
     public static func createdBridgeForApply(
