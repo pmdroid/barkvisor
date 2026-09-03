@@ -141,11 +141,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             plan _: LinuxHostBridgeApplyResult,
         ) throws {
             if request.action == .revert {
+                if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try revertAddresses(request: request, probe: probe)
+                    return
+                }
                 try withClaim(pendingKey(request: request, probe: probe)) {
-                    if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
-                        try revertAddresses(request: request, probe: probe)
-                        return
-                    }
                     try revert(request: request, probe: probe)
                 }
                 return
@@ -157,7 +157,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 return
             }
             do {
-                try persist(request: request, probe: probe)
+                try withClaim(pendingKey(request: request, probe: probe)) {
+                    try persist(request: request, probe: probe)
+                }
             } catch {
                 if LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
                     try? revertAddresses(request: request, probe: probe)
@@ -253,9 +255,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
-            if probe.backend != .netplan {
-                try startRollbackTimer(bridge: request.bridge)
-            }
+            try startRollbackTimer(bridge: request.bridge)
         }
 
         private func persistAddresses(
@@ -468,6 +468,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             request: LinuxHostBridgeApplyRequest,
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
+            if request.attachedWorkloadCount > 0 {
+                throw BarkVisorError.conflict(
+                    "Cannot delete \(request.bridge): \(request.attachedWorkloadCount) Workload(s) still reference it.",
+                )
+            }
             let members = probe.facts.bridges.first { $0.name == request.bridge }?.enslaved ?? []
             let nic = request.nic ?? members.first ?? probe.facts.defaultRouteInterface ?? ""
             let ports = members.isEmpty && !nic.isEmpty ? [nic] : members
@@ -654,7 +659,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 _ = kill(pid_t(pid), SIGTERM)
             }
             stopRollbackTimer(bridge: request.bridge)
-            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
             var nic = request.nic?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if nic.isEmpty {
                 nic = probe.facts.defaultRouteInterface ?? ""
@@ -726,6 +730,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             try? FileManager.default.removeItem(
                 atPath: LinuxHostBridgeApply.commitStampPath(bridge: request.bridge),
             )
+            HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 
         private func writeACL(bridge: String, existing: String?) throws {
@@ -929,40 +934,31 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
             guard probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 else { return }
-            let yamlExists = FileManager.default.fileExists(
-                atPath: LinuxHostBridgeApply.netplanPath(bridge: target),
-            ) || FileManager.default.fileExists(
-                atPath: LinuxHostAddressPersist.netplanAliasPath(interface: target),
+            guard LinuxHostBridgeApply.isNetplanProcess(pid: pid) else {
+                throw BarkVisorError.internalError("netplan try did not keep the config.")
+            }
+            try Data().write(
+                to: URL(fileURLWithPath: HostNetworkPendingCommitService.keepingPath(target)),
+                options: .atomic,
             )
-            let isNetplan = LinuxHostBridgeApply.isNetplanProcess(pid: pid)
-            if isNetplan {
-                try Data().write(
-                    to: URL(fileURLWithPath: HostNetworkPendingCommitService.keepingPath(target)),
-                    options: .atomic,
-                )
-                if kill(pid_t(pid), SIGUSR1) != 0 {
-                    try? FileManager.default.removeItem(
-                        atPath: HostNetworkPendingCommitService.keepingPath(target),
-                    )
-                    if yamlExists { return }
-                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
-                }
-                let deadline = Date().addingTimeInterval(30)
-                var status: Int32 = 0
-                var waited: pid_t = 0
-                while Date() < deadline {
-                    waited = waitpid(pid_t(pid), &status, WNOHANG)
-                    if waited != 0 { break }
-                    Thread.sleep(forTimeInterval: 0.05)
-                }
-                if waited > 0, status == 0 { return }
-                if yamlExists { return }
+            if kill(pid_t(pid), SIGUSR1) != 0 {
                 try? FileManager.default.removeItem(
                     atPath: HostNetworkPendingCommitService.keepingPath(target),
                 )
-                throw BarkVisorError.internalError("netplan try did not keep the config.")
+                throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
             }
-            if yamlExists { return }
+            let deadline = Date().addingTimeInterval(30)
+            var status: Int32 = 0
+            var waited: pid_t = 0
+            while Date() < deadline {
+                waited = waitpid(pid_t(pid), &status, WNOHANG)
+                if waited != 0 { break }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if waited > 0, status == 0 { return }
+            try? FileManager.default.removeItem(
+                atPath: HostNetworkPendingCommitService.keepingPath(target),
+            )
             throw BarkVisorError.internalError("netplan try did not keep the config.")
         }
 

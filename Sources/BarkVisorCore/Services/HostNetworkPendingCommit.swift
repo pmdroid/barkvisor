@@ -199,7 +199,21 @@ public enum HostNetworkPendingCommitService {
         FileManager.default.fileExists(atPath: keepingPath(target))
     }
 
+    private static let gateTableLock = NSLock()
+    nonisolated(unsafe) private static var gates: [String: NSRecursiveLock] = [:]
+
+    private static func gate(for target: String) -> NSRecursiveLock {
+        gateTableLock.lock()
+        defer { gateTableLock.unlock() }
+        if let existing = gates[target] { return existing }
+        let lock = NSRecursiveLock()
+        gates[target] = lock
+        return lock
+    }
+
     public static func claimRevert(_ target: String) -> Bool {
+        let lock = gate(for: target)
+        lock.lock()
         let path = claimPath(target)
         let fm = FileManager.default
         try? fm.createDirectory(
@@ -220,6 +234,7 @@ public enum HostNetworkPendingCommitService {
                 ?? (attrs?[.creationDate] as? Date)
                 ?? .distantPast
             if Date().timeIntervalSince(created) < 30 {
+                lock.unlock()
                 return false
             }
             try? fm.removeItem(atPath: path)
@@ -230,6 +245,7 @@ public enum HostNetworkPendingCommitService {
             try? "1".write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
             return true
         } catch {
+            lock.unlock()
             return false
         }
     }
@@ -239,14 +255,15 @@ public enum HostNetworkPendingCommitService {
         let myPid = String(ProcessInfo.processInfo.processIdentifier)
         let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if owner == myPid {
-            let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) - 1
-            if n > 0 {
-                try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
-                return
-            }
+        guard owner == myPid else { return }
+        let n = (Int((try? String(contentsOfFile: "\(path)/refs", encoding: .utf8)) ?? "1") ?? 1) - 1
+        if n > 0 {
+            try? String(n).write(toFile: "\(path)/refs", atomically: true, encoding: .utf8)
+            gate(for: target).unlock()
+            return
         }
         try? FileManager.default.removeItem(atPath: path)
+        gate(for: target).unlock()
     }
 
     public static func activePending() -> HostNetworkPendingCommit? {

@@ -508,8 +508,6 @@ import Foundation
                     let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
                         || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
                         && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
-                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     if undoCreate {
                         try SocketVmnetLaunchd.remove(interface: resolved.device)
                         plan.changes.append("Stopped BarkVisor-managed socket_vmnet for \(resolved.device)")
@@ -525,6 +523,8 @@ import Foundation
                             at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
                         )
                     }
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     plan.applied = true
                     plan.pendingCommit = false
                     plan.message = undoCreate
@@ -533,8 +533,6 @@ import Foundation
                 }
             case .delete:
                 try withClaim(resolved.device) {
-                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
-                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
                     try SocketVmnetLaunchd.remove(interface: resolved.device)
                     try? FileManager.default.removeItem(
@@ -545,6 +543,8 @@ import Foundation
                             at: LinuxHostBridgeApply.ownerMarkerURL(bridge: uplink),
                         )
                     }
+                    HostNetworkRollbackLaunchd.disarm(target: resolved.device)
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
                     plan.applied = true
                     plan.pendingCommit = false
                     plan.message = "Deleted owned socket_vmnet on \(resolved.device)."

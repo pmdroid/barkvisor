@@ -14,21 +14,25 @@ public enum HostNetworkPendingReaper {
                 continue
             }
             do {
-                if try await settleExpired(pending, db: db) {
-                    continue
-                }
                 let bridge = workloadBridgeName(pending)
                 let attached = pending.createdBridge
                     ? (try await NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                     : 0
                 if attached > 0 {
+                    keepNetplanTry(pending)
                     try HostNetworkPendingCommitService.keepNow(target: pending.target)
                     continue
                 }
-                try revertHost(pending)
+                if try await settleExpired(pending, db: db) {
+                    continue
+                }
+                try revertHost(pending, attached: attached)
+                let still = pending.createdBridge
+                    ? (try await NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                    : 0
                 if LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(
                     createdBridge: pending.createdBridge,
-                    attached: attached,
+                    attached: still,
                 ) {
                     try await NetworkService.deleteUnattached(bridge: bridge, db: db)
                 }
@@ -56,10 +60,6 @@ public enum HostNetworkPendingReaper {
                 try HostNetworkPendingCommitService.keepNow(target: pending.target)
                 return true
             case .alreadyReverted:
-                if !pending.createdBridge {
-                    HostNetworkPendingCommitService.clearLinux(bridge: pending.target)
-                    return true
-                }
                 return false
             }
         #else
@@ -79,7 +79,15 @@ public enum HostNetworkPendingReaper {
         #endif
     }
 
-    public static func revertHost(_ pending: HostNetworkPendingCommit) throws {
+    private static func keepNetplanTry(_ pending: HostNetworkPendingCommit) {
+        #if os(Linux)
+            guard let pid = pending.netplanPid, pid > 0 else { return }
+            guard LinuxHostBridgeApply.isNetplanProcess(pid: pid) else { return }
+            _ = kill(pid_t(pid), SIGUSR1)
+        #endif
+    }
+
+    public static func revertHost(_ pending: HostNetworkPendingCommit, attached: Int = 0) throws {
         let action: LinuxHostBridgeApplyAction = pending.createdBridge ? .delete : .revert
         let nic = LinuxHostBridgeApply.readOwnerMarker(bridge: pending.target)?.uplink
             ?? pending.target
@@ -88,6 +96,7 @@ public enum HostNetworkPendingReaper {
             bridge: workloadBridgeName(pending),
             nic: nic,
             confirm: true,
+            attachedWorkloadCount: attached,
         )
         #if os(Linux)
             _ = try LinuxHostBridgeApplyLive.run(request: request)
