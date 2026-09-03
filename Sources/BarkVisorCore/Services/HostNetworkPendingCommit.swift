@@ -204,8 +204,15 @@ public enum HostNetworkPendingCommitService {
         FileManager.default.fileExists(atPath: keepingPath(target))
     }
 
+    private static let applyGate = NSLock()
     private static let gateTableLock = NSLock()
     nonisolated(unsafe) private static var gates: [String: NSRecursiveLock] = [:]
+
+    public static func withApplyGate(_ body: () throws -> Void) throws {
+        applyGate.lock()
+        defer { applyGate.unlock() }
+        try body()
+    }
 
     private static func gate(for target: String) -> NSRecursiveLock {
         gateTableLock.lock()

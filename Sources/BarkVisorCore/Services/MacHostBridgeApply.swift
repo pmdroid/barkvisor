@@ -414,6 +414,7 @@ import Foundation
 
             switch request.action {
             case .apply:
+                try HostNetworkPendingCommitService.withApplyGate {
                 if let other = HostNetworkPendingCommitService.blockingPending(
                     target: resolved.device,
                     existing: HostNetworkPendingCommitService.listMacPending(),
@@ -480,6 +481,7 @@ import Foundation
                 plan.createdBridge = createdNow
                 plan.message =
                     "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
+                }
             case .commit:
                 try withClaim(resolved.device) {
                     if HostNetworkPendingCommitService.stampExists(resolved.device) {

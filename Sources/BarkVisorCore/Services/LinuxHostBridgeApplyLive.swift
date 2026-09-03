@@ -157,8 +157,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 return
             }
             do {
-                try withClaim(pendingKey(request: request, probe: probe)) {
-                    try persist(request: request, probe: probe)
+                try HostNetworkPendingCommitService.withApplyGate {
+                    try withClaim(pendingKey(request: request, probe: probe)) {
+                        try persist(request: request, probe: probe)
+                    }
                 }
             } catch {
                 if case BarkVisorError.conflict = error {
