@@ -1,67 +1,46 @@
 # First Launch and Setup
 
-## What Happens at Startup
+## What happens at startup
 
-When BarkVisor starts for the first time:
+When BarkVisor starts for the first time, it prepares its data directory, creates everything it needs (including a **Default NAT** network so VMs get internet with zero configuration, plus the official image and template catalogs), and starts the web console on port **7777**.
 
-1. The data directory is created (see [Installation (macOS)](getting-started-installation.md) or [Installation (Linux)](getting-started-linux.md) for paths).
-2. The **SQLite database** is created and migrated to the latest schema.
-3. **Default records are seeded** into the database:
-   - A **Default NAT** network, which provides internet access to VMs through the host network stack with no additional configuration (macOS and Linux).
-   - The **BarkVisor Official** image repository (`images` type), pointing to the official image catalog.
-   - The **BarkVisor Templates** repository (`templates` type), pointing to the official VM template catalog.
-4. The HTTP server starts on port **7777** immediately.
-5. The **SetupMiddleware** detects that no admin user exists and blocks all non-setup API routes, returning a setup-required response.
+## Web-based setup
 
-## Web-Based Setup
-
-Open your browser and navigate to `http://localhost:7777`. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, the UI presents a setup wizard.
-
-Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, install Homebrew `socket_vmnet` as your user. The root Device daemon starts it. Linux applies `br0` from **Networks → Bridge setup**. NAT works without either.
+Open `http://localhost:7777` in your browser. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, a setup wizard walks you through five short steps.
 
 ### 1. Welcome
 
-![Setup welcome screen](/docs/onboarding/setup-welcome.png)
+![Setup welcome screen](img/setup-welcome.png)
 
-Choose **Set up this Device** to create a new Home on this machine, or **Join an existing Home** if another Device already issued a pairing code (Settings → Pairing → Add a Device). Paste the full pairing code (`barkvisor://pair/v1?…`) — the short code alone is not enough. This Device still runs if the other Device is later unreachable.
-
-On an **API-only Device** (no SPA), join from that host instead of the wizard:
-
-```sh
-barkvisor-agent join --code 'barkvisor://pair/v1?…'
-```
-
-Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. Full walkthrough: [Home and pairing](home-and-pairing.md). See also [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
+Confirm the **Device name** and click **Continue**. This creates a new Home on this machine. To add this Device to an existing Home instead, join from the command line on this host (see [Home and pairing](home-and-pairing.md)) — this Device keeps running even if the other Device later goes offline.
 
 ### 2. Add a passkey
 
-![Create admin account](/docs/onboarding/setup-admin.png)
+![Add a passkey](img/setup-passkey.png)
 
-Click **Add passkey** and confirm with Touch ID, Windows Hello, or your password manager. There is no username or password in the web wizard.
+Click **Add passkey** and confirm with Touch ID, Windows Hello, or your password manager. There is no username or password — the passkey signs you in from now on.
 
-Headless / CI still uses `POST /api/setup/admin` with a username and password.
+If setup was interrupted earlier and you want a clean start, stop the daemon, delete the data directory, and start again.
 
-After the passkey is stored, the wizard continues. (If setup was partially completed earlier — stop the daemon, delete the data directory, and start again for a clean wizard.)
+### 3. Image Library folder
 
-### 3. Sync image catalog
+![Image Library folder](img/setup-library.png)
 
-![Sync image catalog](/docs/onboarding/setup-catalog.png)
+Pick where this Device stores OS images (**Browse**, pick a folder, **Save folder**, **Continue**). You can change this later under **Settings → Library**.
 
-Click **Sync Catalog** so OS images and templates are available immediately (or **Skip** and sync later from the Registry).
+### 4. Image catalog
 
-![Catalog sync finished](/docs/onboarding/setup-catalog-synced.png)
+![Image catalog](img/setup-catalog.png)
 
-When the sync finishes, click **Continue**.
+Click **Sync catalog** so OS images and templates are available immediately — or **Skip** and sync later from **Settings → Repositories**.
 
-### 4. Finish and open the dashboard
+### 5. Ready
 
-![Setup complete — All Set](/docs/onboarding/setup-ready.png)
+![Setup complete — All Set](img/setup-ready.png)
 
-Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the main UI.
+Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the main UI (shown here: [Dashboard](using-dashboard.md)).
 
-![Dashboard after setup](/docs/onboarding/setup-dashboard.png)
-
-SetupMiddleware stops blocking API routes once setup is complete.
+![Dashboard after setup](img/dashboard.png)
 
 ## Words we use
 
@@ -75,38 +54,30 @@ On subsequent launches, the server detects the existing admin and starts normall
 
 ## Bridged networking (optional)
 
-NAT works out of the box on every host. Bridged networking uses the native path for each platform:
+NAT works out of the box on every host. For bridged networking:
 
 ### macOS
 
-Install **socket_vmnet** with Homebrew as your user. Do not `sudo brew install`. The root Device daemon starts the service via launchctl. There is no XPC helper:
-
-```sh
-brew install socket_vmnet
-```
-
-NAT Workloads work without this.
+Install **socket_vmnet** with Homebrew as your user (`brew install socket_vmnet` — never with `sudo`). The BarkVisor daemon starts it for you. NAT Workloads work without this.
 
 ### Linux
 
-Open **Networks → Bridge setup → Apply**. Equivalent commands stay on that page. Rollback is a host timer, not a browser Confirm after the uplink dies. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
+Open **Networks → Host interfaces → Create → Bridge** and Apply. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
 
 ## Catalog Sync
 
 Image and template catalogs from built-in repositories are synced automatically in the background on each startup. You can also trigger a manual sync from **Settings → Repositories**, or add custom catalog URLs there.
 
-## Shutdown Behavior
+## Shutdown behavior
 
-The daemon handles SIGTERM and SIGINT signals for graceful shutdown. When the daemon stops while VMs are running, QEMU processes continue running in the background. On next launch, BarkVisor reconnects to them.
+If you stop the daemon while VMs are running, the VMs keep running in the background — BarkVisor reconnects to them on next launch. To stop everything, stop your VMs in the web UI first.
 
-To stop the daemon:
+To stop the daemon itself:
 
 ```sh
-# macOS (launchd)
+# macOS
 sudo launchctl bootout system/dev.barkvisor
 
-# Linux (systemd)
+# Linux
 sudo systemctl stop barkvisor.service
 ```
-
-To stop the daemon and shut down all VMs first, use the web UI to stop VMs before stopping the daemon.
