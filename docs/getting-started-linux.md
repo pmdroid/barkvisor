@@ -289,6 +289,7 @@ smoke scripts. They are **not** part of `mise run prepush`.
 ```sh
 mise run guest-smoke        # blank disk (fast)
 mise run guest-smoke-real   # Ubuntu cloud image + SSH
+mise run host-network-extra-ip  # dummy NIC extra-IP add/remove (Docker on macOS)
 ```
 
 Expect **minutes on KVM**, or **up to ~15 minutes on TCG**. If

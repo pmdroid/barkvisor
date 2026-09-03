@@ -449,7 +449,16 @@ public enum LinuxHostBridgeApply {
         if !target.isEmpty {
             let addressing = HostInterfaceAddressDiscovery.discoverByInterface(interfaceNames: [target])[target]
             liveIPv4 = addressing?.addresses.map(\.cidr) ?? []
-            keepIPv4 = addressing?.addresses.filter { $0.source == .dhcp || $0.primary }.map(\.cidr) ?? []
+            keepIPv4 = addressing?.addresses.filter { $0.source == .dhcp }.map(\.cidr) ?? []
+            if keepIPv4.isEmpty {
+                let kernel = HostInfoService.listInterfaceAddresses().first { row in
+                    row.name == target && !row.ipAddress.contains(":")
+                }
+                if let kernel {
+                    let cidr = kernel.prefixLength.map { "\(kernel.ipAddress)/\($0)" } ?? kernel.ipAddress
+                    keepIPv4 = [cidr]
+                }
+            }
         }
         return LinuxHostBridgeApplyProbe(
             facts: facts,

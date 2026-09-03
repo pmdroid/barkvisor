@@ -60,6 +60,10 @@ run = "scripts/serve-local-updates.sh --dir dist"
 description = "Opt-in API contract BDD: probe every OpenAPI operation (fast, no QEMU)"
 run = "./scripts/api-contract-bdd.sh"
 
+[tasks.host-network-extra-ip]
+description = "Opt-in Linux extra-IP add/remove BDD (Docker on macOS; not in default prepush)"
+run = "./scripts/linux-host-network-docker.sh"
+
 [tasks.prepush-full]
 description = "Opt-in: prepush + API contract BDD + blank-disk guest-smoke (never the default push gate)"
 depends = ["prepush", "api-bdd", "guest-smoke"]

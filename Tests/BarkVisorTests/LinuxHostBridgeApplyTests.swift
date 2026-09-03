@@ -432,6 +432,15 @@ struct LinuxHostBridgeApplyTests {
         #expect(!drop.contains { $0.command.contains("ip addr add 192.168.30.1/16") })
         #expect(!drop.contains { $0.command.contains("+ipv4.addresses 192.168.30.1/16") })
         #expect(!drop.contains { $0.command.contains("192.168.8.163") })
+        let helper = LinuxHostBridgeApply.addressRollbackHelperScript(
+            device: "enp2s0",
+            iface: "enp2s0",
+            cidrs: ["10.0.0.2/24"],
+            persistFiles: ["/tmp/x"],
+            restoreCIDRs: ["192.168.8.201/16"],
+        )
+        #expect(helper.contains("ip addr del 10.0.0.2/24"))
+        #expect(helper.contains("ip addr add 192.168.8.201/16"))
     }
 
     @Test func `acl tag without marker is leftover we can delete`() throws {
