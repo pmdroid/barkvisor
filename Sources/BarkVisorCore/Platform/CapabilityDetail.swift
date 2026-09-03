@@ -240,7 +240,7 @@ public enum CapabilityDetailBuilder {
                 code: .hostBridgeManagement,
                 supported: true,
                 remediation: "Networks can apply or revert host br0 via the root Device daemon. "
-                    + "Equivalent commands stay visible. After Apply, keep changes within 30s or the host auto-reverts.",
+                    + "Equivalent commands stay visible. After Apply, keep changes within 60s or the host auto-reverts.",
             )
         }
         return CapabilityDetail(

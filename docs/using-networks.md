@@ -36,7 +36,7 @@ Toolbar **Create → Bridge** opens the create modal:
 | Name | Server next-free `br0`, `br1`, … (read-only). Skips kernel-existing and marked names. AgentBox `br0` means first Create is `br1`. |
 | Port | One unused NIC. Linux refuses Wi-Fi. macOS allows `en0` (Wi-Fi). |
 
-Apply always adds a bridged Workload network with `network.bridge = brN`. Same confirm and 30 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+Apply always adds a bridged Workload network with `network.bridge = brN`. Same confirm and 60 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
 
 Select a row to open the **edit drawer** below the table.
 
@@ -100,7 +100,7 @@ On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases
 
 **Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. Shared kernel bridges are never default-deleted.
 
-Apply first shows a confirmation with collapsible change details. After Apply, changes stay **pending** for 30 seconds. A modal asks you to click **Keep changes** or they auto-revert — including tearing down a Bridge you just created. If the NIC carries SSH or the SPA, Apply warns before the uplink moves.
+Apply first shows a confirmation with collapsible change details. After Apply, changes stay **pending** for 60 seconds. A modal asks you to click **Keep changes** or they auto-revert — including tearing down a Bridge you just created. If the NIC carries SSH or the SPA, Apply warns before the uplink moves.
 
 Wi-Fi is refused. ifupdown is refused.
 
@@ -125,7 +125,7 @@ curl -sS -X DELETE http://127.0.0.1:7777/api/system/interfaces/br0 \
 
 **Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC via `networksetup` + `ifconfig`. NAT Workloads work with bridged host networking down.
 
-After Apply, the same **30 second keep window** applies: the Keep modal or POST `action: commit`. If the timer expires, the Device auto-reverts.
+After Apply, the same **60 second keep window** applies: the Keep modal or POST `action: commit`. If the timer expires, the Device auto-reverts.
 
 API (same routes as Linux; `interface` is the hardware port, e.g. `en0`):
 

@@ -60,23 +60,17 @@ public enum LinuxHostBridgeApplyLive {
                 ? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
                 : request.bridge
             let nic = request.nic ?? LinuxHostBridgeApply.addressApplyDevice(request: request, probe: resolved)
-            if !addressOnly, LinuxHostBridgeApply.dropsManagementSession(nic: nic, probe: resolved) {
-                plan.pendingCommit = false
-                plan.message =
-                    "Applied \(appliedOn) via \(plan.backend) and kept it. This NIC carries SSH or the SPA, so Keep cannot run after Apply."
-            } else {
-                let pending = HostNetworkPendingCommitService.makePending(
-                    target: addressOnly
-                        ? nic
-                        : request.bridge,
-                    createdBridge: createdNow,
-                )
-                plan.pendingCommit = true
-                plan.commitDeadline = pending.commitDeadline
-                plan.rollbackSeconds = pending.rollbackSeconds
-                plan.message =
-                    "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
-            }
+            let pending = HostNetworkPendingCommitService.makePending(
+                target: addressOnly
+                    ? nic
+                    : request.bridge,
+                createdBridge: createdNow,
+            )
+            plan.pendingCommit = true
+            plan.commitDeadline = pending.commitDeadline
+            plan.rollbackSeconds = pending.rollbackSeconds
+            plan.message =
+                "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .commit:
             try writer.commit(request: request, probe: resolved)
             plan.applied = true
@@ -157,7 +151,14 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 try deleteOwned(request: request, probe: probe)
                 return
             }
-            try persist(request: request, probe: probe)
+            do {
+                try persist(request: request, probe: probe)
+            } catch {
+                if !LinuxHostBridgeApply.isAddressOnlyApply(request: request, probe: probe) {
+                    try? revert(request: request, probe: probe)
+                }
+                throw error
+            }
         }
 
         func commit(
@@ -197,7 +198,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 try persistAddresses(request: request, probe: probe, plan: plan)
                 return
             }
-            let keepNow = LinuxHostBridgeApply.dropsManagementSession(nic: nic, probe: probe)
             var pendingNetplan: Process?
             switch probe.backend {
             case .netplan:
@@ -211,20 +211,11 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 )
                 pendingNetplan = try beginNetplanTry()
             case .networkManager:
-                if keepNow {
-                    try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
-                }
                 try applyNetworkManager(request: request, nic: nic, plan: plan)
-                if !keepNow {
-                    try startRollbackTimer(bridge: request.bridge)
-                }
+                try startRollbackTimer(bridge: request.bridge)
             case .systemdNetworkd:
                 try writeNetworkd(request: request, nic: nic, plan: plan)
-                if keepNow {
-                    try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
-                } else {
-                    try startRollbackTimer(bridge: request.bridge)
-                }
+                try startRollbackTimer(bridge: request.bridge)
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/networkctl",
                     arguments: ["reload"],
@@ -243,13 +234,6 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 createdBridge: LinuxHostBridgeApply.createdBridgeForApply(request: request, probe: probe),
             )
             try setuidHelpers(probe.helperPaths)
-            if keepNow {
-                try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
-                if probe.backend == .netplan, let netplan = pendingNetplan {
-                    try commitNetplanTry(netplan)
-                }
-                return
-            }
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
                 createdBridge: LinuxHostBridgeApply.createdBridge(

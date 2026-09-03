@@ -177,7 +177,7 @@ public struct LinuxHostBridgeChange: Sendable, Equatable {
 public enum LinuxHostBridgeApply {
     public static let aclMarker = "# barkvisor:allow-br0"
     public static let ownedMarkerName = "host-bridge"
-    public static let rollbackSeconds = 30
+    public static let rollbackSeconds = 60
 
     public static func dropsManagementSession(
         nic: String,
@@ -681,18 +681,17 @@ public enum LinuxHostBridgeApply {
         var warnings = probe.sessionWarnings
         if probe.facts.onlyUplink {
             warnings.append(
-                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Apply keeps the bridge automatically because Keep cannot run after the session drops.",
+                "This Device has a single uplink. Enslaving it can drop SSH and the SPA. Keep changes within \(rollbackSeconds)s or they auto-revert.",
             )
         }
         let sessionHit = probe.sessionRiskNics.contains(nic)
         if sessionHit {
             warnings.append(
-                "'\(nic)' carries SSH or the SPA session. Pass --confirm. Apply keeps the bridge automatically because Keep cannot run after the session drops.",
+                "'\(nic)' carries SSH or the SPA session. Pass --confirm. Keep changes within \(rollbackSeconds)s or they auto-revert.",
             )
         }
 
-        let keepNow = dropsManagementSession(nic: nic, probe: probe)
-        let changes = plannedChanges(request: request, probe: probe, nic: nic, plan: plan, keepNow: keepNow)
+        let changes = plannedChanges(request: request, probe: probe, nic: nic, plan: plan)
         let commands = changes.map(\.command)
         let changeText = changes.map(\.description)
 
@@ -924,7 +923,6 @@ public enum LinuxHostBridgeApply {
         probe: LinuxHostBridgeApplyProbe,
         nic: String,
         plan: HostInterfaceAddressApplyPlan,
-        keepNow: Bool = false,
     ) -> [LinuxHostBridgeChange] {
         var changes: [LinuxHostBridgeChange] = []
         changes.append(LinuxHostBridgeChange(
@@ -934,19 +932,13 @@ public enum LinuxHostBridgeApply {
         switch probe.backend {
         case .netplan:
             changes.append(LinuxHostBridgeChange(
-                description: keepNow
-                    ? "Write \(netplanPath(bridge: request.bridge)) and apply"
-                    : "Write \(netplanPath(bridge: request.bridge)) and `netplan try` (\(rollbackSeconds)s keep window)",
-                command: keepNow
-                    ? "sudo netplan apply"
-                    : "sudo netplan try --timeout \(rollbackSeconds)",
+                description: "Write \(netplanPath(bridge: request.bridge)) and `netplan try` (\(rollbackSeconds)s keep window)",
+                command: "sudo netplan try --timeout \(rollbackSeconds)",
             ))
         case .networkManager:
             let slave = nmSlaveConnectionName(bridge: request.bridge, nic: nic)
             changes.append(LinuxHostBridgeChange(
-                description: keepNow
-                    ? "nmcli bridge barkvisor-\(request.bridge)"
-                    : "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
+                description: "nmcli bridge barkvisor-\(request.bridge) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo nmcli connection add type bridge ifname \(request.bridge) con-name barkvisor-\(request.bridge)",
             ))
             changes.append(LinuxHostBridgeChange(
@@ -959,9 +951,7 @@ public enum LinuxHostBridgeApply {
             ))
         case .systemdNetworkd:
             changes.append(LinuxHostBridgeChange(
-                description: keepNow
-                    ? "Write \(networkdNetdevPath(bridge: request.bridge))"
-                    : "Write \(networkdNetdevPath(bridge: request.bridge)) + systemd-run \(rollbackSeconds)s revert",
+                description: "Write \(networkdNetdevPath(bridge: request.bridge)) + systemd-run \(rollbackSeconds)s revert",
                 command: "sudo networkctl reload",
             ))
         case .ifupdown, .unknown:
@@ -999,7 +989,6 @@ public enum LinuxHostBridgeApply {
             probe: probe,
             nic: nic,
             plan: plan,
-            keepNow: dropsManagementSession(nic: nic, probe: probe),
         ).map(\.command)
     }
 

@@ -20,7 +20,7 @@ const emit = defineEmits(['confirm', 'cancel'])
         </div>
         <div class="split-body">
           <p class="split-warn">{{ message }}</p>
-          <p v-if="loading" class="split-warn">Working… the Device may drop for 15s or more. Wait — do not retry.</p>
+          <p v-if="loading" class="split-warn">Working… the Device may drop. Wait — do not retry.</p>
           <details v-if="props.details?.length" class="split-details" open>
             <summary>Changes</summary>
             <ul>

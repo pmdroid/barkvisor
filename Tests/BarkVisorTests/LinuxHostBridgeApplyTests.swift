@@ -126,7 +126,7 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(!pending.success)
         #expect(pending.needsConfirm)
-        #expect(pending.warnings.contains { $0.contains("keeps the bridge automatically") })
+        #expect(pending.warnings.contains { $0.contains("auto-revert") })
         #expect(!pending.applied)
 
         let confirmed = LinuxHostBridgeApply.evaluate(
@@ -135,8 +135,8 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(confirmed.success)
         #expect(!confirmed.needsConfirm)
-        #expect(confirmed.commands.contains { $0.contains("netplan apply") })
-        #expect(!confirmed.commands.contains { $0.contains("netplan try") })
+        #expect(confirmed.commands.contains { $0.contains("netplan try") })
+        #expect(!confirmed.commands.contains { $0.contains("netplan apply") })
     }
 
     @Test func `revert never deletes a shared br0`() {
@@ -278,7 +278,7 @@ struct LinuxHostBridgeApplyTests {
         #expect(recorder.steps.contains { $0.contains("netplan") })
     }
 
-    @Test func `live apply keeps immediately when nic would drop SSH`() throws {
+    @Test func `live apply keeps a pending window when nic would drop SSH`() throws {
         let recorder = RecordingLinuxHostBridgeMutator()
         let result = try LinuxHostBridgeApplyLive.run(
             request: LinuxHostBridgeApplyRequest(action: .apply, nic: "enp2s0", confirm: true),
@@ -287,8 +287,10 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(result.applied)
         #expect(result.success)
-        #expect(!result.pendingCommit)
-        #expect(result.message.contains("kept"))
+        #expect(result.pendingCommit)
+        #expect(result.rollbackSeconds == 60)
+        #expect(result.message.contains("auto-revert"))
+        #expect(!result.message.contains("kept it"))
     }
 
     @Test func `check includes address diffs when addresses provided`() {
@@ -699,7 +701,7 @@ struct LinuxHostBridgeApplyTests {
         let expired = HostNetworkPendingCommit(
             target: "br0",
             commitDeadline: Date().addingTimeInterval(-1),
-            rollbackSeconds: 30,
+            rollbackSeconds: 60,
         )
         #expect(HostNetworkPendingCommitService.blockingPending(target: "br1", existing: [expired]) == nil)
     }

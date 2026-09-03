@@ -202,9 +202,13 @@ struct HomeDevicesController: RouteCollection {
         }
         headers.append((APIContract.versionHeaderName, String(APIContract.version)))
 
+        var hop = client
+        if Self.usesLongMemberTimeout(method: req.method.rawValue, url: url) {
+            hop = Self.clientWithTimeout(client, seconds: 90)
+        }
         let result: HomeDeviceProxyResponse
         do {
-            result = try await client.send(
+            result = try await hop.send(
                 HomeDeviceProxyRequest(
                     method: req.method.rawValue,
                     url: url,
@@ -221,6 +225,28 @@ struct HomeDevicesController: RouteCollection {
             )
         }
         return Self.response(from: result)
+    }
+
+    private static func usesLongMemberTimeout(method: String, url: URL) -> Bool {
+        let verb = method.uppercased()
+        guard verb == "POST" || verb == "DELETE" else { return false }
+        let path = url.path
+        return path.contains("/system/interfaces") || path.contains("/system/bridges")
+    }
+
+    private static func clientWithTimeout(
+        _ client: any HomeDeviceProxyClient,
+        seconds: Int64,
+    ) -> any HomeDeviceProxyClient {
+        if var mtls = client as? AgentMTLSClient {
+            mtls.timeoutSeconds = seconds
+            return mtls
+        }
+        if var local = client as? LocalHostProxyClient {
+            local.timeout = TimeInterval(seconds)
+            return local
+        }
+        return client
     }
 
     static func collectedBody(_ req: Vapor.Request) async throws -> Data? {

@@ -226,7 +226,7 @@ Uninstall and `postrm` strip **marker-tagged** host-bridge files only (`# barkvi
 
 NAT works out of the box. Bridged mode uses a host `br0` plus QEMU `qemu-bridge-helper`. There is no XPC helper.
 
-Prefer **Networks → Host interfaces → Create → Bridge** on the Device. After Apply, keep changes within 30 seconds in the SPA or POST `action: commit`; otherwise the host auto-reverts. Wi-Fi is refused.
+Prefer **Networks → Host interfaces → Create → Bridge** on the Device. After Apply, keep changes within 60 seconds in the SPA or POST `action: commit`; otherwise the host auto-reverts. Wi-Fi is refused.
 
 Host address on `br0` is DHCP or static for this Device. Configure it in **Networks → Host interfaces**.
 

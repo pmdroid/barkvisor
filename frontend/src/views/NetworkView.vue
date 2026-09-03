@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { apiErrorMessage, isOccupiedBridgeConflict } from '../api/errors'
+import { apiErrorMessage, isOccupiedBridgeConflict, isTransientHostApplyError } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
 import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface, NextBridgeResponse } from '../api/types'
@@ -444,6 +444,8 @@ const linuxApplyLoading = ref(false)
 const linuxApplyResult = ref<BridgeActionResponse | null>(null)
 const linuxApplyConfirm = ref<'apply' | 'revert' | 'delete' | null>(null)
 const linuxApplySource = ref<'drawer' | 'create-bridge'>('drawer')
+const HOST_APPLY_TIMEOUT_MS = 90_000
+const HOST_APPLY_RECOVER_MS = 90_000
 
 const createMenuOpen = ref(false)
 const showCreateBridge = ref(false)
@@ -521,7 +523,7 @@ function setPendingCommitFromResponse(
     nic,
     target: pendingCommitBridgeName({ target: hinted, nic }, ready),
     commitDeadline: data.commitDeadline,
-    rollbackSeconds: data.rollbackSeconds ?? 30,
+    rollbackSeconds: data.rollbackSeconds ?? 60,
     createdBridge: createdBridge || ready?.pendingCommit?.createdBridge === true,
   }
   startPendingCommitTimer()
@@ -566,7 +568,7 @@ async function keepPendingCommit() {
       interface: pending.nic,
       bridge: pending.target,
       confirm: true,
-    })
+    }, { timeout: HOST_APPLY_TIMEOUT_MS })
     linuxApplyResult.value = data
     if (data.success) {
       clearPendingCommitState()
@@ -583,32 +585,97 @@ async function keepPendingCommit() {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function undoHostApply(args: {
+  device?: HomeDeviceHealthSnapshot | null
+  nic: string
+  target: string
+  createdBridge: boolean
+}): Promise<BridgeActionResponse> {
+  const path = args.device && useHomeUnion.value ? deviceInterfacesPath(args.device) : '/system/interfaces'
+  if (args.createdBridge) {
+    const { data } = await api.post<BridgeActionResponse>(path, {
+      confirm: true,
+      action: 'delete',
+      interface: args.nic,
+      bridge: args.target,
+    }, { timeout: HOST_APPLY_TIMEOUT_MS })
+    return data
+  }
+  const { data } = await api.delete<BridgeActionResponse>(
+    hostBridgeRevertPath(args.nic, args.device ?? undefined, args.target),
+    {
+      data: {
+        confirm: true,
+        action: 'revert',
+        interface: args.nic,
+        bridge: args.target,
+      },
+      timeout: HOST_APPLY_TIMEOUT_MS,
+    },
+  )
+  return data
+}
+
+async function recoverConfirmedHostApply(args: {
+  device?: HomeDeviceHealthSnapshot | null
+  hostId: string
+  nic: string
+  bridge?: string
+  createdBridge: boolean
+}): Promise<'pending' | 'reverted' | 'gone' | 'unreachable'> {
+  const until = Date.now() + HOST_APPLY_RECOVER_MS
+  while (Date.now() < until) {
+    await sleep(2000)
+    const ready = await fetchHostReadiness(args.device ?? null)
+    if (!ready) continue
+    if (ready.pendingCommit) {
+      syncPendingCommitFromReadiness(args.hostId, ready, args.nic)
+      toast.info('Device is back. Keep changes or they auto-revert.')
+      return 'pending'
+    }
+    const named = args.bridge
+    const leftover = named ? ready.bridges.some((row) => row.name === named) : false
+    if (args.createdBridge && leftover && named) {
+      try {
+        await undoHostApply({
+          device: args.device,
+          nic: args.nic,
+          target: named,
+          createdBridge: true,
+        })
+        toast.info(`Reverted Bridge ${named} after Apply failed.`)
+        await fetchHostReadiness(args.device ?? null)
+        if (args.hostId) await refreshInterfaceContext(args.hostId)
+        return 'reverted'
+      } catch {
+        toast.error(`Apply failed and revert of ${named} failed. Delete it from Host interfaces.`)
+        return 'reverted'
+      }
+    }
+    return 'gone'
+  }
+  toast.error('Device still unreachable. If Apply landed, the Device auto-reverts within 60s unless you Keep.')
+  return 'unreachable'
+}
+
 async function autoRevertPendingCommit() {
   const pending = pendingCommit.value
   if (!pending) return
   const device = devicesStore.deviceByHostId(pending.hostId)
   linuxApplyLoading.value = true
   try {
-    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
-    const undo = pending.createdBridge ? 'delete' : 'revert'
-    const { data } = undo === 'delete'
-      ? await api.post<BridgeActionResponse>(path, {
-        confirm: true,
-        action: 'delete',
-        interface: pending.nic,
-        bridge: pending.target,
-      }).then((r) => r.data)
-      : await api.delete<BridgeActionResponse>(
-        hostBridgeRevertPath(pending.nic, device ?? undefined, pending.target),
-        {
-          data: {
-            confirm: true,
-            action: 'revert',
-            interface: pending.nic,
-            bridge: pending.target,
-          },
-        },
-      ).then((r) => r.data)
+    const data = await undoHostApply({
+      device,
+      nic: pending.nic,
+      target: pending.target,
+      createdBridge: pending.createdBridge,
+    })
     clearPendingCommitState()
     if (data.success) {
       toast.info(data.message || 'Host network changes auto-reverted.')
@@ -797,23 +864,23 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
   linuxApplySource.value = 'drawer'
   linuxApplyResult.value = null
   linuxApplyLoading.value = true
+  const mode = selectedInterfaceMode.value
+  const role = selectedInterfaceRole.value
+  const ownsAddresses = interfaceOwnsAddressApply(role, row.iface, ready, mode)
+  const targets = ownsAddresses
+    ? addressApplyTargets(row.iface, ready, mode)
+    : {
+        nic: resolveBridgeApplyNic(row.iface, ready),
+        bridge: existingBridge ?? undefined,
+      }
+  const nic = targets.nic
+  const payload = applyPayloadForSelectedInterface()
+  const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
+  const targetBridge = pendingCommit.value?.target
+    ?? interfaceAssociatedBridge(row.iface, selectedInterfaceReadiness.value)?.name
+    ?? targets.bridge
+    ?? existingBridge
   try {
-    const mode = selectedInterfaceMode.value
-    const role = selectedInterfaceRole.value
-    const ownsAddresses = interfaceOwnsAddressApply(role, row.iface, ready, mode)
-    const targets = ownsAddresses
-      ? addressApplyTargets(row.iface, ready, mode)
-      : {
-          nic: resolveBridgeApplyNic(row.iface, ready),
-          bridge: existingBridge ?? undefined,
-        }
-    const nic = targets.nic
-    const payload = applyPayloadForSelectedInterface()
-    const path = device && useHomeUnion.value ? deviceInterfacesPath(device) : '/system/interfaces'
-    const targetBridge = pendingCommit.value?.target
-      ?? interfaceAssociatedBridge(row.iface, selectedInterfaceReadiness.value)?.name
-      ?? targets.bridge
-      ?? existingBridge
     const data = action === 'revert'
       ? await api.delete<BridgeActionResponse>(
         hostBridgeRevertPath(
@@ -836,7 +903,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
           action: 'delete',
           interface: nic,
           bridge: targetBridge,
-        }, { timeout: 45_000 }).then((r) => r.data)
+        }, { timeout: HOST_APPLY_TIMEOUT_MS }).then((r) => r.data)
       : await api.post<BridgeActionResponse>(path, buildHostBridgeApplyBody({
         nic,
         confirm,
@@ -844,7 +911,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
         rows: payload.rows,
         gateway: payload.gateway,
         dns: payload.dns,
-      }), { timeout: 45_000 }).then((r) => r.data)
+      }), { timeout: HOST_APPLY_TIMEOUT_MS }).then((r) => r.data)
     linuxApplyResult.value = data
     if (!confirm && (action === 'apply' || action === 'delete')) {
       if (data.needsConfirm || data.success) {
@@ -859,7 +926,7 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
       return
     }
     if (data.pendingCommit && data.commitDeadline && action === 'apply') {
-      setPendingCommitFromResponse(row.hostId, nic, data, targetBridge)
+      setPendingCommitFromResponse(row.hostId, nic, data, targetBridge ?? undefined)
     } else if (action === 'revert' || action === 'apply' || action === 'delete') {
       if (pendingCommit.value?.hostId === row.hostId) clearPendingCommitState()
     }
@@ -883,6 +950,16 @@ async function runInterfaceHostBridge(action: 'apply' | 'revert' | 'delete', con
       toast.error(data.message)
     }
   } catch (e: unknown) {
+    if (confirm && action === 'apply' && isTransientHostApplyError(e)) {
+      const outcome = await recoverConfirmedHostApply({
+        device,
+        hostId: row.hostId,
+        nic,
+        bridge: targetBridge ?? undefined,
+        createdBridge: false,
+      })
+      if (outcome === 'pending') return
+    }
     toast.error(apiErrorMessage(e))
   } finally {
     linuxApplyLoading.value = false
@@ -1198,13 +1275,16 @@ watch(formHostId, async (id, prev) => {
 
 async function confirmLinuxBridge() {
   const action = linuxApplyConfirm.value
-  linuxApplyConfirm.value = null
   if (!action) return
-  if (linuxApplySource.value === 'create-bridge') {
-    await applyCreateBridge(true)
-    return
+  try {
+    if (linuxApplySource.value === 'create-bridge') {
+      await applyCreateBridge(true)
+      return
+    }
+    await runInterfaceHostBridge(action, true)
+  } finally {
+    linuxApplyConfirm.value = null
   }
-  await runInterfaceHostBridge(action, true)
 }
 
 function resetCreateBridgeForm() {
@@ -1337,7 +1417,7 @@ async function applyCreateBridge(confirm = false) {
         : [{ id: 'dhcp', kind: 'dhcp', cidr: '' }],
       gateway: createBridgeGateway.value,
       dns: createBridgeDNS.value,
-    }), { timeout: 45_000 })
+    }), { timeout: HOST_APPLY_TIMEOUT_MS })
     linuxApplyResult.value = data
     if (!confirm) {
       if (data.needsConfirm || data.success) {
@@ -1375,6 +1455,37 @@ async function applyCreateBridge(confirm = false) {
       createBridgeError.value = data.message
     }
   } catch (e: unknown) {
+    if (confirm && isTransientHostApplyError(e)) {
+      const hostId = device?.hostId || devicesStore.selfDevice?.hostId || ''
+      const outcome = await recoverConfirmedHostApply({
+        device,
+        hostId,
+        nic,
+        bridge,
+        createdBridge: true,
+      })
+      if (outcome === 'pending') {
+        const body: NetworkWriteBody = {
+          name: `Bridged (${bridge})`,
+          mode: 'bridged',
+          bridge,
+        }
+        try {
+          if (useHomeUnion.value && device) await homeNets.create(device, body)
+          else await networkStore.create(body)
+        } catch (err: unknown) {
+          if (!isOccupiedBridgeConflict(err, bridge)) throw err
+        }
+        showCreateBridge.value = false
+        return
+      }
+      createBridgeError.value = outcome === 'unreachable'
+        ? 'Device still unreachable. If the Bridge landed, it auto-reverts within 60s.'
+        : outcome === 'reverted'
+          ? 'Create Bridge failed; leftover Bridge was reverted.'
+          : apiErrorMessage(e)
+      return
+    }
     createBridgeError.value = apiErrorMessage(e)
   } finally {
     linuxApplyLoading.value = false
@@ -1773,7 +1884,7 @@ async function doDeleteNetwork() {
       ? 'Name is a label for the Workload network. Default is the port plus -bridge. One unused NIC is the port.'
       : 'Linux uses the next-free brN. You can edit the name. One unused NIC is the port.'"
     rail-title="Bridge"
-    @close="showCreateBridge = false"
+    @close="!linuxApplyLoading && (showCreateBridge = false)"
   >
     <template #rail>
       <div class="split-s on">
@@ -1807,7 +1918,7 @@ async function doDeleteNetwork() {
     </div>
     <FormError v-if="createBridgeError" :message="createBridgeError" />
     <template #actions>
-      <AppButton @click="showCreateBridge = false">Cancel</AppButton>
+      <AppButton :disabled="linuxApplyLoading" @click="showCreateBridge = false">Cancel</AppButton>
       <AppButton
         variant="primary"
         :loading="linuxApplyLoading"
@@ -1920,15 +2031,21 @@ async function doDeleteNetwork() {
   <ConfirmDialog
     v-if="linuxApplyConfirm"
     :title="linuxApplySource === 'create-bridge' ? 'Create this Bridge?' : linuxApplyConfirm === 'delete' ? 'Delete this Bridge?' : linuxApplyConfirm === 'revert' ? 'Revert host network?' : 'Apply these network changes?'"
-    :message="[linuxApplyResult?.message, ...(linuxApplyResult?.warnings || [])].filter(Boolean).join(' ') || (linuxApplyConfirm === 'delete' ? 'Removes the Bridge and restores the NIC. Review the commands first.' : linuxApplyConfirm === 'apply' ? 'These changes go live for 30 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
+    :message="[linuxApplyResult?.message, ...(linuxApplyResult?.warnings || [])].filter(Boolean).join(' ') || (linuxApplyConfirm === 'delete' ? 'Removes the Bridge and restores the NIC. Review the commands first.' : linuxApplyConfirm === 'apply' ? 'These changes go live for 60 seconds. Keep them or they auto-revert.' : 'This NIC may carry SSH or the SPA.')"
     :details="linuxApplyResult?.changes ?? []"
     :commands="linuxApplyResult?.commands ?? []"
     :confirm-label="linuxApplyConfirm === 'delete' ? 'Delete' : linuxApplyConfirm === 'revert' ? 'Revert' : 'Apply'"
     :danger="linuxApplyConfirm === 'delete' || linuxApplyConfirm === 'revert'"
     :loading="linuxApplyLoading"
     @confirm="confirmLinuxBridge"
-    @cancel="linuxApplyConfirm = null"
+    @cancel="!linuxApplyLoading && (linuxApplyConfirm = null)"
   />
+
+  <div v-if="linuxApplyLoading" class="host-net-working" role="status">
+    <div class="host-net-working-card">
+      <p>Working… the Device may drop. Wait — do not retry.</p>
+    </div>
+  </div>
 
   <ConfirmDialog
     v-if="deleteTarget"
@@ -1942,3 +2059,28 @@ async function doDeleteNetwork() {
   />
   </div>
 </template>
+
+<style scoped>
+.host-net-working {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg, #0b0b0b) 55%, transparent);
+}
+.host-net-working-card {
+  max-width: 28rem;
+  padding: 20px 24px;
+  border-radius: 10px;
+  background: var(--surface, #161616);
+  color: var(--amber, #f5c518);
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 12px 40px color-mix(in srgb, #000 40%, transparent);
+}
+.host-net-working-card p {
+  margin: 0;
+}
+</style>
