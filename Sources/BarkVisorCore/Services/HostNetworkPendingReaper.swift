@@ -5,6 +5,11 @@ public enum HostNetworkPendingReaper {
     public static func expire(db: DatabasePool) async {
         for pending in pendingWithoutStamp() {
             guard pending.expired else { continue }
+            guard HostNetworkPendingCommitService.claimRevert(pending.target) else { continue }
+            defer { HostNetworkPendingCommitService.releaseRevert(pending.target) }
+            if HostNetworkPendingCommitService.stampExists(pending.target) {
+                continue
+            }
             do {
                 try revertHost(pending)
                 let bridge = workloadBridgeName(pending)

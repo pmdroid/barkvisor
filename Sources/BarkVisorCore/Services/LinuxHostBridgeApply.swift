@@ -379,10 +379,13 @@ public enum LinuxHostBridgeApply {
     public static func rollbackHelperScript(bridge: String, dataDir: String) -> String {
         let stamp = commitStampPath(bridge: bridge)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: bridge)
+        let claim = HostNetworkPendingCommitService.claimPath(bridge)
         let marker = "\(dataDir)/host-bridge-\(bridge).json"
         return """
         #!/bin/sh
         if [ -f \(stamp) ]; then exit 0; fi
+        if ! mkdir \(claim) 2>/dev/null; then exit 0; fi
+        if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi
         rm -f \(netplanPath(bridge: bridge)) || true
         /usr/sbin/netplan apply >/dev/null 2>&1 || true
         /usr/bin/nmcli connection delete barkvisor-\(bridge) >/dev/null 2>&1 || true
@@ -401,6 +404,7 @@ public enum LinuxHostBridgeApply {
           /sbin/ip link del \(bridge) >/dev/null 2>&1 || /usr/sbin/ip link del \(bridge) >/dev/null 2>&1 || true
         fi
         rm -f \(marker) \(pending) || true
+        rmdir \(claim) 2>/dev/null || true
         """
     }
 
@@ -1144,10 +1148,13 @@ public enum LinuxHostBridgeApply {
     ) -> String {
         let stamp = commitStampPath(bridge: device)
         let pending = HostNetworkPendingCommitService.linuxPendingPath(bridge: device)
+        let claim = HostNetworkPendingCommitService.claimPath(device)
         let nm = nmConnection.trimmingCharacters(in: .whitespacesAndNewlines)
         var lines: [String] = [
             "#!/bin/sh",
             "if [ -f \(stamp) ]; then exit 0; fi",
+            "if ! mkdir \(claim) 2>/dev/null; then exit 0; fi",
+            "if [ -f \(stamp) ]; then rmdir \(claim) 2>/dev/null; exit 0; fi",
         ]
         if !nm.isEmpty {
             for cidr in restoreCIDRs {
@@ -1185,6 +1192,7 @@ public enum LinuxHostBridgeApply {
         })
         lines.append("/usr/bin/networkctl reload >/dev/null 2>&1 || true")
         lines.append("rm -f \(pending) || true")
+        lines.append("rmdir \(claim) 2>/dev/null || true")
         return lines.joined(separator: "\n") + "\n"
     }
 

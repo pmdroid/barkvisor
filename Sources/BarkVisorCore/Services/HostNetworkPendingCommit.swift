@@ -180,6 +180,38 @@ public enum HostNetworkPendingCommitService {
         FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target))
     }
 
+    public static func claimPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
+        dataDir.appendingPathComponent("host-network", isDirectory: true)
+            .appendingPathComponent("\(target)-reverting").path
+    }
+
+    public static func claimRevert(_ target: String) -> Bool {
+        let path = claimPath(target)
+        let fm = FileManager.default
+        try? fm.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        if fm.fileExists(atPath: path) {
+            let attrs = try? fm.attributesOfItem(atPath: path)
+            let created = attrs?[.creationDate] as? Date ?? .distantPast
+            if Date().timeIntervalSince(created) < 30 {
+                return false
+            }
+            try? fm.removeItem(atPath: path)
+        }
+        do {
+            try fm.createDirectory(atPath: path, withIntermediateDirectories: false)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public static func releaseRevert(_ target: String) {
+        try? FileManager.default.removeItem(atPath: claimPath(target))
+    }
+
     public static func activePending() -> HostNetworkPendingCommit? {
         #if os(Linux)
             return listLinuxPending().first { !stampExists($0.target) }

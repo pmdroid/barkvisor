@@ -453,6 +453,17 @@ import Foundation
                     createdBridge: createdNow,
                 )
                 try HostNetworkPendingCommitService.writeMac(pending)
+                do {
+                    try HostNetworkRollbackLaunchd.arm(target: resolved.device)
+                } catch {
+                    HostNetworkPendingCommitService.clearMac(device: resolved.device)
+                    if createdNow {
+                        try? SocketVmnetLaunchd.remove(interface: resolved.device)
+                    } else {
+                        _ = try? MacHostNetworkApply.revert(device: resolved.device)
+                    }
+                    throw error
+                }
                 plan.applied = true
                 plan.pendingCommit = true
                 plan.commitDeadline = pending.commitDeadline
@@ -478,6 +489,7 @@ import Foundation
                     to: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device)),
                     options: .atomic,
                 )
+                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 plan.applied = true
                 plan.pendingCommit = false
@@ -486,6 +498,7 @@ import Foundation
                 let undoCreate = HostNetworkPendingCommitService.readMac(device: resolved.device)?.createdBridge == true
                     || MacHostBridgeApply.isSyntheticBridgeName(request.bridge)
                     && LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.createdBridge == true
+                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 if undoCreate {
                     try SocketVmnetLaunchd.remove(interface: resolved.device)
@@ -508,6 +521,7 @@ import Foundation
                     ? "Reverted host network changes and removed the new Bridge."
                     : "Reverted BarkVisor host network files. socket_vmnet was not stopped."
             case .delete:
+                HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                 HostNetworkPendingCommitService.clearMac(device: resolved.device)
                 let uplink = LinuxHostBridgeApply.readOwnerMarker(bridge: request.bridge)?.uplink
                 try SocketVmnetLaunchd.remove(interface: resolved.device)

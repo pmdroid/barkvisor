@@ -174,16 +174,18 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
                 )
             }
-            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
-            stopRollbackTimer(bridge: request.bridge)
             if probe.backend == .netplan, let pid = pending.netplanPid, pid > 0 {
-                _ = kill(pid_t(pid), SIGUSR1)
-                let deadline = Date().addingTimeInterval(30)
-                while Date() < deadline {
-                    if kill(pid_t(pid), 0) != 0 { break }
-                    Thread.sleep(forTimeInterval: 0.05)
+                if kill(pid_t(pid), SIGUSR1) != 0 {
+                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
+                }
+                var status: Int32 = 0
+                let waited = waitpid(pid_t(pid), &status, 0)
+                if waited <= 0 || status != 0 {
+                    throw BarkVisorError.internalError("netplan try did not keep the config.")
                 }
             }
+            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: request.bridge), "")
+            stopRollbackTimer(bridge: request.bridge)
             HostNetworkPendingCommitService.clearLinux(bridge: request.bridge)
         }
 

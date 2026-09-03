@@ -85,6 +85,8 @@ struct LinuxHostBridgeApplyTests {
         let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0", dataDir: "/var/lib/barkvisor")
         #expect(script.contains("host-network/br0-commit"))
         #expect(script.contains("then exit 0"))
+        #expect(script.contains("mkdir "))
+        #expect(script.contains("-reverting"))
         #expect(script.contains("nmcli connection delete barkvisor-br0"))
         #expect(script.contains("grep \"^barkvisor-br0-\""))
         #expect(script.contains("netplan apply"))
@@ -692,6 +694,15 @@ struct LinuxHostBridgeApplyTests {
         #expect(LinuxHostBridgeApply.dropsManagementSession(nic: "eth0", probe: only))
         let safe = probe(nic: "eth1", ready: true)
         #expect(!LinuxHostBridgeApply.dropsManagementSession(nic: "eth1", probe: safe))
+    }
+
+    @Test func `revert claim is exclusive then stealable`() {
+        let target = "bv-claim-\(UUID().uuidString.prefix(8))"
+        defer { HostNetworkPendingCommitService.releaseRevert(target) }
+        #expect(HostNetworkPendingCommitService.claimRevert(target))
+        #expect(!HostNetworkPendingCommitService.claimRevert(target))
+        HostNetworkPendingCommitService.releaseRevert(target)
+        #expect(HostNetworkPendingCommitService.claimRevert(target))
     }
 
     @Test func `pending path lives in dataDir host-network`() {
