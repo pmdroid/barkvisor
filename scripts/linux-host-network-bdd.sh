@@ -12,7 +12,11 @@ NIC="${HOSTNET_NIC:-bvtest0}"
 PRIMARY="${HOSTNET_PRIMARY:-10.200.55.1/24}"
 ALIAS="${HOSTNET_ALIAS:-10.200.55.50/24}"
 export BARKVISOR_ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
-export BARKVISOR_ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+if [[ -z "${BARKVISOR_ADMIN_PASSWORD:-}" ]]; then
+  echo "error: BARKVISOR_ADMIN_PASSWORD is required; no default is used (set it explicitly to avoid creating well-known admin accounts)" >&2
+  exit 1
+fi
+export BARKVISOR_ADMIN_PASSWORD
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   log "DRY_RUN=1 — syntax + feature"

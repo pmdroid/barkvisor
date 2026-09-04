@@ -320,6 +320,45 @@ public enum Config {
         return secret
     }
 
+    public static let ollamaKeySecretFileName = "ollama-key-secret"
+
+    public static func ollamaKeySecretFile(in dataDir: URL) -> URL {
+        dataDir.appendingPathComponent(ollamaKeySecretFileName)
+    }
+
+    public static func loadOllamaKeySecret(from dataDir: URL) -> String? {
+        let file = ollamaKeySecretFile(in: dataDir)
+        guard let data = try? Data(contentsOf: file),
+              let existing = String(data: data, encoding: .utf8)?.trimmingCharacters(
+                  in: .whitespacesAndNewlines,
+              ),
+              !existing.isEmpty
+        else {
+            return nil
+        }
+        return existing
+    }
+
+    public static func persistOllamaKeySecret(_ secret: String, to dataDir: URL) throws {
+        try persistPrivateFile(secret, at: ollamaKeySecretFile(in: dataDir), directory: dataDir)
+    }
+
+    public static var ollamaKeySecret: String {
+        if let existing = loadOllamaKeySecret(from: dataDir) {
+            return existing
+        }
+        let secret = PlatformRandom.secureBase64(byteCount: 32)
+        do {
+            try persistOllamaKeySecret(secret, to: dataDir)
+            Log.server.info("Generated and stored Ollama key secret on disk")
+        } catch {
+            Log.server.critical(
+                "Failed to write Ollama key secret to disk: \(error.localizedDescription)"
+            )
+        }
+        return secret
+    }
+
     /// Serializes API-key HMAC file mutation with `create` / pairing revoke+rotate.
     static func withAPIKeyHmacSecretLock<T>(
         _ body: () async throws -> T,

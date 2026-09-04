@@ -199,12 +199,19 @@ extension PairingService {
             throw PairingError.redeemFailed(status: http.status, reason: reason)
         }
 
-        let remote: PairingRedeemResponse
+        var remote: PairingRedeemResponse
         do {
             remote = try JSONDecoder().decode(PairingRedeemResponse.self, from: http.body)
         } catch {
             throw PairingError.invalidPayload("Issuer returned an invalid pairing response")
         }
+        try validateRedeemMaterial(remote, localHostId: hostId, now: now)
+        try unsealSharedIdentity(
+            &remote,
+            expected: payload,
+            localHostId: hostId,
+            joinerDeviceKeyPEM: material.deviceKeyPEM,
+        )
         persistPendingRedeem(remote, code: payload.code, dataDir: dataDir)
 
         let result = try await applyTrust(
@@ -286,6 +293,29 @@ extension PairingService {
         PairingCode.hashesEqual(pending.codeHash, PairingCode.hash(expected.code))
             && pending.response.hostId == expected.hostId
             && pending.response.deviceFingerprint.lowercased() == expected.fingerprint.lowercased()
+    }
+
+    static func unsealSharedIdentity(
+        _ response: inout PairingRedeemResponse,
+        expected: PairingPayload,
+        localHostId: String,
+        joinerDeviceKeyPEM: String,
+    ) throws {
+        if response.jwtSecret != nil || response.adminUser != nil {
+            throw PairingError.invalidPayload(
+                "Issuer sent pairing identity outside the sealed envelope",
+            )
+        }
+        guard let seal = response.identitySeal else { return }
+        let identity = try PairingIdentitySealing.open(
+            seal,
+            joinerDeviceKeyPEM: joinerDeviceKeyPEM,
+            issuerCertificatePEM: response.deviceCertificatePEM,
+            issuerHostId: expected.hostId,
+            joinerHostId: localHostId,
+        )
+        response.jwtSecret = identity.jwtSecret.isEmpty ? nil : identity.jwtSecret
+        response.adminUser = identity.adminUser
     }
 
     static func persistReceipt(_ receipt: PairingPeerReceipt, dataDir: URL) throws {

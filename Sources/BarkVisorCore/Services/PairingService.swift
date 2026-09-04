@@ -273,7 +273,12 @@ public enum PairingService {
                 now: input.now,
                 devices: devices,
             )
-            return attachIdentity(replayed, input: input)
+            return try attachIdentity(
+                replayed,
+                input: input,
+                material: material,
+                joinerCertificatePEM: req.deviceCertificatePEM,
+            )
         }
         // New unused code: first pair or PAS-77 re-pair. issueAndPin
         // replaces any previous pin for this hostId; registerPairedDevice
@@ -309,7 +314,7 @@ public enum PairingService {
             now: input.now,
             devices: devices,
         )
-        return attachIdentity(
+        return try attachIdentity(
             PairingRedeemResponse(
                 hostId: input.issuerHostId,
                 deviceCertificatePEM: material.deviceCertificatePEM,
@@ -321,6 +326,8 @@ public enum PairingService {
                 agentPort: consumed.agentPort,
             ),
             input: input,
+            material: material,
+            joinerCertificatePEM: req.deviceCertificatePEM,
         )
     }
 
@@ -402,19 +409,38 @@ public enum PairingService {
 
     /// Shared login material for the joiner (PAS-81). Reads `dataDir/jwt-secret`
     /// when RedeemInput does not pass one; never generates a secret here.
+    /// Sealed to the joiner Device key; plaintext identity never goes on the wire.
     static func attachIdentity(
         _ response: PairingRedeemResponse,
         input: RedeemInput,
-    ) -> PairingRedeemResponse {
+        material: HomeCertificateMaterial,
+        joinerCertificatePEM: String,
+    ) throws -> PairingRedeemResponse {
         var copy = response
-        let secret = input.jwtSecret ?? Config.loadJWTSecret(from: input.dataDir)
-        if let secret, !secret.isEmpty {
-            copy.jwtSecret = secret
+        let secret = input.jwtSecret ?? Config.loadJWTSecret(from: input.dataDir) ?? ""
+        var admin = input.adminUser
+        if let candidate = admin, candidate.id.isEmpty || candidate.username.isEmpty {
+            admin = nil
         }
-        if let admin = input.adminUser,
-           !admin.id.isEmpty,
-           !admin.username.isEmpty {
-            copy.adminUser = admin
+        guard !secret.isEmpty || admin != nil else { return copy }
+        let identity = PairingSharedIdentity(
+            jwtSecret: secret,
+            adminUser: admin,
+        )
+        do {
+            copy.identitySeal = try PairingIdentitySealing.seal(
+                identity,
+                issuerDeviceKeyPEM: material.deviceKeyPEM,
+                joinerCertificatePEM: joinerCertificatePEM,
+                issuerHostId: input.issuerHostId,
+                joinerHostId: input.request.hostId,
+            )
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to seal pairing identity: \(error.localizedDescription)",
+            )
         }
         return copy
     }

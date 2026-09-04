@@ -90,6 +90,30 @@ public struct PairingAdminUser: Codable, Sendable, Equatable {
     }
 }
 
+/// Shared login material copied at pair time (PAS-81). Sealed to the joiner
+/// Device key before it ever goes on the wire.
+public struct PairingSharedIdentity: Codable, Sendable, Equatable {
+    public var jwtSecret: String
+    public var adminUser: PairingAdminUser?
+
+    public init(jwtSecret: String, adminUser: PairingAdminUser?) {
+        self.jwtSecret = jwtSecret
+        self.adminUser = adminUser
+    }
+}
+
+/// AES-GCM envelope holding `PairingSharedIdentity`, sealed under ECDH of the
+/// issuer Device key and the joiner Device certificate public key so a LAN
+/// observer of the plaintext HTTP redeem cannot read the HMAC secret or the
+/// admin password hash.
+public struct PairingIdentitySeal: Codable, Sendable, Equatable {
+    public var ciphertext: String
+
+    public init(ciphertext: String) {
+        self.ciphertext = ciphertext
+    }
+}
+
 /// Trust material returned by a successful redeem.
 public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var hostId: String
@@ -101,8 +125,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var issuedFingerprint: String
     public var agentPort: Int
     public var apiVersion: Int
-    /// Issuer HMAC secret (`dataDir/jwt-secret`). Optional so older pending
-    /// redeem files still decode; redeem attaches it when present (PAS-81).
+    public var identitySeal: PairingIdentitySeal?
     public var jwtSecret: String?
     public var adminUser: PairingAdminUser?
 
@@ -116,6 +139,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         issuedFingerprint: String,
         agentPort: Int,
         apiVersion: Int = APIContract.version,
+        identitySeal: PairingIdentitySeal? = nil,
         jwtSecret: String? = nil,
         adminUser: PairingAdminUser? = nil,
     ) {
@@ -128,6 +152,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         self.issuedFingerprint = issuedFingerprint
         self.agentPort = agentPort
         self.apiVersion = apiVersion
+        self.identitySeal = identitySeal
         self.jwtSecret = jwtSecret
         self.adminUser = adminUser
     }

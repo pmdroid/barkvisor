@@ -85,16 +85,23 @@ struct CodingAgentImageTests {
         #expect(!yaml.contains("opencode.ai/install"))
         #expect(!yaml.contains("| bash"))
         #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
-        #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(!yaml.contains("export OPENAI_API_KEY="))
+        #expect(yaml.contains("if [ -r /etc/default/barkvisor-openai ]"))
         #expect(CodingAgentImage.openaiAPIKeyFromUserData(yaml) == "ollama")
+        let credential = try #require(CodingAgentImage.webTerminalCredentialFromUserData(yaml))
+        #expect(CodingAgentImage.isWebTerminalCredential(credential))
+        #expect(yaml.contains(#"ExecStart=/bin/sh -ec 'exec /usr/local/bin/ttyd --writable --port 7681 -c "$TTYD_CREDENTIAL" tmux new -A -s main'"#))
+        #expect(yaml.contains("- path: /etc/default/barkvisor-ttyd\n    permissions: '0600'"))
+        #expect(yaml.contains("TTYD_CREDENTIAL=\(credential)"))
+        let regen = CodingAgentImage.userDataForGPU(gpuAttached: false, existingUserData: yaml)
+        #expect(CodingAgentImage.webTerminalCredentialFromUserData(regen) == credential)
         let grantKey = try CodingAgentImage.openaiAPIKeyForHomeGrant("barkvisor_abc")
         let granted = CodingAgentImage.userData(
             openaiBaseURL: CodingAgentImage.deviceOllamaBaseURL,
             openaiAPIKey: grantKey,
         )
-        #expect(granted.contains("export OPENAI_API_KEY='barkvisor_abc'"))
         #expect(granted.contains("OPENAI_API_KEY=barkvisor_abc"))
-        #expect(!granted.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(!granted.contains("export OPENAI_API_KEY="))
         #expect(CodingAgentImage.openaiAPIKeyFromUserData(granted) == "barkvisor_abc")
         let appliedGrant = try CodingAgentImage.applyingCreateDefaults(
             params: CreateVMParams(
@@ -110,7 +117,7 @@ struct CodingAgentImageTests {
         )
         #expect(appliedGrant.cloudInit?.userData?.contains("OPENAI_API_KEY=barkvisor_abc") == true)
         #expect(yaml.contains("permissions: '0600'"))
-        #expect(yaml.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+        #expect(!yaml.contains("chown ubuntu:ubuntu"))
         #expect(yaml.contains("/etc/git-hooks/pre-push"))
         #expect(yaml.contains("/var/lib/barkvisor/last-git-push"))
         let byo = CodingAgentImage.userData(
@@ -119,7 +126,8 @@ struct CodingAgentImageTests {
         )
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))
-        #expect(byo.contains("export OPENAI_API_KEY='sk-test'"))
+        #expect(byo.contains("OPENAI_API_KEY=sk-test"))
+        #expect(!byo.contains("export OPENAI_API_KEY="))
         #expect(try CodingAgentImage.normalizeOpenAIAPIKey(nil) == "ollama")
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIAPIKey("", required: true)
@@ -292,6 +300,11 @@ struct CodingAgentImageTests {
             #expect(source.contains("/var/lib/barkvisor/last-git-push"))
             #expect(source.contains("posixSingleQuoted"))
             #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+            #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-ttyd"))
+            #expect(source.contains("/etc/default/barkvisor-ttyd\n"))
+            #expect(source.contains("TTYD_CREDENTIAL"))
+            #expect(source.contains("-c \"$TTYD_CREDENTIAL\""))
+            #expect(source.contains("if [ -r /etc/default/barkvisor-openai ]"))
             #expect(!source.contains("claude.ai/install.sh"))
         }
         #expect(console.contains("isShellSafeOpenAIBaseURL"))
@@ -303,7 +316,7 @@ struct CodingAgentImageTests {
         #expect(frontend.contains("url.hostname"))
         for source in [console, frontend] {
             #expect(source.contains("permissions: '0600'"))
-            #expect(source.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+            #expect(!source.contains("chown ubuntu:ubuntu"))
         }
     }
 }

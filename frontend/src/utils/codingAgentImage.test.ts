@@ -5,14 +5,19 @@ import {
   CODING_AGENT_SLUGS,
   DEVICE_OLLAMA_BASE_URL,
   OPENCODE_SHA256_AARCH64,
+  DEFAULT_OPENAI_API_KEY,
+  WEB_TERMINAL_CREDENTIAL_PREFIX,
   codingAgentUserData,
   defaultWorkloadClassForImage,
+  generateWebTerminalCredential,
   isCodingAgentImage,
+  isWebTerminalCredential,
   mergeCodingAgentUserData,
   normalizeOpenAIBaseURL,
   openaiAPIKeyForHomeGrant,
   openaiAPIKeyFromUserData,
   usesDeviceOllama,
+  webTerminalCredentialFromUserData,
 } from './codingAgentImage'
 
 describe('codingAgentImage (PAS-271)', () => {
@@ -53,12 +58,22 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).toContain('/usr/local/bin')
     expect(yaml).not.toContain('export OPENAI_BASE_URL="')
     expect(yaml).toContain("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
-    expect(yaml).toContain("export OPENAI_API_KEY='ollama'")
+    expect(yaml).toContain('OPENAI_API_KEY=ollama')
+    expect(yaml).not.toContain('export OPENAI_API_KEY=')
     expect(yaml).toContain("permissions: '0600'")
-    expect(yaml).toContain('chown ubuntu:ubuntu /etc/default/barkvisor-openai')
+    expect(yaml).not.toContain('chown ubuntu:ubuntu')
+    expect(yaml).toContain('- path: /etc/default/barkvisor-ttyd')
+    expect(yaml).toContain('TTYD_CREDENTIAL=')
+    expect(yaml).toContain('EnvironmentFile=-/etc/default/barkvisor-ttyd')
+    expect(yaml).toContain('-c "$TTYD_CREDENTIAL"')
+    const credential = webTerminalCredentialFromUserData(yaml)
+    expect(credential).not.toBeNull()
+    expect(isWebTerminalCredential(credential!)).toBe(true)
+    const fresh = codingAgentUserData(DEVICE_OLLAMA_BASE_URL, 'ollama', credential!)
+    expect(webTerminalCredentialFromUserData(fresh)).toBe(credential)
     const byoKey = codingAgentUserData('https://api.example/v1', 'sk-test')
-    expect(byoKey).toContain("export OPENAI_API_KEY='sk-test'")
     expect(byoKey).toContain('OPENAI_API_KEY=sk-test')
+    expect(byoKey).not.toContain('export OPENAI_API_KEY=')
     expect(yaml).toContain(ALLOW_HOST_OLLAMA_YAML)
     expect(yaml).not.toContain('# barkvisor:allow-host-ollama')
     expect(yaml).toContain(CLAUDE_SHA256_AARCH64)
@@ -82,12 +97,11 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(() => mergeCodingAgentUserData('', img, 'byo', 'https://api.example/v1')).toThrow()
     const byo = mergeCodingAgentUserData('', img, 'byo', 'https://api.example/v1', 'sk-test')
     expect(byo).toContain('https://api.example/v1')
-    expect(byo).toContain("export OPENAI_API_KEY='sk-test'")
+    expect(byo).toContain('OPENAI_API_KEY=sk-test')
     expect(mergeCodingAgentUserData('', { name: 'Ubuntu' }, 'device-ollama', '')).toBe('')
     const granted = mergeCodingAgentUserData('', img, 'home-ollama', '', '', 'barkvisor_abc')
-    expect(granted).toContain("export OPENAI_API_KEY='barkvisor_abc'")
     expect(granted).toContain('OPENAI_API_KEY=barkvisor_abc')
-    expect(granted).not.toContain("export OPENAI_API_KEY='ollama'")
+    expect(granted).not.toContain('export OPENAI_API_KEY=')
     expect(openaiAPIKeyFromUserData(granted)).toBe('barkvisor_abc')
     expect(openaiAPIKeyFromUserData(injected)).toBe('ollama')
   })
@@ -104,6 +118,17 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(() => mergeCodingAgentUserData('', img, 'home-ollama', '', '', '  ')).toThrow(
       'OPENAI_API_KEY is required',
     )
-    expect(mergeCodingAgentUserData('', img, 'home-ollama', '')).toContain("export OPENAI_API_KEY='ollama'")
+    expect(mergeCodingAgentUserData('', img, 'home-ollama', '')).toContain('OPENAI_API_KEY=ollama')
+  })
+
+  test('web terminal credentials are prefixed hex, gated in ttyd', () => {
+    const credential = generateWebTerminalCredential()
+    expect(WEB_TERMINAL_CREDENTIAL_PREFIX).toBe('barkvisor-vm:')
+    expect(credential.startsWith(WEB_TERMINAL_CREDENTIAL_PREFIX)).toBe(true)
+    expect(isWebTerminalCredential(credential)).toBe(true)
+    expect(isWebTerminalCredential('barkvisor-vm:not-hex-32')).toBe(false)
+    expect(isWebTerminalCredential('password1')).toBe(false)
+    expect(webTerminalCredentialFromUserData('TTYD_CREDENTIAL=' + credential)).toBe(credential)
+    expect(webTerminalCredentialFromUserData('junk')).toBeNull()
   })
 })

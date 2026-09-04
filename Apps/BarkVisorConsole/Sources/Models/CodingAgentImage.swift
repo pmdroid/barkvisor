@@ -59,6 +59,33 @@ enum CodingAgentImage {
 
     static let defaultOpenAIAPIKey = "ollama"
 
+    static let webTerminalCredentialPrefix = "barkvisor-vm:"
+
+    static func generateWebTerminalCredential() -> String {
+        webTerminalCredentialPrefix + UUID().uuidString
+            .replacingOccurrences(of: "-", with: "")
+            .lowercased()
+    }
+
+    static func isWebTerminalCredential(_ value: String) -> Bool {
+        guard value.hasPrefix(webTerminalCredentialPrefix) else { return false }
+        let token = value.dropFirst(webTerminalCredentialPrefix.count)
+        return token.count == 32 && token.allSatisfy(\.isHexDigit)
+    }
+
+    static func webTerminalCredentialFromUserData(_ userData: String?) -> String? {
+        guard let userData, !userData.isEmpty else { return nil }
+        let pattern = #"(?m)^[ \t]*TTYD_CREDENTIAL=([A-Za-z0-9._+=:-]+)[ \t]*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: userData, range: NSRange(userData.startIndex..., in: userData),
+              ),
+              let range = Range(match.range(at: 1), in: userData)
+        else { return nil }
+        let value = String(userData[range])
+        return isWebTerminalCredential(value) ? value : nil
+    }
+
     static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
         guard let raw else { return defaultOpenAIAPIKey }
         return try normalizeOpenAIAPIKey(raw, required: true)
@@ -117,9 +144,12 @@ enum CodingAgentImage {
     static func userData(
         openaiBaseURL: String,
         openaiAPIKey: String = defaultOpenAIAPIKey,
+        webTerminalCredential: String? = nil,
     ) -> String {
+        let credential = webTerminalCredential.flatMap {
+            isWebTerminalCredential($0) ? $0 : nil
+        } ?? generateWebTerminalCredential()
         let quotedURL = posixSingleQuoted(openaiBaseURL)
-        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL) ? "\(allowHostOllamaYAML)\n" : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
@@ -146,11 +176,18 @@ enum CodingAgentImage {
             content: |
               OPENAI_BASE_URL=\(openaiBaseURL)
               OPENAI_API_KEY=\(openaiAPIKey)
-          - path: /etc/profile.d/barkvisor-openai.sh
+          - path: /etc/default/barkvisor-ttyd
             permissions: '0600'
             content: |
+              TTYD_CREDENTIAL=\(credential)
+          - path: /etc/profile.d/barkvisor-openai.sh
+            permissions: '0644'
+            content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY=\(quotedKey)
+              if [ -r /etc/default/barkvisor-openai ]; then
+                . /etc/default/barkvisor-openai
+                export OPENAI_BASE_URL OPENAI_API_KEY
+              fi
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |
@@ -163,7 +200,8 @@ enum CodingAgentImage {
               Type=simple
               User=ubuntu
               EnvironmentFile=-/etc/default/barkvisor-openai
-              ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
+              EnvironmentFile=-/etc/default/barkvisor-ttyd
+              ExecStart=/bin/sh -ec 'exec /usr/local/bin/ttyd --writable --port \(ttydPort) -c "$TTYD_CREDENTIAL" tmux new -A -s main'
               Restart=on-failure
 
               [Install]
@@ -216,7 +254,6 @@ enum CodingAgentImage {
               install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
               install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
         runcmd:
-          - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
           - install -d -m 1777 /var/lib/barkvisor
           - git config --system core.hooksPath /etc/git-hooks
           - systemctl enable --now qemu-guest-agent

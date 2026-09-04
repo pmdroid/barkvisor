@@ -102,9 +102,13 @@ export function usesDeviceOllama(url: string): boolean {
 export function codingAgentUserData(
   openaiBaseURL: string,
   openaiAPIKey = DEFAULT_OPENAI_API_KEY,
+  webTerminalCredential?: string,
 ): string {
+  const credential =
+    webTerminalCredential && isWebTerminalCredential(webTerminalCredential)
+      ? webTerminalCredential
+      : generateWebTerminalCredential()
   const quotedURL = posixSingleQuoted(openaiBaseURL)
-  const quotedKey = posixSingleQuoted(openaiAPIKey)
   const marker = usesDeviceOllama(openaiBaseURL) ? `${ALLOW_HOST_OLLAMA_YAML}\n` : ''
   return `${marker}package_update: true
 packages:
@@ -120,11 +124,18 @@ write_files:
     content: |
       OPENAI_BASE_URL=${openaiBaseURL}
       OPENAI_API_KEY=${openaiAPIKey}
-  - path: /etc/profile.d/barkvisor-openai.sh
+  - path: /etc/default/barkvisor-ttyd
     permissions: '0600'
     content: |
+      TTYD_CREDENTIAL=${credential}
+  - path: /etc/profile.d/barkvisor-openai.sh
+    permissions: '0644'
+    content: |
       export OPENAI_BASE_URL=${quotedURL}
-      export OPENAI_API_KEY=${quotedKey}
+      if [ -r /etc/default/barkvisor-openai ]; then
+        . /etc/default/barkvisor-openai
+        export OPENAI_BASE_URL OPENAI_API_KEY
+      fi
   - path: /etc/systemd/system/ttyd.service
     permissions: '0644'
     content: |
@@ -137,7 +148,8 @@ write_files:
       Type=simple
       User=ubuntu
       EnvironmentFile=-/etc/default/barkvisor-openai
-      ExecStart=/usr/local/bin/ttyd --writable --port ${WEB_TERMINAL_PORT} tmux new -A -s main
+      EnvironmentFile=-/etc/default/barkvisor-ttyd
+      ExecStart=/bin/sh -ec 'exec /usr/local/bin/ttyd --writable --port ${WEB_TERMINAL_PORT} -c "$TTYD_CREDENTIAL" tmux new -A -s main'
       Restart=on-failure
 
       [Install]
@@ -190,7 +202,6 @@ write_files:
       install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v${CLAUDE_VERSION}/\${claude_tar}" "$claude_sha" claude
       install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/\${oc_tar}" "$oc_sha" opencode
 runcmd:
-  - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
   - install -d -m 1777 /var/lib/barkvisor
   - git config --system core.hooksPath /etc/git-hooks
   - systemctl enable --now qemu-guest-agent
@@ -202,6 +213,28 @@ runcmd:
 export function openaiAPIKeyForHomeGrant(raw?: string | null): string {
   if (raw == null) return DEFAULT_OPENAI_API_KEY
   return normalizeOpenAIAPIKey(raw, true)
+}
+
+export const WEB_TERMINAL_CREDENTIAL_PREFIX = 'barkvisor-vm:'
+
+export function generateWebTerminalCredential(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return WEB_TERMINAL_CREDENTIAL_PREFIX + hex
+}
+
+export function isWebTerminalCredential(value: string): boolean {
+  if (!value.startsWith(WEB_TERMINAL_CREDENTIAL_PREFIX)) return false
+  const token = value.slice(WEB_TERMINAL_CREDENTIAL_PREFIX.length)
+  return token.length === 32 && /^[0-9a-f]+$/.test(token)
+}
+
+export function webTerminalCredentialFromUserData(userData?: string | null): string | null {
+  if (!userData) return null
+  const match = userData.match(/^[ \t]*TTYD_CREDENTIAL=([A-Za-z0-9._+=:-]+)[ \t]*$/m)
+  const value = match?.[1]
+  return value && isWebTerminalCredential(value) ? value : null
 }
 
 export function openaiAPIKeyFromUserData(userData?: string | null): string | null {

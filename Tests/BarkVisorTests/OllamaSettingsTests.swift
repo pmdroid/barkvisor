@@ -17,6 +17,62 @@ struct OllamaSettingsTests {
         dbPool = pool
     }
 
+    @Test func `stored key is sealed at rest and decrypts on read`() throws {
+        _ = try dbPool.write { db in
+            try OllamaSettings.save(
+                hostId: "desk",
+                endpoint: nil,
+                apiKey: "sk-live-abcd1234",
+                updateApiKey: true,
+                selfHostId: "home",
+                db: db,
+                secret: "test-ollama-secret",
+            )
+        }
+        let stored = try dbPool.read { db in
+            try OllamaHostSettingRecord.fetch(db, hostId: "desk")?.apiKey
+        }
+        let sealed = try #require(stored)
+        #expect(sealed.hasPrefix("barkvisor-enc1:"))
+        #expect(!sealed.contains("sk-live-abcd1234"))
+        let loaded = try dbPool.read { db in
+            try OllamaSettings.load(hostId: "desk", from: db, secret: "test-ollama-secret")
+        }
+        #expect(loaded.apiKey == "sk-live-abcd1234")
+    }
+
+    @Test func `legacy plaintext rows keep working until re-saved`() throws {
+        try dbPool.write { db in
+            try OllamaHostSettingRecord(
+                hostId: "desk",
+                endpoint: "http://127.0.0.1:11434",
+                apiKey: "legacy-plaintext-key",
+            ).insert(db)
+        }
+        let loaded = try dbPool.read { db in
+            try OllamaSettings.load(hostId: "desk", from: db, secret: "any-secret")
+        }
+        #expect(loaded.apiKey == "legacy-plaintext-key")
+    }
+
+    @Test func `lost key secret makes stored ciphertext unreadable`() throws {
+        _ = try dbPool.write { db in
+            try OllamaSettings.save(
+                hostId: "desk",
+                endpoint: nil,
+                apiKey: "sk-live-abcd1234",
+                updateApiKey: true,
+                selfHostId: "home",
+                db: db,
+                secret: "secret-a",
+            )
+        }
+        let loaded = try dbPool.read { db in
+            try OllamaSettings.load(hostId: "desk", from: db, secret: "secret-b")
+        }
+        #expect(loaded.apiKey == nil)
+    }
+
     @Test func `legacy global key seeds self and stays as fallback`() throws {
         try dbPool.write { db in
             try AppSetting(key: OllamaSettings.apiKeyKey, value: "global-secret-key")
