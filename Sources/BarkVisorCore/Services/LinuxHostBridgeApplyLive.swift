@@ -742,7 +742,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             if let helperModes = pending?.helperModes {
                 for (path, mode) in helperModes.sorted(by: { $0.key < $1.key })
-                where FileManager.default.fileExists(atPath: path) {
+                    where FileManager.default.fileExists(atPath: path) {
                     try? FileManager.default.setAttributes(
                         [.posixPermissions: NSNumber(value: mode)],
                         ofItemAtPath: path,

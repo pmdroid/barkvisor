@@ -25,7 +25,7 @@ struct VMStartHelpersTests {
         let sock = tempFileURL()
         let process = Process()
         #expect(
-            !(await VMManager.waitForSocket(sock, process: process, pollCount: 3, pollNanos: 1_000)),
+            await !(VMManager.waitForSocket(sock, process: process, pollCount: 3, pollNanos: 1_000)),
         )
     }
 
@@ -36,11 +36,11 @@ struct VMStartHelpersTests {
         try process.run()
         process.waitUntilExit()
         #expect(
-            !(await VMManager.waitForSocket(sock, process: process, pollCount: 5, pollNanos: 1_000)),
+            await !(VMManager.waitForSocket(sock, process: process, pollCount: 5, pollNanos: 1_000)),
         )
     }
 
-    @Test func `assert host ports fails on bound udp hostfwd`() async throws {
+    @Test func `assert host ports fails on bound udp hostfwd`() throws {
         let port = try Self.bindUDPEphemeralPort()
         defer { close(port.fd) }
         let vm = try Self.makeVM(portForwards: [

@@ -353,7 +353,7 @@ public enum Config {
             Log.server.info("Generated and stored Ollama key secret on disk")
         } catch {
             Log.server.critical(
-                "Failed to write Ollama key secret to disk: \(error.localizedDescription)"
+                "Failed to write Ollama key secret to disk: \(error.localizedDescription)",
             )
         }
         return secret
