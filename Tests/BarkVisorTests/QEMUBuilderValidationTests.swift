@@ -282,6 +282,18 @@ struct QEMUBuilderValidationTests {
 
     // MARK: - Sockets / VNC clipboard
 
+    @Test func `tpm device args reconnect on chrtpm socket`() {
+        let args = QEMUBuilder.tpmDeviceArgs(
+            tpmSockPath: "/tmp/vm/swtpm.sock",
+            tpmDevice: "tpm-tis-device,tpmdev=tpm0",
+        )
+        #expect(args == [
+            "-chardev", "socket,id=chrtpm,path=/tmp/vm/swtpm.sock,reconnect=5",
+            "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+            "-device", "tpm-tis-device,tpmdev=tpm0",
+        ])
+    }
+
     @Test func `socketArgs keep lossy VNC and qemu-vdagent clipboard`() {
         let sockets = VMSockets(vmID: "01234567-89ab-cdef-0123-456789abcdef")
         let args = QEMUBuilder.socketArgs(sockets, vdagentClipboard: true)
@@ -293,6 +305,10 @@ struct QEMUBuilderValidationTests {
         #expect(args.contains("qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"))
         #expect(args.contains("virtserialport,chardev=vdagent,name=com.redhat.spice.0"))
         #expect(args.contains("virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"))
+        for sock in [sockets.qmp, sockets.event] {
+            #expect(args.contains("unix:\(sock.path),server=on,wait=off"))
+        }
+        #expect(!args.contains { $0.contains("nowait") })
     }
 
     @Test func `socketArgs omit qemu-vdagent when this Device QEMU has no such chardev`() {

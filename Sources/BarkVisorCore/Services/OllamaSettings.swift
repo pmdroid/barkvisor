@@ -1,3 +1,8 @@
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    import Crypto
+#endif
 import Foundation
 import GRDB
 
@@ -6,30 +11,96 @@ import GRDB
 public enum OllamaSettings {
     public static let endpointKey = "ollama.endpoint"
     public static let apiKeyKey = "ollama.api_key"
+    static let ciphertextPrefix = "barkvisor-enc1:"
 
     public static func maskedAPIKey(_ raw: String?) -> String? {
         nonempty(raw) == nil ? nil : "••••"
+    }
+
+    static func sealAPIKey(_ plaintext: String, secret: String) throws -> String {
+        let key = SymmetricKey(data: SHA256.hash(data: Data(secret.utf8)))
+        let sealed = try AES.GCM.seal(Data(plaintext.utf8), using: key)
+        guard let combined = sealed.combined else {
+            throw BarkVisorError.internalError("Unable to seal Ollama key")
+        }
+        return ciphertextPrefix + combined.base64EncodedString()
+    }
+
+    static func storedAPIKey(_ raw: String?, secret: String) -> String? {
+        guard let raw, nonempty(raw) != nil else { return nil }
+        guard raw.hasPrefix(ciphertextPrefix) else { return raw }
+        let key = SymmetricKey(data: SHA256.hash(data: Data(secret.utf8)))
+        guard let payload = Data(base64Encoded: String(raw.dropFirst(ciphertextPrefix.count))),
+              let sealed = try? AES.GCM.SealedBox(combined: payload),
+              let opened = try? AES.GCM.open(sealed, using: key),
+              let plaintext = String(data: opened, encoding: .utf8)
+        else {
+            Log.server.warning("Stored Ollama key could not be decrypted; re-enter it")
+            return nil
+        }
+        return plaintext
+    }
+
+    static func resealLegacyPlaintext(
+        _ raw: String?,
+        secret: String,
+        write: (String) throws -> Void,
+    ) {
+        guard let raw, nonempty(raw) != nil, !raw.hasPrefix(ciphertextPrefix),
+              storedAPIKey(raw, secret: secret) != nil
+        else { return }
+        do {
+            try write(sealAPIKey(raw, secret: secret))
+        } catch {
+            Log.server.warning("Could not re-seal legacy Ollama key: \(error.localizedDescription)")
+        }
     }
 
     public static func load(from db: Database) throws -> (endpoint: URL, apiKey: String?) {
         try load(hostId: Config.hostId, from: db)
     }
 
-    public static func load(hostId: String, from db: Database) throws -> (endpoint: URL, apiKey: String?) {
+    public static func load(
+        hostId: String,
+        from db: Database,
+        secret: String? = nil,
+    ) throws -> (endpoint: URL, apiKey: String?) {
         let hostId = try requireHostId(hostId)
+        let keySecret = secret ?? Config.ollamaKeySecret
         if let row = try OllamaHostSettingRecord.fetch(db, hostId: hostId) {
             let global = try loadGlobalRaw(from: db)
             let endpointRaw = nonempty(row.endpoint) ?? global.endpoint
-            // NULL apiKey inherits the global key; empty string is an explicit clear.
             let apiKeyRaw = row.apiKey == nil ? global.apiKey : nonempty(row.apiKey)
-            return try credentials(endpointRaw: endpointRaw, apiKeyRaw: apiKeyRaw)
+            resealLegacyPlaintext(row.apiKey, secret: keySecret) { sealed in
+                var resealed = row
+                resealed.apiKey = sealed
+                try resealed.save(db)
+            }
+            if row.apiKey == nil {
+                resealLegacyPlaintext(global.apiKey, secret: keySecret) { sealed in
+                    try AppSetting(key: apiKeyKey, value: sealed).save(db, onConflict: .replace)
+                }
+            }
+            return try credentials(
+                endpointRaw: endpointRaw,
+                apiKeyRaw: storedAPIKey(apiKeyRaw, secret: keySecret),
+            )
         }
-        return try loadGlobal(from: db)
+        return try loadGlobal(from: db, secret: keySecret)
     }
 
-    public static func loadGlobal(from db: Database) throws -> (endpoint: URL, apiKey: String?) {
+    public static func loadGlobal(
+        from db: Database,
+        secret: String? = nil,
+    ) throws -> (endpoint: URL, apiKey: String?) {
         let raw = try loadGlobalRaw(from: db)
-        return try credentials(endpointRaw: raw.endpoint, apiKeyRaw: raw.apiKey)
+        resealLegacyPlaintext(raw.apiKey, secret: secret ?? Config.ollamaKeySecret) { sealed in
+            try AppSetting(key: apiKeyKey, value: sealed).save(db, onConflict: .replace)
+        }
+        return try credentials(
+            endpointRaw: raw.endpoint,
+            apiKeyRaw: storedAPIKey(raw.apiKey, secret: secret ?? Config.ollamaKeySecret),
+        )
     }
 
     public static func snapshot(hostId: String, from db: Database) throws -> OllamaHostSettings {
@@ -67,8 +138,10 @@ public enum OllamaSettings {
         updateApiKey: Bool,
         selfHostId: String,
         db: Database,
+        secret: String? = nil,
     ) throws -> OllamaSettingsSnapshot {
         let selfHostId = try requireHostId(selfHostId)
+        let keySecret = secret ?? Config.ollamaKeySecret
         try seedSelfFromLegacy(hostId: selfHostId, db: db)
         let target = try optionalHostId(hostId) ?? selfHostId
         let existing = try OllamaHostSettingRecord.fetch(db, hostId: target)
@@ -78,8 +151,8 @@ public enum OllamaSettings {
             row.endpoint = url.absoluteString
         }
         if updateApiKey {
-            // Persist "" as an explicit clear (no inherit). Do not coerce empty to nil.
-            row.apiKey = (apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = (apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            row.apiKey = trimmed.isEmpty ? "" : try sealAPIKey(trimmed, secret: keySecret)
         }
         try row.save(db)
         return try list(knownHostIds: [target], selfHostId: selfHostId, from: db)

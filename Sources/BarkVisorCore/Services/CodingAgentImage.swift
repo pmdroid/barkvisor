@@ -77,6 +77,20 @@ public enum CodingAgentImage {
 
     public static let defaultOpenAIAPIKey = "ollama"
 
+    public static let webTerminalCredentialPrefix = "barkvisor-vm:"
+
+    public static func generateWebTerminalCredential() -> String {
+        let hex = PlatformRandom.secureBytes(count: 16)
+            .map { String(format: "%02x", $0) }.joined()
+        return webTerminalCredentialPrefix + hex
+    }
+
+    public static func isWebTerminalCredential(_ value: String) -> Bool {
+        guard value.hasPrefix(webTerminalCredentialPrefix) else { return false }
+        let token = value.dropFirst(webTerminalCredentialPrefix.count)
+        return token.count == 32 && token.allSatisfy(\.isHexDigit)
+    }
+
     public static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
         !value.isEmpty && value.allSatisfy { ch in
             ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))
@@ -102,6 +116,19 @@ public enum CodingAgentImage {
     public static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
         guard let raw else { return defaultOpenAIAPIKey }
         return try normalizeOpenAIAPIKey(raw, required: true)
+    }
+
+    public static func webTerminalCredentialFromUserData(_ userData: String?) -> String? {
+        guard let userData, !userData.isEmpty else { return nil }
+        let pattern = #"(?m)^[ \t]*TTYD_CREDENTIAL=([A-Za-z0-9._+=:-]+)[ \t]*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: userData, range: NSRange(userData.startIndex..., in: userData),
+              ),
+              let range = Range(match.range(at: 1), in: userData)
+        else { return nil }
+        let value = String(userData[range])
+        return isWebTerminalCredential(value) ? value : nil
     }
 
     /// Unquoted `/etc/default/barkvisor-openai` assignment. GPU rewrite keeps a grant.
@@ -132,9 +159,12 @@ public enum CodingAgentImage {
         openaiBaseURL: String,
         openaiAPIKey: String = defaultOpenAIAPIKey,
         installGuestOllama: Bool = false,
+        webTerminalCredential: String? = nil,
     ) -> String {
+        let credential = webTerminalCredential.flatMap {
+            isWebTerminalCredential($0) ? $0 : nil
+        } ?? generateWebTerminalCredential()
         let quotedURL = posixSingleQuoted(openaiBaseURL)
-        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL)
             ? "\(AgentNetworkCage.allowHostOllamaYAML)\n"
             : ""
@@ -148,6 +178,7 @@ public enum CodingAgentImage {
         let ocArm = opencodeSha256Aarch64
         let ocX64 = opencodeSha256Amd64
         let ttydPort = webTerminalPort
+        let ttydCredential = credential
         let guestOllamaFiles: String
         let guestOllamaRun: String
         if installGuestOllama {
@@ -182,11 +213,18 @@ public enum CodingAgentImage {
             content: |
               OPENAI_BASE_URL=\(openaiBaseURL)
               OPENAI_API_KEY=\(openaiAPIKey)
-          - path: /etc/profile.d/barkvisor-openai.sh
+          - path: /etc/default/barkvisor-ttyd
             permissions: '0600'
             content: |
+              TTYD_CREDENTIAL=\(ttydCredential)
+          - path: /etc/profile.d/barkvisor-openai.sh
+            permissions: '0644'
+            content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY=\(quotedKey)
+              if [ -r /etc/default/barkvisor-openai ]; then
+                . /etc/default/barkvisor-openai
+                export OPENAI_BASE_URL OPENAI_API_KEY
+              fi
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |
@@ -199,7 +237,8 @@ public enum CodingAgentImage {
               Type=simple
               User=ubuntu
               EnvironmentFile=-/etc/default/barkvisor-openai
-              ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
+              EnvironmentFile=-/etc/default/barkvisor-ttyd
+              ExecStart=/bin/sh -ec 'exec /usr/local/bin/ttyd --writable --port \(ttydPort) -c "$TTYD_CREDENTIAL" tmux new -A -s main'
               Restart=on-failure
 
               [Install]
@@ -252,7 +291,6 @@ public enum CodingAgentImage {
               install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
               install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
         \(guestOllamaFiles)runcmd:
-          - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
           - install -d -m 1777 /var/lib/barkvisor
           - git config --system core.hooksPath /etc/git-hooks
           - systemctl enable --now qemu-guest-agent
@@ -273,6 +311,7 @@ public enum CodingAgentImage {
             openaiBaseURL: gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL,
             openaiAPIKey: key,
             installGuestOllama: gpuAttached,
+            webTerminalCredential: webTerminalCredentialFromUserData(existingUserData),
         )
     }
 

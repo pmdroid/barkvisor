@@ -106,7 +106,12 @@ def body_for(method: str, path: str) -> bytes | None:
         return None
     if path == "/api/auth/login":
         user = os.environ.get("BARKVISOR_ADMIN_USER", "admin")
-        pw = os.environ.get("BARKVISOR_ADMIN_PASSWORD", "barkvisor-smoke-pass")
+        pw = os.environ.get("BARKVISOR_ADMIN_PASSWORD", "")
+        if not pw:
+            sys.stderr.write(
+                "error: BARKVISOR_ADMIN_PASSWORD is required; no default is used\n",
+            )
+            sys.exit(1)
         return json.dumps({"username": user, "password": pw}).encode()
     if path == "/api/auth/refresh":
         return json.dumps({"refreshToken": "invalid"}).encode()

@@ -255,6 +255,66 @@ struct JWTAuthMiddlewareTests {
         }
     }
 
+    @Test func `home tunnel session query accepts only single-use tickets`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let ticket = await mintTicket()
+        let session = await mintTicket(vmID: "vm-1")
+        do {
+            let req = request(
+                app,
+                path: "/api/home/devices/peer-1/v1/vms/vm-1/vnc?ticket=\(ticket)&session=\(session)",
+            )
+            req.parameters.set("vmId", to: "vm-1")
+            let response = try await jwt.respond(to: req, chainingTo: OKResponder())
+            #expect(response.status == .ok)
+            #expect(req.authenticatedUser?.authMethod == "ticket")
+            let leftoverDevice = await WebSocketTicketStore.shared.validateTicket(
+                ticket, forVMID: "vm-1",
+            )
+            #expect(leftoverDevice != nil)
+            let spentSession = await WebSocketTicketStore.shared.validateTicket(
+                session, forVMID: "vm-1",
+            )
+            #expect(spentSession == nil)
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
+    @Test func `home tunnel rejects a raw JWT as the session query value`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let payload = UserPayload(
+            sub: .init(value: "user-1"),
+            username: "admin",
+            exp: .init(value: Date().addingTimeInterval(3_600)),
+        )
+        let token = try await keys.sign(payload)
+        do {
+            let req = request(
+                app,
+                path: "/api/home/devices/peer-1/v1/vms/vm-1/vnc?session=\(token)",
+            )
+            req.parameters.set("vmId", to: "vm-1")
+            do {
+                _ = try await jwt.respond(to: req, chainingTo: OKResponder())
+                Issue.record("expected unauthorized for a JWT-shaped session value")
+            } catch let error as AbortError {
+                #expect(error.status == .unauthorized)
+            }
+            try await keys.verify(token, as: UserPayload.self)
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
     @Test func `inference token cannot call pull or the rest of the Home API`() async throws {
         let app = try await makeApp()
         defer { Task { await stop(app) } }

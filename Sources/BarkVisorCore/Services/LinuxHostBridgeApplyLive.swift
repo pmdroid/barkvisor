@@ -259,7 +259,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 uplink: nic,
                 createdBridge: LinuxHostBridgeApply.createdBridgeForApply(request: request, probe: probe),
             )
-            try setuidHelpers(probe.helperPaths)
+            let helperModes = try helperModesProbe(probe.helperPaths)
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
                 createdBridge: LinuxHostBridgeApply.createdBridge(
@@ -268,8 +268,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     factsBridges: probe.facts.bridges,
                 ),
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
+                helperModes: helperModes.isEmpty ? nil : helperModes,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
+            try setuidHelpers(helperModes)
             try startRollbackTimer(bridge: request.bridge)
         }
 
@@ -669,8 +671,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
         }
 
         private func revert(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
-            if let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge),
-               let pid = pending.netplanPid, pid > 0 {
+            let pending = HostNetworkPendingCommitService.readLinux(bridge: request.bridge)
+            if let pid = pending?.netplanPid, pid > 0 {
                 _ = kill(pid_t(pid), SIGTERM)
             }
             stopRollbackTimer(bridge: request.bridge)
@@ -739,6 +741,15 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     LinuxHostBridgeApply.stripMarkedACL(existing: existing, bridge: request.bridge),
                 )
             }
+            if let helperModes = pending?.helperModes {
+                for (path, mode) in helperModes.sorted(by: { $0.key < $1.key })
+                    where FileManager.default.fileExists(atPath: path) {
+                    try? FileManager.default.setAttributes(
+                        [.posixPermissions: NSNumber(value: mode)],
+                        ofItemAtPath: path,
+                    )
+                }
+            }
             try? FileManager.default.removeItem(
                 at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
             )
@@ -760,10 +771,20 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
         }
 
-        private func setuidHelpers(_ paths: [String]) throws {
+        private func helperModesProbe(_ paths: [String]) throws -> [String: Int] {
+            var modes: [String: Int] = [:]
             for path in paths where FileManager.default.fileExists(atPath: path) {
-                var attrs = try FileManager.default.attributesOfItem(atPath: path)
+                let attrs = try FileManager.default.attributesOfItem(atPath: path)
                 let current = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
+                modes[path] = Int(current)
+            }
+            return modes
+        }
+
+        private func setuidHelpers(_ modes: [String: Int]) throws {
+            for (path, current) in modes.sorted(by: { $0.key < $1.key })
+                where FileManager.default.fileExists(atPath: path) {
+                var attrs = try FileManager.default.attributesOfItem(atPath: path)
                 attrs[.posixPermissions] = NSNumber(value: current | 0o4000 | 0o111)
                 try FileManager.default.setAttributes(attrs, ofItemAtPath: path)
             }

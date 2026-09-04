@@ -4263,16 +4263,19 @@ components:
           type: integer
         apiVersion:
           type: integer
-        jwtSecret:
-          type: string
+        identitySeal:
+          type: object
+          required: [ciphertext]
+          properties:
+            ciphertext:
+              type: string
+              description: base64 AES-GCM combined box of the shared login JSON
           description: >
-            Optional issuer Home JWT HMAC secret (dataDir/jwt-secret).
-            Omitted when the issuer has no secret to copy.
-        adminUser:
-          $ref: "#/components/schemas/PairingAdminUser"
-          description: >
-            Optional first password-backed admin row copied from the issuer.
-            Omitted when no such user exists.
+            Shared login sealed to the joiner Device key. Contains the issuer
+            Home JWT HMAC secret and optional admin row, AES-GCM encrypted
+            under ECDH of the issuer Device key and the joiner Device
+            certificate public key. Plaintext jwtSecret / adminUser are never
+            sent over the plaintext HTTP redeem.
 
     PairingAdminUser:
       type: object

@@ -57,19 +57,44 @@ struct AgentNetworkCageTests {
     }
 
     @Test func `linux owner commands cover blocked CIDRs`() {
-        let cmds = AgentNetworkCage.linuxOwnerRejectCommands(pid: 4_242)
+        let cmds = AgentNetworkCage.linuxOwnerRejectCommands(uid: 4_242)
         #expect(cmds.count == AgentNetworkCage.blockedIPv4CIDRs.count)
-        #expect(cmds.allSatisfy { $0.contains("4242") && $0.contains("REJECT") })
-        let deletes = AgentNetworkCage.linuxOwnerDeleteCommands(pid: 4_242)
+        #expect(cmds.allSatisfy { $0.contains("--uid-owner") && $0.contains("4242") && $0.contains("REJECT") })
+        #expect(cmds.allSatisfy { !$0.contains("--pid-owner") })
+        let deletes = AgentNetworkCage.linuxOwnerDeleteCommands(uid: 4_242)
         #expect(deletes.count == cmds.count)
         #expect(deletes.allSatisfy { $0.contains("-D") && $0.contains("OUTPUT") })
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/bin/iptables"))
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/sbin/iptables"))
-        let accept = AgentNetworkCage.linuxOllamaAcceptCommands(pid: 4_242)
+        let accept = AgentNetworkCage.linuxOllamaAcceptCommands(uid: 4_242)
         #expect(accept.count == 1)
         #expect(accept[0].contains("11434"))
         #expect(accept[0].contains("ACCEPT"))
         #expect(accept[0].contains("127.0.0.1"))
+    }
+
+    @Test func `owner uid is the drop user or nil for root`() {
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "barkvisor" ? 995 : nil },
+            ) == 995,
+        )
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "qemu" ? 994 : nil },
+            ) == 994,
+        )
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { _ in nil },
+            ) == nil,
+        )
     }
 
     @Test func `house launch is not wrapped`() throws {
@@ -107,5 +132,62 @@ struct AgentNetworkCageTests {
         )
         let ollamaNet = ollamaArgs.first { $0.hasPrefix("user,id=net0") }
         #expect(ollamaNet?.contains("11434") == true)
+    }
+
+    @Test func `cgroup name sanitization keeps safe characters`() {
+        #expect(AgentNetworkCage.sanitizeCgroupName("vm-01_UUID.x") == "vm-01_UUID.x")
+        #expect(AgentNetworkCage.sanitizeCgroupName("a/b\\c d") == "a-b-c-d")
+        #expect(AgentNetworkCage.sanitizeCgroupName("") == "vm")
+        #expect(AgentNetworkCage.cgroupRelPath(vmID: "abc") == "barkvisor-agent/abc")
+    }
+
+    @Test func `cgroup commands match by path and never by uid`() {
+        let reject = AgentNetworkCage.linuxCgroupRejectCommands(cgroupRelPath: "barkvisor-agent/vm1")
+        #expect(reject.count == AgentNetworkCage.blockedIPv4CIDRs.count)
+        #expect(reject.allSatisfy { $0.contains("-m") && $0.contains("cgroup") && $0.contains("--path") })
+        #expect(reject.allSatisfy { $0.contains("barkvisor-agent/vm1") && $0.contains("REJECT") })
+        #expect(reject.allSatisfy { !$0.contains("--uid-owner") })
+
+        let accept = AgentNetworkCage.linuxCgroupOllamaAcceptCommands(cgroupRelPath: "barkvisor-agent/vm1")
+        #expect(accept.count == 1)
+        #expect(accept[0].contains("11434") && accept[0].contains("ACCEPT"))
+
+        let deletes = AgentNetworkCage.linuxCgroupDeleteCommands(cgroupRelPath: "barkvisor-agent/vm1")
+        #expect(deletes.count == reject.count + accept.count)
+        #expect(deletes.allSatisfy { $0.contains("-D") })
+    }
+
+    @Test func `placeInCgroup writes pid when root and dir is writable`() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cage-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        #expect(AgentNetworkCage.placeInCgroup(pid: 4_242, relPath: "barkvisor-agent/vm1", root: tmp.path, isRoot: true))
+        let procs = try String(
+            contentsOf: tmp.appendingPathComponent("barkvisor-agent/vm1/cgroup.procs"),
+            encoding: .utf8,
+        )
+        #expect(procs.trimmingCharacters(in: .whitespacesAndNewlines) == "4242")
+        #expect(!AgentNetworkCage.placeInCgroup(pid: 4_242, relPath: "barkvisor-agent/vm1", root: tmp.path, isRoot: false))
+        AgentNetworkCage.removeCgroup(relPath: "barkvisor-agent/vm1", root: tmp.path)
+        #expect(!FileManager.default.fileExists(atPath: tmp.appendingPathComponent("barkvisor-agent/vm1").path))
+    }
+
+    @Test func `reconcile re-applies reject and ollama only when a remaining VM opts in`() {
+        let rejectOnly = AgentNetworkCage.reconcileCommands(
+            uid: 995,
+            remainingAgentVMs: ["vm2"],
+            userDataLookup: { _ in nil },
+        )
+        #expect(rejectOnly == AgentNetworkCage.linuxOwnerRejectCommands(uid: 995))
+        #expect(rejectOnly.allSatisfy { $0.contains("--uid-owner") && !$0.contains("--pid-owner") })
+
+        let withOllama = AgentNetworkCage.reconcileCommands(
+            uid: 995,
+            remainingAgentVMs: ["vm2", "vm3"],
+            userDataLookup: { $0 == "vm3" ? "\(AgentNetworkCage.allowHostOllamaYAML)\n" : nil },
+        )
+        #expect(withOllama.count == rejectOnly.count + 1)
+        #expect(withOllama.last?.contains("11434") == true)
     }
 }

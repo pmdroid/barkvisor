@@ -89,12 +89,23 @@ struct PairingIdentityTests {
             ),
             offers: offers,
         )
-        #expect(remote.jwtSecret == "issuer-hmac-secret")
-        #expect(remote.adminUser == admin)
+        #expect(remote.jwtSecret == nil)
+        #expect(remote.adminUser == nil)
+        let seal = try #require(remote.identitySeal)
+        let identity = try PairingIdentitySealing.open(
+            seal,
+            joinerDeviceKeyPEM: joiner.deviceKeyPEM,
+            issuerCertificatePEM: remote.deviceCertificatePEM,
+            issuerHostId: issuerId,
+            joinerHostId: joinerId,
+        )
+        #expect(identity.jwtSecret == "issuer-hmac-secret")
+        #expect(identity.adminUser == admin)
         let encoded = try JSONEncoder().encode(remote)
         let json = try #require(String(data: encoded, encoding: .utf8))
-        #expect(json.contains("passwordHash"))
-        #expect(!json.contains("home-password"))
+        #expect(!json.contains("issuer-hmac-secret"))
+        #expect(!json.contains("$2b$12$storedhash"))
+        #expect(!json.contains("passwordHash"))
         #expect(!json.contains("\"password\""))
     }
 
@@ -138,7 +149,17 @@ struct PairingIdentityTests {
             ),
             offers: offers,
         )
-        #expect(remote.jwtSecret == "from-disk-secret")
+        let seal = try #require(remote.identitySeal)
+        let identity = try PairingIdentitySealing.open(
+            seal,
+            joinerDeviceKeyPEM: joiner.deviceKeyPEM,
+            issuerCertificatePEM: remote.deviceCertificatePEM,
+            issuerHostId: issuerId,
+            joinerHostId: joiner.hostId,
+        )
+        #expect(identity.jwtSecret == "from-disk-secret")
+        #expect(identity.adminUser == nil)
+        #expect(remote.jwtSecret == nil)
         #expect(remote.adminUser == nil)
     }
 
@@ -577,6 +598,53 @@ struct PairingIdentityTests {
         )
         #expect(user.username == "pascal")
         #expect(!token.isEmpty)
+    }
+    @Test func `join rejects plaintext identity on the wire`() async throws {
+        let issuerDir = try isolatedDir("iss-plain")
+        let joinerDir = try isolatedDir("join-plain")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        try Config.persistJWTSecret("home-jwt", to: issuerDir)
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.20",
+                advertisedHosts: ["192.168.0.20"],
+            ),
+            offers: offers,
+        )
+        let client = IdentityRedeemClient { body in
+            let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
+            var response = try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: issuerDir,
+                    issuerHostId: issuerId,
+                    request: request,
+                    jwtSecret: "home-jwt",
+                ),
+                offers: offers,
+            )
+            response.identitySeal = nil
+            response.jwtSecret = "home-jwt"
+            return response
+        }
+        await #expect(throws: PairingError.self) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: issued.qrPayload),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: client,
+            )
+        }
+        #expect(Config.loadJWTSecret(from: joinerDir) == nil)
     }
 }
 

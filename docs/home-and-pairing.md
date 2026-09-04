@@ -30,7 +30,7 @@ The chosen address is the `host=` in that offer. Changing the address issues a n
 
 The same **Settings → Pairing** tab holds the **phone sign-in QR**. That is how the mobile app logs into this Home. It is not on Settings → Home.
 
-Join redeem is HTTP on `:7777`. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
+Join redeem is HTTP on `:7777`. The redeem response carries the shared login (Home JWT secret and admin row) only inside an envelope sealed to the joiner Device key, so an on-path observer of the plaintext HTTP cannot read it. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
 
 Older joiners that only accept RFC1918 still reject a `100.64/10` offer. Upgrade the joining Device, or pick a LAN IP both sides can reach.
 

@@ -156,10 +156,12 @@ public enum PortRegistry {
 
     /// Bind test on 0.0.0.0 and 127.0.0.1 without `SO_REUSEADDR`.
     /// QEMU NAT `hostfwd` uses INADDR_ANY; Coding Agent ttyd uses loopback (PAS-272).
-    /// UDP is not probed in Wave 0 (returns `true`).
     public static func probeListen(port: Int, proto: String) -> Bool {
-        guard normalizedProtocol(proto) == "tcp" else { return true }
-        return isTCPPortFree(port)
+        switch normalizedProtocol(proto) {
+        case "tcp": return isPortFree(port, sockType: streamSockType)
+        case "udp": return isPortFree(port, sockType: dgramSockType)
+        default: return true
+        }
     }
 
     public static func normalizedProtocol(_ proto: String) -> String {
@@ -170,18 +172,29 @@ public enum PortRegistry {
         "\(port)/\(proto)"
     }
 
-    /// Free only if both INADDR_ANY and 127.0.0.1 can bind `port`.
-    private static func isTCPPortFree(_ port: Int) -> Bool {
-        isTCPBindFree(port, saddr: INADDR_ANY)
-            && isTCPBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian)
+    private static var streamSockType: Int32 {
+        #if os(Linux)
+            Int32(SOCK_STREAM.rawValue)
+        #else
+            SOCK_STREAM
+        #endif
     }
 
-    private static func isTCPBindFree(_ port: Int, saddr: in_addr_t) -> Bool {
+    private static var dgramSockType: Int32 {
         #if os(Linux)
-            let sockType = Int32(SOCK_STREAM.rawValue)
+            Int32(SOCK_DGRAM.rawValue)
         #else
-            let sockType = SOCK_STREAM
+            SOCK_DGRAM
         #endif
+    }
+
+    /// Free only if both INADDR_ANY and 127.0.0.1 can bind `port`.
+    private static func isPortFree(_ port: Int, sockType: Int32) -> Bool {
+        isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
+            && isBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian, sockType: sockType)
+    }
+
+    private static func isBindFree(_ port: Int, saddr: in_addr_t, sockType: Int32) -> Bool {
         let fd = socket(AF_INET, sockType, 0)
         guard fd >= 0 else { return true }
         defer { close(fd) }

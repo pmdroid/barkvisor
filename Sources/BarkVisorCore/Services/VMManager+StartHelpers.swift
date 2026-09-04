@@ -142,10 +142,31 @@ extension VMManager {
                 }
             }
         }
-        // Wait for swtpm socket to appear
-        try await Task.sleep(nanoseconds: 500_000_000)
+        if let swtpmSock = launch.swtpmStateDir?.appendingPathComponent("swtpm.sock") {
+            let ready = await Self.waitForSocket(swtpmSock, process: tpmProc)
+            guard ready, tpmProc.isRunning else {
+                let msg = tpmProc.isRunning
+                    ? "swtpm socket did not appear at \(swtpmSock.path) within 10s"
+                    : "swtpm exited before creating \(swtpmSock.path)"
+                Log.vm.error("swtpm failed to start: \(msg)", vm: vmID)
+                throw BarkVisorError.processSpawnFailed(msg)
+            }
+        }
         Log.vm.info("swtpm started for VM \(vmName)", vm: vmID)
         return tpmProc
+    }
+
+    static func waitForSocket(
+        _ url: URL, process: Process, pollCount: Int = 100, pollNanos: UInt32 = 100_000,
+    ) async -> Bool {
+        await Task.detached(priority: .utility) {
+            for _ in 0 ..< pollCount {
+                if FileManager.default.fileExists(atPath: url.path) { return true }
+                if !process.isRunning { return false }
+                usleep(pollNanos)
+            }
+            return process.isRunning && FileManager.default.fileExists(atPath: url.path)
+        }.value
     }
 
     // MARK: - Host port forwards
@@ -159,7 +180,6 @@ extension VMManager {
         for rule in rules {
             try QEMUBuilder.validatePort(rule.hostPort)
             try QEMUBuilder.validateProtocol(rule.protocol)
-            guard PortRegistry.normalizedProtocol(rule.protocol) == "tcp" else { continue }
             if !PortRegistry.probeListen(port: rule.hostPort, proto: rule.protocol) {
                 throw BarkVisorError.portInUse(
                     "Host port \(rule.hostPort) is already in use "
@@ -193,7 +213,7 @@ extension VMManager {
 
     func configureQEMUProcess(
         launch: QEMULaunchConfig, vmID: String,
-    ) -> (Process, Pipe, Pipe) {
+    ) -> (Process, Pipe, Pipe, String?) {
         let process = Process()
         let dropped = WorkloadPrivilegeDrop.apply(
             executable: launch.executable,
@@ -223,7 +243,7 @@ extension VMManager {
             }
         }
 
-        return (process, stdoutPipe, stderrPipe)
+        return (process, stdoutPipe, stderrPipe, dropped.dropped ? dropped.user : nil)
     }
 
     // MARK: - Socket Readiness

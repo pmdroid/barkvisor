@@ -13,8 +13,8 @@ struct QEMUArgvTests {
         "-drive", "file=\(bootDisk),format=qcow2,if=none,id=boot0,cache=writeback",
         "-chardev", "socket,id=serial0,path=/var/run/barkvisor/6FB33A30-F13-ser.sock,server=on,wait=off",
         "-vnc", "unix:/var/run/barkvisor/6FB33A30-F13-vnc.sock,lossy=on",
-        "-qmp", "unix:/var/run/barkvisor/6FB33A30-F13-qmp.sock,server,nowait",
-        "-qmp", "unix:/var/run/barkvisor/6FB33A30-F13-evt.sock,server,nowait",
+        "-qmp", "unix:/var/run/barkvisor/6FB33A30-F13-qmp.sock,server=on,wait=off",
+        "-qmp", "unix:/var/run/barkvisor/6FB33A30-F13-evt.sock,server=on,wait=off",
     ]
 
     @Test func `fixture argv parses identity sockets and drives`() throws {

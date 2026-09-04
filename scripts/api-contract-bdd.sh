@@ -20,7 +20,11 @@ PROBE="$ROOT/scripts/lib/api-contract-probe.py"
 OPENAPI="$ROOT/docs/api/openapi.yaml"
 
 export BARKVISOR_ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
-export BARKVISOR_ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+if [[ -z "${BARKVISOR_ADMIN_PASSWORD:-}" ]]; then
+  echo "error: BARKVISOR_ADMIN_PASSWORD is required; no default is used (set it explicitly to avoid creating well-known admin accounts)" >&2
+  exit 1
+fi
+export BARKVISOR_ADMIN_PASSWORD
 
 die() { echo "error: $*" >&2; exit 1; }
 log() { echo "==> $*"; }

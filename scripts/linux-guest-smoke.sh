@@ -26,7 +26,7 @@
 #   BARKVISOR_PORT              Prefer this port (else pick free)
 #   BARKVISOR_DATA_DIR          Override data dir (else mktemp)
 #   BARKVISOR_ADMIN_USER        Default: admin
-#   BARKVISOR_ADMIN_PASSWORD    Default: barkvisor-smoke-pass (must be >= 10 chars)
+#   BARKVISOR_ADMIN_PASSWORD    Required (must be >= 10 chars)
 #   BARKVISOR_CLOUD_IMAGE_URL   Cloud-image URL (set by REAL_GUEST=1 default)
 #   REAL_GUEST=1                Ubuntu 24.04 cloud image (host arch) + cloud-init + SSH probe
 #   BARKVISOR_DEFAULT_CLOUD_IMAGE_URL  Override default image when REAL_GUEST=1
@@ -48,7 +48,11 @@ cd "$ROOT"
 source "$ROOT/scripts/lib/linux-smoke-common.sh"
 
 export BARKVISOR_ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
-export BARKVISOR_ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+if [[ -z "${BARKVISOR_ADMIN_PASSWORD:-}" ]]; then
+  echo "error: BARKVISOR_ADMIN_PASSWORD is required; no default is used (set it explicitly to avoid creating well-known admin accounts)" >&2
+  exit 1
+fi
+export BARKVISOR_ADMIN_PASSWORD
 ADMIN_USER="${BARKVISOR_ADMIN_USER}"
 ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD}"
 VM_NAME="${VM_NAME:-linux-guest-smoke}"

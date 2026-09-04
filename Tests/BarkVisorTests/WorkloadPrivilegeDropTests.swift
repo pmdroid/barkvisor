@@ -121,6 +121,37 @@ struct WorkloadPrivilegeDropTests {
         }
     }
 
+    @Test func `drop uid resolves the drop user uid when it exists`() {
+        #expect(
+            WorkloadPrivilegeDrop.dropUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "barkvisor" ? 995 : ($0 == "qemu" ? 994 : nil) },
+            ) == 995,
+        )
+        #expect(
+            WorkloadPrivilegeDrop.dropUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "qemu" ? 994 : nil },
+            ) == 994,
+        )
+        #expect(
+            WorkloadPrivilegeDrop.dropUID(
+                euid: 501,
+                dropsOnPlatform: true,
+                uidForUser: { _ in 995 },
+            ) == nil,
+        )
+        #expect(
+            WorkloadPrivilegeDrop.dropUID(
+                euid: 0,
+                dropsOnPlatform: false,
+                uidForUser: { _ in 995 },
+            ) == nil,
+        )
+    }
+
     @Test func `drop user is barkvisor when linux root and the account exists`() {
         #expect(
             WorkloadPrivilegeDrop.dropUser(

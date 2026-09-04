@@ -208,10 +208,22 @@ extension VMManager {
 
     // MARK: - Cleanup
 
+    private func remainingAgentVMIDs(excluding vmID: String) async -> [String] {
+        let otherIDs = Array(runningVMs.keys.filter { $0 != vmID })
+        guard let rows = try? await dbPool.read({ db in
+            try otherIDs.map { id in try (id, VM.fetchOne(db, key: id)?.workloadClass) }
+        }) else { return [] }
+        return rows.compactMap { id, raw in
+            guard let raw, (try? WorkloadClass.parse(raw)) == .agent else { return nil }
+            return id
+        }
+    }
+
     public func cleanup(vmID: String) async {
         await CodingAgentSessionStore.shared.remove(vmID: vmID)
         if let running = runningVMs[vmID] {
-            AgentNetworkCage.removeLinuxFilter(pid: running.pid, vmID: vmID)
+            let remainingAgentVMs = await remainingAgentVMIDs(excluding: vmID)
+            AgentNetworkCage.removeLinuxFilter(vmID: vmID, remainingAgentVMs: remainingAgentVMs)
             terminateSwtpm(running, vmID: vmID)
         }
         // Remove PID file

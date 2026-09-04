@@ -7,7 +7,8 @@ import Foundation
 /// 1. Black-holes guest connections to the daemon ports on the slirp gateway.
 /// 2. Wraps QEMU in a Mac seatbelt that denies RFC1918 / loopback outbound
 ///    (DNS/53 still allowed so slirp can resolve).
-/// 3. On Linux, inserts iptables owner-match REJECT rules for the QEMU pid.
+/// 3. On Linux, inserts iptables REJECT rules scoped to the VM's cgroup
+///    (owner-match uid rules as fallback when cgroups are unavailable).
 public enum AgentNetworkCage {
     public static let slirpGateway = "10.0.2.2"
 
@@ -118,12 +119,55 @@ public enum AgentNetworkCage {
         return profile
     }
 
-    public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
-        linuxOwnerCommands(pid: pid, action: "-I")
+    public static let cgroupRoot = "/sys/fs/cgroup"
+    public static let cgroupParentName = "barkvisor-agent"
+
+    public static func sanitizeCgroupName(_ raw: String) -> String {
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-",
+        )
+        let sanitized = String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : Character("-") })
+        return sanitized.isEmpty ? "vm" : sanitized
     }
 
-    public static func linuxOwnerDeleteCommands(pid: Int32) -> [[String]] {
-        linuxOwnerCommands(pid: pid, action: "-D")
+    public static func cgroupRelPath(vmID: String) -> String {
+        "\(cgroupParentName)/\(sanitizeCgroupName(vmID))"
+    }
+
+    public static func placeInCgroup(
+        pid: Int32,
+        relPath: String,
+        root: String? = nil,
+        isRoot: Bool = WorkloadPrivilegeDrop.currentEUID() == 0,
+    ) -> Bool {
+        let base = root ?? cgroupRoot
+        let dir = URL(fileURLWithPath: base).appendingPathComponent(relPath)
+        let fm = FileManager.default
+        guard isRoot else { return false }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard fm.fileExists(atPath: dir.path) else { return false }
+        let procs = dir.appendingPathComponent("cgroup.procs")
+        if !fm.fileExists(atPath: procs.path) {
+            fm.createFile(atPath: procs.path, contents: Data())
+        }
+        guard let handle = try? FileHandle(forWritingTo: procs) else {
+            return false
+        }
+        defer { try? handle.close() }
+        return (try? handle.write(contentsOf: Data("\(pid)\n".utf8))) != nil
+    }
+
+    public static func removeCgroup(relPath: String, root: String? = nil) {
+        let base = root ?? cgroupRoot
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: base).appendingPathComponent(relPath))
+    }
+
+    public static func linuxOwnerRejectCommands(uid: uid_t) -> [[String]] {
+        linuxOwnerCommands(uid: uid, action: "-I")
+    }
+
+    public static func linuxOwnerDeleteCommands(uid: uid_t) -> [[String]] {
+        linuxOwnerCommands(uid: uid, action: "-D")
     }
 
     public static let iptablesSearchPaths = [
@@ -139,71 +183,179 @@ public enum AgentNetworkCage {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    public static func applyLinuxFilter(pid: Int32, vmID: String) throws {
+    public static func applyLinuxFilter(vmID: String, pid: Int32, launchUser: String? = nil) throws {
         #if os(Linux)
             guard let exe = resolveIptables() else {
                 throw BarkVisorError.forbidden(
                     "Agent Workloads need iptables to block the house LAN",
                 )
             }
-            try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
-            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
-                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
+            let rel = cgroupRelPath(vmID: vmID)
+            if placeInCgroup(pid: pid, relPath: rel) {
+                try runIptables(exe: exe, commands: linuxCgroupRejectCommands(cgroupRelPath: rel), vmID: vmID)
+                if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
+                    try runIptables(
+                        exe: exe,
+                        commands: linuxCgroupOllamaAcceptCommands(cgroupRelPath: rel),
+                        vmID: vmID,
+                    )
+                }
+                Log.vm.info("Agent LAN filter applied for cgroup \(rel)", vm: vmID)
+                return
             }
-            Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
+            guard let uid = workloadOwnerUID() else {
+                throw BarkVisorError.forbidden(
+                    "Agent Workloads need root (per-VM cgroup) or the barkvisor/qemu drop user (owner rules) to block the house LAN",
+                )
+            }
+            guard let launchUser, WorkloadPrivilegeDrop.uid(forUser: launchUser) == uid else {
+                throw BarkVisorError.forbidden(
+                    "Agent LAN owner rules need the QEMU privilege drop to \(launchUser ?? "a drop user")",
+                )
+            }
+            try runIptables(exe: exe, commands: linuxOwnerRejectCommands(uid: uid), vmID: vmID)
+            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
+                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(uid: uid), vmID: vmID)
+            }
+            Log.vm.info("Agent LAN filter applied for uid \(uid) (cgroup unavailable)", vm: vmID)
         #else
-            _ = pid
-            _ = vmID
+            _ = (vmID, pid, launchUser)
         #endif
     }
 
-    public static func removeLinuxFilter(pid: Int32, vmID: String) {
+    public static func removeLinuxFilter(vmID: String, remainingAgentVMs: [String] = []) {
         #if os(Linux)
             guard let exe = resolveIptables() else { return }
-            for args in linuxOllamaDeleteCommands(pid: pid) + linuxOwnerDeleteCommands(pid: pid) {
-                let proc = Process()
-                proc.executableURL = exe
-                proc.arguments = Array(args.dropFirst())
-                proc.standardOutput = FileHandle.nullDevice
-                proc.standardError = FileHandle.nullDevice
-                try? proc.run()
-                proc.waitUntilExit()
+            let rel = cgroupRelPath(vmID: vmID)
+            let cgroupDir = URL(fileURLWithPath: cgroupRoot).appendingPathComponent(rel).path
+            let wasCgroupScoped = FileManager.default.fileExists(atPath: cgroupDir)
+            for args in linuxCgroupDeleteCommands(cgroupRelPath: rel) {
+                runIgnoringStatus(exe: exe, arguments: Array(args.dropFirst()))
             }
-            Log.vm.info("Agent LAN filter removed for pid \(pid)", vm: vmID)
+            removeCgroup(relPath: rel)
+            guard !wasCgroupScoped else {
+                Log.vm.info("Agent LAN filter removed for cgroup \(rel)", vm: vmID)
+                return
+            }
+            guard let uid = workloadOwnerUID() else { return }
+            for args in linuxOllamaDeleteCommands(uid: uid) + linuxOwnerDeleteCommands(uid: uid) {
+                runIgnoringStatus(exe: exe, arguments: Array(args.dropFirst()))
+            }
+            if remainingAgentVMs.isEmpty {
+                Log.vm.info("Agent LAN filter removed for uid \(uid)", vm: vmID)
+                return
+            }
+            for args in reconcileCommands(
+                uid: uid,
+                remainingAgentVMs: remainingAgentVMs,
+                userDataLookup: { CloudInitService.storedUserData(vmID: $0) },
+            ) {
+                runIgnoringStatus(exe: exe, arguments: Array(args.dropFirst()))
+            }
+            Log.vm.info(
+                "Agent LAN filter reconciled for \(remainingAgentVMs.count) remaining agent VMs",
+                vm: vmID,
+            )
         #else
-            _ = pid
-            _ = vmID
+            _ = (vmID, remainingAgentVMs)
         #endif
     }
 
-    private static func linuxOwnerCommands(pid: Int32, action: String) -> [[String]] {
+    static func reconcileCommands(
+        uid: uid_t,
+        remainingAgentVMs: [String],
+        userDataLookup: (String) -> String?,
+    ) -> [[String]] {
+        var commands = linuxOwnerRejectCommands(uid: uid)
+        let anyOllama = remainingAgentVMs.contains {
+            allowHostOllama(userData: userDataLookup($0))
+        }
+        if anyOllama {
+            commands += linuxOllamaAcceptCommands(uid: uid)
+        }
+        return commands
+    }
+
+    private static func rejectCommands(action: String, match: [String]) -> [[String]] {
+        blockedIPv4CIDRs.map { cidr in
+            ["iptables", action, "OUTPUT"] + match + ["-d", cidr, "-j", "REJECT"]
+        }
+    }
+
+    private static func ollamaAcceptCommands(action: String, match: [String]) -> [[String]] {
+        [
+            ["iptables", action, "OUTPUT"] + match + [
+                "-p", "tcp",
+                "-d", "127.0.0.1",
+                "--dport", "\(ollamaPort)",
+                "-j", "ACCEPT",
+            ],
+        ]
+    }
+
+    public static func linuxCgroupRejectCommands(cgroupRelPath: String) -> [[String]] {
+        rejectCommands(action: "-I", match: ["-m", "cgroup", "--path", cgroupRelPath])
+    }
+
+    public static func linuxCgroupOllamaAcceptCommands(cgroupRelPath: String) -> [[String]] {
+        ollamaAcceptCommands(action: "-I", match: ["-m", "cgroup", "--path", cgroupRelPath])
+    }
+
+    public static func linuxCgroupDeleteCommands(cgroupRelPath: String) -> [[String]] {
+        rejectCommands(action: "-D", match: ["-m", "cgroup", "--path", cgroupRelPath])
+            + ollamaAcceptCommands(action: "-D", match: ["-m", "cgroup", "--path", cgroupRelPath])
+    }
+
+    private static func runIgnoringStatus(exe: URL, arguments: [String]) {
+        let proc = Process()
+        proc.executableURL = exe
+        proc.arguments = arguments
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        try? proc.run()
+        proc.waitUntilExit()
+    }
+
+    private static func linuxOwnerCommands(uid: uid_t, action: String) -> [[String]] {
         blockedIPv4CIDRs.map { cidr in
             [
                 "iptables", action, "OUTPUT",
-                "-m", "owner", "--pid-owner", "\(pid)",
+                "-m", "owner", "--uid-owner", "\(uid)",
                 "-d", cidr,
                 "-j", "REJECT",
             ]
         }
     }
 
-    public static func linuxOllamaAcceptCommands(pid: Int32) -> [[String]] {
-        linuxOllamaCommands(pid: pid, action: "-I")
+    public static func linuxOllamaAcceptCommands(uid: uid_t) -> [[String]] {
+        linuxOllamaCommands(uid: uid, action: "-I")
     }
 
-    public static func linuxOllamaDeleteCommands(pid: Int32) -> [[String]] {
-        linuxOllamaCommands(pid: pid, action: "-D")
+    public static func linuxOllamaDeleteCommands(uid: uid_t) -> [[String]] {
+        linuxOllamaCommands(uid: uid, action: "-D")
     }
 
-    private static func linuxOllamaCommands(pid: Int32, action: String) -> [[String]] {
+    private static func linuxOllamaCommands(uid: uid_t, action: String) -> [[String]] {
         [[
             "iptables", action, "OUTPUT",
-            "-m", "owner", "--pid-owner", "\(pid)",
+            "-m", "owner", "--uid-owner", "\(uid)",
             "-p", "tcp",
             "-d", "127.0.0.1",
             "--dport", "\(ollamaPort)",
             "-j", "ACCEPT",
         ]]
+    }
+
+    public static func workloadOwnerUID(
+        euid: uid_t = WorkloadPrivilegeDrop.currentEUID(),
+        dropsOnPlatform: Bool = WorkloadPrivilegeDrop.dropsOnThisPlatform,
+        uidForUser: (String) -> uid_t? = WorkloadPrivilegeDrop.uid(forUser:),
+    ) -> uid_t? {
+        WorkloadPrivilegeDrop.dropUID(
+            euid: euid,
+            dropsOnPlatform: dropsOnPlatform,
+            uidForUser: uidForUser,
+        )
     }
 
     #if os(Linux)

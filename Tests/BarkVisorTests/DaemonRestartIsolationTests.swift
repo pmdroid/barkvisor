@@ -321,8 +321,8 @@ struct DaemonRestartIsolationTests {
             "-drive", "file=/var/lib/barkvisor/disks/\(vmID).qcow2,format=qcow2,id=boot0",
             "-chardev", "socket,id=serial0,path=/tmp/barkvisor-test-ser.sock,server=on,wait=off",
             "-vnc", "unix:/tmp/barkvisor-test-vnc.sock,lossy=on",
-            "-qmp", "unix:/tmp/barkvisor-test-qmp.sock,server,nowait",
-            "-qmp", "unix:/tmp/barkvisor-test-evt.sock,server,nowait",
+            "-qmp", "unix:/tmp/barkvisor-test-qmp.sock,server=on,wait=off",
+            "-qmp", "unix:/tmp/barkvisor-test-evt.sock,server=on,wait=off",
         ]
     }
 

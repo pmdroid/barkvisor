@@ -278,6 +278,7 @@ struct LinuxGuestScriptsTests {
         proc.currentDirectoryURL = repoRoot
         var env = ProcessInfo.processInfo.environment
         env["DRY_RUN"] = "1"
+        env["BARKVISOR_ADMIN_PASSWORD"] = "barkvisor-ci-pass"
         proc.environment = env
         let pipe = Pipe()
         proc.standardOutput = pipe
@@ -379,6 +380,7 @@ struct LinuxGuestScriptsTests {
             proc.arguments = [path] + args
             proc.currentDirectoryURL = repoRoot
             var env = ProcessInfo.processInfo.environment
+            env["BARKVISOR_ADMIN_PASSWORD"] = "barkvisor-ci-pass"
             extraEnv.forEach { env[$0.key] = $0.value }
             proc.environment = env
             let pipe = Pipe()
@@ -678,6 +680,7 @@ struct LinuxGuestScriptsTests {
             proc.arguments = [path.path]
             proc.currentDirectoryURL = repoRoot
             var env = ProcessInfo.processInfo.environment
+            env["BARKVISOR_ADMIN_PASSWORD"] = "barkvisor-ci-pass"
             extraEnv.forEach { env[$0.key] = $0.value }
             proc.environment = env
             let pipe = Pipe()

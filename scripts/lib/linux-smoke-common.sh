@@ -255,7 +255,9 @@ api_code() {
 # Uses BARKVISOR_ADMIN_USER / BARKVISOR_ADMIN_PASSWORD.
 setup_or_login() {
   local admin_user="${BARKVISOR_ADMIN_USER:-admin}"
-  local admin_password="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+  [[ -n "${BARKVISOR_ADMIN_PASSWORD:-}" ]] ||
+    fail "BARKVISOR_ADMIN_PASSWORD is required; no default is used (set it explicitly to avoid creating well-known admin accounts)"
+  local admin_password="$BARKVISOR_ADMIN_PASSWORD"
   local status_json complete code complete_json login_json
 
   STATUS_JSON="$(api GET /api/setup/status || true)"
