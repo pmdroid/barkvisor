@@ -420,12 +420,15 @@ public enum QEMUBuilder {
         // aarch64 uses tpm-tis-device; x86_64 uses tpm-tis.
         let isX86 = (try? GuestProfiles.require(guestType).isX86) == true
         let tpmDevice = isX86 ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
-        let args = [
-            "-chardev", "socket,id=chrtpm,path=\(tpmSock.path)",
+        return (tpmDeviceArgs(tpmSockPath: tpmSock.path, tpmDevice: tpmDevice), exe, swtpmArgs, tpmStateDir)
+    }
+
+    static func tpmDeviceArgs(tpmSockPath: String, tpmDevice: String) -> [String] {
+        [
+            "-chardev", "socket,id=chrtpm,path=\(tpmSockPath),reconnect=5",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", tpmDevice,
         ]
-        return (args, exe, swtpmArgs, tpmStateDir)
     }
 
     package static func additionalDiskArgs(
@@ -550,8 +553,8 @@ public enum QEMUBuilder {
             // lossy=on enables Tight+JPEG in QEMU's VNC server (much less bandwidth/CPU
             // than raw/hextile for typical desktop sessions; noVNC negotiates JPEG quality).
             "-vnc", "unix:\(sockets.vnc.path),lossy=on",
-            "-qmp", "unix:\(sockets.qmp.path),server,nowait",
-            "-qmp", "unix:\(sockets.event.path),server,nowait",
+            "-qmp", "unix:\(sockets.qmp.path),server=on,wait=off",
+            "-qmp", "unix:\(sockets.event.path),server=on,wait=off",
             "-device", "virtio-serial-pci",
             "-chardev", "socket,path=\(sockets.guestAgent.path),server=on,wait=off,id=qga0",
             "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",

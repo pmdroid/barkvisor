@@ -91,6 +91,11 @@ public actor PendingVMProgressTicker {
                     ),
                 )
             }
-        } catch {}
+        } catch {
+            Log.app.error(
+                "VM image progress tick failed: \(error.localizedDescription)",
+            )
+            lastSent.removeAll()
+        }
     }
 }

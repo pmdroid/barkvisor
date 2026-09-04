@@ -93,6 +93,58 @@ struct PendingVMImageOverlayTests {
         #expect(second?.pendingImageId == nil)
         #expect(second?.downloadPercent == nil)
     }
+
+    @Test func `failed tick clears last sent so the next tick resends`() async throws {
+        let (pool, tmp) = try makeOverlayDB()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let badTmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: badTmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: badTmp) }
+        try await seedPending(pool: pool, vmID: "vm-1", imageID: "img-1", imageStatus: "downloading")
+        let downloader = ImageDownloader(dbPool: { pool })
+        await downloader.publish(
+            ImageProgressEvent(
+                id: "img-1", status: "downloading",
+                bytesReceived: 10, totalBytes: 100,
+                percent: 10, error: nil,
+            ),
+        )
+        let stream = VMStateStreamService()
+        let events = await stream.stateStream(vmID: "vm-1")
+        var iterator = events.makeAsyncIterator()
+        let ticker = PendingVMProgressTicker()
+        await ticker.tick(db: pool, downloader: downloader, stream: stream)
+        let first = await iterator.next()
+        #expect(first?.pendingImageId == "img-1")
+        let badPool = try DatabasePool(path: badTmp.appendingPathComponent("bad.sqlite").path)
+        await ticker.tick(db: badPool, downloader: downloader, stream: stream)
+        await ticker.tick(db: pool, downloader: downloader, stream: stream)
+        let resent = await nextEventOrTimeout(EventIteratorBox(iterator))
+        #expect(resent?.pendingImageId == "img-1")
+        #expect(resent?.downloadPercent == 10)
+    }
+}
+
+private final class EventIteratorBox: @unchecked Sendable {
+    var iterator: AsyncStream<VMStateEvent>.Iterator
+    init(_ iterator: AsyncStream<VMStateEvent>.Iterator) {
+        self.iterator = iterator
+    }
+}
+
+private func nextEventOrTimeout(
+    _ box: EventIteratorBox,
+) async -> VMStateEvent? {
+    await withTaskGroup(of: VMStateEvent?.self) { group in
+        group.addTask { await box.iterator.next() }
+        group.addTask {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            return nil
+        }
+        let first = await group.next() ?? nil
+        group.cancelAll()
+        return first
+    }
 }
 
 private func seedPending(
