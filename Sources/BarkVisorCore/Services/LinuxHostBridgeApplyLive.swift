@@ -259,7 +259,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 uplink: nic,
                 createdBridge: LinuxHostBridgeApply.createdBridgeForApply(request: request, probe: probe),
             )
-            let helperModes = try setuidHelpers(probe.helperPaths)
+            let helperModes = try helperModesProbe(probe.helperPaths)
             let pending = HostNetworkPendingCommitService.makePending(
                 target: request.bridge,
                 createdBridge: LinuxHostBridgeApply.createdBridge(
@@ -271,6 +271,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 helperModes: helperModes.isEmpty ? nil : helperModes,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
+            try setuidHelpers(helperModes)
             try startRollbackTimer(bridge: request.bridge)
         }
 
@@ -770,16 +771,23 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
         }
 
-        private func setuidHelpers(_ paths: [String]) throws -> [String: Int] {
+        private func helperModesProbe(_ paths: [String]) throws -> [String: Int] {
             var modes: [String: Int] = [:]
             for path in paths where FileManager.default.fileExists(atPath: path) {
-                var attrs = try FileManager.default.attributesOfItem(atPath: path)
+                let attrs = try FileManager.default.attributesOfItem(atPath: path)
                 let current = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
                 modes[path] = Int(current)
+            }
+            return modes
+        }
+
+        private func setuidHelpers(_ modes: [String: Int]) throws {
+            for (path, current) in modes.sorted(by: { $0.key < $1.key })
+                where FileManager.default.fileExists(atPath: path) {
+                var attrs = try FileManager.default.attributesOfItem(atPath: path)
                 attrs[.posixPermissions] = NSNumber(value: current | 0o4000 | 0o111)
                 try FileManager.default.setAttributes(attrs, ofItemAtPath: path)
             }
-            return modes
         }
 
         private func writeNetworkd(

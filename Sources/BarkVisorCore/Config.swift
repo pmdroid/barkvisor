@@ -344,6 +344,8 @@ public enum Config {
     }
 
     public static var ollamaKeySecret: String {
+        ollamaKeySecretFileLock.lock()
+        defer { ollamaKeySecretFileLock.unlock() }
         if let existing = loadOllamaKeySecret(from: dataDir) {
             return existing
         }
@@ -537,6 +539,7 @@ public enum Config {
     }
 
     private static let apiKeyHmacSecretFileLock = NSLock()
+    private static let ollamaKeySecretFileLock = NSLock()
     private static let apiKeyHmacSecretGate = APIKeyHmacSecretGate()
 }
 

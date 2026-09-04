@@ -41,6 +41,21 @@ public enum OllamaSettings {
         return plaintext
     }
 
+    static func resealLegacyPlaintext(
+        _ raw: String?,
+        secret: String,
+        write: (String) throws -> Void,
+    ) {
+        guard let raw, nonempty(raw) != nil, !raw.hasPrefix(ciphertextPrefix),
+              storedAPIKey(raw, secret: secret) != nil
+        else { return }
+        do {
+            try write(sealAPIKey(raw, secret: secret))
+        } catch {
+            Log.server.warning("Could not re-seal legacy Ollama key: \(error.localizedDescription)")
+        }
+    }
+
     public static func load(from db: Database) throws -> (endpoint: URL, apiKey: String?) {
         try load(hostId: Config.hostId, from: db)
     }
@@ -56,6 +71,16 @@ public enum OllamaSettings {
             let global = try loadGlobalRaw(from: db)
             let endpointRaw = nonempty(row.endpoint) ?? global.endpoint
             let apiKeyRaw = row.apiKey == nil ? global.apiKey : nonempty(row.apiKey)
+            resealLegacyPlaintext(row.apiKey, secret: keySecret) { sealed in
+                var resealed = row
+                resealed.apiKey = sealed
+                try resealed.save(db)
+            }
+            if row.apiKey == nil {
+                resealLegacyPlaintext(global.apiKey, secret: keySecret) { sealed in
+                    try AppSetting(key: apiKeyKey, value: sealed).save(db, onConflict: .replace)
+                }
+            }
             return try credentials(
                 endpointRaw: endpointRaw,
                 apiKeyRaw: storedAPIKey(apiKeyRaw, secret: keySecret),
@@ -69,6 +94,9 @@ public enum OllamaSettings {
         secret: String? = nil,
     ) throws -> (endpoint: URL, apiKey: String?) {
         let raw = try loadGlobalRaw(from: db)
+        resealLegacyPlaintext(raw.apiKey, secret: secret ?? Config.ollamaKeySecret) { sealed in
+            try AppSetting(key: apiKeyKey, value: sealed).save(db, onConflict: .replace)
+        }
         return try credentials(
             endpointRaw: raw.endpoint,
             apiKeyRaw: storedAPIKey(raw.apiKey, secret: secret ?? Config.ollamaKeySecret),

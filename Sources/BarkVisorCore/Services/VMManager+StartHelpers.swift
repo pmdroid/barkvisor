@@ -213,7 +213,7 @@ extension VMManager {
 
     func configureQEMUProcess(
         launch: QEMULaunchConfig, vmID: String,
-    ) -> (Process, Pipe, Pipe) {
+    ) -> (Process, Pipe, Pipe, String?) {
         let process = Process()
         let dropped = WorkloadPrivilegeDrop.apply(
             executable: launch.executable,
@@ -243,7 +243,7 @@ extension VMManager {
             }
         }
 
-        return (process, stdoutPipe, stderrPipe)
+        return (process, stdoutPipe, stderrPipe, dropped.user)
     }
 
     // MARK: - Socket Readiness
