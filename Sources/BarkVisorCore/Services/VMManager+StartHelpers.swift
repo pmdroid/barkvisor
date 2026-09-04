@@ -243,7 +243,7 @@ extension VMManager {
             }
         }
 
-        return (process, stdoutPipe, stderrPipe, dropped.user)
+        return (process, stdoutPipe, stderrPipe, dropped.dropped ? dropped.user : nil)
     }
 
     // MARK: - Socket Readiness
