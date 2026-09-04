@@ -14,3 +14,7 @@ the Home/Device terminology.
 Pick one and the chosen direction gets implemented against `SetupView.vue`
 (`frontend/src/views/SetupView.vue`), replacing the current wizard including its
 capability-gated bridge step.
+
+This directory is a retained design archive; the implemented setup flow lives in
+`frontend/src/views/SetupView.vue`, which follows the chosen direction here. The
+prototypes are kept for reference and are not part of the build.
