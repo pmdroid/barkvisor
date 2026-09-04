@@ -12,6 +12,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
     public var rollbackSeconds: Int
     public var createdBridge: Bool
     public var netplanPid: Int32?
+    public var helperModes: [String: Int]?
 
     public init(
         target: String,
@@ -19,16 +20,18 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         rollbackSeconds: Int,
         createdBridge: Bool = false,
         netplanPid: Int32? = nil,
+        helperModes: [String: Int]? = nil,
     ) {
         self.target = target
         self.commitDeadline = commitDeadline
         self.rollbackSeconds = rollbackSeconds
         self.createdBridge = createdBridge
         self.netplanPid = netplanPid
+        self.helperModes = helperModes
     }
 
     enum CodingKeys: String, CodingKey {
-        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid
+        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid, helperModes
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +41,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         rollbackSeconds = try c.decode(Int.self, forKey: .rollbackSeconds)
         createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
         netplanPid = try c.decodeIfPresent(Int32.self, forKey: .netplanPid)
+        helperModes = try c.decodeIfPresent([String: Int].self, forKey: .helperModes)
     }
 
     public var expired: Bool {
@@ -335,6 +339,7 @@ public enum HostNetworkPendingCommitService {
         target: String,
         createdBridge: Bool = false,
         netplanPid: Int32? = nil,
+        helperModes: [String: Int]? = nil,
     ) -> HostNetworkPendingCommit {
         HostNetworkPendingCommit(
             target: target,
@@ -342,6 +347,7 @@ public enum HostNetworkPendingCommitService {
             rollbackSeconds: rollbackSeconds,
             createdBridge: createdBridge,
             netplanPid: netplanPid,
+            helperModes: helperModes,
         )
     }
 }

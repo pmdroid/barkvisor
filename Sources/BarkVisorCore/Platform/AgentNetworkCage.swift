@@ -118,12 +118,12 @@ public enum AgentNetworkCage {
         return profile
     }
 
-    public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
-        linuxOwnerCommands(pid: pid, action: "-I")
+    public static func linuxOwnerRejectCommands(uid: uid_t) -> [[String]] {
+        linuxOwnerCommands(uid: uid, action: "-I")
     }
 
-    public static func linuxOwnerDeleteCommands(pid: Int32) -> [[String]] {
-        linuxOwnerCommands(pid: pid, action: "-D")
+    public static func linuxOwnerDeleteCommands(uid: uid_t) -> [[String]] {
+        linuxOwnerCommands(uid: uid, action: "-D")
     }
 
     public static let iptablesSearchPaths = [
@@ -139,28 +139,32 @@ public enum AgentNetworkCage {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    public static func applyLinuxFilter(pid: Int32, vmID: String) throws {
+    public static func applyLinuxFilter(vmID: String) throws {
         #if os(Linux)
             guard let exe = resolveIptables() else {
                 throw BarkVisorError.forbidden(
                     "Agent Workloads need iptables to block the house LAN",
                 )
             }
-            try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
-            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
-                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
+            guard let uid = workloadOwnerUID() else {
+                throw BarkVisorError.forbidden(
+                    "Agent Workloads need the barkvisor or qemu drop user to match iptables owner rules",
+                )
             }
-            Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
+            try runIptables(exe: exe, commands: linuxOwnerRejectCommands(uid: uid), vmID: vmID)
+            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
+                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(uid: uid), vmID: vmID)
+            }
+            Log.vm.info("Agent LAN filter applied for uid \(uid)", vm: vmID)
         #else
-            _ = pid
             _ = vmID
         #endif
     }
 
-    public static func removeLinuxFilter(pid: Int32, vmID: String) {
+    public static func removeLinuxFilter(vmID: String) {
         #if os(Linux)
-            guard let exe = resolveIptables() else { return }
-            for args in linuxOllamaDeleteCommands(pid: pid) + linuxOwnerDeleteCommands(pid: pid) {
+            guard let exe = resolveIptables(), let uid = workloadOwnerUID() else { return }
+            for args in linuxOllamaDeleteCommands(uid: uid) + linuxOwnerDeleteCommands(uid: uid) {
                 let proc = Process()
                 proc.executableURL = exe
                 proc.arguments = Array(args.dropFirst())
@@ -169,41 +173,52 @@ public enum AgentNetworkCage {
                 try? proc.run()
                 proc.waitUntilExit()
             }
-            Log.vm.info("Agent LAN filter removed for pid \(pid)", vm: vmID)
+            Log.vm.info("Agent LAN filter removed for uid \(uid)", vm: vmID)
         #else
-            _ = pid
             _ = vmID
         #endif
     }
 
-    private static func linuxOwnerCommands(pid: Int32, action: String) -> [[String]] {
+    private static func linuxOwnerCommands(uid: uid_t, action: String) -> [[String]] {
         blockedIPv4CIDRs.map { cidr in
             [
                 "iptables", action, "OUTPUT",
-                "-m", "owner", "--pid-owner", "\(pid)",
+                "-m", "owner", "--uid-owner", "\(uid)",
                 "-d", cidr,
                 "-j", "REJECT",
             ]
         }
     }
 
-    public static func linuxOllamaAcceptCommands(pid: Int32) -> [[String]] {
-        linuxOllamaCommands(pid: pid, action: "-I")
+    public static func linuxOllamaAcceptCommands(uid: uid_t) -> [[String]] {
+        linuxOllamaCommands(uid: uid, action: "-I")
     }
 
-    public static func linuxOllamaDeleteCommands(pid: Int32) -> [[String]] {
-        linuxOllamaCommands(pid: pid, action: "-D")
+    public static func linuxOllamaDeleteCommands(uid: uid_t) -> [[String]] {
+        linuxOllamaCommands(uid: uid, action: "-D")
     }
 
-    private static func linuxOllamaCommands(pid: Int32, action: String) -> [[String]] {
+    private static func linuxOllamaCommands(uid: uid_t, action: String) -> [[String]] {
         [[
             "iptables", action, "OUTPUT",
-            "-m", "owner", "--pid-owner", "\(pid)",
+            "-m", "owner", "--uid-owner", "\(uid)",
             "-p", "tcp",
             "-d", "127.0.0.1",
             "--dport", "\(ollamaPort)",
             "-j", "ACCEPT",
         ]]
+    }
+
+    public static func workloadOwnerUID(
+        euid: uid_t = WorkloadPrivilegeDrop.currentEUID(),
+        dropsOnPlatform: Bool = WorkloadPrivilegeDrop.dropsOnThisPlatform,
+        uidForUser: (String) -> uid_t? = WorkloadPrivilegeDrop.uid(forUser:),
+    ) -> uid_t? {
+        WorkloadPrivilegeDrop.dropUID(
+            euid: euid,
+            dropsOnPlatform: dropsOnPlatform,
+            uidForUser: uidForUser,
+        )
     }
 
     #if os(Linux)

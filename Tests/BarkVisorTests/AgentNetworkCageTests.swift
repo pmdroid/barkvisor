@@ -57,19 +57,44 @@ struct AgentNetworkCageTests {
     }
 
     @Test func `linux owner commands cover blocked CIDRs`() {
-        let cmds = AgentNetworkCage.linuxOwnerRejectCommands(pid: 4_242)
+        let cmds = AgentNetworkCage.linuxOwnerRejectCommands(uid: 4_242)
         #expect(cmds.count == AgentNetworkCage.blockedIPv4CIDRs.count)
-        #expect(cmds.allSatisfy { $0.contains("4242") && $0.contains("REJECT") })
-        let deletes = AgentNetworkCage.linuxOwnerDeleteCommands(pid: 4_242)
+        #expect(cmds.allSatisfy { $0.contains("--uid-owner") && $0.contains("4242") && $0.contains("REJECT") })
+        #expect(cmds.allSatisfy { !$0.contains("--pid-owner") })
+        let deletes = AgentNetworkCage.linuxOwnerDeleteCommands(uid: 4_242)
         #expect(deletes.count == cmds.count)
         #expect(deletes.allSatisfy { $0.contains("-D") && $0.contains("OUTPUT") })
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/bin/iptables"))
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/sbin/iptables"))
-        let accept = AgentNetworkCage.linuxOllamaAcceptCommands(pid: 4_242)
+        let accept = AgentNetworkCage.linuxOllamaAcceptCommands(uid: 4_242)
         #expect(accept.count == 1)
         #expect(accept[0].contains("11434"))
         #expect(accept[0].contains("ACCEPT"))
         #expect(accept[0].contains("127.0.0.1"))
+    }
+
+    @Test func `owner uid is the drop user or nil for root`() {
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "barkvisor" ? 995 : nil },
+            ) == 995,
+        )
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { $0 == "qemu" ? 994 : nil },
+            ) == 994,
+        )
+        #expect(
+            AgentNetworkCage.workloadOwnerUID(
+                euid: 0,
+                dropsOnPlatform: true,
+                uidForUser: { _ in nil },
+            ) == nil,
+        )
     }
 
     @Test func `house launch is not wrapped`() throws {

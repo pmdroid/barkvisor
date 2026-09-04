@@ -274,7 +274,7 @@ public actor VMManager: VMStateQuerying {
             let pid = process.processIdentifier
             if (try? WorkloadClass.parse(loaded.vm.workloadClass)) == .agent {
                 do {
-                    try AgentNetworkCage.applyLinuxFilter(pid: pid, vmID: vmID)
+                    try AgentNetworkCage.applyLinuxFilter(vmID: vmID)
                 } catch {
                     process.terminate()
                     throw error

@@ -178,6 +178,26 @@ public enum WorkloadPrivilegeDrop {
         geteuid()
     }
 
+    public static func uid(forUser name: String) -> uid_t? {
+        name.withCString { ptr in
+            guard let pw = getpwnam(ptr) else { return nil }
+            return pw.pointee.pw_uid
+        }
+    }
+
+    public static func dropUID(
+        euid: uid_t,
+        dropsOnPlatform: Bool,
+        uidForUser: (String) -> uid_t?,
+    ) -> uid_t? {
+        guard let user = dropUser(
+            euid: euid,
+            dropsOnPlatform: dropsOnPlatform,
+            userExists: { uidForUser($0) != nil },
+        ) else { return nil }
+        return uidForUser(user)
+    }
+
     static func applyOwnership(_ url: URL, user: String) throws {
         let path = url.path
         if DiskSettings.isHostDevicePath(path) { return }
