@@ -480,6 +480,28 @@ export interface TaskAcceptedResponse {
   taskID: string
 }
 
+export interface UpdateInfo {
+  version: string
+  packageURL: string
+  checksumURL: string
+  packageKind: string
+  changelog: string
+  publishedAt: string
+  isPrerelease: boolean
+}
+
+export interface UpdateCheckResponse {
+  currentVersion: string
+  update: UpdateInfo | null
+}
+
+export interface UpdateSettings {
+  channel: 'stable' | 'beta'
+  autoCheck: boolean
+  isDevBuild: boolean
+  updateURL: string | null
+}
+
 export interface VMTaskAcceptedResponse {
   taskID: string
   vm: VM

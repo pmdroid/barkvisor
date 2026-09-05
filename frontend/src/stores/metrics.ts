@@ -9,7 +9,7 @@ import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 export const useMetricsStore = defineStore('metrics', () => {
   const samples = ref<MetricSample[]>([])
   const stream = useTicketedEventSource()
-  let pollTimer: number | undefined
+  let pollTimer: ReturnType<typeof setInterval> | undefined
   let epoch = 0
 
   async function loadHistory(path: string, epochAtStart: number) {

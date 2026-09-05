@@ -99,7 +99,7 @@ export function reachabilityCardClass(code: string | undefined): string {
 }
 
 export function reachabilityHint(
-  device: { reachability?: string; reachabilityError?: string | null },
+  device: { reachability?: string | null; reachabilityError?: string | null },
 ): string | null {
   const code = device.reachability
   if (!code || code === 'ok') return null

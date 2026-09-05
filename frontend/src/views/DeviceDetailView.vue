@@ -746,7 +746,7 @@ async function doStop() {
               :loading="diskDirSaving"
               loading-text="Saving..."
               :disabled="diskDirLoading || !diskDirCanEdit || diskDirectoryDraft === ''"
-              @click="saveDiskSettings"
+              @click="() => saveDiskSettings()"
             >
               Save
             </AppButton>

@@ -183,7 +183,9 @@ function isBlockDisk(row: HomeDiskRow): boolean {
 
 function mutateApiTarget(device: HomeDeviceHealthSnapshot | null) {
   if (useHomeUnion.value && device) return device
-  return devicesStore.selfDevice ?? { hostId: devicesStore.selfDevice?.hostId || '', role: 'self' }
+  const self = devicesStore.selfDevice
+  if (self) return self
+  return { hostId: '', role: 'self' }
 }
 
 async function loadFormDiskContext() {
@@ -251,12 +253,6 @@ function openWorkload(row: HomeDiskRow, attachment: DiskAttachment) {
 function barPct(used: number, total: number): number {
   if (total <= 0) return 0
   return Math.min((used / total) * 100, 100)
-}
-
-function volumeOtherPct(summary: StorageSummary): number {
-  if (summary.volumeTotalBytes <= 0) return 0
-  const other = summary.volumeTotalBytes - summary.volumeAvailableBytes - summary.totalActualBytes
-  return Math.min((Math.max(other, 0) / summary.volumeTotalBytes) * 100, 100)
 }
 
 async function refreshHomeDisks() {

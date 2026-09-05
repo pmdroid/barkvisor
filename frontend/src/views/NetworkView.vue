@@ -60,7 +60,6 @@ import {
   interfaceBridgeColumn,
   interfaceBridgeFieldsReadOnly,
   interfaceOwnsAddressApply,
-  interfaceOwnsBridgeSetupApply,
   interfaceRoleBadgeClass,
   interfaceRoleLabel,
   interfaceRouteColumn,
@@ -69,7 +68,6 @@ import {
   syntheticMacBridgeIfaces,
   resolveBridgeApplyNic,
   pendingCommitBridgeName,
-  pendingCommitMatchesInterface,
   hostBridgeActionPath,
   interfaceAssociatedBridge,
   interfaceShowsDelete,
@@ -346,33 +344,6 @@ const canApplyAddresses = computed(() => {
   return interfaceAddressValidation.value.ok
 })
 
-const canApplySelectedInterface = computed(() => {
-  const row = selectedInterfaceRow.value
-  if (!row) return false
-  const mode = selectedInterfaceMode.value
-  if (
-    interfaceShowsDelete(row.iface, selectedInterfaceReadiness.value)
-    && (mode === 'linux-guide' || mode === 'macos-guide')
-  ) {
-    return true
-  }
-  const deviceCaps = deviceCapsFor(row.hostId)
-  if (!hostBridgeCanApply({
-    platform: deviceCaps.platform,
-    supportsHostMutation: deviceCaps.supportsHostMutation,
-    supportsHostBridgeManagement: deviceCaps.supportsHostBridgeManagement,
-    supportsManagedBridgeDaemon: deviceCaps.supportsManagedBridgeDaemon,
-  })) return false
-  if (selectedInterfaceReadOnly.value) return false
-  return selectedOwnsAddressApply.value
-    || interfaceOwnsBridgeSetupApply(
-      selectedInterfaceRole.value,
-      row.iface,
-      selectedInterfaceReadiness.value,
-      selectedInterfaceMode.value,
-    )
-})
-
 const showAddressEditor = computed(() => {
   const row = selectedInterfaceRow.value
   if (!row) return false
@@ -401,17 +372,6 @@ const selectedInterfaceRole = computed(() => {
 const selectedInterfaceReadOnly = computed(() =>
   interfaceBridgeFieldsReadOnly(selectedInterfaceRole.value),
 )
-
-const selectedOwnsAddressApply = computed(() => {
-  const row = selectedInterfaceRow.value
-  if (!row) return false
-  return interfaceOwnsAddressApply(
-    selectedInterfaceRole.value,
-    row.iface,
-    selectedInterfaceReadiness.value,
-    selectedInterfaceMode.value,
-  )
-})
 
 const selectedAddressFieldsReadOnly = computed(() => selectedInterfaceReadOnly.value)
 
@@ -562,8 +522,6 @@ function syncPendingCommitFromReadiness(hostId: string, ready: HostBridgeReadine
   }
   startPendingCommitTimer()
 }
-
-const showPendingCommitModal = computed(() => pendingCommit.value !== null)
 
 async function keepPendingCommit() {
   const pending = pendingCommit.value
@@ -1061,25 +1019,6 @@ function defaultFormHostId(): string {
 function getBridgeStatus(ifaceName: string, hostId?: string): BridgeInfo | undefined {
   const list = hostId && useHomeUnion.value ? homeNets.bridgesFor(hostId) : bridges.value
   return list.find((b) => b.interface === ifaceName)
-}
-
-function getBridgeStatusForNetwork(row: HomeNetworkRow): string | null {
-  const n = row.network
-  if (n.mode !== 'bridged' || !n.bridge) return null
-  const info = getBridgeStatus(n.bridge, row.hostId)
-  return info?.status || 'not_configured'
-}
-
-function bridgeBadgeClass(status: string): string {
-  if (status === 'active') return 'badge-green'
-  if (status === 'installed') return 'badge-accent'
-  return 'badge-gray'
-}
-
-function bridgeBadgeLabel(status: string): string {
-  if (status === 'active') return 'active'
-  if (status === 'installed') return 'installed'
-  return 'no bridge'
 }
 
 const usedBridgeInterfaces = computed(() => {

@@ -24,8 +24,8 @@ import { apiErrorMessage } from '../api/errors'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
-import { homeImageKey, useHomeLibraryStore, type HomeTemplate } from '../stores/homeLibrary'
-import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
+import { homeImageKey, useHomeLibraryStore, type HomeImage, type HomeTemplate } from '../stores/homeLibrary'
+import { hostArchToImageArch, imageArchSupportedOnHost } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   createVMIncompatibilityReasons,
@@ -37,7 +37,6 @@ import {
 } from '../utils/deviceCompatibility'
 import {
   availableSizePresets,
-  SIZE_PRESETS,
   vmCpuCap,
   vmMemoryCapMB,
   type SizePreset,
@@ -157,7 +156,6 @@ export function useCreateVMWizard(
 
   const hostArch = computed(() => pickedCaps.value.hostArch)
   const guestTypes = computed(() => pickedCaps.value.guestTypes ?? [])
-  const accelerator = computed(() => pickedCaps.value.accelerator)
   const hostCpuCount = computed(() => {
     const n = pickedCaps.value.hostCpuCount
     return typeof n === 'number' && n >= 1 ? n : 1
@@ -172,9 +170,6 @@ export function useCreateVMWizard(
     const cap = vmMemCapMB.value
     return cap != null ? Math.max(1, Math.floor(cap / 1024)) : 8
   })
-  const usb = computed(() => ({
-    available: pickedCaps.value.supportsUSBPassthrough,
-  }))
   const bridged = computed(() => ({
     available: pickedCaps.value.supportsBridgedNetworking,
     explanation:
@@ -219,7 +214,7 @@ export function useCreateVMWizard(
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
   const selectedImageId = ref('')
 
-  const selectedImage = computed(() => {
+  const selectedImage = computed<HomeImage | Image | null>(() => {
     if (!selectedImageId.value) return null
     return homeLibrary.images.find((i) => i.libraryKey === selectedImageId.value)
       || homeLibrary.images.find((i) => i.id === selectedImageId.value)
@@ -790,12 +785,6 @@ export function useCreateVMWizard(
   const filteredImages = computed(() => {
     const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
     return homeLibrary.images.filter((i) => i.imageType === type && i.status === 'ready')
-  })
-  const foreignArchImageCount = computed(() => 0)
-
-  const selectedNetwork = computed(() => {
-    if (!selectedNetworkId.value) return null
-    return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
   function selectedDeviceSelectable(): boolean {

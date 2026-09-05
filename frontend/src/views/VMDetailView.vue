@@ -755,7 +755,7 @@ async function patchWorkload(body: Parameters<typeof store.update>[1]) {
   if (isMemberDetail.value) {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) {
-      throw new Error(`${deviceDisplayLabel(device)} did not answer`)
+      throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
     }
     await homeWorkloads.update(device, vmId.value, body)
     return

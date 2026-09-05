@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
+import type { Image } from '../api/types'
 import { onActivated, onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useImageStore } from '../stores/images'
@@ -81,7 +82,14 @@ const libraryCapPercent = computed(() => {
   return Math.min(100, Math.round((used / total) * 100))
 })
 
-function imageRowsFromLibrary(images: HomeImage[]) {
+type LibraryImageRow = HomeImage & {
+  id: string
+  status: Image['status']
+  hostId: string
+  path?: string | null
+}
+
+function imageRowsFromLibrary(images: HomeImage[]): LibraryImageRow[] {
   return images.flatMap((img) =>
     img.copies.map((copy) => ({
       ...img,
@@ -93,7 +101,7 @@ function imageRowsFromLibrary(images: HomeImage[]) {
   )
 }
 
-const visibleImages = computed(() => {
+const visibleImages = computed<LibraryImageRow[] | Image[]>(() => {
   if (homeLibrary.images.length > 0) {
     return scopeRows(imageRowsFromLibrary(homeLibrary.images), deviceScope.selectedHostId)
   }
@@ -169,6 +177,10 @@ function imageFileName(img: { name: string; sourceUrl: string | null; imageType:
   }
   const ext = img.imageType === 'iso' ? 'iso' : 'qcow2'
   return `${img.name.toLowerCase().replace(/\s+/g, '-')}-${img.arch}.${ext}`
+}
+
+function imageHostId(img: LibraryImageRow | Image): string | undefined {
+  return 'hostId' in img ? img.hostId : undefined
 }
 
 function usedByNames(img: { id: string }): string {
@@ -561,7 +573,7 @@ async function doDeleteImage() {
             <div v-if="usedByNames(img)" class="row-sub">{{ usedByNames(img) }}</div>
           </td>
           <td class="del">
-            <AppButton size="sm" variant="danger" aria-label="Delete" @click="deleteImage(img.id, img.name, 'hostId' in img ? img.hostId : undefined)">Delete</AppButton>
+            <AppButton size="sm" variant="danger" aria-label="Delete" @click="deleteImage(img.id, img.name, imageHostId(img))">Delete</AppButton>
           </td>
         </tr>
     </tbody>
