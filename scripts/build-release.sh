@@ -729,11 +729,9 @@ HTML
     fi
 
     # Notarize the pkg
-    if [ "$NO_SIGN" = false ] && [ -n "$SIGNING_IDENTITY" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+    if [ "$NO_SIGN" = false ] && [ -n "$SIGNING_IDENTITY" ]; then
         log_sub "Notarizing pkg..."
         xcrun notarytool submit "$PKG_PATH" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
             --keychain-profile "barkvisor-notarize" \
             --wait
 

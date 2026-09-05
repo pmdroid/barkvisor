@@ -34,3 +34,4 @@ website/src/content/docs/docs/linux.md
 # Agent runtime (never commit)
 .acpbot/
 .acpbot-inbox/
+.gnupg-release/
