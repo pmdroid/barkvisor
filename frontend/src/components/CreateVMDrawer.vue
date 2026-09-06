@@ -15,6 +15,16 @@ const showImagePin = computed(() =>
   wizard.galleryKind.value === 'windows' || wizard.galleryKind.value === 'custom',
 )
 const imagePinVariant = computed(() => wizard.galleryKind.value === 'windows' ? 'iso' : 'custom')
+
+const blockedReason = computed(() => {
+  if (wizard.currentStepLabel.value === 'Gallery') return ''
+  if (wizard.imagePinBusy.value) return ''
+  const option = wizard.deviceOptions.value.find(
+    (o) => o.hostId === wizard.selectedHostId.value,
+  )
+  if (!option || option.compatible) return ''
+  return option.reasons.join(' ')
+})
 </script>
 
 <template>
@@ -108,6 +118,7 @@ const imagePinVariant = computed(() => wizard.galleryKind.value === 'windows' ? 
         />
 
         <p v-if="wizard.error.value" class="mag-error">{{ wizard.error.value }}</p>
+        <p v-else-if="blockedReason" class="mag-error">{{ blockedReason }}</p>
       </div>
       <div class="mag-foot">
         <button type="button" class="mag-btn ghost" @click="wizard.step.value > 1 ? wizard.prev() : emit('close')">

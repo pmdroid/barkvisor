@@ -25,7 +25,7 @@ import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore, type HomeImage, type HomeTemplate } from '../stores/homeLibrary'
-import { hostArchToImageArch, imageArchSupportedOnHost } from '../utils/imageArch'
+import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   createVMIncompatibilityReasons,
@@ -255,8 +255,16 @@ export function useCreateVMWizard(
 
   const showHostnameHint = computed(() => isCloudInitGuest.value)
 
-  /** Guest arch is always the picked Device arch in the magazine wizard. */
-  const effectiveGuestArch = computed(() => hostImageArch.value)
+  /**
+   * Guest arch: the pinned/selected image's arch wins, so an arm64 ISO on an
+   * x86_64 Device reports the right mismatch. Falls back to the Device arch
+   * (templates, coding-agent, images without a known arch).
+   */
+  const effectiveGuestArch = computed(() => {
+    const imgArch = normalizeImageArch(selectedImage.value?.arch)
+    if (imgArch) return imgArch
+    return hostImageArch.value
+  })
 
   const cpuCount = ref(4)
   const memoryMB = ref(8192)
@@ -356,8 +364,8 @@ export function useCreateVMWizard(
   const vmType = computed(() =>
     resolveGuestType({
       osFamily: osType.value,
-      arch: hostImageArch.value,
-      defaultArch: hostImageArch.value,
+      arch: effectiveGuestArch.value,
+      defaultArch: effectiveGuestArch.value,
     }),
   )
 
