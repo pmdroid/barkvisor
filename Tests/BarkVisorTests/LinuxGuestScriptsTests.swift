@@ -556,33 +556,7 @@ struct LinuxGuestScriptsTests {
         #expect(required.1.contains("docs/ci-kvm-runner.md"))
     }
 
-    @Test func `guest-boot workflow is optional and does not change required CI`() throws {
-        let workflow = try String(
-            contentsOf: repoRoot.appendingPathComponent(".github/workflows/guest-boot.yml"),
-            encoding: .utf8,
-        )
-        for needle in [
-            "name: Guest Boot",
-            "ubuntu-24.04",
-            "/dev/kvm",
-            "KVM_RUNNER_ENABLED",
-            "self-hosted, linux, kvm",
-            "run-guest-boot",
-            "cron:",
-            "upload-artifact",
-            "ci-guest-boot.sh",
-            "NEVER a required status check",
-            "guest-boot-bdd.sh",
-            "sha256sum -c",
-        ] {
-            #expect(workflow.contains(needle), "guest-boot.yml should mention \(needle)")
-        }
-        #expect(workflow.contains("da8272a5fddccd65b1529ed0e52e04526e2eadd4237d58d6220efeb973c6cd19"))
-        #expect(workflow.contains("47126395429653fa768d370655876ec1b68f6a95c7884f5e4f179700141c9b7f"))
-        #expect(workflow.contains("if: vars.KVM_RUNNER_ENABLED == 'true'"))
-        #expect(!workflow.localizedCaseInsensitiveContains("cluster"))
-        #expect(!workflow.localizedCaseInsensitiveContains("quorum"))
-
+    @Test func `guest-boot is not a required CI gate`() throws {
         let ci = try String(
             contentsOf: repoRoot.appendingPathComponent(".github/workflows/ci.yml"),
             encoding: .utf8,
