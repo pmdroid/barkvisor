@@ -157,7 +157,7 @@ QEMU, firmware, and ISO tools are distro packages — never bundled:
 | QEMU system | `qemu-base` | `qemu-kvm` | `qemu-system-x86` |
 | Display device modules | `qemu-hw-display-virtio-gpu` + `qemu-hw-display-virtio-gpu-pci` | included | included |
 | `qemu-img` | `qemu-base` | `qemu-img` | `qemu-utils` |
-| UEFI firmware | `edk2-ovmf` (x86_64), `edk2-armvirt` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
+| UEFI firmware | `edk2-ovmf` (x86_64), `edk2-aarch64` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
 | Cloud-init seed ISO | `cdrtools` | `genisoimage` or `xorriso` | `genisoimage` |
 | swtpm (Windows guests) | `swtpm` | `swtpm` | `swtpm` |
 
@@ -172,6 +172,8 @@ sudo pacman-key --init
 sudo pacman-key --populate archlinux holo
 ```
 
+If SteamOS reports a read-only root filesystem, enable SteamOS developer mode first (`steamos-readonly disable` or `steamos-devmode enable`, depending on the SteamOS version).
+
 ### Install the tarball into your home prefix
 
 Do **not** run the tarball's `install.sh` without root — it installs system units and requires root. For a user install:
@@ -179,12 +181,14 @@ Do **not** run the tarball's `install.sh` without root — it installs system un
 ```sh
 tar -xzf barkvisor-<version>-linux-<arch>.tar.gz
 mkdir -p ~/.local/opt
-mv barkvisor-<version>-linux-<arch> ~/.local/opt/barkvisor
+mv barkvisor-<version>-linux-<arch> ~/.local/opt/barkvisor-<version>
+ln -sfn ~/.local/opt/barkvisor-<version> ~/.local/opt/barkvisor
+rm -rf ~/.local/opt/barkvisor/root/usr/local/share/barkvisor/frontend
 mkdir -p ~/.local/bin
-ln -sf ~/.local/opt/barkvisor/root/bin/barkvisor-agent ~/.local/bin/barkvisor-agent
+ln -sf ~/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent ~/.local/bin/barkvisor-agent
 ```
 
-Run the binary named **`barkvisor-agent`** — it serves the API without the SPA. Data lives under `~/.local/share/barkvisor` (or set `BARKVISOR_DATA_DIR`); run it as your user, not with `sudo`.
+Run the binary named **`barkvisor-agent`** — it serves the API without the SPA. Removing the bundled SPA keeps this a **user** install: data lives under `~/.local/share/barkvisor` (or set `BARKVISOR_DATA_DIR`). If the SPA stays on disk, the daemon treats the prefix as an installed appliance and expects `/var/lib/barkvisor`, which your user cannot write. Run it as your user, not with `sudo`.
 
 ### systemd user unit
 
@@ -195,12 +199,15 @@ Description=BarkVisor agent (API-only Device)
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/opt/barkvisor/root/bin/barkvisor-agent serve
+Environment=LD_LIBRARY_PATH=%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/swift:%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/compat
+ExecStart=%h/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent serve
 Restart=on-failure
 
 [Install]
 WantedBy=default.target
 ```
+
+The `LD_LIBRARY_PATH` line is required — the binary links the bundled Swift runtime in that directory and does not embed an rpath for the home prefix.
 
 ```sh
 systemctl --user daemon-reload
@@ -213,7 +220,7 @@ Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?
 
 Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. `barkvisor-agent doctor` reports this as agent-as-user.
 
-Updates are manual: extract the newer tarball over `~/.local/opt/barkvisor`, then `systemctl --user restart barkvisor-agent.service`.
+Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, then `systemctl --user restart barkvisor-agent.service`.
 
 ## What gets installed
 
