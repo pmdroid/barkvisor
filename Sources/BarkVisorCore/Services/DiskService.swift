@@ -141,31 +141,62 @@ public enum DiskService {
             try growIfNeeded(path: destPath.path, sizeGB: sizeGB, qemuImg: qemuImg)
         }
 
-        // HAOS and some cloud images ship with backup GPT not at the end of a
-        // larger virtual disk; UEFI then fails with BdsDxe "No bootable option".
-        repairGPTBackupHeaderIfPossible(path: destPath.path)
+        try verifyGuestPartitionTable(path: destPath.path, qemuImg: qemuImg)
         try WorkloadPrivilegeDrop.handoffWritable(destPath)
     }
 
-    /// Relocate GPT secondary header to the end of the image when `sgdisk` exists.
-    /// Best-effort: never fails provision if tools/nbd are unavailable.
-    private static func repairGPTBackupHeaderIfPossible(path: String) {
-        let sgdisk = ["/usr/sbin/sgdisk", "/sbin/sgdisk", "/usr/bin/sgdisk"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-        guard let sgdisk else { return }
-
-        // Prefer direct sgdisk on the file (works for some setups); fall back quietly.
-        // `sgdisk -e` moves the backup GPT to the end of the device.
-        let result = try? PlatformProcess.run(
-            executable: URL(fileURLWithPath: sgdisk),
-            arguments: ["-e", path],
+    static func verifyGuestPartitionTable(path: String, qemuImg: URL) throws {
+        let result = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["map", "--output=json", "-U", path],
             timeout: 60,
         )
-        if result?.succeeded == true {
+        guard result.succeeded,
+              let entries = try? JSONSerialization.jsonObject(with: result.stdout) as? [[String: Any]]
+        else {
+            Log.server.warning(
+                "qemu-img map failed for \(path); skipping partition-table verification",
+            )
             return
         }
-        // qcow2 usually needs nbd; skip without root rather than failing clone.
-        _ = path
+
+        if let lba1 = guestBytes(path: path, entries: entries, guestOffset: 512, length: 512),
+           lba1.starts(with: Array("EFI PART".utf8)) {
+            return
+        }
+        if let lba0 = guestBytes(path: path, entries: entries, guestOffset: 0, length: 512),
+           lba0.count >= 512, lba0[510] == 0x55, lba0[511] == 0xAA {
+            return
+        }
+        throw BarkVisorError.diskCreateFailed(
+            "cloned disk \(path) has no partition table; the source image did not clone and the guest cannot boot",
+        )
+    }
+
+    private static func guestBytes(
+        path: String,
+        entries: [[String: Any]],
+        guestOffset: Int64,
+        length: Int,
+    ) -> [UInt8]? {
+        let entry = entries.first { e in
+            guard let start = jsonInt64(e["start"]), let len = jsonInt64(e["length"]),
+                  guestOffset >= start, guestOffset < start + len
+            else { return false }
+            return (jsonInt64(e["depth"]) ?? 0) == 0 && e["compressed"] as? Bool != true
+        }
+        guard let entry,
+              let start = jsonInt64(entry["start"]),
+              let fileOffset = jsonInt64(entry["offset"]).map({ $0 + (guestOffset - start) }),
+              entry["zero"] as? Bool != true,
+              entry["data"] as? Bool == true,
+              fileOffset >= 0
+        else { return nil }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        handle.seek(toFileOffset: UInt64(fileOffset))
+        guard let data = try? handle.read(upToCount: length) else { return nil }
+        return Array(data)
     }
 
     /// Resize a disk image to a new size (grow only — never shrink without an explicit API).
