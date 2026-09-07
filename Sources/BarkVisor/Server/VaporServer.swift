@@ -17,6 +17,7 @@ public final class VaporServer: @unchecked Sendable {
     private(set) var diskInfoCache: DiskInfoCache?
     private(set) var setupMiddleware: SetupMiddleware?
     private(set) var agentTLSServer: AgentTLSServer?
+    private var pendingAgentTLSReload = false
 
     /// Non-nil when the database was recovered in a lossy way at startup.
     /// The UI can check this to display a warning banner to the user.
@@ -163,12 +164,19 @@ public final class VaporServer: @unchecked Sendable {
         if let bound = self.agentTLSServer?.boundPort {
             Config.adoptBoundAgentPort(bound)
         }
+        if pendingAgentTLSReload {
+            pendingAgentTLSReload = false
+            await reloadAgentTLSAfterJoin()
+        }
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
     }
 
     private func reloadAgentTLSAfterJoin() async {
-        guard let agentTLSServer else { return }
+        guard let agentTLSServer else {
+            pendingAgentTLSReload = true
+            return
+        }
         do {
             try await agentTLSServer.reloadFromDisk()
             Log.server.info("Agent mTLS identity reloaded after pairing join")
