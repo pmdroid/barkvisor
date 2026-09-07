@@ -72,6 +72,11 @@ public final class AgentTLSServer: @unchecked Sendable {
     /// Test seam: next N `startListener` calls throw before binding.
     var testStartListenerFailuresRemaining = 0
 
+    /// Test seam: leaf currently presented on the listener.
+    var presentedCertificatePEMForTesting: String {
+        presentationCertificatePEM
+    }
+
     /// Re-read Home CA / Device leaf (and pairing receipt) and rebind if they changed.
     ///
     /// If the listener is already down, this always attempts to bind — even when

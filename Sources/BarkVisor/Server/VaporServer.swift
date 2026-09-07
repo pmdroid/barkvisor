@@ -133,6 +133,9 @@ public final class VaporServer: @unchecked Sendable {
                 healthProbes: services.healthProbes,
                 pairingOffers: pairingOffers,
                 jwt: JWTAuthMiddleware(keys: keys),
+                onPairingJoined: { [weak self] in
+                    await self?.reloadAgentTLSAfterJoin()
+                },
             ),
         )
 
@@ -162,6 +165,18 @@ public final class VaporServer: @unchecked Sendable {
         }
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
+    }
+
+    private func reloadAgentTLSAfterJoin() async {
+        guard let agentTLSServer else { return }
+        do {
+            try await agentTLSServer.reloadFromDisk()
+            Log.server.info("Agent mTLS identity reloaded after pairing join")
+        } catch {
+            Log.server.warning(
+                "Agent mTLS reload after join failed (hourly reload will retry): \(error.localizedDescription)",
+            )
+        }
     }
 
     /// PAS-180: console-local first-boot join. Best-effort so a down Home
