@@ -31,7 +31,7 @@ enum CancellableProxyStream {
 /// trust root. A failed call must not touch local SQLite / QEMU.
 ///
 /// Event loops and TLS-backed HTTP clients are process-scoped (same idea
-/// as `LocalHostProxyHTTP.shared`) so concurrent dashboard proxies do
+/// as `LocalHostProxyClientCache`) so concurrent dashboard proxies do
 /// not spawn a NIO thread pool per request.
 public struct AgentMTLSClient: HomeDeviceProxyClient {
     public var material: HomeCertificateMaterial

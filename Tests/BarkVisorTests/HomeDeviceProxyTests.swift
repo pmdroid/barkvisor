@@ -331,7 +331,7 @@ struct HomeDeviceProxyTests {
         defer { delayed.stop() }
         let url = try #require(URL(string: "http://127.0.0.1:\(delayed.port)/"))
         let client = LocalHostProxyClient()
-        await #expect(throws: HomeDeviceProxyError.self) {
+        await #expect(throws: HomeDeviceProxyError.connectTimeout) {
             try await client.send(HomeDeviceProxyRequest(method: "GET", url: url), timeout: 1)
         }
         let response = try await client.send(
