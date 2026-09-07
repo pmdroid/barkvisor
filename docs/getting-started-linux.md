@@ -1,6 +1,6 @@
 # Installation (Linux)
 
-This page is the Ubuntu / Debian appliance. Install the matching `.deb`. The Device daemon runs as **root**.
+This page is the Ubuntu / Debian appliance. Install the matching `.deb`. The Device daemon runs as **root**. Other distros (Arch, SteamOS, Fedora) and no-root hosts: see [Other distros: portable tarball, no root](#other-distros-portable-tarball-no-root).
 
 This milestone is **Ubuntu / Debian `.deb`** and **macOS `.pkg`**. Not rpm, not Fedora, not Arch as the operator channel. Packaging still knows how to emit those formats for builders. See [Building releases](getting-started-building-releases.md).
 
@@ -143,6 +143,77 @@ Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot
 Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Pairing → Add a Device). The short code alone is not enough.
 
 Then manage Workloads from the other Device SPA. See [Home and pairing](home-and-pairing.md), [Product terminology](product-terminology.md), and [First launch](getting-started-first-launch.md).
+
+## Other distros: portable tarball, no root
+
+Ubuntu / Debian is the packaged appliance. The release tarball (`barkvisor-<version>-linux-<arch>.tar.gz`) runs on any glibc host with distro QEMU — Arch, SteamOS, Fedora, openSUSE. Without root, install it into your home prefix and run the agent as your user under `systemctl --user`.
+
+### Dependencies (install first)
+
+QEMU, firmware, and ISO tools are distro packages — never bundled:
+
+| Need | Arch / SteamOS | Fedora | Ubuntu / Debian |
+|------|----------------|--------|-----------------|
+| QEMU system | `qemu-base` | `qemu-kvm` | `qemu-system-x86` |
+| Display device modules | `qemu-hw-display-virtio-gpu` + `qemu-hw-display-virtio-gpu-pci` | included | included |
+| `qemu-img` | `qemu-base` | `qemu-img` | `qemu-utils` |
+| UEFI firmware | `edk2-ovmf` (x86_64), `edk2-armvirt` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
+| Cloud-init seed ISO | `cdrtools` | `genisoimage` or `xorriso` | `genisoimage` |
+| swtpm (Windows guests) | `swtpm` | `swtpm` | `swtpm` |
+
+Arch and SteamOS split QEMU device modules out of `qemu-base`: without `qemu-hw-display-virtio-gpu` and `qemu-hw-display-virtio-gpu-pci`, VM start fails with `'virtio-gpu-pci' is not a valid device model name`. The `.deb` dependency list above does not apply here.
+
+Run **`barkvisor-agent doctor`** after installing dependencies. It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start.
+
+SteamOS only: initialize signing keys before `pacman -S` if pacman reports unknown trust:
+
+```sh
+sudo pacman-key --init
+sudo pacman-key --populate archlinux holo
+```
+
+### Install the tarball into your home prefix
+
+Do **not** run the tarball's `install.sh` without root — it installs system units and requires root. For a user install:
+
+```sh
+tar -xzf barkvisor-<version>-linux-<arch>.tar.gz
+mkdir -p ~/.local/opt
+mv barkvisor-<version>-linux-<arch> ~/.local/opt/barkvisor
+mkdir -p ~/.local/bin
+ln -sf ~/.local/opt/barkvisor/root/bin/barkvisor-agent ~/.local/bin/barkvisor-agent
+```
+
+Run the binary named **`barkvisor-agent`** — it serves the API without the SPA. Data lives under `~/.local/share/barkvisor` (or set `BARKVISOR_DATA_DIR`); run it as your user, not with `sudo`.
+
+### systemd user unit
+
+```ini
+# ~/.config/systemd/user/barkvisor-agent.service
+[Unit]
+Description=BarkVisor agent (API-only Device)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/opt/barkvisor/root/bin/barkvisor-agent serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now barkvisor-agent.service
+loginctl enable-linger "$USER"   # keep running after logout
+journalctl --user -u barkvisor-agent.service -f
+```
+
+Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
+
+Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. `barkvisor-agent doctor` reports this as agent-as-user.
+
+Updates are manual: extract the newer tarball over `~/.local/opt/barkvisor`, then `systemctl --user restart barkvisor-agent.service`.
 
 ## What gets installed
 

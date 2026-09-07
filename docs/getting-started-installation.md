@@ -7,7 +7,7 @@ This milestone is **Ubuntu / Debian `.deb`** and **macOS `.pkg`**. Not rpm, not 
 | Platform | Guide |
 |----------|--------|
 | **macOS** | This page |
-| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — Ubuntu / Debian `.deb` + systemd |
+| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — Ubuntu / Debian `.deb` + systemd; other distros and no-root hosts use the portable tarball on that page |
 
 After install, open `http://localhost:7777` and finish the web setup. First Workload: [Quickstart](getting-started-quickstart.md) and [First launch](getting-started-first-launch.md). Words: **Home**, **Device**, **Workload**, **Library**. See [Product terminology](product-terminology.md).
 

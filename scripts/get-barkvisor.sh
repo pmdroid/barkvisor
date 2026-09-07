@@ -296,7 +296,7 @@ detect_channel() {
       ASSET_SUFFIX=".pkg"
       ;;
     Linux)
-      is_debian_family || die "Ubuntu/Debian .deb only for now (host is $(linux_distro_id); rpm/Fedora is not this milestone)"
+      is_debian_family || die "Ubuntu/Debian .deb only for this channel (host is $(linux_distro_id); rpm/Fedora is not this milestone). Other distros / no-root hosts: use the release tarball — https://github.com/pmdroid/barkvisor/releases (see the 'Other distros: portable tarball, no root' section of the Linux install docs)"
       local darch
       darch="$(deb_arch)" || die "unsupported Linux arch $(host_arch) (need amd64 or arm64)"
       CHANNEL="linux"
