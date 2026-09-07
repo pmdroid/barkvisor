@@ -38,6 +38,7 @@ public enum PlatformQEMU {
             "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
             "/usr/share/edk2/x64/OVMF_CODE.fd",
+            "/usr/share/edk2/x64/OVMF_CODE.4m.fd",
             // Arch: edk2-ovmf
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd",
             "/usr/share/ovmf/x64/OVMF_CODE.fd",
@@ -96,6 +97,8 @@ public enum PlatformQEMU {
             "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/x64/OVMF_CODE.secboot.fd",
+            "/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd",
+            "/usr/share/edk2-ovmf/x64/OVMF_CODE.secboot.4m.fd",
             "/usr/share/edk2/x64/OVMF_CODE.4m.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
             "/usr/share/OVMF/OVMF_CODE.fd",
