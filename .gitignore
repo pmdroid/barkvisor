@@ -35,3 +35,5 @@ website/src/content/docs/docs/linux.md
 .acpbot/
 .acpbot-inbox/
 .gnupg-release/
+ssh
+ssh.pub
