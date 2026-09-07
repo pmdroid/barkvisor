@@ -344,7 +344,7 @@ struct HomeOllamaController: RouteCollection {
             let memberStream = try await sendMemberStream(
                 hostId: picked.hostId,
                 method: "POST",
-                path: "/api/ollama/v1/chat/completions",
+                path: OllamaChatProxy.deviceCompletionsPath,
                 body: data,
                 user: user,
                 timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,
@@ -354,7 +354,7 @@ struct HomeOllamaController: RouteCollection {
         let result = try await sendMember(
             hostId: picked.hostId,
             method: "POST",
-            path: "/api/ollama/v1/chat/completions",
+            path: OllamaChatProxy.deviceCompletionsPath,
             body: data,
             user: user,
             timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,

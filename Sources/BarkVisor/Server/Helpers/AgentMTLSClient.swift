@@ -268,6 +268,13 @@ public struct LocalHostProxyClient: HomeDeviceProxyClient {
     }
 
     public func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
+        try await send(request, timeout: nil)
+    }
+
+    public func send(
+        _ request: HomeDeviceProxyRequest,
+        timeout override: TimeInterval?,
+    ) async throws -> HomeDeviceProxyResponse {
         var outbound = HTTPClientRequest(url: request.url.absoluteString)
         outbound.method = HTTPMethod(rawValue: request.method.uppercased())
         for (name, value) in request.headers {
@@ -276,10 +283,13 @@ public struct LocalHostProxyClient: HomeDeviceProxyClient {
         if let body = request.body {
             outbound.body = .bytes(body)
         }
-        let seconds = Int64(max(1, timeout.rounded(.up)))
+        let seconds = Int64(max(1, (override ?? timeout).rounded(.up)))
         let response: HTTPClientResponse
         do {
-            response = try await LocalHostProxyHTTP.shared.execute(outbound, timeout: .seconds(seconds))
+            response = try await LocalHostProxyHTTP.client(requestTimeout: seconds).execute(
+                outbound,
+                timeout: .seconds(seconds),
+            )
         } catch {
             throw HomeDeviceProxyError.classify(error)
         }
@@ -295,16 +305,41 @@ public struct LocalHostProxyClient: HomeDeviceProxyClient {
 
 /// Process-wide plaintext loopback client. Never shut down; same lifetime
 /// as `AgentMTLSRuntime`. Redirects are off so a 3xx cannot escape loopback.
+/// Generation requests (cold model load, slow first token) far exceed the
+/// control-plane default, so clients are cached per request timeout with the
+/// read timeout raised to match — mirroring `AgentMTLSRuntime`.
 private enum LocalHostProxyHTTP {
-    static let shared: HTTPClient = {
+    static let connectTimeoutSeconds: Int64 = 10
+
+    static func client(requestTimeout: Int64) -> HTTPClient {
+        LocalHostProxyClientCache.shared.client(requestTimeout: requestTimeout)
+    }
+}
+
+private final class LocalHostProxyClientCache: @unchecked Sendable {
+    static let shared = LocalHostProxyClientCache()
+    private let lock = NSLock()
+    private var clients: [Int64: HTTPClient] = [:]
+
+    func client(requestTimeout: Int64) -> HTTPClient {
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = clients[requestTimeout] {
+            return existing
+        }
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
-        config.timeout = HTTPClient.Configuration.Timeout(connect: .seconds(10), read: .seconds(30))
-        return HTTPClient(
+        config.timeout = HTTPClient.Configuration.Timeout(
+            connect: .seconds(LocalHostProxyHTTP.connectTimeoutSeconds),
+            read: .seconds(requestTimeout),
+        )
+        let created = HTTPClient(
             eventLoopGroupProvider: .shared(LocalHostProxyHTTPGroup.shared),
             configuration: config,
         )
-    }()
+        clients[requestTimeout] = created
+        return created
+    }
 }
 
 private enum LocalHostProxyHTTPGroup {

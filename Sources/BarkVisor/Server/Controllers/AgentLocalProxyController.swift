@@ -180,6 +180,7 @@ struct AgentLocalProxyController: RouteCollection {
                     headers: headers,
                     body: body,
                 ),
+                timeout: Self.generationTimeout(for: path),
             )
         } catch let error as BarkVisorError {
             throw error
@@ -190,6 +191,15 @@ struct AgentLocalProxyController: RouteCollection {
             )
         }
         return HomeDevicesController.response(from: result)
+    }
+
+    /// Generation paths wait on cold model loads and slow first tokens; the
+    /// 10s control-plane loopback default aborts them mid-flight ("Local host
+    /// API timed out"). Grant the completions endpoint the stream timeout.
+    static func generationTimeout(for path: String) -> TimeInterval? {
+        path == OllamaChatProxy.deviceCompletionsPath
+            ? TimeInterval(OllamaChatProxy.streamTimeoutSeconds)
+            : nil
     }
 
     private func requirePeer(_ req: Vapor.Request) throws -> AgentPeerIdentity {

@@ -238,10 +238,21 @@ public struct HomeDeviceProxyResponse: Sendable {
 
 public protocol HomeDeviceProxyClient: Sendable {
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse
+    /// Per-request timeout override. `nil` keeps the client's default. Clients
+    /// that cannot honor it fall back to the plain `send` via the extension.
+    func send(_ request: HomeDeviceProxyRequest, timeout: TimeInterval?) async throws
+        -> HomeDeviceProxyResponse
     func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error>
 }
 
 extension HomeDeviceProxyClient {
+    /// Default: ignore the per-request override and use the client's own
+    /// default timeout. Real proxy clients override this.
+    public func send(_ request: HomeDeviceProxyRequest, timeout: TimeInterval?) async throws
+        -> HomeDeviceProxyResponse {
+        try await send(request)
+    }
+
     /// Default: buffer `send`, then yield one chunk. Used by test doubles.
     /// Non-2xx becomes `BarkVisorError.badGateway` so SSE proxies fail closed
     /// before writing HTTP 200.
