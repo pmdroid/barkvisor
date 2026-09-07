@@ -55,6 +55,7 @@ public enum PlatformQEMU {
             "/usr/share/edk2-ovmf/x64/OVMF_VARS.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_VARS.4m.fd",
             "/usr/share/edk2/x64/OVMF_VARS.fd",
+            "/usr/share/edk2/x64/OVMF_VARS.4m.fd",
             "/usr/share/ovmf/x64/OVMF_VARS.fd",
             "/usr/share/qemu/OVMF_VARS.fd",
             "/usr/share/qemu/edk2-x86_64-vars.fd",
@@ -95,6 +96,7 @@ public enum PlatformQEMU {
             "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/x64/OVMF_CODE.secboot.fd",
+            "/usr/share/edk2/x64/OVMF_CODE.4m.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
             "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.fd",
@@ -122,6 +124,7 @@ public enum PlatformQEMU {
             "/usr/share/edk2-ovmf/x64/OVMF_VARS.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_VARS.4m.fd",
             "/usr/share/edk2/x64/OVMF_VARS.fd",
+            "/usr/share/edk2/x64/OVMF_VARS.4m.fd",
             "/usr/share/ovmf/x64/OVMF_VARS.fd",
             "/usr/share/qemu/OVMF_VARS.fd",
             "/usr/share/qemu/edk2-x86_64-vars.fd",
@@ -137,6 +140,17 @@ public enum PlatformQEMU {
             "brew install qemu"
         #else
             "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
+        #endif
+    }
+
+    /// How to install the QEMU hardware modules Arch/SteamOS split out of qemu-base.
+    public static var qemuDeviceInstallHint: String {
+        #if os(macOS)
+            "reinstall qemu: brew install qemu"
+        #else
+            "QEMU is missing device modules. "
+                + "Arch/SteamOS: pacman -S qemu-hw-display-virtio-gpu qemu-hw-display-virtio-gpu-pci (split out of qemu-base)  "
+                + "|  Debian/Ubuntu: apt install qemu-system-x86 (full package, not qemu-system-misc)  |  Fedora: dnf install qemu-kvm"
         #endif
     }
 
@@ -173,6 +187,24 @@ public enum PlatformQEMU {
             "brew install swtpm"
         #else
             "apt/pacman/apk/dnf: swtpm"
+        #endif
+    }
+
+    /// How to install qemu-img (provisioning disks from images).
+    public static var qemuImgInstallHint: String {
+        #if os(macOS)
+            "brew install qemu"
+        #else
+            "qemu-img is required to clone and resize image disks. apt: qemu-utils  |  pacman: qemu-base  |  dnf: qemu-img  |  apk: qemu-img"
+        #endif
+    }
+
+    /// How to install an mkisofs-compatible ISO tool for cloud-init.
+    public static var isoToolInstallHint: String {
+        #if os(macOS)
+            "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
+        #else
+            "apt: genisoimage  |  pacman: cdrtools  |  dnf: genisoimage|xorriso  |  apk: xorriso"
         #endif
     }
 }

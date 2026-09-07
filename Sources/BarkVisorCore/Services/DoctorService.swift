@@ -81,6 +81,9 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var macSocketServiceRunning: Bool
     public var vfioPresent: Bool
     public var vfioNodesOpenable: Bool?
+    public var qemuImgPath: String?
+    public var isoToolPath: String?
+    public var qemuMissingDevices: [String]?
 
     public init(
         os: String,
@@ -99,6 +102,9 @@ public struct DoctorFactInputs: Sendable, Equatable {
         macSocketServiceRunning: Bool = false,
         vfioPresent: Bool = false,
         vfioNodesOpenable: Bool? = nil,
+        qemuImgPath: String? = nil,
+        isoToolPath: String? = nil,
+        qemuMissingDevices: [String]? = nil,
     ) {
         self.os = os
         self.uid = uid
@@ -116,6 +122,9 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.macSocketServiceRunning = macSocketServiceRunning
         self.vfioPresent = vfioPresent
         self.vfioNodesOpenable = vfioNodesOpenable
+        self.qemuImgPath = qemuImgPath
+        self.isoToolPath = isoToolPath
+        self.qemuMissingDevices = qemuMissingDevices
     }
 }
 
@@ -140,6 +149,11 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             .first { $0.name == suggested }?.ipAddress
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let vfio = Self.vfioFacts()
+        let qemuMissingDevices: [String]? = qemuPath.flatMap { path in
+            QEMUDeviceSupport.supportedDeviceNames(binary: URL(fileURLWithPath: path)).map { supported in
+                QEMUDeviceSupport.requiredLaunchDevices.subtracting(supported).sorted()
+            }
+        }
         return DoctorFactInputs(
             os: PlatformHost.platformName,
             uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(geteuid())),
@@ -157,7 +171,26 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             macSocketServiceRunning: processes.contains { $0.command.contains("socket_vmnet") },
             vfioPresent: vfio.present,
             vfioNodesOpenable: vfio.openable,
+            qemuImgPath: Self.locateQemuImg(),
+            isoToolPath: CloudInitService.locateCloudInitISOTool()?.path,
+            qemuMissingDevices: qemuMissingDevices,
         )
+    }
+
+    static func locateQemuImg() -> String? {
+        if let helper = try? BundleResolver.helper("qemu-img") {
+            return helper.path
+        }
+        let names = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")
+            .split(separator: ":")
+            .map(String.init)
+        for dir in ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"] + names {
+            let candidate = URL(fileURLWithPath: dir).appendingPathComponent("qemu-img")
+            if FileManager.default.isExecutableFile(atPath: candidate.path) {
+                return candidate.path
+            }
+        }
+        return nil
     }
 
     static func vfioFacts() -> (present: Bool, openable: Bool?) {
@@ -267,6 +300,9 @@ public enum DoctorService {
         let checks = [
             daemonUIDCheck(inputs),
             qemuCheck(inputs),
+            qemuDevicesCheck(inputs),
+            qemuImgCheck(inputs),
+            isoToolCheck(inputs),
             qemuProcessCheck(inputs),
             kvmCheck(inputs),
             vfioDropCheck(inputs),
@@ -315,7 +351,8 @@ public enum DoctorService {
         return DoctorCheck(
             id: "daemon-uid",
             status: .warn,
-            detail: "uid=\(inputs.uid) (unprivileged). Appliance Device expects root (#386).",
+            detail: "uid=\(inputs.uid) (unprivileged). agent-as-user: NAT networking only — "
+                + "bridged networking, qemu-bridge-helper, and VFIO need root.",
         )
     }
 
@@ -327,6 +364,50 @@ public enum DoctorService {
             id: "qemu",
             status: .fail,
             detail: "\(qemuBinaryName()) not found. \(PlatformQEMU.qemuInstallHint)",
+        )
+    }
+
+    private static func qemuDevicesCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        guard let missing = inputs.qemuMissingDevices else {
+            return DoctorCheck(
+                id: "qemu-devices",
+                status: .skip,
+                detail: "Device support not probed (QEMU missing or probe unavailable).",
+            )
+        }
+        if missing.isEmpty {
+            return DoctorCheck(
+                id: "qemu-devices",
+                status: .ok,
+                detail: "virtio-gpu-pci, virtio-blk-pci, qemu-xhci and friends present.",
+            )
+        }
+        return DoctorCheck(
+            id: "qemu-devices",
+            status: .fail,
+            detail: "missing device modules: \(missing.joined(separator: ", ")). \(PlatformQEMU.qemuDeviceInstallHint)",
+        )
+    }
+
+    private static func qemuImgCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if let path = inputs.qemuImgPath, !path.isEmpty {
+            return DoctorCheck(id: "qemu-img", status: .ok, detail: path)
+        }
+        return DoctorCheck(
+            id: "qemu-img",
+            status: .fail,
+            detail: "qemu-img not found. \(PlatformQEMU.qemuImgInstallHint)",
+        )
+    }
+
+    private static func isoToolCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if let path = inputs.isoToolPath, !path.isEmpty {
+            return DoctorCheck(id: "cloud-init-iso", status: .ok, detail: path)
+        }
+        return DoctorCheck(
+            id: "cloud-init-iso",
+            status: .fail,
+            detail: "mkisofs/genisoimage/xorrisofs not found. \(PlatformQEMU.isoToolInstallHint)",
         )
     }
 

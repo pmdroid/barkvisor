@@ -245,6 +245,7 @@ public enum QEMUBuilder {
         _ = try sanitizeQEMUArg(disk.format, label: "Disk format")
 
         let windows = profile.isWindows
+        try assertCoreDevicesAvailable(binary: qemuBinary, windows: windows)
         let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
         let machine = try validateMachine(
@@ -568,6 +569,20 @@ public enum QEMUBuilder {
         return args
     }
 
+    private static func assertCoreDevicesAvailable(binary: URL, windows: Bool) throws {
+        guard let supported = QEMUDeviceSupport.supportedDeviceNames(binary: binary) else { return }
+        var required = QEMUDeviceSupport.requiredLaunchDevices
+        if windows {
+            required.formUnion(QEMUDeviceSupport.requiredWindowsDevices)
+        }
+        let missing = required.subtracting(supported).sorted()
+        guard !missing.isEmpty else { return }
+        throw BarkVisorError.badRequest(
+            "QEMU \(binary.path) lacks required device modules: \(missing.joined(separator: ", ")). "
+                + PlatformQEMU.qemuDeviceInstallHint,
+        )
+    }
+
     private static func displayAndInputArgs(spec: WorkloadSpec) -> [String] {
         let resolution = spec.spec.display?.resolution ?? "1280x800"
         var args = ["-device", "ramfb"]
@@ -825,14 +840,14 @@ public enum QEMUBuilder {
     }
 
     /// Reorder firmware VARS candidates so the CODE variant (secboot / 4M) is tried first.
-    private static func preferMatchingFirmwareToken(
+    static func preferMatchingFirmwareToken(
         _ token: String,
         in candidates: [String],
         codePath: String,
     ) -> [String] {
-        let match = candidates.filter { $0.contains(token) }
-        let rest = candidates.filter { !$0.contains(token) }
-        if codePath.contains(token) {
+        let match = candidates.filter { $0.localizedCaseInsensitiveContains(token) }
+        let rest = candidates.filter { !$0.localizedCaseInsensitiveContains(token) }
+        if codePath.localizedCaseInsensitiveContains(token) {
             return match + rest
         }
         return rest + match

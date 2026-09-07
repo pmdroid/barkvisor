@@ -50,6 +50,9 @@ struct DoctorServiceTests {
         macSocketServiceRunning: Bool = false,
         vfioPresent: Bool = false,
         vfioNodesOpenable: Bool? = nil,
+        qemuImgPath: String? = "/usr/bin/qemu-img",
+        isoToolPath: String? = "/usr/bin/mkisofs",
+        qemuMissingDevices: [String]? = [],
     ) -> DoctorFactInputs {
         DoctorFactInputs(
             os: os,
@@ -68,6 +71,9 @@ struct DoctorServiceTests {
             macSocketServiceRunning: macSocketServiceRunning,
             vfioPresent: vfioPresent,
             vfioNodesOpenable: vfioNodesOpenable,
+            qemuImgPath: qemuImgPath,
+            isoToolPath: isoToolPath,
+            qemuMissingDevices: qemuMissingDevices,
         )
     }
 
@@ -79,6 +85,7 @@ struct DoctorServiceTests {
         let report = DoctorService.assemble(from: inputs(uid: 501))
         #expect(check(report, "daemon-uid").status == .warn)
         #expect(check(report, "daemon-uid").detail.contains("501"))
+        #expect(check(report, "daemon-uid").detail.contains("NAT"))
         #expect(!report.privileged)
         #expect(report.ok)
     }
@@ -375,5 +382,38 @@ struct DoctorServiceTests {
         let expected = GuestProfiles.profilesCompatible(withHostArch: PlatformCapabilities.hostArch)
             .contains { $0.defaultTPMEnabled }
         #expect(required == expected)
+    }
+}
+
+extension DoctorServiceTests {
+    @Test func `missing qemu-img fails with install hint`() {
+        let report = DoctorService.assemble(from: inputs(qemuImgPath: nil))
+        let check = report.checks.first { $0.id == "qemu-img" }
+        #expect(check?.status == .fail)
+        #expect(check?.detail.contains("qemu-img") == true)
+        #expect(!report.ok)
+    }
+
+    @Test func `missing cloud-init iso tool fails`() {
+        let report = DoctorService.assemble(from: inputs(isoToolPath: nil))
+        let check = report.checks.first { $0.id == "cloud-init-iso" }
+        #expect(check?.status == .fail)
+        #expect(check?.detail.contains("mkisofs") == true)
+        #expect(!report.ok)
+    }
+
+    @Test func `missing virtio device modules fail with arch hint`() {
+        let report = DoctorService.assemble(from: inputs(qemuMissingDevices: ["virtio-gpu-pci"]))
+        let check = report.checks.first { $0.id == "qemu-devices" }
+        #expect(check?.status == .fail)
+        #expect(check?.detail.contains("virtio-gpu-pci") == true)
+        #expect(!report.ok)
+    }
+
+    @Test func `present qemu-img and iso tool pass`() {
+        let report = DoctorService.assemble(from: inputs())
+        #expect(report.checks.first { $0.id == "qemu-img" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "cloud-init-iso" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "qemu-devices" }?.status == .ok)
     }
 }

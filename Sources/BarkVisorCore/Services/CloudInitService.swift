@@ -218,7 +218,7 @@ public enum CloudInitService {
 
     /// Resolve mkisofs-compatible tooling: bundled helper first, then distro PATH.
     /// Linux packages: `genisoimage` (Debian/Ubuntu) or `cdrtools` (mkisofs).
-    private static func resolveCloudInitISOTool() throws -> URL {
+    public static func locateCloudInitISOTool() -> URL? {
         if let bundled = try? BundleResolver.helper("mkisofs") {
             return bundled
         }
@@ -237,10 +237,18 @@ public enum CloudInitService {
                 }
             }
         }
+        return nil
+    }
+
+    private static func resolveCloudInitISOTool() throws -> URL {
+        if let found = locateCloudInitISOTool() {
+            return found
+        }
         #if os(macOS)
             let hint = "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
         #else
-            let hint = "Install via: apt install genisoimage  |  dnf install genisoimage|xorriso"
+            let hint =
+                "Install via: apt install genisoimage  |  pacman -S cdrtools  |  dnf install genisoimage|xorriso  |  apk add xorriso"
         #endif
         throw BarkVisorError.cloudInitFailed(
             "mkisofs/genisoimage not found. \(hint)",
