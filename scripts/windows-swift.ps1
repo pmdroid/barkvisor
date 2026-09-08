@@ -148,6 +148,7 @@ private func readlink(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer
             }
         }
         if ($next -ne $text) {
+            Set-ItemProperty -LiteralPath $_.FullName -Name IsReadOnly -Value $false
             [System.IO.File]::WriteAllText($_.FullName, $next)
         }
     }
