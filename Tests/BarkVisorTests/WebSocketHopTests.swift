@@ -660,7 +660,7 @@ struct WebSocketHopTests {
             return buffer.count
         }
 
-        func append<S: Sequence>(_ bytes: S) where S.Element == UInt8 {
+        func append(_ bytes: some Sequence<UInt8>) {
             lock.lock()
             buffer.append(contentsOf: bytes)
             lock.unlock()
