@@ -146,8 +146,9 @@ Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue 
         $next = $next.Replace("fflush(stdout)", "fflush(nil)")
         if ($_.Name -eq "WritePCAPHandler.swift") {
             $next = $next.Replace(".sin_addr.s_addr", ".sin_addr.S_un.S_addr")
-            $next = $next.Replace("open(pathPtr, O_WRONLY | oflag, 0o600)", "pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
-            $next = $next.Replace("_open(pathPtr, O_WRONLY | oflag, 0o600)", "pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            $next = $next.Replace("let fd = open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            $next = $next.Replace("let fd = _open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            $next = $next.Replace("let fd = pcappcap_open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
             $next = $next.Replace("let sysWrite = write", "let sysWrite = pcap_write")
             if ($next.IndexOf("func pcap_open(") -lt 0) {
                 $gtod = @"
