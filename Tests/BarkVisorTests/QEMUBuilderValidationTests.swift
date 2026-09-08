@@ -295,19 +295,22 @@ struct QEMUBuilderValidationTests {
         #expect(!args.contains { $0.contains("reconnect") })
     }
 
-    @Test func `hvf display matches working Ubuntu virtio-gpu scanout`() {
+    @Test func `hvf windows puts ramfb before virtio-gpu for installer GOP`() {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(id: "vm-disp", name: "disp"),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: 1, memoryMb: 512),
             ),
         )
-        let hvf = QEMUBuilder.displayAndInputArgs(spec: spec, accelerator: "hvf")
-        #expect(!hvf.contains("ramfb"))
-        #expect(hvf.contains("virtio-gpu-pci,xres=1280,yres=800"))
-        let kvm = QEMUBuilder.displayAndInputArgs(spec: spec, accelerator: "kvm")
-        #expect(kvm.contains("ramfb"))
-        #expect(kvm.contains("virtio-gpu-pci,xres=1280,yres=800"))
+        let win = QEMUBuilder.displayAndInputArgs(
+            spec: spec, accelerator: "hvf", windows: true,
+        )
+        #expect(win.firstIndex(of: "ramfb")! < win.firstIndex(of: "virtio-gpu-pci,xres=1280,yres=800")!)
+        let linux = QEMUBuilder.displayAndInputArgs(
+            spec: spec, accelerator: "hvf", windows: false,
+        )
+        #expect(!linux.contains("ramfb"))
+        #expect(linux.contains("virtio-gpu-pci,xres=1280,yres=800"))
     }
 
     @Test func `arm hvf tpm disables PPI so HVF can map the device`() {
