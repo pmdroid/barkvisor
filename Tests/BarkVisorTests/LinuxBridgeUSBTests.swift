@@ -25,6 +25,12 @@ struct LinuxBridgeUSBTests {
             #expect(!PlatformCapabilities.supportsHostBridgeManagement)
             try PlatformCapabilities.requireManagedBridgeDaemon()
             try PlatformCapabilities.requireHostMutation()
+        #elseif os(Windows)
+            #expect(!PlatformCapabilities.supportsBridgedNetworking)
+            #expect(!PlatformCapabilities.supportsUSBPassthrough)
+            #expect(!PlatformCapabilities.supportsHostMutation)
+            #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(!PlatformCapabilities.supportsHostBridgeManagement)
         #endif
     }
 

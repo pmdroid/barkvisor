@@ -16,7 +16,8 @@ public struct QEMUArgv: Equatable, Sendable {
     }
 
     public static func isQEMUExecutable(_ path: String) -> Bool {
-        URL(fileURLWithPath: path).lastPathComponent.hasPrefix("qemu-system")
+        let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+        return name.hasPrefix("qemu-system")
     }
 
     public var uuid: String? {
@@ -166,6 +167,8 @@ public enum QEMUProcessTable {
                 return []
             }
             return entries.compactMap { Int32($0) }.filter { $0 > 1 }
+        #elseif os(Windows)
+            return []
         #else
             guard let result = try? PlatformProcess.run(
                 path: "/bin/ps",

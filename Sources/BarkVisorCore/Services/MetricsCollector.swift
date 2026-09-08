@@ -264,7 +264,7 @@ public actor MetricsCollector {
             let deltaNs = Double(delta) * Double(timebase.numer) / Double(timebase.denom)
             let percent = deltaNs / Double(5_000_000_000) * 100.0
             return min(max(percent, 0), 100.0)
-        #else
+        #elseif os(Linux)
             // Linux: /proc/<pid>/stat fields utime+stime in clock ticks
             guard let content = try? String(contentsOfFile: "/proc/\(pid)/stat", encoding: .utf8) else {
                 return 0
@@ -284,6 +284,8 @@ public actor MetricsCollector {
             guard ticks > 0 else { return 0 }
             let percent = (delta / ticks) / 5.0 * 100.0
             return min(max(percent, 0), 100.0)
+        #else
+            return 0
         #endif
     }
 }

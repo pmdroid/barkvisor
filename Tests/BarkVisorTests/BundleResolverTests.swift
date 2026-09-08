@@ -8,6 +8,9 @@ struct BundleResolverTests {
             #expect(qemu.first == "/opt/homebrew/bin/qemu-system-aarch64")
             #expect(qemu.contains("/usr/local/bin/qemu-system-aarch64"))
             #expect(qemu.last?.hasSuffix("/libexec/barkvisor/qemu-system-aarch64") == true)
+        #elseif os(Windows)
+            #expect(qemu.contains { $0.contains("Program Files") && $0.hasSuffix("qemu-system-aarch64.exe") })
+            #expect(qemu.contains { $0.contains("msys64") && $0.hasSuffix("qemu-system-aarch64.exe") })
         #else
             #expect(qemu.first?.hasSuffix("/libexec/barkvisor/qemu-system-aarch64") == true)
             #expect(qemu.contains("/usr/bin/qemu-system-aarch64"))

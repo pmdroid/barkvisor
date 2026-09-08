@@ -64,114 +64,134 @@ public struct HostInterfaceSnapshot: Sendable {
 public enum HostInfoService {
     /// List all IPv4 network interfaces on this host.
     public static func listInterfaces() -> [HostInterfaceInfo] {
-        var interfaces: [HostInterfaceInfo] = []
+        #if os(Windows)
+            return []
+        #else
+            return listInterfacesPOSIX()
+        #endif
+    }
 
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+    #if !os(Windows)
+        private static func listInterfacesPOSIX() -> [HostInterfaceInfo] {
+            var interfaces: [HostInterfaceInfo] = []
+
+            var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+                return interfaces
+            }
+            defer { freeifaddrs(firstAddr) }
+
+            var seen = Set<String>()
+            var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
+
+            while let addr = current {
+                let name = String(cString: addr.pointee.ifa_name)
+
+                if let ifaAddr = addr.pointee.ifa_addr, ifaAddr.pointee.sa_family == UInt8(AF_INET),
+                   !seen.contains(name) {
+                    seen.insert(name)
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+                        let addrLen = socklen_t(ifaAddr.pointee.sa_len)
+                    #else
+                        // Linux sockaddr has no sa_len; use sockaddr_in size for AF_INET.
+                        let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    #endif
+                    if getnameinfo(
+                        ifaAddr, addrLen,
+                        &hostname, socklen_t(hostname.count),
+                        nil, 0, NI_NUMERICHOST,
+                    ) == 0 {
+                        let ip = hostname.withUnsafeBufferPointer {
+                            String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
+                        }
+                        interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip))
+                    }
+                }
+                current = addr.pointee.ifa_next
+            }
+
             return interfaces
         }
-        defer { freeifaddrs(firstAddr) }
-
-        var seen = Set<String>()
-        var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
-
-        while let addr = current {
-            let name = String(cString: addr.pointee.ifa_name)
-
-            if let ifaAddr = addr.pointee.ifa_addr, ifaAddr.pointee.sa_family == UInt8(AF_INET),
-               !seen.contains(name) {
-                seen.insert(name)
-                var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-                    let addrLen = socklen_t(ifaAddr.pointee.sa_len)
-                #else
-                    // Linux sockaddr has no sa_len; use sockaddr_in size for AF_INET.
-                    let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                #endif
-                if getnameinfo(
-                    ifaAddr, addrLen,
-                    &hostname, socklen_t(hostname.count),
-                    nil, 0, NI_NUMERICHOST,
-                ) == 0 {
-                    let ip = hostname.withUnsafeBufferPointer {
-                        String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
-                    }
-                    interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip))
-                }
-            }
-            current = addr.pointee.ifa_next
-        }
-
-        return interfaces
-    }
+    #endif
 
     /// All currently assigned IPv4 and IPv6 addresses (one row per address).
     /// `listInterfaces()` stays IPv4-only for setup/system UI.
     public static func listInterfaceAddresses() -> [HostInterfaceInfo] {
-        var interfaces: [HostInterfaceInfo] = []
+        #if os(Windows)
+            return []
+        #else
+            return listInterfaceAddressesPOSIX()
+        #endif
+    }
 
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
-            return interfaces
-        }
-        defer { freeifaddrs(firstAddr) }
+    #if !os(Windows)
+        private static func listInterfaceAddressesPOSIX() -> [HostInterfaceInfo] {
+            var interfaces: [HostInterfaceInfo] = []
 
-        var seen = Set<String>()
-        var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
-        while let addr = current {
-            let name = String(cString: addr.pointee.ifa_name)
-            if let ifaAddr = addr.pointee.ifa_addr {
-                let family = Int32(ifaAddr.pointee.sa_family)
-                if family == AF_INET || family == AF_INET6,
-                   let ip = numericHost(ifaAddr) {
-                    let key = "\(name)\0\(ip)"
-                    if seen.insert(key).inserted {
-                        interfaces.append(HostInterfaceInfo(
-                            name: name,
-                            ipAddress: ip,
-                            prefixLength: family == AF_INET ? ipv4PrefixLength(addr.pointee) : nil,
-                        ))
+            var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+                return interfaces
+            }
+            defer { freeifaddrs(firstAddr) }
+
+            var seen = Set<String>()
+            var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
+            while let addr = current {
+                let name = String(cString: addr.pointee.ifa_name)
+                if let ifaAddr = addr.pointee.ifa_addr {
+                    let family = Int32(ifaAddr.pointee.sa_family)
+                    if family == AF_INET || family == AF_INET6,
+                       let ip = numericHost(ifaAddr) {
+                        let key = "\(name)\0\(ip)"
+                        if seen.insert(key).inserted {
+                            interfaces.append(HostInterfaceInfo(
+                                name: name,
+                                ipAddress: ip,
+                                prefixLength: family == AF_INET ? ipv4PrefixLength(addr.pointee) : nil,
+                            ))
+                        }
                     }
                 }
+                current = addr.pointee.ifa_next
             }
-            current = addr.pointee.ifa_next
+            return interfaces
         }
-        return interfaces
-    }
 
-    private static func ipv4PrefixLength(_ ifa: ifaddrs) -> Int? {
-        guard let maskPtr = ifa.ifa_netmask else { return nil }
-        guard Int32(maskPtr.pointee.sa_family) == AF_INET else { return nil }
-        return maskPtr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ptr in
-            Int(UInt32(bigEndian: ptr.pointee.sin_addr.s_addr).nonzeroBitCount)
+        private static func ipv4PrefixLength(_ ifa: ifaddrs) -> Int? {
+            guard let maskPtr = ifa.ifa_netmask else { return nil }
+            guard Int32(maskPtr.pointee.sa_family) == AF_INET else { return nil }
+            return maskPtr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ptr in
+                Int(UInt32(bigEndian: ptr.pointee.sin_addr.s_addr).nonzeroBitCount)
+            }
         }
-    }
 
-    private static func numericHost(_ ifaAddr: UnsafePointer<sockaddr>) -> String? {
-        let family = Int32(ifaAddr.pointee.sa_family)
-        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-            let addrLen = socklen_t(ifaAddr.pointee.sa_len)
-        #else
-            let addrLen: socklen_t = family == AF_INET6
-                ? socklen_t(MemoryLayout<sockaddr_in6>.size)
-                : socklen_t(MemoryLayout<sockaddr_in>.size)
-        #endif
-        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-        guard getnameinfo(
-            ifaAddr, addrLen,
-            &hostname, socklen_t(hostname.count),
-            nil, 0, NI_NUMERICHOST,
-        ) == 0 else {
-            return nil
+        private static func numericHost(_ ifaAddr: UnsafePointer<sockaddr>) -> String? {
+            let family = Int32(ifaAddr.pointee.sa_family)
+            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+                let addrLen = socklen_t(ifaAddr.pointee.sa_len)
+            #else
+                let addrLen: socklen_t = family == AF_INET6
+                    ? socklen_t(MemoryLayout<sockaddr_in6>.size)
+                    : socklen_t(MemoryLayout<sockaddr_in>.size)
+            #endif
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(
+                ifaAddr, addrLen,
+                &hostname, socklen_t(hostname.count),
+                nil, 0, NI_NUMERICHOST,
+            ) == 0 else {
+                return nil
+            }
+            var ip = hostname.withUnsafeBufferPointer {
+                String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
+            }
+            if let zone = ip.firstIndex(of: "%") {
+                ip = String(ip[..<zone])
+            }
+            return ip.isEmpty ? nil : ip
         }
-        var ip = hostname.withUnsafeBufferPointer {
-            String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
-        }
-        if let zone = ip.firstIndex(of: "%") {
-            ip = String(ip[..<zone])
-        }
-        return ip.isEmpty ? nil : ip
-    }
+    #endif
 
     /// Whether a network interface name exists on this host.
     ///
@@ -190,27 +210,31 @@ public enum HostInfoService {
         }
         #if os(Linux)
             return LinuxHostNetwork.interfaceExists(name)
+        #elseif os(Windows)
+            return false
         #else
             return interfaceExistsViaGetifaddrs(name)
         #endif
     }
 
-    /// BSD/macOS existence probe via getifaddrs (includes interfaces without IPv4).
-    private static func interfaceExistsViaGetifaddrs(_ name: String) -> Bool {
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+    #if !os(Windows)
+        /// BSD/macOS existence probe via getifaddrs (includes interfaces without IPv4).
+        private static func interfaceExistsViaGetifaddrs(_ name: String) -> Bool {
+            var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+                return false
+            }
+            defer { freeifaddrs(firstAddr) }
+            var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
+            while let addr = current {
+                if String(cString: addr.pointee.ifa_name) == name {
+                    return true
+                }
+                current = addr.pointee.ifa_next
+            }
             return false
         }
-        defer { freeifaddrs(firstAddr) }
-        var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
-        while let addr = current {
-            if String(cString: addr.pointee.ifa_name) == name {
-                return true
-            }
-            current = addr.pointee.ifa_next
-        }
-        return false
-    }
+    #endif
 
     /// Human-readable label for setup / system UI (macOS + Linux host names).
     public static func displayName(for name: String) -> String {
@@ -370,22 +394,26 @@ public enum HostInfoService {
     }
 
     private static func linkFlagsByInterface() -> [String: (operState: String, carrier: Bool?)] {
-        var out: [String: (operState: String, carrier: Bool?)] = [:]
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return out }
-        defer { freeifaddrs(first) }
-        var current: UnsafeMutablePointer<ifaddrs>? = first
-        while let addr = current {
-            let name = String(cString: addr.pointee.ifa_name)
-            if out[name] == nil {
-                let flags = addr.pointee.ifa_flags
-                let up = (flags & UInt32(IFF_UP)) != 0
-                let running = (flags & UInt32(IFF_RUNNING)) != 0
-                out[name] = (up ? "up" : "down", running)
+        #if os(Windows)
+            return [:]
+        #else
+            var out: [String: (operState: String, carrier: Bool?)] = [:]
+            var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return out }
+            defer { freeifaddrs(first) }
+            var current: UnsafeMutablePointer<ifaddrs>? = first
+            while let addr = current {
+                let name = String(cString: addr.pointee.ifa_name)
+                if out[name] == nil {
+                    let flags = addr.pointee.ifa_flags
+                    let up = (flags & UInt32(IFF_UP)) != 0
+                    let running = (flags & UInt32(IFF_RUNNING)) != 0
+                    out[name] = (up ? "up" : "down", running)
+                }
+                current = addr.pointee.ifa_next
             }
-            current = addr.pointee.ifa_next
-        }
-        return out
+            return out
+        #endif
     }
 
     /// First primary IPv4 CIDR, or first address, for legacy `ipAddress` field.

@@ -175,14 +175,23 @@ public enum WorkloadPrivilegeDrop {
     }
 
     public static func currentEUID() -> uid_t {
-        geteuid()
+        #if os(Windows)
+            1_000
+        #else
+            geteuid()
+        #endif
     }
 
     public static func uid(forUser name: String) -> uid_t? {
-        name.withCString { ptr in
-            guard let pw = getpwnam(ptr) else { return nil }
-            return pw.pointee.pw_uid
-        }
+        #if os(Windows)
+            _ = name
+            return nil
+        #else
+            name.withCString { ptr in
+                guard let pw = getpwnam(ptr) else { return nil }
+                return pw.pointee.pw_uid
+            }
+        #endif
     }
 
     public static func dropUID(
@@ -203,32 +212,42 @@ public enum WorkloadPrivilegeDrop {
         if DiskSettings.isHostDevicePath(path) { return }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return }
-        let ids: (uid_t, gid_t)? = user.withCString { ptr in
-            guard let pw = getpwnam(ptr) else { return nil }
-            return (pw.pointee.pw_uid, pw.pointee.pw_gid)
-        }
-        guard let (uid, gid) = ids else { return }
-        let mode = writableMode(isDirectory: isDir.boolValue)
-        do {
-            try FileManager.default.setAttributes(
-                [
-                    .ownerAccountID: uid,
-                    .groupOwnerAccountID: gid,
-                    .posixPermissions: mode,
-                ],
-                ofItemAtPath: path,
-            )
-        } catch {
-            throw BarkVisorError.internalError(
-                "could not hand off \(path) to \(user) for dropped QEMU: \(error.localizedDescription)",
-            )
-        }
+        #if os(Windows)
+            _ = user
+            return
+        #else
+            let ids: (uid_t, gid_t)? = user.withCString { ptr in
+                guard let pw = getpwnam(ptr) else { return nil }
+                return (pw.pointee.pw_uid, pw.pointee.pw_gid)
+            }
+            guard let (uid, gid) = ids else { return }
+            let mode = writableMode(isDirectory: isDir.boolValue)
+            do {
+                try FileManager.default.setAttributes(
+                    [
+                        .ownerAccountID: uid,
+                        .groupOwnerAccountID: gid,
+                        .posixPermissions: mode,
+                    ],
+                    ofItemAtPath: path,
+                )
+            } catch {
+                throw BarkVisorError.internalError(
+                    "could not hand off \(path) to \(user) for dropped QEMU: \(error.localizedDescription)",
+                )
+            }
+        #endif
     }
 
     private static func userAccountExists(_ name: String) -> Bool {
-        name.withCString { ptr in
-            getpwnam(ptr) != nil
-        }
+        #if os(Windows)
+            _ = name
+            return false
+        #else
+            name.withCString { ptr in
+                getpwnam(ptr) != nil
+            }
+        #endif
     }
 
     private static func firstExistingWrapper(_ path: String) -> String? {

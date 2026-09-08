@@ -3,6 +3,8 @@ import Foundation
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// Portable constants / helpers for BSD vs Linux libc socket APIs.

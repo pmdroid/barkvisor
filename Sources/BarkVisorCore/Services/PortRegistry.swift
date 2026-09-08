@@ -173,7 +173,9 @@ public enum PortRegistry {
     }
 
     private static var streamSockType: Int32 {
-        #if os(Linux)
+        #if os(Windows)
+            0
+        #elseif os(Linux)
             Int32(SOCK_STREAM.rawValue)
         #else
             SOCK_STREAM
@@ -181,32 +183,41 @@ public enum PortRegistry {
     }
 
     private static var dgramSockType: Int32 {
-        #if os(Linux)
+        #if os(Windows)
+            0
+        #elseif os(Linux)
             Int32(SOCK_DGRAM.rawValue)
         #else
             SOCK_DGRAM
         #endif
     }
 
-    /// Free only if both INADDR_ANY and 127.0.0.1 can bind `port`.
     private static func isPortFree(_ port: Int, sockType: Int32) -> Bool {
-        isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
-            && isBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian, sockType: sockType)
+        #if os(Windows)
+            _ = port
+            _ = sockType
+            return true
+        #else
+            return isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
+                && isBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian, sockType: sockType)
+        #endif
     }
 
-    private static func isBindFree(_ port: Int, saddr: in_addr_t, sockType: Int32) -> Bool {
-        let fd = socket(AF_INET, sockType, 0)
-        guard fd >= 0 else { return true }
-        defer { close(fd) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(UInt16(port).bigEndian)
-        addr.sin_addr = in_addr(s_addr: saddr)
-        let bindResult = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+    #if !os(Windows)
+        private static func isBindFree(_ port: Int, saddr: in_addr_t, sockType: Int32) -> Bool {
+            let fd = socket(AF_INET, sockType, 0)
+            guard fd >= 0 else { return true }
+            defer { close(fd) }
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = in_port_t(UInt16(port).bigEndian)
+            addr.sin_addr = in_addr(s_addr: saddr)
+            let bindResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
             }
+            return bindResult == 0
         }
-        return bindResult == 0
-    }
+    #endif
 }

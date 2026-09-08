@@ -34,45 +34,50 @@ public final class QMPClient: @unchecked Sendable {
     }
 
     private func openSocket(timeoutSeconds: Int) throws {
-        fd = socket(AF_UNIX, PlatformSocket.stream, 0)
-        guard fd >= 0 else {
-            throw BarkVisorError.monitorError("Failed to create QMP socket")
-        }
-        readBuffer.removeAll(keepingCapacity: false)
+        #if os(Windows)
+            _ = timeoutSeconds
+            throw BarkVisorError.monitorError("QMP Unix sockets are not available on Windows yet")
+        #else
+            fd = socket(AF_UNIX, PlatformSocket.stream, 0)
+            guard fd >= 0 else {
+                throw BarkVisorError.monitorError("Failed to create QMP socket")
+            }
+            readBuffer.removeAll(keepingCapacity: false)
 
-        var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let pathBytes = socketPath.utf8CString
-        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
-            close(fd)
-            fd = -1
-            throw BarkVisorError.monitorError("QMP socket path too long")
-        }
-        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-            ptr.withMemoryRebound(to: CChar.self, capacity: pathBytes.count) { dest in
-                pathBytes.withUnsafeBufferPointer { src in
-                    if let base = src.baseAddress {
-                        _ = memcpy(dest, base, src.count)
+            var addr = sockaddr_un()
+            addr.sun_family = sa_family_t(AF_UNIX)
+            let pathBytes = socketPath.utf8CString
+            guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+                close(fd)
+                fd = -1
+                throw BarkVisorError.monitorError("QMP socket path too long")
+            }
+            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: pathBytes.count) { dest in
+                    pathBytes.withUnsafeBufferPointer { src in
+                        if let base = src.baseAddress {
+                            _ = memcpy(dest, base, src.count)
+                        }
                     }
                 }
             }
-        }
 
-        let connectResult = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                Foundation.connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            let connectResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    Foundation.connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
             }
-        }
 
-        guard connectResult == 0 else {
-            close(fd)
-            fd = -1
-            throw BarkVisorError.monitorError("Failed to connect to QMP socket at \(socketPath)")
-        }
+            guard connectResult == 0 else {
+                close(fd)
+                fd = -1
+                throw BarkVisorError.monitorError("Failed to connect to QMP socket at \(socketPath)")
+            }
+        #endif
     }
 
     public func execute(_ command: String) throws -> [String: Any] {
@@ -91,7 +96,11 @@ public final class QMPClient: @unchecked Sendable {
 
     public func disconnect() {
         if fd >= 0 {
-            close(fd)
+            #if os(Windows)
+                _ = fd
+            #else
+                close(fd)
+            #endif
             fd = -1
         }
         readBuffer.removeAll(keepingCapacity: false)
@@ -113,77 +122,87 @@ public final class QMPClient: @unchecked Sendable {
     }
 
     private func sendCommand(_ cmd: [String: Any]) throws {
-        guard fd >= 0 else {
-            throw BarkVisorError.monitorError("QMP not connected")
-        }
-        let data = try JSONSerialization.data(withJSONObject: cmd)
-        let msg = data + Data([0x0A]) // newline terminated
-        var totalWritten = 0
-        try msg.withUnsafeBytes { buf in
-            guard let base = buf.baseAddress else { return }
-            while totalWritten < buf.count {
-                let n = write(fd, base + totalWritten, buf.count - totalWritten)
-                guard n > 0 else {
-                    throw BarkVisorError.monitorError("QMP write failed (errno \(errno))")
-                }
-                totalWritten += n
+        #if os(Windows)
+            _ = cmd
+            throw BarkVisorError.monitorError("QMP Unix sockets are not available on Windows yet")
+        #else
+            guard fd >= 0 else {
+                throw BarkVisorError.monitorError("QMP not connected")
             }
-        }
+            let data = try JSONSerialization.data(withJSONObject: cmd)
+            let msg = data + Data([0x0A]) // newline terminated
+            var totalWritten = 0
+            try msg.withUnsafeBytes { buf in
+                guard let base = buf.baseAddress else { return }
+                while totalWritten < buf.count {
+                    let n = write(fd, base + totalWritten, buf.count - totalWritten)
+                    guard n > 0 else {
+                        throw BarkVisorError.monitorError("QMP write failed (errno \(errno))")
+                    }
+                    totalWritten += n
+                }
+            }
+        #endif
     }
 
     /// Read the next QMP JSON message (could be a response or an event).
     /// Handles multi-message reads: QEMU often sends `POWERDOWN\n{"return":{}}\n` in one packet.
     private func readMessage(maxBytes: Int? = nil) throws -> [String: Any] {
-        guard fd >= 0 else {
-            throw BarkVisorError.monitorError("QMP not connected")
-        }
+        #if os(Windows)
+            _ = maxBytes
+            throw BarkVisorError.monitorError("QMP Unix sockets are not available on Windows yet")
+        #else
+            guard fd >= 0 else {
+                throw BarkVisorError.monitorError("QMP not connected")
+            }
 
-        let chunkSize = 65_536
-        let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
-        defer { chunk.deallocate() }
+            let chunkSize = 65_536
+            let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+            defer { chunk.deallocate() }
 
-        while true {
-            // Complete line already buffered?
-            if let nl = readBuffer.firstIndex(of: 0x0A) {
-                let line = Data(readBuffer[..<nl])
-                readBuffer.removeSubrange(...nl)
-                if line.isEmpty { continue }
-                if let maxBytes, line.count > maxBytes {
+            while true {
+                // Complete line already buffered?
+                if let nl = readBuffer.firstIndex(of: 0x0A) {
+                    let line = Data(readBuffer[..<nl])
+                    readBuffer.removeSubrange(...nl)
+                    if line.isEmpty { continue }
+                    if let maxBytes, line.count > maxBytes {
+                        try rejectOversizedResponse(maxBytes)
+                    }
+                    do {
+                        guard let json = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
+                            throw BarkVisorError.monitorError("Invalid QMP response format")
+                        }
+                        return json
+                    } catch let error as BarkVisorError {
+                        throw error
+                    } catch {
+                        throw BarkVisorError.monitorError(
+                            "QMP JSON parse failed: \(error.localizedDescription)",
+                        )
+                    }
+                }
+
+                if let maxBytes, readBuffer.count > maxBytes {
                     try rejectOversizedResponse(maxBytes)
                 }
-                do {
-                    guard let json = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
-                        throw BarkVisorError.monitorError("Invalid QMP response format")
+
+                let n = read(fd, chunk, chunkSize)
+                if n == 0 {
+                    throw BarkVisorError.monitorError("QMP connection closed (empty read)")
+                }
+                if n < 0 {
+                    if errno == EAGAIN || errno == EWOULDBLOCK {
+                        throw BarkVisorError.monitorError("QMP read timed out after \(timeoutSeconds)s")
                     }
-                    return json
-                } catch let error as BarkVisorError {
-                    throw error
-                } catch {
-                    throw BarkVisorError.monitorError(
-                        "QMP JSON parse failed: \(error.localizedDescription)",
-                    )
+                    throw BarkVisorError.monitorError("QMP read failed (errno \(errno))")
+                }
+                readBuffer.append(chunk, count: n)
+                if let maxBytes, readBuffer.count > maxBytes {
+                    try rejectOversizedResponse(maxBytes)
                 }
             }
-
-            if let maxBytes, readBuffer.count > maxBytes {
-                try rejectOversizedResponse(maxBytes)
-            }
-
-            let n = read(fd, chunk, chunkSize)
-            if n == 0 {
-                throw BarkVisorError.monitorError("QMP connection closed (empty read)")
-            }
-            if n < 0 {
-                if errno == EAGAIN || errno == EWOULDBLOCK {
-                    throw BarkVisorError.monitorError("QMP read timed out after \(timeoutSeconds)s")
-                }
-                throw BarkVisorError.monitorError("QMP read failed (errno \(errno))")
-            }
-            readBuffer.append(chunk, count: n)
-            if let maxBytes, readBuffer.count > maxBytes {
-                try rejectOversizedResponse(maxBytes)
-            }
-        }
+        #endif
     }
 
     /// Drop the socket so a later command cannot read a truncated tail or a
