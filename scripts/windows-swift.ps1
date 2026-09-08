@@ -52,15 +52,59 @@ char *strptime_l(const char *s, const char *f, struct tm *tm, locale_t loc);
 "@
 Set-Content -LiteralPath $prefixPath -Value $prefix -Encoding ascii
 
+$sqliteRoot = Join-Path ([System.IO.Path]::GetTempPath()) "barkvisor-win-sqlite"
+$sqliteInc = Join-Path $sqliteRoot "include"
+$sqliteLibDir = Join-Path $sqliteRoot "lib"
+$sqliteHdr = Join-Path $sqliteInc "sqlite3.h"
+$sqliteLib = Join-Path $sqliteLibDir "sqlite3.lib"
+if (-not ((Test-Path -LiteralPath $sqliteHdr) -and (Test-Path -LiteralPath $sqliteLib))) {
+    New-Item -ItemType Directory -Force -Path $sqliteInc | Out-Null
+    New-Item -ItemType Directory -Force -Path $sqliteLibDir | Out-Null
+    $work = Join-Path $sqliteRoot "src"
+    New-Item -ItemType Directory -Force -Path $work | Out-Null
+    $zip = Join-Path $work "sqlite.zip"
+    $uri = "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip"
+    Invoke-WebRequest -Uri $uri -OutFile $zip -UseBasicParsing
+    Expand-Archive -LiteralPath $zip -DestinationPath $work -Force
+    $amal = Get-ChildItem -LiteralPath $work -Directory | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName "sqlite3.c")
+    } | Select-Object -First 1
+    if (-not $amal) { throw "sqlite amalgamation sqlite3.c missing" }
+    Copy-Item -LiteralPath (Join-Path $amal.FullName "sqlite3.h") -Destination $sqliteHdr
+    if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path -LiteralPath $vswhere) {
+            $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+            if (Test-Path -LiteralPath $vcvars) {
+                cmd.exe /c "`"$vcvars`" >nul && set" | ForEach-Object {
+                    if ($_ -match '^([^=]+)=(.*)$') {
+                        Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
+                    }
+                }
+            }
+        }
+    }
+    $c = Join-Path $amal.FullName "sqlite3.c"
+    $obj = Join-Path $work "sqlite3.obj"
+    & cl.exe /nologo /c /O2 /Fo$obj /DSQLITE_ENABLE_FTS5 /DSQLITE_ENABLE_JSON1 /DSQLITE_ENABLE_SNAPSHOT /DSQLITE_THREADSAFE=1 /DSQLITE_OMIT_LOAD_EXTENSION $c
+    if ($LASTEXITCODE -ne 0) { throw "cl sqlite3.c failed" }
+    & lib.exe /nologo /out:$sqliteLib $obj
+    if ($LASTEXITCODE -ne 0) { throw "lib sqlite3.lib failed" }
+}
+
 $all = @()
 if ($SwiftArgs) { $all += $SwiftArgs }
 $all += @(
     "-Xcc", "-I$inc",
+    "-Xcc", "-I$sqliteInc",
     "-Xcc", "-include",
     "-Xcc", $prefixPath,
     "-Xcxx", "-I$inc",
+    "-Xcxx", "-I$sqliteInc",
     "-Xcxx", "-include",
-    "-Xcxx", $prefixPath
+    "-Xcxx", $prefixPath,
+    "-Xlinker", "/LIBPATH:$sqliteLibDir"
 )
 & swift @all
 exit $LASTEXITCODE
