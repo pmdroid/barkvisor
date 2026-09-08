@@ -57,11 +57,11 @@ public final class QMPClient: @unchecked Sendable {
     private func openSocket(timeoutSeconds: Int) throws {
         try PlatformSocket.ensureStarted()
         #if os(Windows)
-            let created = socket(PlatformSocket.unixFamily, PlatformSocket.stream, 0)
-            guard created != INVALID_SOCKET else {
-                throw BarkVisorError.monitorError("Failed to create QMP socket")
+            do {
+                winSock = try PlatformSocket.connectUnixStream(path: socketPath)
+            } catch {
+                throw BarkVisorError.monitorError("Failed to connect to QMP socket at \(socketPath)")
             }
-            winSock = created
             readBuffer.removeAll(keepingCapacity: false)
 
             var ms = DWORD(timeoutSeconds * 1_000)
@@ -82,35 +82,6 @@ public final class QMPClient: @unchecked Sendable {
                         Int32(MemoryLayout<DWORD>.size),
                     )
                 }
-            }
-
-            let pathBytes = Array(socketPath.utf8CString)
-            guard pathBytes.count <= 108 else {
-                closeSocket()
-                throw BarkVisorError.monitorError("QMP socket path too long")
-            }
-
-            var storage = [UInt8](repeating: 0, count: 2 + 108)
-            let family = UInt16(bitPattern: Int16(PlatformSocket.unixFamily))
-            storage.withUnsafeMutableBytes { raw in
-                raw.storeBytes(of: family, toByteOffset: 0, as: UInt16.self)
-                pathBytes.withUnsafeBytes { src in
-                    guard let dest = raw.baseAddress, let base = src.baseAddress else { return }
-                    memcpy(dest + 2, base, src.count)
-                }
-            }
-
-            let connectResult = storage.withUnsafeBytes { raw in
-                WinSDK.connect(
-                    winSock,
-                    raw.baseAddress!.assumingMemoryBound(to: sockaddr.self),
-                    Int32(raw.count),
-                )
-            }
-
-            guard connectResult == 0 else {
-                closeSocket()
-                throw BarkVisorError.monitorError("Failed to connect to QMP socket at \(socketPath)")
             }
         #else
             fd = socket(PlatformSocket.unixFamily, PlatformSocket.stream, 0)

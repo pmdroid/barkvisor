@@ -3,6 +3,9 @@ import Foundation
 import NIOCore
 import NIOPosix
 import Vapor
+#if os(Windows)
+    import WinSDK
+#endif
 
 /// Client WebSocket ↔ far-end stream (PAS-224, PAS-233).
 ///
@@ -225,21 +228,33 @@ struct UnixSocketHopFarEnd: WebSocketHopFarEnding {
     func open(
         configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
     ) async throws -> any WebSocketHopPeer {
-        let peer = UnixSocketHopPeer()
-        configure(peer)
-        let channel = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Channel, Error>) in
-            let once = OnceResume(cont)
-            ClientBootstrap(group: group)
-                .channelInitializer { channel in
-                    channel.pipeline.addHandler(UnixSocketToPipeHandler(peer: peer))
-                }
-                .connect(unixDomainSocketPath: path)
-                .whenComplete { result in
-                    _ = once.resume(result)
-                }
-        }
-        peer.activate(channel)
-        return peer
+        #if os(Windows)
+            let socket = try PlatformSocket.connectUnixStream(path: path)
+            let peer = WindowsUnixSocketHopPeer(socket: socket, eventLoop: group.next())
+            configure(peer)
+            if peer.isClosed {
+                peer.close()
+                return peer
+            }
+            peer.start()
+            return peer
+        #else
+            let peer = UnixSocketHopPeer()
+            configure(peer)
+            let channel = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Channel, Error>) in
+                let once = OnceResume(cont)
+                ClientBootstrap(group: group)
+                    .channelInitializer { channel in
+                        channel.pipeline.addHandler(UnixSocketToPipeHandler(peer: peer))
+                    }
+                    .connect(unixDomainSocketPath: path)
+                    .whenComplete { result in
+                        _ = once.resume(result)
+                    }
+            }
+            peer.activate(channel)
+            return peer
+        #endif
     }
 }
 
@@ -332,16 +347,8 @@ final class UnixSocketHopPeer: WebSocketHopPeer, @unchecked Sendable {
             return self.box
         }()
         guard let box else { return }
-        var remaining = buffer
-        while remaining.readableBytes > 0 {
-            let n = min(remaining.readableBytes, WebSocketHop.maxBinaryFrameBytes)
-            guard var slice = remaining.readSlice(length: n) else { break }
-            var owned = ByteBufferAllocator().buffer(capacity: n)
-            owned.writeBuffer(&slice)
-            if !box.sendOrBuffer(.binary(owned)) {
-                close()
-                return
-            }
+        if !UnixSocketHopFrames.push(buffer, into: box) {
+            close()
         }
     }
 
@@ -400,6 +407,162 @@ final class UnixSocketHopPeer: WebSocketHopPeer, @unchecked Sendable {
         }
     }
 }
+
+private enum UnixSocketHopFrames {
+    static func push(_ buffer: ByteBuffer, into box: WebSocketPipeBox) -> Bool {
+        var remaining = buffer
+        while remaining.readableBytes > 0 {
+            let n = min(remaining.readableBytes, WebSocketHop.maxBinaryFrameBytes)
+            guard var slice = remaining.readSlice(length: n) else { break }
+            var owned = ByteBufferAllocator().buffer(capacity: n)
+            owned.writeBuffer(&slice)
+            if !box.sendOrBuffer(.binary(owned)) {
+                return false
+            }
+        }
+        return true
+    }
+}
+
+#if os(Windows)
+    private final class WindowsUnixSocketHopPeer: WebSocketHopPeer, @unchecked Sendable {
+        private let lock = NSLock()
+        private var sock: SOCKET
+        private var box: WebSocketPipeBox?
+        private var closed = false
+        private var started = false
+        private let closePromise: EventLoopPromise<Void>
+
+        init(socket: SOCKET, eventLoop: any EventLoop = WebSocketHop.dialEventLoopGroup.next()) {
+            sock = socket
+            closePromise = eventLoop.makePromise(of: Void.self)
+        }
+
+        var isClosed: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return closed
+        }
+
+        var closeFuture: EventLoopFuture<Void> {
+            closePromise.futureResult
+        }
+
+        func capture(into box: WebSocketPipeBox) {
+            lock.lock()
+            self.box = box
+            lock.unlock()
+        }
+
+        func start() {
+            let sock: SOCKET? = {
+                lock.lock()
+                defer { lock.unlock() }
+                if closed || started { return nil }
+                started = true
+                return self.sock
+            }()
+            guard let sock else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                self.readLoop(sock)
+            }
+        }
+
+        func send(_ frame: WebSocketPipeBox.Frame, completed: (@Sendable () -> Void)?) {
+            let sock: SOCKET? = {
+                lock.lock()
+                defer { lock.unlock() }
+                if closed { return nil }
+                return self.sock
+            }()
+            guard let sock, sock != INVALID_SOCKET else {
+                completed?()
+                return
+            }
+            switch frame {
+            case let .binary(buffer):
+                write(sock, buffer)
+            case let .text(text):
+                var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
+                buffer.writeString(text)
+                write(sock, buffer)
+            }
+            completed?()
+        }
+
+        func close() {
+            let sock: SOCKET? = {
+                lock.lock()
+                let already = closed
+                closed = true
+                let sock = self.sock
+                self.sock = INVALID_SOCKET
+                lock.unlock()
+                if !already {
+                    closePromise.succeed(())
+                }
+                return already ? nil : sock
+            }()
+            if let sock, sock != INVALID_SOCKET {
+                shutdown(sock, SD_BOTH)
+                closesocket(sock)
+            }
+        }
+
+        private func readLoop(_ sock: SOCKET) {
+            let chunkSize = 65_536
+            let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+            defer { chunk.deallocate() }
+            while true {
+                let n = chunk.withMemoryRebound(to: CChar.self, capacity: chunkSize) { ptr in
+                    Int(recv(sock, ptr, Int32(chunkSize), 0))
+                }
+                if n <= 0 {
+                    close()
+                    return
+                }
+                var buffer = ByteBufferAllocator().buffer(capacity: n)
+                buffer.writeBytes(UnsafeBufferPointer(start: chunk, count: n))
+                receive(buffer)
+            }
+        }
+
+        private func receive(_ buffer: ByteBuffer) {
+            let box: WebSocketPipeBox? = {
+                lock.lock()
+                defer { lock.unlock() }
+                return self.box
+            }()
+            guard let box else { return }
+            if !UnixSocketHopFrames.push(buffer, into: box) {
+                close()
+            }
+        }
+
+        private func write(_ sock: SOCKET, _ buffer: ByteBuffer) {
+            var remaining = buffer
+            while remaining.readableBytes > 0 {
+                let n: Int = remaining.withUnsafeReadableBytes { raw in
+                    let count = min(raw.count, Int(Int32.max))
+                    guard let base = raw.baseAddress else { return 0 }
+                    return Int(
+                        send(
+                            sock,
+                            base.assumingMemoryBound(to: CChar.self),
+                            Int32(count),
+                            0,
+                        ),
+                    )
+                }
+                if n <= 0 {
+                    close()
+                    return
+                }
+                remaining.moveReaderIndex(forwardBy: n)
+            }
+        }
+    }
+#endif
 
 private final class UnixSocketToPipeHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
