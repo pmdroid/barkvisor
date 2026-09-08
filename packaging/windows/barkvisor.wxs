@@ -7,7 +7,7 @@
       Version="0.0.0"
       Manufacturer="BarkVisor"
       UpgradeCode="7E4C9F2A-8B13-4D6E-9C41-2A7F0B5D1E88">
-    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of BarkVisor is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
@@ -40,7 +40,7 @@
     </Directory>
 
     <DirectoryRef Id="INSTALLDIR">
-      <Component Id="BarkVisorExe" Guid="B41F0C3E-6A91-4F2D-9C77-1E8A4D6B2F10">
+      <Component Id="BarkVisorExe" Guid="B41F0C3E-6A91-4F2D-9C77-1E8A4D6B2F10" Win64="yes">
         <File Id="BarkVisorFile" Source="payload\BarkVisor.exe" KeyPath="yes" />
         <ServiceInstall
             Id="BarkVisorService"
@@ -62,7 +62,7 @@
     </DirectoryRef>
 
     <DirectoryRef Id="DATADIR">
-      <Component Id="BarkVisorDataDir" Guid="C52A1D4F-7B02-4E3E-8D88-2F9B5E7C3011">
+      <Component Id="BarkVisorDataDir" Guid="C52A1D4F-7B02-4E3E-8D88-2F9B5E7C3011" Win64="yes">
         <CreateFolder>
           <Permission User="SYSTEM" GenericAll="yes" />
           <Permission User="Administrators" GenericAll="yes" />
@@ -71,7 +71,7 @@
     </DirectoryRef>
 
     <DirectoryRef Id="RUNDIR">
-      <Component Id="BarkVisorRunDir" Guid="D63B2E50-8C13-4F4F-9E99-3A0C6F8D4122">
+      <Component Id="BarkVisorRunDir" Guid="D63B2E50-8C13-4F4F-9E99-3A0C6F8D4122" Win64="yes">
         <CreateFolder>
           <Permission User="SYSTEM" GenericAll="yes" />
           <Permission User="Administrators" GenericAll="yes" />

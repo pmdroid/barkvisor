@@ -44,7 +44,7 @@ Get-ChildItem -LiteralPath $PayloadDir -Filter *.dll -File -ErrorAction Silently
     $fid = New-WixId "Fdll" $_.Name
     $guid = New-WixGuid $_.Name
     $src = XmlEscape $_.FullName
-    [void]$runtime.AppendLine("      <Component Id=`"$cid`" Guid=`"$guid`">")
+    [void]$runtime.AppendLine("      <Component Id=`"$cid`" Guid=`"$guid`" Win64=`"yes`">")
     [void]$runtime.AppendLine("        <File Id=`"$fid`" Name=`"$(XmlEscape $_.Name)`" Source=`"$src`" KeyPath=`"yes`" />")
     [void]$runtime.AppendLine("      </Component>")
 }
@@ -76,7 +76,7 @@ function Append-SpaDirectory {
         $guid = New-WixGuid $key
         $src = XmlEscape $_.FullName
         $spaComponents.Add($cid)
-        [void]$spaBody.AppendLine("$pad<Component Id=`"$cid`" Guid=`"$guid`">")
+        [void]$spaBody.AppendLine("$pad<Component Id=`"$cid`" Guid=`"$guid`" Win64=`"yes`">")
         [void]$spaBody.AppendLine("$pad  <File Id=`"$fid`" Name=`"$(XmlEscape $_.Name)`" Source=`"$src`" KeyPath=`"yes`" />")
         [void]$spaBody.AppendLine("$pad</Component>")
     }

@@ -31,6 +31,8 @@ struct WindowsPackagingTests {
         #expect(!wxs.contains("Source=\"*.dll\""))
         #expect(wxs.contains("ComponentGroupRef Id=\"BarkVisorRuntimeDlls\""))
         #expect(wxs.contains("ComponentGroupRef Id=\"BarkVisorSpaFiles\""))
+        #expect(wxs.contains("Platform=\"x64\""))
+        #expect(wxs.contains("Win64=\"yes\""))
         let harvest = try read("packaging/windows/harvest-wxs.ps1")
         #expect(harvest.contains("BarkVisorRuntimeDlls"))
         #expect(harvest.contains("BarkVisorSpaFiles"))
@@ -39,11 +41,13 @@ struct WindowsPackagingTests {
         #expect(harvest.contains("<File Id="))
         #expect(harvest.contains("frontend\\dist"))
         #expect(harvest.contains("Append-SpaDirectory"))
+        #expect(harvest.contains("Win64="))
         #expect(!harvest.contains(#"Source="payload\*.dll""#))
         let build = try read("packaging/windows/build-msi.ps1")
         #expect(build.contains("harvest-wxs.ps1"))
         #expect(build.contains("barkvisor-runtime.wxs"))
         #expect(build.contains("barkvisor-spa.wxs"))
+        #expect(build.contains("-arch x64"))
     }
 
     @Test func `install script fails without qemu and uses localsystem`() throws {

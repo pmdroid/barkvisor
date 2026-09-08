@@ -72,7 +72,7 @@ if ($candle -and $light) {
         (Join-Path $OutDir "barkvisor-runtime.wxs"),
         (Join-Path $OutDir "barkvisor-spa.wxs")
     )
-    & $candle.Source $wxs -out (Join-Path $OutDir "\")
+    & $candle.Source -arch x64 $wxs -out (Join-Path $OutDir "\")
     if ($LASTEXITCODE -ne 0) {
         Write-Error "candle.exe failed"
         exit 1
