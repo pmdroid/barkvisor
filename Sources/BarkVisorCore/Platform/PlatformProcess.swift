@@ -21,9 +21,19 @@ import Foundation
 
     @discardableResult
     func kill(_ pid: Int32, _ signal: Int32) -> Int32 {
-        _ = pid
-        _ = signal
-        return -1
+        guard pid > 0 else { return -1 }
+        var access = DWORD(PROCESS_QUERY_LIMITED_INFORMATION)
+        if signal != 0 {
+            access |= DWORD(PROCESS_TERMINATE)
+        }
+        let handle = OpenProcess(access, false, DWORD(bitPattern: UInt32(bitPattern: pid)))
+        guard let handle, handle != INVALID_HANDLE_VALUE else { return -1 }
+        defer { CloseHandle(handle) }
+        var code: DWORD = 0
+        guard GetExitCodeProcess(handle, &code) else { return -1 }
+        if code != DWORD(STILL_ACTIVE) { return -1 }
+        if signal == 0 { return 0 }
+        return TerminateProcess(handle, 1) ? 0 : -1
     }
 #endif
 
@@ -77,6 +87,8 @@ public enum PlatformProcess {
             let n = readlink(link, &buf, buf.count - 1)
             guard n > 0 else { return nil }
             return String(cString: buf)
+        #elseif os(Windows)
+            return windowsExecutablePath(pid: pid)
         #else
             return nil
         #endif
@@ -222,6 +234,26 @@ public enum PlatformProcess {
                 String(data: Data(chunk), encoding: .utf8)
             }
             return args.isEmpty ? nil : args
+        }
+    #endif
+
+    #if os(Windows)
+        private static func windowsExecutablePath(pid: Int32) -> String? {
+            guard pid > 0 else { return nil }
+            let handle = OpenProcess(
+                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
+                false,
+                DWORD(bitPattern: UInt32(bitPattern: pid)),
+            )
+            guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+            defer { CloseHandle(handle) }
+            var buf = [WCHAR](repeating: 0, count: 32_768)
+            var size = DWORD(buf.count)
+            let ok = buf.withUnsafeMutableBufferPointer { ptr in
+                QueryFullProcessImageNameW(handle, 0, ptr.baseAddress, &size)
+            }
+            guard ok, size > 0 else { return nil }
+            return String(decoding: buf.prefix(Int(size)).map { UInt16($0) }, as: UTF16.self)
         }
     #endif
 

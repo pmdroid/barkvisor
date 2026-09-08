@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if canImport(WinSDK)
+    import WinSDK
+#endif
 @testable import BarkVisor
 @testable import BarkVisorCore
 
@@ -143,11 +146,44 @@ struct WindowsPlatformTests {
         #endif
     }
 
-    @Test func `process inspect is nil on windows`() {
+    @Test func `process inspect resolves the running image on windows`() {
         #if os(Windows)
             let pid = ProcessInfo.processInfo.processIdentifier
-            #expect(PlatformProcess.arguments(pid: pid) == nil)
-            #expect(PlatformProcess.executablePath(pid: pid) == nil)
+            let path = PlatformProcess.executablePath(pid: pid)
+            #expect(path != nil)
+            #expect(path?.localizedCaseInsensitiveContains(".exe") == true)
+            #expect(kill(pid, 0) == 0)
+        #endif
+    }
+
+    @Test func `probeListen is false while a tcp socket is bound on windows`() throws {
+        #if os(Windows)
+            try PlatformSocket.ensureStarted()
+            let sock = socket(Int32(AF_INET), PlatformSocket.stream, 0)
+            #expect(sock != INVALID_SOCKET)
+            defer { closesocket(sock) }
+            var addr = sockaddr_in()
+            addr.sin_family = ADDRESS_FAMILY(AF_INET)
+            addr.sin_port = 0
+            addr.sin_addr.S_un.S_addr = INADDR_ANY
+            let bindResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    bind(sock, sockPtr, Int32(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            #expect(bindResult == 0)
+            var bound = sockaddr_in()
+            var len = Int32(MemoryLayout<sockaddr_in>.size)
+            let nameResult = withUnsafeMutablePointer(to: &bound) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    getsockname(sock, sockPtr, &len)
+                }
+            }
+            #expect(nameResult == 0)
+            let port = Int(UInt16(bigEndian: bound.sin_port))
+            #expect(port > 0)
+            #expect(PortRegistry.probeListen(port: port, proto: "tcp") == false)
+            #expect(PortRegistry.probeListen(port: port, proto: "udp") == true)
         #endif
     }
 

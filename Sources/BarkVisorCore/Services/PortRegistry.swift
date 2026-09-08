@@ -4,6 +4,8 @@ import GRDB
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// A host-local port claimed by a workload (Wave 0: VMs only).
@@ -173,37 +175,45 @@ public enum PortRegistry {
     }
 
     private static var streamSockType: Int32 {
-        #if os(Windows)
-            0
-        #elseif os(Linux)
-            Int32(SOCK_STREAM.rawValue)
-        #else
-            SOCK_STREAM
-        #endif
+        PlatformSocket.stream
     }
 
     private static var dgramSockType: Int32 {
-        #if os(Windows)
-            0
-        #elseif os(Linux)
-            Int32(SOCK_DGRAM.rawValue)
-        #else
-            SOCK_DGRAM
-        #endif
+        PlatformSocket.datagram
     }
 
     private static func isPortFree(_ port: Int, sockType: Int32) -> Bool {
         #if os(Windows)
-            _ = port
-            _ = sockType
-            return true
+            isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
+                && isBindFree(port, saddr: INADDR_LOOPBACK, sockType: sockType)
         #else
-            return isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
+            isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
                 && isBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian, sockType: sockType)
         #endif
     }
 
-    #if !os(Windows)
+    #if os(Windows)
+        private static func isBindFree(_ port: Int, saddr: ULONG, sockType: Int32) -> Bool {
+            do {
+                try PlatformSocket.ensureStarted()
+            } catch {
+                return false
+            }
+            let sock = socket(Int32(AF_INET), sockType, 0)
+            guard sock != INVALID_SOCKET else { return true }
+            defer { closesocket(sock) }
+            var addr = sockaddr_in()
+            addr.sin_family = ADDRESS_FAMILY(AF_INET)
+            addr.sin_port = UInt16(port).bigEndian
+            addr.sin_addr.S_un.S_addr = saddr.bigEndian
+            let bindResult = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                    bind(sock, sockPtr, Int32(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            return bindResult == 0
+        }
+    #else
         private static func isBindFree(_ port: Int, saddr: in_addr_t, sockType: Int32) -> Bool {
             let fd = socket(AF_INET, sockType, 0)
             guard fd >= 0 else { return true }
