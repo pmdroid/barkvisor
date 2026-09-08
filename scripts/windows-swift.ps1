@@ -11,9 +11,11 @@ New-Item -ItemType Directory -Force -Path $inc | Out-Null
 $unistd = @"
 #ifndef BARKVISOR_WIN_UNISTD_H
 #define BARKVISOR_WIN_UNISTD_H
+#ifndef __ASSEMBLER__
 #include <stdlib.h>
 #include <io.h>
 #include <stdio.h>
+#endif
 #endif
 "@
 Set-Content -LiteralPath (Join-Path $inc "unistd.h") -Value $unistd -Encoding ascii
@@ -22,6 +24,7 @@ $prefixPath = Join-Path $inc "barkvisor-win-prefix.h"
 $prefix = @"
 #ifndef BARKVISOR_WIN_PREFIX_H
 #define BARKVISOR_WIN_PREFIX_H
+#ifndef __ASSEMBLER__
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -29,17 +32,18 @@ $prefix = @"
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <stdlib.h>
-#include <time.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 #ifndef locale_t
 typedef void *locale_t;
 #endif
+struct tm;
 char *strptime(const char *s, const char *f, struct tm *tm);
 char *strptime_l(const char *s, const char *f, struct tm *tm, locale_t loc);
 #ifdef __cplusplus
 }
+#endif
 #endif
 #endif
 "@
