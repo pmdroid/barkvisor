@@ -111,7 +111,9 @@ jobs:
           swift-build: 6.3.3-RELEASE
 
       - name: swift build
-        run: swift build --product BarkVisorApp
+        run: .\scripts\windows-swift.ps1 --% build --product BarkVisorApp
+        shell: pwsh
 
       - name: swift test
-        run: swift test --skip-update --filter WindowsPlatform
+        run: .\scripts\windows-swift.ps1 --% test --skip-update --filter WindowsPlatform
+        shell: pwsh

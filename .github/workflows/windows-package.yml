@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
 
       - name: Build release binary
-        run: swift build -c release --product BarkVisorApp
+        run: .\scripts\windows-swift.ps1 --% build -c release --product BarkVisorApp
         shell: pwsh
 
       - name: Stage payload
