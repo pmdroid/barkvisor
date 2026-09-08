@@ -58,15 +58,23 @@ struct PlatformQEMUPathTests {
     }
 
     @Test func `ovmf secure boot candidates include qemu windows share`() {
-        let code = PlatformQEMU.ovmfSecureBootCandidates
-        #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE_4M.secboot.fd") })
-        #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE.secboot.fd") })
-        #expect(code.contains { $0.contains("msys64") && $0.contains("edk2-x86_64-code.fd") })
-        let vars = PlatformQEMU.ovmfSecureBootVarsCandidates
-        #expect(vars.contains { $0.contains("Program Files") && $0.contains("OVMF_VARS_4M.fd") })
-        #expect(vars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
-        let linuxVars = PlatformQEMU.edk2X86VarsCandidates
-        #expect(linuxVars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
+        #if os(Windows)
+            let code = PlatformQEMU.ovmfSecureBootCandidates
+            #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE_4M.secboot.fd") })
+            #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE.secboot.fd") })
+            #expect(code.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-secure-code.fd") })
+            #expect(code.contains { $0.contains("msys64") && $0.contains("edk2-x86_64-code.fd") })
+            let vars = PlatformQEMU.ovmfSecureBootVarsCandidates
+            #expect(vars.contains { $0.contains("Program Files") && $0.contains("OVMF_VARS_4M.fd") })
+            #expect(vars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
+            #expect(vars.contains { $0.contains("edk2-i386-vars.fd") && $0.contains("Program Files") })
+            let linuxVars = PlatformQEMU.edk2X86VarsCandidates
+            #expect(linuxVars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
+        #else
+            #expect(!PlatformQEMU.ovmfSecureBootCandidates.contains { $0.contains("Program Files") })
+            #expect(!PlatformQEMU.ovmfSecureBootVarsCandidates.contains { $0.contains("Program Files") })
+            #expect(!PlatformQEMU.edk2X86VarsCandidates.contains { $0.contains("\\OVMF_VARS_4M.fd") })
+        #endif
     }
 
     // MARK: - Install hints

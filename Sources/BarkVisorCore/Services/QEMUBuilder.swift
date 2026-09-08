@@ -879,7 +879,12 @@ public enum QEMUBuilder {
             }
         }
         #if os(Windows)
-            for name in ["OVMF_CODE_4M.fd", "OVMF_CODE.fd", "edk2-x86_64-code.fd"] {
+            for name in [
+                "edk2-x86_64-secure-code.fd",
+                "OVMF_CODE_4M.fd",
+                "OVMF_CODE.fd",
+                "edk2-x86_64-code.fd",
+            ] {
                 if let url = BundleResolver.qemuResource(name) {
                     return url
                 }

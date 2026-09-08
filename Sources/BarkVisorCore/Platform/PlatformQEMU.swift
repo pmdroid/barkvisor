@@ -57,7 +57,7 @@ public enum PlatformQEMU {
 
     /// NVRAM var store templates matching common CODE images (must copy, not zero-fill).
     public static var edk2X86VarsCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_VARS_4M.fd",
             "/usr/share/OVMF/OVMF_VARS.fd",
             "/usr/share/edk2/ovmf/OVMF_VARS.fd",
@@ -71,13 +71,18 @@ public enum PlatformQEMU {
             // Some QEMU packages (Fedora-style firmware.json layouts) ship
             // x86_64 CODE with the shared i386 vars template.
             "/usr/share/qemu/edk2-i386-vars.fd",
-        ] + windowsQEMUShareDirs.flatMap { dir in
-            [
-                "\(dir)\\OVMF_VARS_4M.fd",
-                "\(dir)\\OVMF_VARS.fd",
-                "\(dir)\\edk2-x86_64-vars.fd",
-            ]
-        }
+        ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_VARS_4M.fd",
+                    "\(dir)\\OVMF_VARS.fd",
+                    "\(dir)\\edk2-x86_64-vars.fd",
+                    "\(dir)\\edk2-i386-vars.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     /// AAVMF / ARM64 NVRAM templates when available.
@@ -105,7 +110,7 @@ public enum PlatformQEMU {
     /// System paths for x86_64 OVMF secure-boot firmware (Windows amd64 guests).
     /// Prefer `OVMF_CODE.secboot` / 4M, then fall back to non-secboot OVMF.
     public static var ovmfSecureBootCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
             "/usr/share/OVMF/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
@@ -123,20 +128,25 @@ public enum PlatformQEMU {
             "/usr/share/ovmf/x64/OVMF_CODE.fd",
             "/usr/share/qemu/OVMF.fd",
             "/usr/share/qemu/edk2-x86_64-code.fd",
-        ] + windowsQEMUShareDirs.flatMap { dir in
-            [
-                "\(dir)\\OVMF_CODE_4M.secboot.fd",
-                "\(dir)\\OVMF_CODE.secboot.fd",
-                "\(dir)\\OVMF_CODE_4M.fd",
-                "\(dir)\\OVMF_CODE.fd",
-                "\(dir)\\edk2-x86_64-code.fd",
-            ]
-        }
+        ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_CODE_4M.secboot.fd",
+                    "\(dir)\\OVMF_CODE.secboot.fd",
+                    "\(dir)\\edk2-x86_64-secure-code.fd",
+                    "\(dir)\\OVMF_CODE_4M.fd",
+                    "\(dir)\\OVMF_CODE.fd",
+                    "\(dir)\\edk2-x86_64-code.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     /// NVRAM templates matching OVMF secure-boot CODE (4M / secboot first).
     public static var ovmfSecureBootVarsCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_VARS_4M.secboot.fd",
             "/usr/share/OVMF/OVMF_VARS.secboot.fd",
             "/usr/share/OVMF/OVMF_VARS_4M.ms.fd",
@@ -154,17 +164,22 @@ public enum PlatformQEMU {
             "/usr/share/qemu/OVMF_VARS.fd",
             "/usr/share/qemu/edk2-x86_64-vars.fd",
             "/usr/share/qemu/edk2-i386-vars.fd",
-        ] + windowsQEMUShareDirs.flatMap { dir in
-            [
-                "\(dir)\\OVMF_VARS_4M.secboot.fd",
-                "\(dir)\\OVMF_VARS.secboot.fd",
-                "\(dir)\\OVMF_VARS_4M.ms.fd",
-                "\(dir)\\OVMF_VARS.ms.fd",
-                "\(dir)\\OVMF_VARS_4M.fd",
-                "\(dir)\\OVMF_VARS.fd",
-                "\(dir)\\edk2-x86_64-vars.fd",
-            ]
-        }
+        ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_VARS_4M.secboot.fd",
+                    "\(dir)\\OVMF_VARS.secboot.fd",
+                    "\(dir)\\OVMF_VARS_4M.ms.fd",
+                    "\(dir)\\OVMF_VARS.ms.fd",
+                    "\(dir)\\OVMF_VARS_4M.fd",
+                    "\(dir)\\OVMF_VARS.fd",
+                    "\(dir)\\edk2-x86_64-vars.fd",
+                    "\(dir)\\edk2-i386-vars.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     // MARK: - Install hints
