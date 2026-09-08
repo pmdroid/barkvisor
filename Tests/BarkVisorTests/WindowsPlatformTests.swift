@@ -388,6 +388,17 @@ struct WindowsPlatformTests {
     @Test func `firmware candidates include qemu share next to exe`() {
         #expect(PlatformQEMU.edk2X86Candidates.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-code.fd") })
         #expect(PlatformQEMU.windowsQEMUShareDirs.contains("C:\\Program Files\\qemu\\share"))
+        #expect(PlatformQEMU.ovmfSecureBootCandidates.contains {
+            $0.contains("Program Files") && $0.contains("OVMF_CODE_4M.secboot.fd")
+        })
+        #expect(PlatformQEMU.ovmfSecureBootVarsCandidates.contains {
+            $0.contains("Program Files") && $0.contains("OVMF_VARS_4M.fd")
+        })
+        #expect(!QEMUBuilder.swtpmUnixIOSupported(os: "Windows"))
+        #expect(PlatformQEMU.swtpmUnixIOUnavailableMessage.contains("firmware.tpm=false"))
+        #if os(Windows)
+            #expect(PlatformQEMU.swtpmInstallHint.contains("firmware.tpm=false"))
+        #endif
     }
 
     @Test func `win32 host metrics are populated on windows`() {

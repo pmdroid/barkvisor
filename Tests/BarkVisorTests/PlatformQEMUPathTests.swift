@@ -57,6 +57,18 @@ struct PlatformQEMUPathTests {
         #expect(vars.contains("/usr/share/OVMF/OVMF_VARS.secboot.fd"))
     }
 
+    @Test func `ovmf secure boot candidates include qemu windows share`() {
+        let code = PlatformQEMU.ovmfSecureBootCandidates
+        #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE_4M.secboot.fd") })
+        #expect(code.contains { $0.contains("Program Files") && $0.contains("OVMF_CODE.secboot.fd") })
+        #expect(code.contains { $0.contains("msys64") && $0.contains("edk2-x86_64-code.fd") })
+        let vars = PlatformQEMU.ovmfSecureBootVarsCandidates
+        #expect(vars.contains { $0.contains("Program Files") && $0.contains("OVMF_VARS_4M.fd") })
+        #expect(vars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
+        let linuxVars = PlatformQEMU.edk2X86VarsCandidates
+        #expect(linuxVars.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-vars.fd") })
+    }
+
     // MARK: - Install hints
 
     @Test func `install hints are non-empty`() {

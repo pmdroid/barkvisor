@@ -11,6 +11,9 @@ struct BundleResolverTests {
         #elseif os(Windows)
             #expect(qemu.contains { $0.contains("Program Files") && $0.hasSuffix("qemu-system-aarch64.exe") })
             #expect(qemu.contains { $0.contains("msys64") && $0.hasSuffix("qemu-system-aarch64.exe") })
+            let swtpm = BundleResolver.helperCandidates("swtpm")
+            #expect(swtpm.contains { $0.contains("msys64") && $0.hasSuffix("swtpm.exe") })
+            #expect(swtpm.contains { $0.contains("usr\\bin") && $0.hasSuffix("swtpm.exe") })
         #else
             #expect(qemu.first?.hasSuffix("/libexec/barkvisor/qemu-system-aarch64") == true)
             #expect(qemu.contains("/usr/bin/qemu-system-aarch64"))

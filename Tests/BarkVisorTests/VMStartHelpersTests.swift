@@ -13,6 +13,46 @@ struct VMStartHelpersTests {
         FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sock")
     }
 
+    @Test func `start swtpm fails closed when unixio is unsupported`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let manager = VMManager(dbPool: pool)
+        let err = await #expect(throws: BarkVisorError.self) {
+            _ = try await manager.startSwtpmIfNeeded(
+                launch: QEMULaunchConfig(
+                    executable: URL(fileURLWithPath: "/usr/bin/true"),
+                    arguments: [],
+                    swtpmExecutable: URL(fileURLWithPath: "/usr/bin/true"),
+                    swtpmArguments: ["socket", "--ctrl", "type=unixio,path=/tmp/swtpm.sock"],
+                    swtpmStateDir: tmp,
+                ),
+                vmID: "vm-tpm",
+                vmName: "win11",
+                unixIOSupported: false,
+            )
+        }
+        #expect(err?.code == "bad_request")
+        #expect(err?.errorDescription == PlatformQEMU.swtpmUnixIOUnavailableMessage)
+        #expect(err?.errorDescription?.contains("firmware.tpm=false") == true)
+
+        let proc = try await manager.startSwtpmIfNeeded(
+            launch: QEMULaunchConfig(
+                executable: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [],
+                swtpmExecutable: nil,
+                swtpmArguments: nil,
+                swtpmStateDir: nil,
+            ),
+            vmID: "vm-linux",
+            vmName: "linux",
+            unixIOSupported: false,
+        )
+        #expect(proc == nil)
+    }
+
     @Test func `wait for socket returns true when file already exists`() async {
         let sock = tempFileURL()
         FileManager.default.createFile(atPath: sock.path, contents: nil)

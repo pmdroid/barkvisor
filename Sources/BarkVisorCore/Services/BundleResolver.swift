@@ -19,13 +19,20 @@ public enum BundleResolver {
             ]
         #elseif os(Windows)
             let exe = name.lowercased().hasSuffix(".exe") ? name : "\(name).exe"
-            return [
+            var candidates = [
                 "C:\\Program Files\\qemu\\\(exe)",
                 "C:\\Program Files\\qemu\\bin\\\(exe)",
                 "C:\\msys64\\ucrt64\\bin\\\(exe)",
                 libexec,
                 "\(Config.libexecDir)/\(exe)",
             ]
+            if name == "swtpm" || exe.lowercased() == "swtpm.exe" {
+                candidates += [
+                    "C:\\msys64\\usr\\bin\\\(exe)",
+                    "C:\\msys64\\mingw64\\bin\\\(exe)",
+                ]
+            }
+            return candidates
         #else
             var candidates = [
                 libexec,

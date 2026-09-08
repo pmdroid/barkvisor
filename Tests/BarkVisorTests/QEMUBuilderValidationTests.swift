@@ -322,6 +322,20 @@ struct QEMUBuilderValidationTests {
         ])
     }
 
+    @Test func `windows host rejects tpm when unixio cannot work`() {
+        #expect(QEMUBuilder.swtpmUnixIOSupported(os: "macOS"))
+        #expect(QEMUBuilder.swtpmUnixIOSupported(os: "Linux"))
+        #expect(!QEMUBuilder.swtpmUnixIOSupported(os: "Windows"))
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.requireTPMEmulator(os: "Windows")
+        }
+        #expect(err?.code == "bad_request")
+        #expect(err?.httpStatus == 400)
+        #expect(err?.errorDescription?.localizedCaseInsensitiveContains("unixio") == true)
+        #expect(err?.errorDescription?.contains("firmware.tpm=false") == true)
+        #expect(err?.errorDescription?.localizedCaseInsensitiveContains("swtpm") == true)
+    }
+
     @Test func `socketArgs keep lossy VNC and qemu-vdagent clipboard`() {
         let sockets = VMSockets(vmID: "01234567-89ab-cdef-0123-456789abcdef")
         let args = QEMUBuilder.socketArgs(sockets, vdagentClipboard: true)
