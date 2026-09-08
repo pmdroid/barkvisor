@@ -123,6 +123,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & swift package config set-mirror --original-url https://github.com/swift-server/async-http-client.git --mirror-url https://github.com/pmdroid/async-http-client.git
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& swift package config set-mirror --original-url https://github.com/vapor/vapor.git --mirror-url https://github.com/pmdroid/vapor.git
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $resolvedPath = Join-Path (Get-Location) "Package.resolved"
 if (Test-Path -LiteralPath $resolvedPath) {
@@ -131,6 +133,7 @@ if (Test-Path -LiteralPath $resolvedPath) {
     $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "04510a23b581cd8111ddeccd3f6bdf236cfd1878")
     $resolved = $resolved.Replace("8666c92dbbb3c8eefc8008c9c8dcf50bfd302167", "3aaa8ccffd696b2109ed74a2608d3c58913daa0d")
     $resolved = $resolved.Replace("c5784ca81535cc6a92d900f84abd070dfb0e9392", "25e948d9bfa7cf0a135a7469cc730f34c00b01c6")
+    $resolved = $resolved.Replace("a8db2dbda8b3cdc8a61bd35128590bd296e85563", "842a55f61e8b1acf2ff337e9633cd50a67ed1615")
     [System.IO.File]::WriteAllText($resolvedPath, $resolved)
 }
 
