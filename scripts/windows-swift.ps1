@@ -143,6 +143,26 @@ Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue 
         $next = $next.Replace("count: INET_ADDRSTRLEN", "count: Int(INET_ADDRSTRLEN)")
         $next = $next.Replace("count: INET6_ADDRSTRLEN", "count: Int(INET6_ADDRSTRLEN)")
         $next = $next.Replace("socklen_t(pointer.count)", "numericCast(pointer.count)")
+        $next = $next.Replace("fflush(stdout)", "fflush(nil)")
+        if ($_.Name -eq "WritePCAPHandler.swift") {
+            $next = $next.Replace(".sin_addr.s_addr", ".sin_addr.S_un.S_addr")
+            $next = $next.Replace("open(pathPtr, O_WRONLY | oflag, 0o600)", "_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            if ($next.IndexOf("func gettimeofday(") -lt 0) {
+                $gtod = @"
+#if os(Windows)
+private func gettimeofday(_ tv: UnsafeMutablePointer<timeval>?, _ tz: UnsafeMutableRawPointer?) -> CInt {
+    var now = timeval()
+    now.tv_sec = time(nil)
+    now.tv_usec = 0
+    tv?.pointee = now
+    return 0
+}
+#endif
+
+"@
+                $next = $gtod + $next
+            }
+        }
         $next = $next.Replace(
             "cnioextras_z_deflateBound(&stream, UInt(inputBuffer.readableBytes))",
             "cnioextras_z_deflateBound(&stream, cnioextras_z_uLong(inputBuffer.readableBytes))"
