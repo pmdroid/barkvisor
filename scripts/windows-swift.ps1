@@ -114,11 +114,6 @@ $nioSsl = Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction Silentl
     Where-Object { $_.Name -like "swift-nio-ssl*" } |
     Select-Object -First 1
 if ($nioSsl) {
-    $unsupported = @"
-#else
-#error("unsupported os")
-#endif
-"@
     $windowsImport = @"
 #elseif canImport(ucrt)
 import ucrt
@@ -129,7 +124,11 @@ import WinSDK
 "@
     Get-ChildItem -LiteralPath (Join-Path $nioSsl.FullName "Sources\NIOSSL") -Filter *.swift | ForEach-Object {
         $text = [System.IO.File]::ReadAllText($_.FullName)
-        $next = $text.Replace($unsupported, $windowsImport)
+        $next = [regex]::Replace(
+            $text,
+            '#else\r?\n#error\("unsupported os"\)\r?\n#endif',
+            $windowsImport.TrimEnd()
+        )
         if ($_.Name -eq "PosixPort.swift" -and $next.IndexOf("private func mlock(") -lt 0) {
             $stubs = @"
 #if os(Windows)
