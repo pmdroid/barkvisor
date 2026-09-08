@@ -29,6 +29,18 @@ $prefix = @"
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <stdlib.h>
+#include <time.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+#ifndef locale_t
+typedef void *locale_t;
+#endif
+char *strptime(const char *s, const char *f, struct tm *tm);
+char *strptime_l(const char *s, const char *f, struct tm *tm, locale_t loc);
+#ifdef __cplusplus
+}
+#endif
 #endif
 "@
 Set-Content -LiteralPath $prefixPath -Value $prefix -Encoding ascii

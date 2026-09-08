@@ -5,6 +5,7 @@ import PackageDescription
 // are unconstrained by `platforms` and work when the toolchain targets Linux.
 
 var coreDependencies: [Target.Dependency] = [
+    .target(name: "WindowsPOSIXShims", condition: .when(platforms: [.windows])),
     .product(name: "GRDB", package: "GRDB.swift"),
     .product(name: "JWTKit", package: "jwt-kit"),
     .product(name: "Yams", package: "Yams"),
@@ -39,6 +40,10 @@ var testDependencies: [Target.Dependency] = [
 var packageTargets: [Target] = []
 
 packageTargets.append(contentsOf: [
+    .target(
+        name: "WindowsPOSIXShims",
+        path: "Sources/WindowsPOSIXShims",
+    ),
     // Core library: services, models, helpers — no Vapor dependency
     .target(
         name: "BarkVisorCore",
