@@ -18,7 +18,13 @@ Set-Content -LiteralPath (Join-Path $inc "unistd.h") -Value $header -Encoding as
 
 $all = @()
 if ($SwiftArgs) { $all += $SwiftArgs }
-$all += "-Xcc"
-$all += "-I$inc"
+$all += @(
+    "-Xcc", "-I$inc",
+    "-Xcc", "-DWIN32_LEAN_AND_MEAN",
+    "-Xcc", "-D_WINSOCKAPI_",
+    "-Xcxx", "-I$inc",
+    "-Xcxx", "-DWIN32_LEAN_AND_MEAN",
+    "-Xcxx", "-D_WINSOCKAPI_"
+)
 & swift @all
 exit $LASTEXITCODE
