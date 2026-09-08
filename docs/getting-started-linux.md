@@ -163,8 +163,6 @@ QEMU, firmware, and ISO tools are distro packages — never bundled:
 
 Arch and SteamOS split QEMU device modules out of `qemu-base`: without `qemu-hw-display-virtio-gpu` and `qemu-hw-display-virtio-gpu-pci`, VM start fails with `'virtio-gpu-pci' is not a valid device model name`. The `.deb` dependency list above does not apply here.
 
-Run **`barkvisor-agent doctor`** after installing dependencies. It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
-
 SteamOS only: initialize signing keys before `pacman -S` if pacman reports unknown trust:
 
 ```sh
@@ -186,9 +184,20 @@ ln -sfn ~/.local/opt/barkvisor-<version> ~/.local/opt/barkvisor
 rm -rf ~/.local/opt/barkvisor/root/usr/local/share/barkvisor/frontend
 mkdir -p ~/.local/bin
 ln -sf ~/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent ~/.local/bin/barkvisor-agent
+export LD_LIBRARY_PATH=~/.local/opt/barkvisor/root/usr/local/lib/barkvisor/swift:~/.local/opt/barkvisor/root/usr/local/lib/barkvisor/compat
 ```
 
 Run the binary named **`barkvisor-agent`** — it serves the API without the SPA. Removing the bundled SPA keeps this a **user** install: data lives under `~/.local/share/barkvisor` (or set `BARKVISOR_DATA_DIR`). If the SPA stays on disk, the daemon treats the prefix as an installed appliance and expects `/var/lib/barkvisor`, which your user cannot write. Run it as your user, not with `sudo`.
+
+The `LD_LIBRARY_PATH` export is required for **every** CLI invocation of this binary (doctor, join, the unit below) — the binary links the bundled Swift runtime in that directory and does not embed an rpath for the home prefix.
+
+Now verify the host:
+
+```sh
+barkvisor-agent doctor
+```
+
+It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
 
 ### systemd user unit
 
@@ -207,8 +216,6 @@ Restart=on-failure
 WantedBy=default.target
 ```
 
-The `LD_LIBRARY_PATH` line is required — the binary links the bundled Swift runtime in that directory and does not embed an rpath for the home prefix.
-
 ```sh
 systemctl --user daemon-reload
 systemctl --user enable --now barkvisor-agent.service
@@ -216,11 +223,11 @@ loginctl enable-linger "$USER"   # keep running after logout
 journalctl --user -u barkvisor-agent.service -f
 ```
 
-Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
+Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`, with the `LD_LIBRARY_PATH` export above in your shell), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
 
 Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. Doctor reports unprivileged runs with an agent-as-user note listing those limits.
 
-Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, then `systemctl --user restart barkvisor-agent.service`.
+Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, **repeat the SPA removal** from the install step, then `systemctl --user restart barkvisor-agent.service`.
 
 ## What gets installed
 
