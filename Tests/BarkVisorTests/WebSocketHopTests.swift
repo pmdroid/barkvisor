@@ -560,235 +560,265 @@ struct WebSocketHopTests {
             return String(data: bytes, encoding: .utf8) ?? ""
         }
     }
+#endif
 
-    private func byteBuffer(_ text: String) -> ByteBuffer {
-        var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
-        buffer.writeString(text)
-        return buffer
+private func byteBuffer(_ text: String) -> ByteBuffer {
+    var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
+    buffer.writeString(text)
+    return buffer
+}
+
+private func waitUntil(
+    _ predicate: @escaping @Sendable () async -> Bool,
+    nanoseconds: UInt64 = 2_000_000_000,
+) async throws {
+    let deadline = DispatchTime.now().uptimeNanoseconds + nanoseconds
+    while await !predicate() {
+        if DispatchTime.now().uptimeNanoseconds > deadline {
+            throw BarkVisorError.timeout("hop seam")
+        }
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+}
+
+private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var closed = false
+    private var box: WebSocketPipeBox?
+    private var sent: [WebSocketPipeBox.Frame] = []
+    private let closePromise: EventLoopPromise<Void>
+
+    init(eventLoop: any EventLoop = MultiThreadedEventLoopGroup.singleton.next()) {
+        closePromise = eventLoop.makePromise(of: Void.self)
     }
 
-    private func waitUntil(
-        _ predicate: @escaping @Sendable () async -> Bool,
-        nanoseconds: UInt64 = 2_000_000_000,
-    ) async throws {
-        let deadline = DispatchTime.now().uptimeNanoseconds + nanoseconds
-        while await !predicate() {
-            if DispatchTime.now().uptimeNanoseconds > deadline {
-                throw BarkVisorError.timeout("hop seam")
-            }
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
+    var isClosed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return closed
     }
 
-    private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
-        private let lock = NSLock()
-        private var closed = false
-        private var box: WebSocketPipeBox?
-        private var sent: [WebSocketPipeBox.Frame] = []
-        private let closePromise: EventLoopPromise<Void>
+    var hasCapture: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return box != nil
+    }
 
-        init(eventLoop: any EventLoop = MultiThreadedEventLoopGroup.singleton.next()) {
-            closePromise = eventLoop.makePromise(of: Void.self)
+    var closeFuture: EventLoopFuture<Void> {
+        closePromise.futureResult
+    }
+
+    func send(_ frame: WebSocketPipeBox.Frame, completed: (@Sendable () -> Void)?) {
+        lock.lock()
+        if !closed {
+            sent.append(frame)
         }
+        lock.unlock()
+        completed?()
+    }
 
-        var isClosed: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return closed
-        }
+    func capture(into box: WebSocketPipeBox) {
+        lock.lock()
+        self.box = box
+        lock.unlock()
+    }
 
-        var hasCapture: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return box != nil
-        }
-
-        var closeFuture: EventLoopFuture<Void> {
-            closePromise.futureResult
-        }
-
-        func send(_ frame: WebSocketPipeBox.Frame, completed: (@Sendable () -> Void)?) {
-            lock.lock()
-            if !closed {
-                sent.append(frame)
-            }
-            lock.unlock()
-            completed?()
-        }
-
-        func capture(into box: WebSocketPipeBox) {
-            lock.lock()
-            self.box = box
-            lock.unlock()
-        }
-
-        func close() {
-            lock.lock()
-            let already = closed
-            closed = true
-            lock.unlock()
-            if !already {
-                closePromise.succeed(())
-            }
-        }
-
-        func inject(_ frame: WebSocketPipeBox.Frame) {
-            let box: WebSocketPipeBox? = {
-                lock.lock()
-                defer { lock.unlock() }
-                return self.box
-            }()
-            if let box, !box.sendOrBuffer(frame) {
-                close()
-            }
-        }
-
-        func sentTexts() -> [String] {
-            lock.lock()
-            defer { lock.unlock() }
-            return sent.compactMap { frame in
-                if case let .text(text) = frame { return text }
-                return nil
-            }
-        }
-
-        func sentBinaryStrings() -> [String] {
-            lock.lock()
-            defer { lock.unlock() }
-            return sent.compactMap { frame in
-                if case let .binary(buffer) = frame { return String(buffer: buffer) }
-                return nil
-            }
-        }
-
-        func sentBinarySizes() -> [Int] {
-            lock.lock()
-            defer { lock.unlock() }
-            return sent.compactMap { frame in
-                if case let .binary(buffer) = frame { return buffer.readableBytes }
-                return nil
-            }
-        }
-
-        func sentBinaryByteCount() -> Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return sent.reduce(0) { count, frame in
-                if case let .binary(buffer) = frame { return count + buffer.readableBytes }
-                return count
-            }
-        }
-
-        func sentLabels() -> [String] {
-            lock.lock()
-            defer { lock.unlock() }
-            return sent.map { frame in
-                switch frame {
-                case let .text(text): "text:\(text)"
-                case let .binary(buffer): "binary:\(String(buffer: buffer))"
-                }
-            }
+    func close() {
+        lock.lock()
+        let already = closed
+        closed = true
+        lock.unlock()
+        if !already {
+            closePromise.succeed(())
         }
     }
 
-    private struct FailingHopFarEnd: WebSocketHopFarEnding {
-        func open(
-            configure _: @escaping @Sendable (any WebSocketHopPeer) -> Void,
-        ) async throws -> any WebSocketHopPeer {
-            throw BarkVisorError.timeout("Device console did not answer")
-        }
-    }
-
-    private final class DelayedHopFarEnd: WebSocketHopFarEnding, @unchecked Sendable {
-        let peer: FakeHopPeer
-        private let lock = NSLock()
-        private var continuation: CheckedContinuation<Void, Never>?
-        private var released = false
-
-        init(peer: FakeHopPeer) {
-            self.peer = peer
-        }
-
-        func release() {
+    func inject(_ frame: WebSocketPipeBox.Frame) {
+        let box: WebSocketPipeBox? = {
             lock.lock()
-            released = true
-            let continuation = self.continuation
-            self.continuation = nil
-            lock.unlock()
-            continuation?.resume()
-        }
-
-        func open(
-            configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
-        ) async throws -> any WebSocketHopPeer {
-            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                lock.lock()
-                if released {
-                    lock.unlock()
-                    cont.resume()
-                } else {
-                    continuation = cont
-                    lock.unlock()
-                }
-            }
-            configure(peer)
-            return peer
+            defer { lock.unlock() }
+            return self.box
+        }()
+        if let box, !box.sendOrBuffer(frame) {
+            close()
         }
     }
 
-    private struct BannerHopFarEnd: WebSocketHopFarEnding {
-        let peer: FakeHopPeer
-        let banners: [WebSocketPipeBox.Frame]
-
-        init(peer: FakeHopPeer, banner: WebSocketPipeBox.Frame) {
-            self.peer = peer
-            banners = [banner]
-        }
-
-        init(peer: FakeHopPeer, banners: [WebSocketPipeBox.Frame]) {
-            self.peer = peer
-            self.banners = banners
-        }
-
-        func open(
-            configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
-        ) async throws -> any WebSocketHopPeer {
-            configure(peer)
-            for banner in banners {
-                peer.inject(banner)
-            }
-            return peer
+    func sentTexts() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.compactMap { frame in
+            if case let .text(text) = frame { return text }
+            return nil
         }
     }
 
-    private final class RecordingHomeWebSocketDialer: HomeWebSocketDialing, @unchecked Sendable {
-        private let lock = NSLock()
-        private let peer: FakeHopPeer
-        private(set) var urls: [URL] = []
-        private(set) var usedSingleton = false
-
-        init(peer: FakeHopPeer) {
-            self.peer = peer
+    func sentBinaryStrings() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.compactMap { frame in
+            if case let .binary(buffer) = frame { return String(buffer: buffer) }
+            return nil
         }
+    }
 
-        func connect(
-            url: URL,
-            on eventLoopGroup: EventLoopGroup,
-            configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
-        ) async throws -> any WebSocketHopPeer {
-            record(url: url, eventLoopGroup: eventLoopGroup)
-            configure(peer)
-            return peer
+    func sentBinarySizes() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.compactMap { frame in
+            if case let .binary(buffer) = frame { return buffer.readableBytes }
+            return nil
         }
+    }
 
-        private func record(url: URL, eventLoopGroup: EventLoopGroup) {
+    func sentBinaryByteCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.reduce(0) { count, frame in
+            if case let .binary(buffer) = frame { return count + buffer.readableBytes }
+            return count
+        }
+    }
+
+    func sentLabels() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.map { frame in
+            switch frame {
+            case let .text(text): "text:\(text)"
+            case let .binary(buffer): "binary:\(String(buffer: buffer))"
+            }
+        }
+    }
+}
+
+private struct FailingHopFarEnd: WebSocketHopFarEnding {
+    func open(
+        configure _: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer {
+        throw BarkVisorError.timeout("Device console did not answer")
+    }
+}
+
+private final class DelayedHopFarEnd: WebSocketHopFarEnding, @unchecked Sendable {
+    let peer: FakeHopPeer
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    init(peer: FakeHopPeer) {
+        self.peer = peer
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    func open(
+        configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             lock.lock()
-            urls.append(url)
-            usedSingleton = (eventLoopGroup as AnyObject) === MultiThreadedEventLoopGroup.singleton
-            lock.unlock()
+            if released {
+                lock.unlock()
+                cont.resume()
+            } else {
+                continuation = cont
+                lock.unlock()
+            }
         }
+        configure(peer)
+        return peer
+    }
+}
+
+private struct BannerHopFarEnd: WebSocketHopFarEnding {
+    let peer: FakeHopPeer
+    let banners: [WebSocketPipeBox.Frame]
+
+    init(peer: FakeHopPeer, banner: WebSocketPipeBox.Frame) {
+        self.peer = peer
+        banners = [banner]
     }
 
+    init(peer: FakeHopPeer, banners: [WebSocketPipeBox.Frame]) {
+        self.peer = peer
+        self.banners = banners
+    }
+
+    func open(
+        configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer {
+        configure(peer)
+        for banner in banners {
+            peer.inject(banner)
+        }
+        return peer
+    }
+}
+
+private final class RecordingHomeWebSocketDialer: HomeWebSocketDialing, @unchecked Sendable {
+    private let lock = NSLock()
+    private let peer: FakeHopPeer
+    private(set) var urls: [URL] = []
+    private(set) var usedSingleton = false
+
+    init(peer: FakeHopPeer) {
+        self.peer = peer
+    }
+
+    func connect(
+        url: URL,
+        on eventLoopGroup: EventLoopGroup,
+        configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer {
+        record(url: url, eventLoopGroup: eventLoopGroup)
+        configure(peer)
+        return peer
+    }
+
+    private func record(url: URL, eventLoopGroup: EventLoopGroup) {
+        lock.lock()
+        urls.append(url)
+        usedSingleton = (eventLoopGroup as AnyObject) === MultiThreadedEventLoopGroup.singleton
+        lock.unlock()
+    }
+}
+
+private final class OverflowFlag: @unchecked Sendable {
+    var fired = false
+}
+
+private struct FakeVMState: VMStateQuerying {
+    var vncPath: String?
+    var serialPath: String?
+
+    func isRunning(_: String) async -> Bool {
+        vncPath != nil || serialPath != nil
+    }
+    func isActiveOrStarting(_: String) async -> Bool {
+        true
+    }
+    func allRunningVMs() async -> [String: RunningVM] {
+        [:]
+    }
+    func vncSocketPath(for _: String) async -> String? {
+        vncPath
+    }
+    func serialSocketPath(for _: String) async -> String? {
+        serialPath
+    }
+    func qmpSocketPath(for _: String) async -> String? {
+        nil
+    }
+}
+
+#if !os(Windows)
     private final class UnixAcceptBox: ChannelInboundHandler, @unchecked Sendable {
         typealias InboundIn = ByteBuffer
         private let lock = NSLock()
@@ -855,34 +885,6 @@ struct WebSocketHopTests {
 
         func channelActive(context: ChannelHandlerContext) {
             offer(context.channel)
-        }
-    }
-
-    private final class OverflowFlag: @unchecked Sendable {
-        var fired = false
-    }
-
-    private struct FakeVMState: VMStateQuerying {
-        var vncPath: String?
-        var serialPath: String?
-
-        func isRunning(_: String) async -> Bool {
-            vncPath != nil || serialPath != nil
-        }
-        func isActiveOrStarting(_: String) async -> Bool {
-            true
-        }
-        func allRunningVMs() async -> [String: RunningVM] {
-            [:]
-        }
-        func vncSocketPath(for _: String) async -> String? {
-            vncPath
-        }
-        func serialSocketPath(for _: String) async -> String? {
-            serialPath
-        }
-        func qmpSocketPath(for _: String) async -> String? {
-            nil
         }
     }
 
