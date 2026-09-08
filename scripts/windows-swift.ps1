@@ -134,6 +134,11 @@ Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue 
         $text = [System.IO.File]::ReadAllText($_.FullName)
         $next = [regex]::Replace($text, '#else\r?\n#error\("unsupported os"\)\r?\n#endif', $windowsOsImport)
         $next = [regex]::Replace($next, '#else\r?\nimport Glibc\r?\n#endif', $windowsGlibcImport)
+        $next = [regex]::Replace(
+            $next,
+            '#else\r?\n@preconcurrency import Glibc\r?\n#endif',
+            $windowsGlibcImport
+        )
         $next = $next.Replace("count: length)", "count: Int(length))")
         $next = $next.Replace("count: INET_ADDRSTRLEN", "count: Int(INET_ADDRSTRLEN)")
         $next = $next.Replace("count: INET6_ADDRSTRLEN", "count: Int(INET6_ADDRSTRLEN)")
