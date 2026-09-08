@@ -539,11 +539,10 @@ public enum HostInfoService {
                 var current: UnsafeMutablePointer<IP_ADAPTER_ADDRESSES>? =
                     base.bindMemory(to: IP_ADAPTER_ADDRESSES.self, capacity: 1)
                 while let adapter = current {
-                    let friendly: String
-                    if let namePtr = adapter.pointee.FriendlyName {
-                        friendly = String(decodingCString: namePtr, as: UTF16.self)
+                    let friendly = if let namePtr = adapter.pointee.FriendlyName {
+                        String(decodingCString: namePtr, as: UTF16.self)
                     } else {
-                        friendly = ""
+                        ""
                     }
                     let ifType = UInt32(adapter.pointee.IfType)
                     let operUp = adapter.pointee.OperStatus == IfOperStatusUp
