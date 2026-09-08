@@ -546,11 +546,11 @@ async function doDeleteImage() {
       await store.remove(id)
     }
     await homeLibrary.fetchImages(devicesStore.devices)
-    confirmTarget.value = null
   } catch (e: unknown) {
     deleteError.value = apiErrorMessage(e, 'Failed to delete image')
   } finally {
     deleting.value = false
+    confirmTarget.value = null
   }
 }
 
