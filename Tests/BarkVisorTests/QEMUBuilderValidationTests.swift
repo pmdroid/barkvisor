@@ -282,16 +282,32 @@ struct QEMUBuilderValidationTests {
 
     // MARK: - Sockets / VNC clipboard
 
-    @Test func `tpm device args reconnect on chrtpm socket`() {
+    @Test func `tpm device args use a unix chardev without reconnect`() {
         let args = QEMUBuilder.tpmDeviceArgs(
             tpmSockPath: "/tmp/vm/swtpm.sock",
             tpmDevice: "tpm-tis-device,tpmdev=tpm0",
         )
         #expect(args == [
-            "-chardev", "socket,id=chrtpm,path=/tmp/vm/swtpm.sock,reconnect=5",
+            "-chardev", "socket,id=chrtpm,path=/tmp/vm/swtpm.sock",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", "tpm-tis-device,tpmdev=tpm0",
         ])
+        #expect(!args.contains { $0.contains("reconnect") })
+    }
+
+    @Test func `arm hvf tpm disables PPI so HVF can map the device`() {
+        #expect(
+            QEMUBuilder.tpmFrontendDevice(isX86: false, accelerator: "hvf")
+                == "tpm-tis-device,tpmdev=tpm0,ppi=off",
+        )
+        #expect(
+            QEMUBuilder.tpmFrontendDevice(isX86: false, accelerator: "kvm")
+                == "tpm-tis-device,tpmdev=tpm0",
+        )
+        #expect(
+            QEMUBuilder.tpmFrontendDevice(isX86: true, accelerator: "hvf")
+                == "tpm-tis,tpmdev=tpm0",
+        )
     }
 
     @Test func `socketArgs keep lossy VNC and qemu-vdagent clipboard`() {
@@ -603,5 +619,43 @@ struct QEMUBuilderValidationTests {
             vmType: "linux-arm64",
         )
         #expect(args.isEmpty)
+    }
+
+    @Test(.enabled(if: QEMUBuilderValidationTests.hostHasARMFirmware))
+    func `windows-arm64 firmwareArgs resolves Homebrew edk2 when AAVMF secboot is absent`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(id: "vm-win-arm-fw", name: "win"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 1, memoryMb: 512),
+            ),
+        )
+        let vmID = "test-win-arm64-fw-\(UUID().uuidString)"
+        let varsDir = Config.dataDir.appendingPathComponent("efivars/\(vmID)")
+        defer { try? FileManager.default.removeItem(at: varsDir) }
+        let args = try QEMUBuilder.firmwareArgs(
+            spec: spec,
+            vmID: vmID,
+            vmType: "windows-arm64",
+        )
+        let joined = args.joined(separator: " ")
+        #expect(
+            joined.contains("AAVMF_CODE.secboot.fd")
+                || joined.contains("edk2-aarch64-secure-code.fd")
+                || joined.contains("edk2-aarch64-code.fd")
+                || joined.contains("AAVMF_CODE"),
+        )
+        #expect(joined.contains("efivars/\(vmID)"))
+    }
+
+    private static var hostHasARMFirmware: Bool {
+        BundleResolver.qemuResource("AAVMF_CODE.secboot.fd") != nil
+            || BundleResolver.qemuResource("edk2-aarch64-secure-code.fd") != nil
+            || BundleResolver.qemuResource("edk2-aarch64-code.fd") != nil
+            || PlatformQEMU.aavmfSecureBootCandidates.contains {
+                FileManager.default.fileExists(atPath: $0)
+            }
+            || PlatformQEMU.edk2ARM64Candidates.contains {
+                FileManager.default.fileExists(atPath: $0)
+            }
     }
 }
