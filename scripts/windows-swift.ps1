@@ -12,9 +12,6 @@ $header = @"
 #define BARKVISOR_WIN_UNISTD_H
 #include <io.h>
 #include <stdio.h>
-#ifndef off_t
-typedef long long off_t;
-#endif
 #endif
 "@
 Set-Content -LiteralPath (Join-Path $inc "unistd.h") -Value $header -Encoding ascii
