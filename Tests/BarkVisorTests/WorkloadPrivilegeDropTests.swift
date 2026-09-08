@@ -112,7 +112,7 @@ struct WorkloadPrivilegeDropTests {
 
     @Test func `live apply on this host does not invent a drop user`() {
         let launch = WorkloadPrivilegeDrop.apply(executable: qemu, arguments: args)
-        #expect(launch.executable.path.hasPrefix("/"))
+        #expect(PlatformPaths.isAbsoluteExecutablePath(launch.executable.path))
         if !WorkloadPrivilegeDrop.dropsOnThisPlatform {
             #expect(!launch.dropped)
         }

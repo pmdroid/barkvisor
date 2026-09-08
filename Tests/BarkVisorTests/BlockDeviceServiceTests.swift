@@ -119,7 +119,7 @@ struct BlockDeviceServiceTests {
         let reason = BlockDeviceService.readWriteDeniedReason(
             path: "/dev/sda",
             openReadWrite: { _ in
-                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
             },
         )
         #expect(reason == BlockDeviceService.readWriteDeniedCopy(path: "/dev/sda"))
@@ -133,7 +133,7 @@ struct BlockDeviceServiceTests {
             try BlockDeviceService.requireReadWrite(
                 path: "/dev/sda",
                 openReadWrite: { _ in
-                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EPERM.rawValue))
                 },
             )
             Issue.record("expected requireReadWrite to throw")
@@ -167,7 +167,7 @@ struct BlockDeviceServiceTests {
             _ = try QEMUBuilder.additionalDiskArgs(
                 [disk],
                 openReadWrite: { _ in
-                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
                 },
             )
             Issue.record("expected additionalDiskArgs to throw")

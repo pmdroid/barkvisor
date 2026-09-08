@@ -213,25 +213,29 @@ struct ControllerLogicTests {
     }
 
     @Test func `directory browser maps unreadable folder to typed permission error`() throws {
-        guard getuid() != 0 else { return }
-        let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
-        let locked = (base as NSString).appendingPathComponent("locked")
-        try FileManager.default.createDirectory(atPath: locked, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked)
-            try? FileManager.default.removeItem(atPath: base)
-        }
-        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked)
-        do {
-            _ = try DirectoryBrowser.list(path: locked, extraRoots: [base])
-            Issue.record("Expected a permission error for an unreadable folder")
-        } catch let error as BarkVisorError {
-            #expect(error.code == "permission_denied")
-            #expect(error.httpStatus == 403)
-            let reason = error.sanitizedDescription
-            #expect(!reason.isEmpty)
-            #expect(!reason.contains(locked))
-        }
+        #if os(Windows)
+            return
+        #else
+            guard WorkloadPrivilegeDrop.currentEUID() != 0 else { return }
+            let base = (NSTemporaryDirectory() as NSString).appendingPathComponent(UUID().uuidString)
+            let locked = (base as NSString).appendingPathComponent("locked")
+            try FileManager.default.createDirectory(atPath: locked, withIntermediateDirectories: true)
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked)
+                try? FileManager.default.removeItem(atPath: base)
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked)
+            do {
+                _ = try DirectoryBrowser.list(path: locked, extraRoots: [base])
+                Issue.record("Expected a permission error for an unreadable folder")
+            } catch let error as BarkVisorError {
+                #expect(error.code == "permission_denied")
+                #expect(error.httpStatus == 403)
+                let reason = error.sanitizedDescription
+                #expect(!reason.isEmpty)
+                #expect(!reason.contains(locked))
+            }
+        #endif
     }
 
     @Test func `directory browser permission error detection`() {

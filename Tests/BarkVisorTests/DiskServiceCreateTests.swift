@@ -219,7 +219,7 @@ final class DiskServiceCreateTests {
                 allowBlockDevices: true,
                 mounts: "",
                 openReadWrite: { _ in
-                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
                 },
                 createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
             )

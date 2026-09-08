@@ -30,14 +30,18 @@ struct VMStartHelpersTests {
     }
 
     @Test func `wait for socket returns false when process exits first`() async throws {
-        let sock = tempFileURL()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try process.run()
-        process.waitUntilExit()
-        #expect(
-            await !(VMManager.waitForSocket(sock, process: process, pollCount: 5, pollNanos: 1_000)),
-        )
+        #if os(Windows)
+            return
+        #else
+            let sock = tempFileURL()
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+            try process.run()
+            process.waitUntilExit()
+            #expect(
+                await !(VMManager.waitForSocket(sock, process: process, pollCount: 5, pollNanos: 1_000)),
+            )
+        #endif
     }
 
     @Test func `assert host ports fails on bound udp hostfwd`() throws {
