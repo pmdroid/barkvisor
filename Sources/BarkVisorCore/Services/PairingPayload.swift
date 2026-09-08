@@ -324,17 +324,20 @@ public struct PairingPayload: Sendable, Equatable {
         var addr = in_addr()
         #if os(Windows)
             guard host.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else { return nil }
+            let parts = host.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4 else { return nil }
+            return (parts[0], parts[1], parts[2], parts[3])
         #else
             guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
+                return nil
+            }
+            let canonical = String(cString: buf)
+            let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4 else { return nil }
+            return (parts[0], parts[1], parts[2], parts[3])
         #endif
-        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-        guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
-            return nil
-        }
-        let canonical = String(cString: buf)
-        let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
-        guard parts.count == 4 else { return nil }
-        return (parts[0], parts[1], parts[2], parts[3])
     }
 
     private static func parseIPv6(_ host: String) -> in6_addr? {
