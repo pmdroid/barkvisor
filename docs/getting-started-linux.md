@@ -156,7 +156,7 @@ QEMU, firmware, and ISO tools are distro packages — never bundled:
 |------|----------------|--------|-----------------|
 | QEMU system | `qemu-base` (x86_64; aarch64 Arch hosts need `qemu-emulators-full`) | `qemu-kvm` | `qemu-system-x86` |
 | Display device modules | `qemu-hw-display-virtio-gpu` + `qemu-hw-display-virtio-gpu-pci` | included | included |
-| `qemu-img` | `qemu-base` | `qemu-img` | `qemu-utils` |
+| `qemu-img` | `qemu-base` (x86_64) or the standalone `qemu-img` package | `qemu-img` | `qemu-utils` |
 | UEFI firmware | `edk2-ovmf` (x86_64), `edk2-aarch64` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
 | Cloud-init seed ISO | `cdrtools` | `genisoimage` or `xorriso` | `genisoimage` |
 | swtpm (Windows guests) | `swtpm` | `swtpm` | `swtpm` |
@@ -225,7 +225,7 @@ journalctl --user -u barkvisor-agent.service -f
 
 Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`, with the `LD_LIBRARY_PATH` export above in your shell), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
 
-Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. Doctor reports unprivileged runs with an agent-as-user note listing those limits.
+Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`) and VFIO passthrough need root. Doctor's agent-as-user note lists exactly that.
 
 Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, **repeat the SPA removal** from the install step, then `systemctl --user restart barkvisor-agent.service`.
 
