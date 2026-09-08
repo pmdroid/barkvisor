@@ -110,28 +110,39 @@ $all += @(
 & swift package resolve
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$nioSsl = Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "swift-nio-ssl*" } |
-    Select-Object -First 1
-if ($nioSsl) {
-    $windowsImport = @"
+$windowsOsImport = @"
 #elseif canImport(ucrt)
 import ucrt
 import WinSDK
 #else
 #error("unsupported os")
 #endif
-"@
-    Get-ChildItem -LiteralPath (Join-Path $nioSsl.FullName "Sources\NIOSSL") -Filter *.swift | ForEach-Object {
+"@.TrimEnd()
+$windowsGlibcImport = @"
+#elseif canImport(ucrt)
+import ucrt
+import WinSDK
+#else
+import Glibc
+#endif
+"@.TrimEnd()
+
+Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    $sources = Join-Path $_.FullName "Sources"
+    if (-not (Test-Path -LiteralPath $sources)) { return }
+    Get-ChildItem -LiteralPath $sources -Recurse -Filter *.swift | ForEach-Object {
         $text = [System.IO.File]::ReadAllText($_.FullName)
-        $next = [regex]::Replace(
-            $text,
-            '#else\r?\n#error\("unsupported os"\)\r?\n#endif',
-            $windowsImport.TrimEnd()
-        )
+        $next = [regex]::Replace($text, '#else\r?\n#error\("unsupported os"\)\r?\n#endif', $windowsOsImport)
+        $next = [regex]::Replace($next, '#else\r?\nimport Glibc\r?\n#endif', $windowsGlibcImport)
+        $next = $next.Replace("count: length)", "count: Int(length))")
+        $next = $next.Replace("count: INET_ADDRSTRLEN", "count: Int(INET_ADDRSTRLEN)")
+        $next = $next.Replace("count: INET6_ADDRSTRLEN", "count: Int(INET6_ADDRSTRLEN)")
+        $next = $next.Replace("statObj.st_mode & S_IFDIR", "CInt(statObj.st_mode) & CInt(S_IFDIR)")
+        $next = $next.Replace("buffer.st_mode & S_IFMT) != S_IFLNK", "CInt(buffer.st_mode) & CInt(S_IFMT)) != 0")
         if ($_.Name -eq "PosixPort.swift" -and $next.IndexOf("private func mlock(") -lt 0) {
             $stubs = @"
 #if os(Windows)
+private var errno: CInt { ucrt._errno().pointee }
 private func mlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
 private func munlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
 private func lstat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<stat>?) -> CInt {
@@ -146,6 +157,21 @@ private func readlink(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer
             if ($idx -ge 0) {
                 $next = $next.Insert($idx, $stubs)
             }
+        }
+        if ($_.Name -eq "SSLContext.swift" -and $next.IndexOf("func opendir(") -lt 0) {
+            $dirStubs = @"
+#if os(Windows)
+private let S_IFLNK: CInt = 0
+private func opendir(_ path: String) -> OpaquePointer { OpaquePointer(bitPattern: 1)! }
+private func readdir(_ dir: OpaquePointer) -> UnsafeMutablePointer<dirent>? { nil }
+private func closedir(_ dir: OpaquePointer) {}
+private struct dirent {
+    var d_name: (CChar, CChar)
+}
+#endif
+
+"@
+            $next = $dirStubs + $next
         }
         if ($next -ne $text) {
             Set-ItemProperty -LiteralPath $_.FullName -Name IsReadOnly -Value $false
