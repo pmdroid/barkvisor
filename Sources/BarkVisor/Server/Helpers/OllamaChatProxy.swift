@@ -6,6 +6,9 @@ import Vapor
 /// Forward Ollama OpenAI SSE bytes to the console (PAS-270).
 enum OllamaChatProxy {
     static let streamTimeoutSeconds: Int64 = 3_600
+    /// Device-local completions endpoint, hit by the member hop on :7778 and
+    /// by Home's member routing.
+    static let deviceCompletionsPath = "/api/ollama/v1/chat/completions"
 
     static func stream(_ chunks: AsyncThrowingStream<Data, Error>) async throws -> Response {
         let source = ChunkSource(chunks)
