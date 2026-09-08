@@ -165,10 +165,11 @@ public final class VaporServer: @unchecked Sendable {
         if let bound = self.agentTLSServer?.boundPort {
             Config.adoptBoundAgentPort(bound)
         }
-        tlsReloadStateLock.lock()
-        let hasPendingReload = pendingAgentTLSReload
-        pendingAgentTLSReload = false
-        tlsReloadStateLock.unlock()
+        let hasPendingReload = tlsReloadStateLock.withLock {
+            let pending = pendingAgentTLSReload
+            pendingAgentTLSReload = false
+            return pending
+        }
         if hasPendingReload {
             await reloadAgentTLSAfterJoin()
         }
@@ -177,12 +178,12 @@ public final class VaporServer: @unchecked Sendable {
     }
 
     private func reloadAgentTLSAfterJoin() async {
-        tlsReloadStateLock.lock()
-        let server = agentTLSServer
-        if server == nil {
-            pendingAgentTLSReload = true
+        let server: AgentTLSServer? = tlsReloadStateLock.withLock {
+            if agentTLSServer == nil {
+                pendingAgentTLSReload = true
+            }
+            return agentTLSServer
         }
-        tlsReloadStateLock.unlock()
         guard let server else { return }
         do {
             try await server.reloadFromDisk()
