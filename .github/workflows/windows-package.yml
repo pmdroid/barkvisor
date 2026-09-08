@@ -12,8 +12,22 @@ permissions:
 
 jobs:
   package:
-    name: Windows amd64
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows arm64
+            runs-on: windows-11-arm
+            build_arch: arm64
+            triple: aarch64-unknown-windows-msvc
+            artifact: barkvisor-windows-arm64
+          - name: Windows amd64
+            runs-on: windows-latest
+            build_arch: amd64
+            triple: x86_64-unknown-windows-msvc
+            artifact: barkvisor-windows-amd64
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -27,7 +41,7 @@ jobs:
           source: swift.org
           swift-version: swift-6.3.3-release
           swift-build: 6.3.3-RELEASE
-          build_arch: amd64
+          build_arch: ${{ matrix.build_arch }}
           cache: true
 
       - name: Build SPA
@@ -46,7 +60,7 @@ jobs:
         run: |
           $candidates = @(
             ".build\release",
-            ".build\x86_64-unknown-windows-msvc\release"
+            ".build\${{ matrix.triple }}\release"
           )
           $source = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ "BarkVisorApp.exe") } | Select-Object -First 1
           if (-not $source) {
@@ -62,16 +76,17 @@ jobs:
       - name: Zip payload
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
-          if (Test-Path -LiteralPath "build\barkvisor-windows-amd64.zip") {
-            Remove-Item -LiteralPath "build\barkvisor-windows-amd64.zip" -Force
+          $zip = "build\${{ matrix.artifact }}.zip"
+          if (Test-Path -LiteralPath $zip) {
+            Remove-Item -LiteralPath $zip -Force
           }
-          Compress-Archive -Path "build\windows-payload\*" -DestinationPath "build\barkvisor-windows-amd64.zip" -Force
+          Compress-Archive -Path "build\windows-payload\*" -DestinationPath $zip -Force
         shell: pwsh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: barkvisor-windows-amd64
-          path: build/barkvisor-windows-amd64.zip
+          name: ${{ matrix.artifact }}
+          path: build/${{ matrix.artifact }}.zip
           if-no-files-found: error
           retention-days: 14

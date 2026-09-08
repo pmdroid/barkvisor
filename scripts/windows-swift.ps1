@@ -74,8 +74,15 @@ if (-not ((Test-Path -LiteralPath $sqliteHdr) -and (Test-Path -LiteralPath $sqli
     if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
         $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
         if (Test-Path -LiteralPath $vswhere) {
-            $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+            $arm64 = $env:PROCESSOR_ARCHITECTURE -eq "ARM64"
+            $vsReq = if ($arm64) {
+                "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+            } else {
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+            }
+            $vcvarsName = if ($arm64) { "vcvarsarm64.bat" } else { "vcvars64.bat" }
+            $vs = & $vswhere -latest -products * -requires $vsReq -property installationPath
+            $vcvars = Join-Path $vs "VC\Auxiliary\Build\$vcvarsName"
             if (Test-Path -LiteralPath $vcvars) {
                 cmd.exe /c "`"$vcvars`" >nul && set" | ForEach-Object {
                     if ($_ -match '^([^=]+)=(.*)$') {
