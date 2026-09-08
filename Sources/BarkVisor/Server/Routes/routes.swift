@@ -20,6 +20,7 @@ struct RouteDependencies {
     let healthProbes: HealthProbeService
     let pairingOffers: PairingOfferStore
     let jwt: JWTAuthMiddleware
+    let onPairingJoined: @Sendable () async -> Void
 }
 
 func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
@@ -32,6 +33,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         jwt: deps.jwt,
         pairingRateLimit: deps.pairingRateLimit,
         keys: deps.keys,
+        onPairingJoined: deps.onPairingJoined,
     )
     try pairing.boot(routes: app)
 

@@ -17,6 +17,8 @@ public final class VaporServer: @unchecked Sendable {
     private(set) var diskInfoCache: DiskInfoCache?
     private(set) var setupMiddleware: SetupMiddleware?
     private(set) var agentTLSServer: AgentTLSServer?
+    private let tlsReloadStateLock = NSLock()
+    private var pendingAgentTLSReload = false
 
     /// Non-nil when the database was recovered in a lossy way at startup.
     /// The UI can check this to display a warning banner to the user.
@@ -133,6 +135,9 @@ public final class VaporServer: @unchecked Sendable {
                 healthProbes: services.healthProbes,
                 pairingOffers: pairingOffers,
                 jwt: JWTAuthMiddleware(keys: keys),
+                onPairingJoined: { [weak self] in
+                    await self?.reloadAgentTLSAfterJoin()
+                },
             ),
         )
 
@@ -160,8 +165,34 @@ public final class VaporServer: @unchecked Sendable {
         if let bound = self.agentTLSServer?.boundPort {
             Config.adoptBoundAgentPort(bound)
         }
+        let hasPendingReload = tlsReloadStateLock.withLock {
+            let pending = pendingAgentTLSReload
+            pendingAgentTLSReload = false
+            return pending
+        }
+        if hasPendingReload {
+            await reloadAgentTLSAfterJoin()
+        }
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
+    }
+
+    private func reloadAgentTLSAfterJoin() async {
+        let server: AgentTLSServer? = tlsReloadStateLock.withLock {
+            if agentTLSServer == nil {
+                pendingAgentTLSReload = true
+            }
+            return agentTLSServer
+        }
+        guard let server else { return }
+        do {
+            try await server.reloadFromDisk()
+            Log.server.info("Agent mTLS identity reloaded after pairing join")
+        } catch {
+            Log.server.warning(
+                "Agent mTLS reload after join failed (hourly reload will retry): \(error.localizedDescription)",
+            )
+        }
     }
 
     /// PAS-180: console-local first-boot join. Best-effort so a down Home

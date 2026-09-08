@@ -431,6 +431,79 @@ struct AgentTLSServerTests {
         }
     }
 
+    @Test func `reloadFromDisk after join presents Home-issued certificate without restart`() async throws {
+        let issuerDir = try isolatedDir()
+        let joinerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joinerMaterial = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let issuedPEM = IssuedPEMCapture()
+
+        let server = AgentTLSServer(
+            material: joinerMaterial,
+            pins: PeerPinStore(dataDir: joinerDir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: joinerDir,
+            hostId: joinerId,
+        )
+        try await server.start()
+        do {
+            let offers = PairingOfferStore(dataDir: issuerDir)
+            let issued = try PairingService.issue(
+                PairingService.IssueInput(
+                    dataDir: issuerDir,
+                    hostId: issuerId,
+                    advertisedHost: "192.168.0.30",
+                    advertisedHosts: ["192.168.0.30"],
+                ),
+                offers: offers,
+            )
+            let client = InProcessRedeemClient(dataDir: issuerDir, issuerHostId: issuerId, offers: offers, capture: issuedPEM)
+            let result = try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: issued.qrPayload),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: client,
+            )
+            #expect(result.issuedFingerprint != joinerMaterial.deviceFingerprint)
+
+            let ca = try NIOSSLCertificate(bytes: Array(issuer.caCertificatePEM.utf8), format: .pem)
+            let homeCert = try NIOSSLCertificate(
+                bytes: Array(issuer.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let homeKey = try NIOSSLPrivateKey(
+                bytes: Array(issuer.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+
+            #expect(server.presentedCertificatePEMForTesting == joinerMaterial.deviceCertificatePEM)
+
+            try await server.reloadFromDisk()
+            #expect(server.presentedCertificatePEMForTesting == issuedPEM.pem)
+            let port = try #require(server.boundPort)
+
+            let body = try await getWhoami(
+                port: port,
+                trust: ca,
+                clientCert: homeCert,
+                clientKey: homeKey,
+            )
+            #expect(body.hostId == issuerId)
+            #expect(body.fingerprint == issuer.deviceFingerprint)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
     @Test func `startDetached failure leaves local runtime independent`() async throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -504,5 +577,51 @@ struct AgentTLSServerTests {
             try? await group.shutdownGracefully()
             throw error
         }
+    }
+}
+
+final class IssuedPEMCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+    var pem: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return value ?? ""
+    }
+    func store(_ pem: String) {
+        lock.lock()
+        value = pem
+        lock.unlock()
+    }
+}
+
+private struct InProcessRedeemClient: PairingHTTPClient {
+    let dataDir: URL
+    let issuerHostId: String
+    let offers: PairingOfferStore
+    let capture: IssuedPEMCapture
+
+    func get(url: URL) async throws -> PairingHTTPResponse {
+        struct Probe: Encodable {
+            var apiVersion: Int
+        }
+        return try PairingHTTPResponse(
+            status: 200,
+            body: JSONEncoder().encode(Probe(apiVersion: APIContract.version)),
+        )
+    }
+
+    func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
+        let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
+        let response = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: dataDir,
+                issuerHostId: issuerHostId,
+                request: request,
+            ),
+            offers: offers,
+        )
+        capture.store(response.issuedCertificatePEM)
+        return try PairingHTTPResponse(status: 200, body: JSONEncoder().encode(response))
     }
 }

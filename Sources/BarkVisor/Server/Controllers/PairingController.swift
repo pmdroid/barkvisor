@@ -20,6 +20,7 @@ struct PairingController: RouteCollection {
     let jwt: JWTAuthMiddleware
     let pairingRateLimit: RateLimitMiddleware
     let keys: JWTKeyCollection
+    let onPairingJoined: @Sendable () async -> Void
 
     func boot(routes: any RoutesBuilder) throws {
         let pairing = routes.grouped("api", "pairing")
@@ -166,6 +167,7 @@ struct PairingController: RouteCollection {
                 db: req.db,
                 keys: keys,
             )
+            await onPairingJoined()
             AuditService.log(
                 action: "pairing.join",
                 resourceType: "device",
