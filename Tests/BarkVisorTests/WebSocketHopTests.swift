@@ -171,18 +171,19 @@ struct WebSocketHopTests {
             #expect(accepted != INVALID_SOCKET)
             defer { closesocket(accepted) }
 
-            inbound.inject(.binary(byteBuffer("rfb")))
-            var got = Data()
-            while got.count < 3 {
-                var chunk = [UInt8](repeating: 0, count: 16)
-                let n = chunk.withUnsafeMutableBytes { raw in
-                    recv(accepted, raw.baseAddress?.assumingMemoryBound(to: CChar.self), 16, 0)
+            let fromClient = WindowsReceivedBytes()
+            DispatchQueue.global(qos: .userInitiated).async {
+                var chunk = [UInt8](repeating: 0, count: 64)
+                while true {
+                    let n = chunk.withUnsafeMutableBytes { raw in
+                        recv(accepted, raw.baseAddress?.assumingMemoryBound(to: CChar.self), 64, 0)
+                    }
+                    if n <= 0 { return }
+                    fromClient.append(chunk.prefix(Int(n)))
                 }
-                #expect(n > 0)
-                got.append(contentsOf: chunk.prefix(Int(n)))
             }
-            #expect(String(data: got, encoding: .utf8) == "rfb")
 
+            inbound.inject(.binary(byteBuffer("rfb")))
             var payload = [UInt8](repeating: 0x5A, count: 40_000)
             var sentTotal = 0
             while sentTotal < payload.count {
@@ -198,7 +199,10 @@ struct WebSocketHopTests {
                 sentTotal += Int(sent)
             }
             #expect(sentTotal == 40_000)
-            try await waitUntil { inbound.sentBinaryByteCount() == 40_000 }
+            try await waitUntil {
+                inbound.sentBinaryByteCount() == 40_000 && fromClient.count >= 3
+            }
+            #expect(String(data: fromClient.data(), encoding: .utf8) == "rfb")
             let sizes = inbound.sentBinarySizes()
             #expect(!sizes.isEmpty)
             #expect(sizes.allSatisfy { $0 <= WebSocketHop.maxBinaryFrameBytes })
@@ -646,6 +650,29 @@ struct WebSocketHopTests {
 #endif
 
 #if os(Windows)
+    private final class WindowsReceivedBytes: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return buffer.count
+        }
+
+        func append<S: Sequence>(_ bytes: S) where S.Element == UInt8 {
+            lock.lock()
+            buffer.append(contentsOf: bytes)
+            lock.unlock()
+        }
+
+        func data() -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return buffer
+        }
+    }
+
     private final class WindowsAcceptedSocket: @unchecked Sendable {
         private let lock = NSLock()
         private var sock: SOCKET = INVALID_SOCKET

@@ -432,6 +432,7 @@ private enum UnixSocketHopFrames {
         private var closed = false
         private var started = false
         private let closePromise: EventLoopPromise<Void>
+        private let writes = DispatchQueue(label: "barkvisor.unix-hop.write")
 
         init(socket: SOCKET, eventLoop: any EventLoop = WebSocketHop.dialEventLoopGroup.next()) {
             sock = socket
@@ -469,25 +470,27 @@ private enum UnixSocketHopFrames {
         }
 
         func send(_ frame: WebSocketPipeBox.Frame, completed: (@Sendable () -> Void)?) {
-            let sock: SOCKET? = {
-                lock.lock()
-                defer { lock.unlock() }
-                if closed { return nil }
-                return self.sock
-            }()
-            guard let sock, sock != INVALID_SOCKET else {
+            writes.async { [self] in
+                let sock: SOCKET? = {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    if closed { return nil }
+                    return self.sock
+                }()
+                guard let sock, sock != INVALID_SOCKET else {
+                    completed?()
+                    return
+                }
+                switch frame {
+                case let .binary(buffer):
+                    write(sock, buffer)
+                case let .text(text):
+                    var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
+                    buffer.writeString(text)
+                    write(sock, buffer)
+                }
                 completed?()
-                return
             }
-            switch frame {
-            case let .binary(buffer):
-                write(sock, buffer)
-            case let .text(text):
-                var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
-                buffer.writeString(text)
-                write(sock, buffer)
-            }
-            completed?()
         }
 
         func close() {
