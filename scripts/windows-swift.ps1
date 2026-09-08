@@ -96,6 +96,7 @@ if (-not ((Test-Path -LiteralPath $sqliteHdr) -and (Test-Path -LiteralPath $sqli
 $all = @()
 if ($SwiftArgs) { $all += $SwiftArgs }
 $all += @(
+    "--force-resolved-versions",
     "-Xcc", "-I$inc",
     "-Xcc", "-I$sqliteInc",
     "-Xcc", "-include",
@@ -107,118 +108,17 @@ $all += @(
     "-Xlinker", "/LIBPATH:$sqliteLibDir"
 )
 
-& swift package resolve
+& swift package config set-mirror --original-url https://github.com/apple/swift-nio-extras.git --mirror-url https://github.com/pmdroid/swift-nio-extras.git
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& swift package config set-mirror --original-url https://github.com/apple/swift-nio-ssl.git --mirror-url https://github.com/pmdroid/swift-nio-ssl.git
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$windowsOsImport = @"
-#elseif canImport(ucrt)
-import ucrt
-import WinSDK
-#else
-#error("unsupported os")
-#endif
-"@.TrimEnd()
-$windowsGlibcImport = @"
-#elseif canImport(ucrt)
-import ucrt
-import WinSDK
-#else
-import Glibc
-#endif
-"@.TrimEnd()
-
-Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-    $sources = Join-Path $_.FullName "Sources"
-    if (-not (Test-Path -LiteralPath $sources)) { return }
-    Get-ChildItem -LiteralPath $sources -Recurse -Filter *.swift | ForEach-Object {
-        $text = [System.IO.File]::ReadAllText($_.FullName)
-        $next = [regex]::Replace($text, '#else\r?\n#error\("unsupported os"\)\r?\n#endif', $windowsOsImport)
-        $next = [regex]::Replace($next, '#else\r?\nimport Glibc\r?\n#endif', $windowsGlibcImport)
-        $next = [regex]::Replace(
-            $next,
-            '#else\r?\n@preconcurrency import Glibc\r?\n#endif',
-            $windowsGlibcImport
-        )
-        $next = $next.Replace("count: length)", "count: Int(length))")
-        $next = $next.Replace("count: INET_ADDRSTRLEN", "count: Int(INET_ADDRSTRLEN)")
-        $next = $next.Replace("count: INET6_ADDRSTRLEN", "count: Int(INET6_ADDRSTRLEN)")
-        $next = $next.Replace("socklen_t(pointer.count)", "numericCast(pointer.count)")
-        $next = $next.Replace("fflush(stdout)", "fflush(nil)")
-        if ($_.Name -eq "WritePCAPHandler.swift") {
-            $next = $next.Replace(".sin_addr.s_addr", ".sin_addr.S_un.S_addr")
-            $next = $next.Replace("let fd = open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
-            $next = $next.Replace("let fd = _open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
-            $next = $next.Replace("let fd = pcappcap_open(pathPtr, O_WRONLY | oflag, 0o600)", "let fd = pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
-            $next = $next.Replace("let sysWrite = write", "let sysWrite = pcap_write")
-            if ($next.IndexOf("func pcap_open(") -lt 0) {
-                $gtod = @"
-#if os(Windows)
-@_silgen_name("_open")
-private func pcap_open(_ path: UnsafePointer<CChar>?, _ oflag: CInt, _ pmode: CInt) -> CInt
-private func pcap_write(_ fd: CInt, _ buf: UnsafeRawPointer?, _ nbyte: Int) -> Int {
-    Int(_write(fd, buf, UInt32(nbyte)))
-}
-private func gettimeofday(_ tv: UnsafeMutablePointer<timeval>?, _ tz: UnsafeMutableRawPointer?) -> CInt {
-    var now = timeval()
-    now.tv_sec = numericCast(time(nil) & 0x7fffffff)
-    now.tv_usec = 0
-    tv?.pointee = now
-    return 0
-}
-#else
-private let pcap_open = open
-private let pcap_write = write
-#endif
-
-"@
-                $next = $gtod + $next
-            }
-        }
-        $next = $next.Replace(
-            "cnioextras_z_deflateBound(&stream, UInt(inputBuffer.readableBytes))",
-            "cnioextras_z_deflateBound(&stream, cnioextras_z_uLong(inputBuffer.readableBytes))"
-        )
-        $next = $next.Replace("statObj.st_mode & S_IFDIR", "CInt(statObj.st_mode) & CInt(S_IFDIR)")
-        $next = $next.Replace("buffer.st_mode & S_IFMT) != S_IFLNK", "CInt(buffer.st_mode) & CInt(S_IFMT)) != 0")
-        if ($_.Name -eq "PosixPort.swift" -and $next.IndexOf("private func mlock(") -lt 0) {
-            $stubs = @"
-#if os(Windows)
-private var errno: CInt { ucrt._errno().pointee }
-private func mlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
-private func munlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
-private func lstat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<stat>?) -> CInt {
-    stat(path, buf)
-}
-private func readlink(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<CChar>?, _ bufsiz: Int) -> Int { -1 }
-#endif
-
-"@
-            $needle = "private let sysFopen = fopen"
-            $idx = $next.IndexOf($needle)
-            if ($idx -ge 0) {
-                $next = $next.Insert($idx, $stubs)
-            }
-        }
-        if ($_.Name -eq "SSLContext.swift" -and $next.IndexOf("func opendir(") -lt 0) {
-            $dirStubs = @"
-#if os(Windows)
-private let S_IFLNK: CInt = 0
-private func opendir(_ path: String) -> OpaquePointer? { OpaquePointer(bitPattern: 1) }
-private func readdir(_ dir: OpaquePointer) -> UnsafeMutablePointer<dirent>? { nil }
-private func closedir(_ dir: OpaquePointer) {}
-private struct dirent {
-    var d_name: (CChar, CChar)
-}
-#endif
-
-"@
-            $next = $dirStubs + $next
-        }
-        if ($next -ne $text) {
-            Set-ItemProperty -LiteralPath $_.FullName -Name IsReadOnly -Value $false
-            [System.IO.File]::WriteAllText($_.FullName, $next)
-        }
-    }
+$resolvedPath = Join-Path (Get-Location) "Package.resolved"
+if (Test-Path -LiteralPath $resolvedPath) {
+    $resolved = [System.IO.File]::ReadAllText($resolvedPath)
+    $resolved = $resolved.Replace("abcf5312eb8ed2fb11916078aef7c46b06f20813", "962499a2c269657f425fdab711e4d06f6ad6aaf1")
+    $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "04510a23b581cd8111ddeccd3f6bdf236cfd1878")
+    [System.IO.File]::WriteAllText($resolvedPath, $resolved)
 }
 
 & swift @all
