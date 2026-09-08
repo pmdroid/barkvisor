@@ -147,26 +147,34 @@ public enum PlatformQEMU {
 
     /// How to install QEMU system emulators on this platform.
     public static var qemuInstallHint: String {
-        #if os(macOS)
-            "brew install qemu"
-        #elseif os(Windows)
-            "winget install qemu  |  MSYS2: pacman -S mingw-w64-ucrt-x86_64-qemu  |  installer: C:\\Program Files\\qemu"
-        #else
-            "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
-        #endif
+        qemuInstallHint(os: PlatformHost.platformName)
+    }
+
+    public static func qemuInstallHint(os: String) -> String {
+        if os.caseInsensitiveCompare("Windows") == .orderedSame {
+            return "winget install qemu  |  MSYS2: pacman -S mingw-w64-ucrt-x86_64-qemu  |  installer: C:\\Program Files\\qemu"
+        }
+        if os.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "brew install qemu"
+        }
+        return "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
     }
 
     /// How to install the QEMU hardware modules Arch/SteamOS split out of qemu-base.
     public static var qemuDeviceInstallHint: String {
-        #if os(macOS)
-            "reinstall qemu: brew install qemu"
-        #elseif os(Windows)
-            "reinstall QEMU (winget install qemu or C:\\Program Files\\qemu) so device modules are present"
-        #else
-            "QEMU is missing device modules. "
-                + "Arch/SteamOS: pacman -S qemu-hw-display-virtio-gpu qemu-hw-display-virtio-gpu-pci (split out of qemu-base)  "
-                + "|  Debian/Ubuntu: apt install qemu-system-x86 (full package, not qemu-system-misc)  |  Fedora: dnf install qemu-kvm"
-        #endif
+        qemuDeviceInstallHint(os: PlatformHost.platformName)
+    }
+
+    public static func qemuDeviceInstallHint(os: String) -> String {
+        if os.caseInsensitiveCompare("Windows") == .orderedSame {
+            return "reinstall QEMU (winget install qemu or C:\\Program Files\\qemu) so device modules are present"
+        }
+        if os.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "reinstall qemu: brew install qemu"
+        }
+        return "QEMU is missing device modules. "
+            + "Arch/SteamOS: pacman -S qemu-hw-display-virtio-gpu qemu-hw-display-virtio-gpu-pci (split out of qemu-base)  "
+            + "|  Debian/Ubuntu: apt install qemu-system-x86 (full package, not qemu-system-misc)  |  Fedora: dnf install qemu-kvm"
     }
 
     /// How to install ARM64 UEFI firmware on this platform.
@@ -182,13 +190,17 @@ public enum PlatformQEMU {
 
     /// How to install x86_64 UEFI firmware on this platform.
     public static var firmwareInstallHintX86: String {
-        #if os(macOS)
-            "brew install qemu"
-        #elseif os(Windows)
-            "install QEMU so share\\edk2-x86_64-code.fd is next to qemu-system-x86_64.exe (C:\\Program Files\\qemu\\share)"
-        #else
-            "apt: ovmf  |  pacman: edk2-ovmf  |  dnf: edk2-ovmf  |  apk: ovmf"
-        #endif
+        firmwareInstallHintX86(os: PlatformHost.platformName)
+    }
+
+    public static func firmwareInstallHintX86(os: String) -> String {
+        if os.caseInsensitiveCompare("Windows") == .orderedSame {
+            return "install QEMU so share\\edk2-x86_64-code.fd is next to qemu-system-x86_64.exe (C:\\Program Files\\qemu\\share)"
+        }
+        if os.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "brew install qemu"
+        }
+        return "apt: ovmf  |  pacman: edk2-ovmf  |  dnf: edk2-ovmf  |  apk: ovmf"
     }
 
     /// How to obtain AAVMF secure-boot firmware on this platform.
@@ -215,23 +227,31 @@ public enum PlatformQEMU {
 
     /// How to install qemu-img (provisioning disks from images).
     public static var qemuImgInstallHint: String {
-        #if os(macOS)
-            "brew install qemu"
-        #elseif os(Windows)
-            "qemu-img.exe is required to clone and resize image disks. winget install qemu  |  C:\\Program Files\\qemu\\qemu-img.exe"
-        #else
-            "qemu-img is required to clone and resize image disks. apt: qemu-utils  |  pacman: qemu-base  |  dnf: qemu-img  |  apk: qemu-img"
-        #endif
+        qemuImgInstallHint(os: PlatformHost.platformName)
+    }
+
+    public static func qemuImgInstallHint(os: String) -> String {
+        if os.caseInsensitiveCompare("Windows") == .orderedSame {
+            return "qemu-img.exe is required to clone and resize image disks. winget install qemu  |  C:\\Program Files\\qemu\\qemu-img.exe"
+        }
+        if os.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "brew install qemu"
+        }
+        return "qemu-img is required to clone and resize image disks. apt: qemu-utils  |  pacman: qemu-base  |  dnf: qemu-img  |  apk: qemu-img"
     }
 
     /// How to install an mkisofs-compatible ISO tool for cloud-init.
     public static var isoToolInstallHint: String {
-        #if os(macOS)
-            "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
-        #elseif os(Windows)
-            "install xorriso or mkisofs (MSYS2: pacman -S mingw-w64-ucrt-x86_64-libisoburn) and keep it on PATH"
-        #else
-            "apt: genisoimage  |  pacman: cdrtools  |  dnf: genisoimage|xorriso  |  apk: xorriso"
-        #endif
+        isoToolInstallHint(os: PlatformHost.platformName)
+    }
+
+    public static func isoToolInstallHint(os: String) -> String {
+        if os.caseInsensitiveCompare("Windows") == .orderedSame {
+            return "install xorriso or mkisofs (MSYS2: pacman -S mingw-w64-ucrt-x86_64-libisoburn) and keep it on PATH"
+        }
+        if os.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
+        }
+        return "apt: genisoimage  |  pacman: cdrtools  |  dnf: genisoimage|xorriso  |  apk: xorriso"
     }
 }

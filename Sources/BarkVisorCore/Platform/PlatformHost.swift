@@ -6,6 +6,8 @@ import Foundation
     import Glibc
 #elseif canImport(Musl)
     import Musl
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// Host CPU and memory metrics with macOS (sysctl/Mach) and Linux (/proc) backends.
@@ -18,7 +20,10 @@ public enum PlatformHost {
             sysctlbyname("hw.ncpu", &ncpu, &size, nil, 0)
             return max(Int(ncpu), 1)
         #elseif os(Windows)
-            max(ProcessInfo.processInfo.processorCount, 1)
+            var info = SYSTEM_INFO()
+            GetSystemInfo(&info)
+            let n = Int(info.dwNumberOfProcessors)
+            return n > 0 ? n : max(ProcessInfo.processInfo.processorCount, 1)
         #else
             let n = sysconf(Int32(_SC_NPROCESSORS_ONLN))
             return n > 0 ? Int(n) : max(ProcessInfo.processInfo.processorCount, 1)
@@ -33,7 +38,12 @@ public enum PlatformHost {
             sysctlbyname("hw.memsize", &memSize, &size, nil, 0)
             return memSize
         #elseif os(Windows)
-            return ProcessInfo.processInfo.physicalMemory
+            var status = MEMORYSTATUSEX()
+            status.dwLength = DWORD(MemoryLayout<MEMORYSTATUSEX>.size)
+            guard GlobalMemoryStatusEx(&status) else {
+                return ProcessInfo.processInfo.physicalMemory
+            }
+            return UInt64(status.ullTotalPhys)
         #else
             if let meminfo = try? String(contentsOfFile: "/proc/meminfo", encoding: .utf8) {
                 for line in meminfo.split(separator: "\n") {
@@ -72,9 +82,14 @@ public enum PlatformHost {
             let used = (UInt64(stats.active_count) + UInt64(stats.wire_count)) * pageSize
             return Int(used / (1_024 * 1_024))
         #elseif os(Windows)
-            return 0
+            var status = MEMORYSTATUSEX()
+            status.dwLength = DWORD(MemoryLayout<MEMORYSTATUSEX>.size)
+            guard GlobalMemoryStatusEx(&status) else { return 0 }
+            return memoryUsedMB(
+                totalBytes: UInt64(status.ullTotalPhys),
+                availableBytes: UInt64(status.ullAvailPhys),
+            )
         #else
-            // MemTotal - MemAvailable (fallback: MemFree + Buffers + Cached)
             guard let meminfo = try? String(contentsOfFile: "/proc/meminfo", encoding: .utf8) else {
                 return 0
             }
@@ -102,10 +117,55 @@ public enum PlatformHost {
         #endif
     }
 
+    public static func memoryUsedMB(totalBytes: UInt64, availableBytes: UInt64) -> Int {
+        let used = totalBytes > availableBytes ? totalBytes - availableBytes : 0
+        return Int(used / (1_024 * 1_024))
+    }
+
+    public static func fileTimeUInt64(low: UInt32, high: UInt32) -> UInt64 {
+        (UInt64(high) << 32) | UInt64(low)
+    }
+
+    public static func cpuLoadPercent(
+        idleTicks: UInt64,
+        kernelTicks: UInt64,
+        userTicks: UInt64,
+        previousIdleTicks: UInt64,
+        previousKernelTicks: UInt64,
+        previousUserTicks: UInt64,
+    ) -> Double {
+        let idle = idleTicks &- previousIdleTicks
+        let kernel = kernelTicks &- previousKernelTicks
+        let user = userTicks &- previousUserTicks
+        let total = kernel &+ user
+        guard total > 0 else { return 0 }
+        let busy = kernel >= idle ? (kernel - idle) &+ user : user
+        return min(Double(busy) / Double(total) * 100.0, 100.0)
+    }
+
     /// Host CPU utilization proxy from 1-minute load average (0…100).
     public static var cpuLoadPercent: Double {
         #if os(Windows)
-            return 0
+            var idle = FILETIME()
+            var kernel = FILETIME()
+            var user = FILETIME()
+            guard GetSystemTimes(&idle, &kernel, &user) else { return 0 }
+            let idleTicks = fileTimeUInt64(low: idle.dwLowDateTime, high: idle.dwHighDateTime)
+            let kernelTicks = fileTimeUInt64(low: kernel.dwLowDateTime, high: kernel.dwHighDateTime)
+            let userTicks = fileTimeUInt64(low: user.dwLowDateTime, high: user.dwHighDateTime)
+            windowsCPUState.lock.lock()
+            defer { windowsCPUState.lock.unlock() }
+            let previous = windowsCPUState.last
+            windowsCPUState.last = (idleTicks, kernelTicks, userTicks)
+            guard let previous else { return 0 }
+            return cpuLoadPercent(
+                idleTicks: idleTicks,
+                kernelTicks: kernelTicks,
+                userTicks: userTicks,
+                previousIdleTicks: previous.idle,
+                previousKernelTicks: previous.kernel,
+                previousUserTicks: previous.user,
+            )
         #else
             var loadAvg = [Double](repeating: 0, count: 3)
             let loadCount = getloadavg(&loadAvg, 3)
@@ -192,3 +252,12 @@ public enum PlatformHost {
         }
     #endif
 }
+
+#if os(Windows)
+    private final class WindowsCPUSampleState: @unchecked Sendable {
+        let lock = NSLock()
+        var last: (idle: UInt64, kernel: UInt64, user: UInt64)?
+    }
+
+    private let windowsCPUState = WindowsCPUSampleState()
+#endif

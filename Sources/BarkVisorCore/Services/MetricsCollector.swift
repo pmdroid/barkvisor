@@ -2,6 +2,8 @@
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 import Foundation
 
@@ -225,10 +227,15 @@ public actor MetricsCollector {
             prevDiskWrite[vmID] = newWrite
         }
 
+        var memoryUsedMB = qmpResult.memoryUsedMB
+        if memoryUsedMB == 0 {
+            memoryUsedMB = processWorkingSetMB(pid: pid)
+        }
+
         let sample = MetricSample(
             timestamp: iso8601.string(from: Date()),
             cpuPercent: cpuPercent,
-            memoryUsedMB: qmpResult.memoryUsedMB,
+            memoryUsedMB: memoryUsedMB,
             diskReadBytes: qmpResult.diskRead,
             diskWriteBytes: qmpResult.diskWrite,
         )
@@ -284,7 +291,53 @@ public actor MetricsCollector {
             guard ticks > 0 else { return 0 }
             let percent = (delta / ticks) / 5.0 * 100.0
             return min(max(percent, 0), 100.0)
+        #elseif os(Windows)
+            let handle = OpenProcess(
+                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
+                false,
+                DWORD(bitPattern: UInt32(bitPattern: pid)),
+            )
+            guard let handle, handle != INVALID_HANDLE_VALUE else { return 0 }
+            defer { CloseHandle(handle) }
+            var created = FILETIME()
+            var exited = FILETIME()
+            var kernel = FILETIME()
+            var user = FILETIME()
+            guard GetProcessTimes(handle, &created, &exited, &kernel, &user) else { return 0 }
+            let totalTime = Int64(bitPattern: PlatformHost.fileTimeUInt64(
+                low: kernel.dwLowDateTime,
+                high: kernel.dwHighDateTime,
+            ) &+ PlatformHost.fileTimeUInt64(
+                low: user.dwLowDateTime,
+                high: user.dwHighDateTime,
+            ))
+            let prev = prevCPUTime[vmID] ?? totalTime
+            prevCPUTime[vmID] = totalTime
+            let delta = Double(totalTime - prev)
+            let seconds = delta / 10_000_000.0
+            let percent = (seconds / Double(Self.systemStatsPollIntervalSeconds))
+                / Double(max(PlatformHost.cpuCount, 1)) * 100.0
+            return min(max(percent, 0), 100.0)
         #else
+            return 0
+        #endif
+    }
+
+    private func processWorkingSetMB(pid: Int32) -> Int {
+        #if os(Windows)
+            let handle = OpenProcess(
+                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
+                false,
+                DWORD(bitPattern: UInt32(bitPattern: pid)),
+            )
+            guard let handle, handle != INVALID_HANDLE_VALUE else { return 0 }
+            defer { CloseHandle(handle) }
+            var counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = DWORD(MemoryLayout<PROCESS_MEMORY_COUNTERS>.size)
+            guard GetProcessMemoryInfo(handle, &counters, counters.cb) else { return 0 }
+            return Int(counters.WorkingSetSize / (1_024 * 1_024))
+        #else
+            _ = pid
             return 0
         #endif
     }

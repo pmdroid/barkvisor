@@ -3,33 +3,27 @@ import Testing
 @testable import BarkVisorCore
 
 struct HostInfoServiceTests {
-    /// Loopback iface name: `lo0` on macOS/BSD, `lo` on Linux.
+    /// Loopback iface name: `lo0` on macOS/BSD, `lo` on Linux, `Loopback` on Windows.
     private static var loopbackName: String {
         #if os(Linux)
             "lo"
+        #elseif os(Windows)
+            "Loopback"
         #else
             "lo0"
         #endif
     }
 
     @Test func `list interfaces returns at least loopback`() {
-        #if os(Windows)
-            #expect(HostInfoService.listInterfaces().isEmpty)
-        #else
-            let interfaces = HostInfoService.listInterfaces()
-            #expect(!interfaces.isEmpty, "Should find at least one network interface")
+        let interfaces = HostInfoService.listInterfaces()
+        #expect(!interfaces.isEmpty, "Should find at least one network interface")
 
-            let lo = interfaces.first(where: { $0.name == Self.loopbackName })
-            #expect(lo != nil, "Should find loopback interface \(Self.loopbackName)")
-            #expect(lo?.ipAddress == "127.0.0.1")
-        #endif
+        let lo = interfaces.first(where: { $0.name == Self.loopbackName })
+        #expect(lo != nil, "Should find loopback interface \(Self.loopbackName)")
+        #expect(lo?.ipAddress == "127.0.0.1")
     }
 
     @Test func `list interface addresses keeps IPv4 and does not leak zone ids`() {
-        #if os(Windows)
-            #expect(HostInfoService.listInterfaceAddresses().isEmpty)
-            return
-        #endif
         let addrs = HostInfoService.listInterfaceAddresses()
         #expect(!addrs.isEmpty, "Should find at least one address")
         let ipv4 = addrs.filter { !$0.ipAddress.contains(":") }
@@ -58,14 +52,10 @@ struct HostInfoServiceTests {
     }
 
     @Test func `interface exists for loopback`() {
-        #if os(Windows)
-            #expect(!HostInfoService.interfaceExists(Self.loopbackName))
-        #else
-            #expect(
-                HostInfoService.interfaceExists(Self.loopbackName),
-                "\(Self.loopbackName) should exist on this host",
-            )
-        #endif
+        #expect(
+            HostInfoService.interfaceExists(Self.loopbackName),
+            "\(Self.loopbackName) should exist on this host",
+        )
     }
 
     @Test func `interface exists for non existent`() {
@@ -77,14 +67,9 @@ struct HostInfoServiceTests {
     @Test func `interface exists includes interfaces without requiring listInterfaces membership`() {
         // listInterfaces is IPv4-only; existence must still be true for loopback
         // even when we only care about the name probe (down/no-IP policy).
-        #if os(Windows)
-            #expect(!HostInfoService.interfaceExists(Self.loopbackName))
-            #expect(HostInfoService.listInterfaces().isEmpty)
-        #else
-            #expect(HostInfoService.interfaceExists(Self.loopbackName))
-            let listed = Set(HostInfoService.listInterfaces().map(\.name))
-            #expect(listed.contains(Self.loopbackName))
-        #endif
+        #expect(HostInfoService.interfaceExists(Self.loopbackName))
+        let listed = Set(HostInfoService.listInterfaces().map(\.name))
+        #expect(listed.contains(Self.loopbackName))
     }
 
     @Test func `displayName labels loopback and common interfaces`() {
@@ -94,6 +79,10 @@ struct HostInfoServiceTests {
             #expect(HostInfoService.displayName(for: "docker0") == "docker0 (Container)")
             #expect(HostInfoService.displayName(for: "eth0") == "eth0 (Ethernet)")
             #expect(HostInfoService.displayName(for: "ens3") == "ens3 (Ethernet)")
+        #elseif os(Windows)
+            #expect(HostInfoService.displayName(for: "Loopback") == "Loopback")
+            #expect(HostInfoService.displayName(for: "Ethernet") == "Ethernet")
+            #expect(HostInfoService.displayName(for: "Wi-Fi") == "Wi-Fi")
         #else
             #expect(HostInfoService.displayName(for: "lo0") == "lo0 (Loopback)")
             #expect(HostInfoService.displayName(for: "en0") == "en0 (Ethernet/Wi-Fi)")
