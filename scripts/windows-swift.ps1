@@ -7,24 +7,41 @@ $ErrorActionPreference = "Stop"
 
 $inc = Join-Path ([System.IO.Path]::GetTempPath()) "barkvisor-win-unistd"
 New-Item -ItemType Directory -Force -Path $inc | Out-Null
-$header = @"
+
+$unistd = @"
 #ifndef BARKVISOR_WIN_UNISTD_H
 #define BARKVISOR_WIN_UNISTD_H
+#include <stdlib.h>
 #include <io.h>
 #include <stdio.h>
 #endif
 "@
-Set-Content -LiteralPath (Join-Path $inc "unistd.h") -Value $header -Encoding ascii
+Set-Content -LiteralPath (Join-Path $inc "unistd.h") -Value $unistd -Encoding ascii
+
+$prefixPath = Join-Path $inc "barkvisor-win-prefix.h"
+$prefix = @"
+#ifndef BARKVISOR_WIN_PREFIX_H
+#define BARKVISOR_WIN_PREFIX_H
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <stdlib.h>
+#endif
+"@
+Set-Content -LiteralPath $prefixPath -Value $prefix -Encoding ascii
 
 $all = @()
 if ($SwiftArgs) { $all += $SwiftArgs }
 $all += @(
     "-Xcc", "-I$inc",
-    "-Xcc", "-DWIN32_LEAN_AND_MEAN",
-    "-Xcc", "-D_WINSOCKAPI_",
+    "-Xcc", "-include",
+    "-Xcc", $prefixPath,
     "-Xcxx", "-I$inc",
-    "-Xcxx", "-DWIN32_LEAN_AND_MEAN",
-    "-Xcxx", "-D_WINSOCKAPI_"
+    "-Xcxx", "-include",
+    "-Xcxx", $prefixPath
 )
 & swift @all
 exit $LASTEXITCODE
