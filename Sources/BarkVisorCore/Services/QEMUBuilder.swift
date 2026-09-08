@@ -924,6 +924,11 @@ public enum QEMUBuilder {
 
     private static func resolveAAVMFSecureBoot() throws -> URL {
         // Bundled / Homebrew share via BundleResolver, then distro AAVMF paths
+        #if os(macOS)
+            if let url = BundleResolver.qemuResource("edk2-aarch64-code.fd") {
+                return url
+            }
+        #endif
         if let url = BundleResolver.qemuResource("AAVMF_CODE.secboot.fd") {
             return url
         }

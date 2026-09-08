@@ -295,7 +295,7 @@ struct QEMUBuilderValidationTests {
         #expect(!args.contains { $0.contains("reconnect") })
     }
 
-    @Test func `hvf display omits ramfb so VNC follows virtio-gpu scanout`() {
+    @Test func `hvf display matches working Ubuntu virtio-gpu scanout`() {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(id: "vm-disp", name: "disp"),
             spec: WorkloadSpecBody(
