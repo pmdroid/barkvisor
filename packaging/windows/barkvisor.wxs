@@ -41,7 +41,8 @@
 
     <DirectoryRef Id="INSTALLDIR">
       <Component Id="BarkVisorExe" Guid="B41F0C3E-6A91-4F2D-9C77-1E8A4D6B2F10">
-        <File Id="BarkVisorFile" Source="BarkVisor.exe" KeyPath="yes" />
+        <File Id="BarkVisorFile" Source="payload\BarkVisor.exe" KeyPath="yes" />
+        <File Id="SwiftRuntimeDlls" Source="payload\*.dll" />
         <ServiceInstall
             Id="BarkVisorService"
             Name="BarkVisor"
@@ -58,6 +59,12 @@
             Stop="both"
             Remove="uninstall"
             Wait="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="SHAREDIST">
+      <Component Id="BarkVisorSpa" Guid="E74C3F61-9D24-4A60-AF00-4B1D7E9C5233">
+        <File Id="SpaIndexHtml" Name="index.html" Source="frontend\dist\index.html" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
@@ -81,6 +88,7 @@
 
     <Feature Id="MainFeature" Title="BarkVisor" Level="1">
       <ComponentRef Id="BarkVisorExe" />
+      <ComponentRef Id="BarkVisorSpa" />
       <ComponentRef Id="BarkVisorDataDir" />
       <ComponentRef Id="BarkVisorRunDir" />
     </Feature>

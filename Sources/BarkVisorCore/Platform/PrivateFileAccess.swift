@@ -40,14 +40,28 @@ public enum PrivateFileAccess {
                 throw CocoaError(.fileWriteUnknown)
             }
             defer { _ = LocalFree(descriptor) }
-            let applied = path.withCString(encodedAs: UTF16.self) { wide in
-                SetFileSecurityW(
+            var present: BOOL = false
+            var defaulted: BOOL = false
+            var acl: PACL?
+            guard GetSecurityDescriptorDacl(descriptor, &present, &acl, &defaulted),
+                  present != false,
+                  let acl
+            else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let flags = DWORD(DACL_SECURITY_INFORMATION) | DWORD(0x8000_0000)
+            let status = path.withCString(encodedAs: UTF16.self) { wide in
+                SetNamedSecurityInfoW(
                     UnsafeMutablePointer(mutating: wide),
-                    SECURITY_INFORMATION(DACL_SECURITY_INFORMATION),
-                    descriptor,
+                    SE_FILE_OBJECT,
+                    flags,
+                    nil,
+                    nil,
+                    acl,
+                    nil,
                 )
             }
-            guard applied else {
+            guard status == DWORD(ERROR_SUCCESS) else {
                 throw CocoaError(.fileWriteUnknown)
             }
         }

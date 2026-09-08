@@ -4,7 +4,7 @@ import Foundation
 public enum PlatformPaths {
     /// Application data directory.
     /// - Override: `BARKVISOR_DATA_DIR` (absolute path)
-    /// - Installed: `/var/lib/barkvisor` (pkg, Homebrew, Linux); `%PROGRAMDATA%\BarkVisor` on Windows
+    /// - Installed: `/var/lib/barkvisor` on all platforms (pkg, Homebrew, Linux)
     /// - Dev macOS: `~/Library/Application Support/BarkVisor`
     /// - Dev Linux: `~/.local/share/barkvisor` (or `$XDG_DATA_HOME/barkvisor`)
     public static func dataDir(isInstalled: Bool) -> URL {
@@ -225,7 +225,7 @@ public enum PlatformPaths {
         return argument
     }
 
-    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Windows `.exe` → exe dir. Otherwise `/usr/local`.
+    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Otherwise `/usr/local`.
     public static func installPrefix(executablePath: String) -> String {
         let resolved = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
         let exeDir = resolved.deletingLastPathComponent()
@@ -245,8 +245,8 @@ public enum PlatformPaths {
 
     /// Installed daemon vs `swift run`. Does not require libexec QEMU (PAS-287).
     ///
-    /// True when `$prefix/share/barkvisor/frontend/dist/index.html` exists and the
-    /// binary lives in `*/bin`, or the exe directory is the prefix (Windows layout).
+    /// True when the binary lives in `*/bin` and
+    /// `$prefix/share/barkvisor/frontend/dist/index.html` exists.
     /// `BARKVISOR_DATA_DIR` only relocates `dataDir`; it does not mark the layout
     /// installed (unprivileged smoke/dev runs would otherwise bind QEMU sockets
     /// under `/var/run/barkvisor`).

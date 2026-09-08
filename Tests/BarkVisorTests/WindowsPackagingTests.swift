@@ -27,6 +27,9 @@ struct WindowsPackagingTests {
         #expect(!wxs.contains("Hyper-V"))
         #expect(!wxs.contains("WSL2"))
         #expect(wxs.contains("CreateFolder"))
+        #expect(wxs.contains("frontend\\dist\\index.html"))
+        #expect(wxs.contains("payload\\*.dll") || wxs.contains("*.dll"))
+        #expect(wxs.contains("BarkVisorSpa"))
     }
 
     @Test func `install script fails without qemu and uses localsystem`() throws {
@@ -37,11 +40,17 @@ struct WindowsPackagingTests {
         #expect(install.contains("QEMU is missing"))
         #expect(install.contains("obj= LocalSystem"))
         #expect(install.contains("NT AUTHORITY\\SYSTEM"))
+        #expect(install.contains("index.html"))
+        #expect(install.contains("frontend\\dist"))
+        #expect(install.contains("*.dll"))
+        #expect(install.contains("Wait-BarkVisorServiceRemoved"))
+        #expect(install.contains("Start-Sleep"))
         #expect(!install.contains("Authenticode"))
         let uninstall = try read("packaging/windows/uninstall.ps1")
         #expect(uninstall.contains("qemu-system"))
         #expect(uninstall.contains("PurgeData"))
         #expect(uninstall.contains("ProgramData"))
+        #expect(uninstall.contains("Wait-BarkVisorServiceRemoved"))
     }
 
     @Test func `service stop handles scm stop not only console`() throws {
@@ -49,8 +58,12 @@ struct WindowsPackagingTests {
         #expect(main.contains("SERVICE_CONTROL_STOP"))
         #expect(main.contains("StartServiceCtrlDispatcherW"))
         #expect(main.contains("SERVICE_ACCEPT_STOP"))
+        #expect(main.contains("SERVICE_START_PENDING"))
         #expect(main.contains("WindowsService.attach()"))
+        #expect(main.contains("WindowsService.reportRunning()"))
+        #expect(main.contains("WindowsService.reportStartFailed()"))
         #expect(main.contains("WindowsService.notifyStopped()"))
+        #expect(main.contains("windowsServiceDispatcherDone"))
     }
 
     @Test func `persist private file still 0600 on posix`() throws {

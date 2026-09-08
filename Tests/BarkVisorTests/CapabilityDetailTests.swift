@@ -380,6 +380,7 @@ struct CapabilityDetailTests {
         #expect(err?.httpStatus == 400)
         #expect(err?.localizedDescription.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
         #expect(err?.localizedDescription.localizedCaseInsensitiveContains("TCG") == true)
+        #expect(err?.localizedDescription.contains("windowsAllowTCG") == true)
 
         #expect(throws: Never.self) {
             try PlatformCapabilities.requireStartAccelerator("whpx", os: "Windows")
@@ -405,6 +406,7 @@ struct CapabilityDetailTests {
             )
         }
         #expect(err?.httpStatus == 400)
+        #expect(err?.localizedDescription.contains("windowsAllowTCG") == true)
         #expect(throws: Never.self) {
             try PlatformCapabilities.requireStartAccelerator(
                 "whpx",

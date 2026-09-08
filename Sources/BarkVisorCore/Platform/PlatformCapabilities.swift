@@ -132,6 +132,12 @@ public enum PlatformCapabilities {
         guard os.caseInsensitiveCompare("Windows") == .orderedSame else { return }
         if accelerator == "whpx" { return }
         if accelerator == "tcg", allowTCG { return }
+        if accelerator == "tcg" {
+            throw BarkVisorError.badRequest(
+                "Windows guests require WHPX. Enable Windows Hypervisor Platform and reboot. "
+                    + "TCG start is off unless windowsAllowTCG is true in settings.json.",
+            )
+        }
         throw BarkVisorError.badRequest(
             "Windows guests require WHPX. Enable Windows Hypervisor Platform and reboot. "
                 + "TCG is inventory-only and cannot start guests.",
