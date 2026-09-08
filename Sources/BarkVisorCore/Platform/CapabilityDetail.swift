@@ -14,6 +14,7 @@ public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case kvmDevice
     case qemuBridgeHelper
     case tcgOnly
+    case whpx
     case vfio
     case gpuPassthrough
 }
@@ -32,6 +33,7 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case iommuMissing = "iommu_missing"
     case vfioMissing = "vfio_missing"
     case gpuMissing = "gpu_missing"
+    case whpxMissing = "whpx_missing"
 }
 
 /// Per-mode support + PAS-94 reason/remediation (PAS-57 / PAS-67).
@@ -155,6 +157,8 @@ public enum CapabilityDetailBuilder {
             return qemuBridgeHelper(os: os, supported: features.qemuBridgeHelper)
         case .tcgOnly:
             return tcgOnly(os: os, accelerator: accel, kvmPresent: features.kvmDevice)
+        case .whpx:
+            return whpx(os: os, accelerator: accel)
         case .vfio:
             return vfio(os: os, features: features, probe: inventory.virtualization.vfioProbe)
         case .gpuPassthrough:
@@ -357,6 +361,14 @@ public enum CapabilityDetailBuilder {
                 remediation: kvmMissingRemediation,
             )
         }
+        if isWindows(os) {
+            return CapabilityDetail(
+                code: .tcgOnly,
+                supported: true,
+                reason: .whpxMissing,
+                remediation: whpxMissingRemediation,
+            )
+        }
         return CapabilityDetail(
             code: .tcgOnly,
             supported: true,
@@ -365,9 +377,33 @@ public enum CapabilityDetailBuilder {
         )
     }
 
+    private static func whpx(os: String, accelerator: String) -> CapabilityDetail {
+        if accelerator == "whpx" {
+            return CapabilityDetail(code: .whpx, supported: true)
+        }
+        if isWindows(os) {
+            return CapabilityDetail(
+                code: .whpx,
+                supported: false,
+                reason: .whpxMissing,
+                remediation: whpxMissingRemediation,
+            )
+        }
+        return CapabilityDetail(
+            code: .whpx,
+            supported: false,
+            reason: .osUnsupported,
+            remediation: "WHPX is the Windows Hypervisor Platform accelerator.",
+        )
+    }
+
     private static let kvmMissingRemediation =
         "KVM is not available (/dev/kvm missing). Guests run under TCG (software emulation). "
             + "Install qemu-kvm, add the user to the kvm group, or enable nested virtualization."
+
+    private static let whpxMissingRemediation =
+        "WHPX is not available. Enable Windows Hypervisor Platform in Windows Features and reboot. "
+            + "TCG is inventory-only and cannot start guests."
 
     private static func vfio(
         os: String,
@@ -448,5 +484,9 @@ public enum CapabilityDetailBuilder {
     private static func isMac(_ os: String) -> Bool {
         os.caseInsensitiveCompare("macOS") == .orderedSame
             || os.caseInsensitiveCompare("Darwin") == .orderedSame
+    }
+
+    private static func isWindows(_ os: String) -> Bool {
+        os.caseInsensitiveCompare("Windows") == .orderedSame
     }
 }

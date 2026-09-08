@@ -172,6 +172,7 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
     public let inAppUpdate: Bool
     public let kvmDevice: Bool
     public let qemuBridgeHelper: Bool
+    public let whpx: Bool
     /// Host can bind a GPU with vfio-pci (Linux IOMMU + vfio + KVM + a GPU). Not QEMU attach.
     public let gpuPassthrough: Bool
     /// IOMMU groups exist and vfio-pci (or `/dev/vfio/vfio`) is present.
@@ -186,6 +187,7 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         qemuBridgeHelper: Bool,
         gpuPassthrough: Bool = false,
         vfio: Bool = false,
+        whpx: Bool = false,
     ) {
         self.bridgedNetworking = bridgedNetworking
         self.managedBridgeDaemon = managedBridgeDaemon
@@ -195,11 +197,12 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         self.qemuBridgeHelper = qemuBridgeHelper
         self.gpuPassthrough = gpuPassthrough
         self.vfio = vfio
+        self.whpx = whpx
     }
 
     enum CodingKeys: String, CodingKey {
         case bridgedNetworking, managedBridgeDaemon, usbPassthrough, inAppUpdate
-        case kvmDevice, qemuBridgeHelper, gpuPassthrough, vfio
+        case kvmDevice, qemuBridgeHelper, gpuPassthrough, vfio, whpx
     }
 
     public init(from decoder: Decoder) throws {
@@ -212,6 +215,7 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         qemuBridgeHelper = try container.decode(Bool.self, forKey: .qemuBridgeHelper)
         gpuPassthrough = try container.decodeIfPresent(Bool.self, forKey: .gpuPassthrough) ?? false
         vfio = try container.decodeIfPresent(Bool.self, forKey: .vfio) ?? false
+        whpx = try container.decodeIfPresent(Bool.self, forKey: .whpx) ?? false
     }
 }
 

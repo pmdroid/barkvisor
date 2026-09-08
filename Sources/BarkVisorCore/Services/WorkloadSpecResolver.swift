@@ -201,12 +201,7 @@ public enum WorkloadSpecResolver {
     }
 
     public static func cpuModel(for accelerator: String) -> String {
-        switch accelerator {
-        case "hvf", "kvm":
-            return "host"
-        default:
-            return "max"
-        }
+        PlatformCapabilities.cpuModel(for: accelerator)
     }
 
     private static func requireCompatibleMergedGuestArch(

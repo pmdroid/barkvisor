@@ -72,6 +72,7 @@ struct APIContractTests {
             "iommu_missing",
             "vfio_missing",
             "gpu_missing",
+            "whpx_missing",
         ]))
     }
 

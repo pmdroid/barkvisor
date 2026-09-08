@@ -154,6 +154,8 @@ struct HostInventoryTests {
             #expect(HostInventoryService.kvmDevicePresent() == false)
             #expect(snapshot().virtualization.features.kvmDevice == false)
         #endif
+        let inv = snapshot()
+        #expect(inv.virtualization.features.whpx == (inv.virtualization.accelerator == "whpx"))
     }
 
     @Test func `bridged product flag requires qemu-bridge-helper on linux`() {

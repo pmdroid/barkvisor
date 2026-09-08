@@ -91,27 +91,49 @@ public enum PlatformCapabilities {
             }
             return "tcg"
         #elseif os(Windows)
-            let whpx = [
-                "C:\\Windows\\System32\\WinHvPlatform.dll",
-                "C:\\Windows\\Sysnative\\WinHvPlatform.dll",
-            ]
-            if whpx.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
-                return "whpx"
-            }
-            return "tcg"
+            return whpxPresent() ? "whpx" : "tcg"
         #else
             return "tcg"
         #endif
     }
 
+    public static func whpxPresent(
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> Bool {
+        let dlls = [
+            "C:\\Windows\\System32\\WinHvPlatform.dll",
+            "C:\\Windows\\Sysnative\\WinHvPlatform.dll",
+        ]
+        return dlls.contains(where: fileExists)
+    }
+
     /// QEMU `-cpu` model matching the accelerator.
     /// `host` requires KVM/HVF; TCG needs a software model (`max`).
     public static var qemuCPUModel: String {
+        cpuModel(for: accelerator)
+    }
+
+    public static func cpuModel(for accelerator: String) -> String {
         switch accelerator {
         case "hvf", "kvm":
             return "host"
+        case "whpx":
+            return "qemu64"
         default:
             return "max"
+        }
+    }
+
+    public static func requireStartAccelerator(
+        _ accelerator: String,
+        os: String = PlatformHost.platformName,
+    ) throws {
+        guard os.caseInsensitiveCompare("Windows") == .orderedSame else { return }
+        guard accelerator == "whpx" else {
+            throw BarkVisorError.badRequest(
+                "Windows guests require WHPX. Enable Windows Hypervisor Platform and reboot. "
+                    + "TCG is inventory-only and cannot start guests.",
+            )
         }
     }
 

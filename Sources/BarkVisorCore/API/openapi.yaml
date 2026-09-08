@@ -3593,6 +3593,7 @@ components:
             - kvmDevice
             - qemuBridgeHelper
             - tcgOnly
+            - whpx
             - vfio
             - gpuPassthrough
         supported:
@@ -3614,6 +3615,7 @@ components:
             - iommu_missing
             - vfio_missing
             - gpu_missing
+            - whpx_missing
         remediation:
           type: string
           nullable: true

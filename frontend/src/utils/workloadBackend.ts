@@ -12,6 +12,8 @@ export function acceleratorLabel(accel: string | null | undefined): string {
       return 'HVF'
     case 'kvm':
       return 'KVM'
+    case 'whpx':
+      return 'WHPX'
     case 'tcg':
       return 'TCG'
     default:

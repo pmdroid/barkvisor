@@ -15,7 +15,13 @@ struct WindowsPlatformTests {
             let accel = PlatformCapabilities.accelerator
             #expect(accel == "whpx" || accel == "tcg")
             #expect(accel != "unknown")
+            if accel == "whpx" {
+                #expect(PlatformCapabilities.qemuCPUModel == "qemu64")
+            } else {
+                #expect(PlatformCapabilities.qemuCPUModel == "max")
+            }
         #endif
+        #expect(PlatformCapabilities.cpuModel(for: "whpx") == "qemu64")
     }
 
     @Test func `data dir override is honored`() {
@@ -81,6 +87,13 @@ struct WindowsPlatformTests {
         let kvm = CapabilityDetailBuilder.detail(for: .kvmDevice, inventory: inv)
         #expect(!kvm.supported)
         #expect(kvm.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+        let tcg = CapabilityDetailBuilder.detail(for: .tcgOnly, inventory: inv)
+        #expect(tcg.supported)
+        #expect(tcg.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+        let whpx = CapabilityDetailBuilder.detail(for: .whpx, inventory: inv)
+        #expect(!whpx.supported)
+        #expect(whpx.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+        #expect(whpx.remediation?.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
         #expect(!update.supported)
         #expect(update.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)

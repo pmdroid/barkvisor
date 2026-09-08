@@ -207,6 +207,9 @@ public actor VMManager: VMStateQuerying {
         try PlatformCapabilities.requireCompatibleGuestArch(
             GuestProfiles.require(effective.launchGuestType).arch,
         )
+        try PlatformCapabilities.requireStartAccelerator(
+            effective.accelerator ?? QEMUBuilder.accelerator,
+        )
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)
 

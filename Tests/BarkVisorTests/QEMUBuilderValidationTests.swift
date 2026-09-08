@@ -272,12 +272,40 @@ struct QEMUBuilderValidationTests {
             } else {
                 #expect(QEMUBuilder.cpuModel == "max")
             }
+        #elseif os(Windows)
+            let accel = QEMUBuilder.accelerator
+            #expect(accel == "whpx" || accel == "tcg")
+            if accel == "whpx" {
+                #expect(QEMUBuilder.cpuModel == "qemu64")
+            } else {
+                #expect(QEMUBuilder.cpuModel == "max")
+            }
         #endif
         // QEMUBuilder and PlatformCapabilities must agree (capabilities API + launch args).
         #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
         #expect(QEMUBuilder.cpuModel == PlatformCapabilities.qemuCPUModel)
         let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
         #expect(WorkloadBackendProjector.project(guestType: native).accelerator == QEMUBuilder.accelerator)
+    }
+
+    @Test func `whpx argv uses qemu64 not host or tcg`() {
+        let backend = WorkloadBackendProjector.project(
+            guestType: "linux-amd64",
+            accelerator: "whpx",
+            hostArch: "x86_64",
+        )
+        let args = [
+            "-accel", backend.accelerator,
+            "-cpu", QEMUBuilder.cpuModel(for: backend.accelerator),
+        ]
+        #expect(args.contains("-accel"))
+        #expect(args.contains("whpx"))
+        #expect(args.contains("-cpu"))
+        #expect(args.contains("qemu64"))
+        #expect(!args.contains("host"))
+        #expect(!args.contains("max"))
+        #expect(!args.contains("tcg"))
+        #expect(backend.emulated == false)
     }
 
     // MARK: - Sockets / VNC clipboard
