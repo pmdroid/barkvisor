@@ -51,26 +51,31 @@ public enum SSRFGuard {
     /// Resolve a hostname to canonical IP strings (IPv4 and IPv6).
     /// Returns an empty array when DNS fails so the caller can decide policy.
     public static func resolvedIPStrings(_ host: String) -> [String] {
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
-        hints.ai_socktype = PlatformSocket.stream
-
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, nil, &hints, &result)
-        guard status == 0, let addrList = result else {
+        #if os(Windows)
+            _ = host
             return []
-        }
-        defer { freeaddrinfo(addrList) }
+        #else
+            var hints = addrinfo()
+            hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
+            hints.ai_socktype = PlatformSocket.stream
 
-        var ips: [String] = []
-        var current: UnsafeMutablePointer<addrinfo>? = addrList
-        while let info = current {
-            if let ipString = ipStringFromAddrInfo(info.pointee) {
-                ips.append(ipString)
+            var result: UnsafeMutablePointer<addrinfo>?
+            let status = getaddrinfo(host, nil, &hints, &result)
+            guard status == 0, let addrList = result else {
+                return []
             }
-            current = info.pointee.ai_next
-        }
-        return ips
+            defer { freeaddrinfo(addrList) }
+
+            var ips: [String] = []
+            var current: UnsafeMutablePointer<addrinfo>? = addrList
+            while let info = current {
+                if let ipString = ipStringFromAddrInfo(info.pointee) {
+                    ips.append(ipString)
+                }
+                current = info.pointee.ai_next
+            }
+            return ips
+        #endif
     }
 
     /// Check if a hostname resolves to any private/internal IP via DNS.
@@ -231,28 +236,30 @@ public enum SSRFGuard {
 
     // MARK: - Private helpers
 
-    private static func ipStringFromAddrInfo(_ info: addrinfo) -> String? {
-        switch info.ai_family {
-        case AF_INET:
-            guard let addr = info.ai_addr else { return nil }
-            var sin = sockaddr_in()
-            memcpy(&sin, addr, MemoryLayout<sockaddr_in>.size)
-            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-            var inAddr = sin.sin_addr
-            inet_ntop(AF_INET, &inAddr, &buf, socklen_t(INET_ADDRSTRLEN))
-            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
-        case AF_INET6:
-            guard let addr = info.ai_addr else { return nil }
-            var sin6 = sockaddr_in6()
-            memcpy(&sin6, addr, MemoryLayout<sockaddr_in6>.size)
-            var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-            var in6Addr = sin6.sin6_addr
-            inet_ntop(AF_INET6, &in6Addr, &buf, socklen_t(INET6_ADDRSTRLEN))
-            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
-        default:
-            return nil
+    #if !os(Windows)
+        private static func ipStringFromAddrInfo(_ info: addrinfo) -> String? {
+            switch info.ai_family {
+            case AF_INET:
+                guard let addr = info.ai_addr else { return nil }
+                var sin = sockaddr_in()
+                memcpy(&sin, addr, MemoryLayout<sockaddr_in>.size)
+                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                var inAddr = sin.sin_addr
+                inet_ntop(AF_INET, &inAddr, &buf, socklen_t(INET_ADDRSTRLEN))
+                return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
+            case AF_INET6:
+                guard let addr = info.ai_addr else { return nil }
+                var sin6 = sockaddr_in6()
+                memcpy(&sin6, addr, MemoryLayout<sockaddr_in6>.size)
+                var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                var in6Addr = sin6.sin6_addr
+                inet_ntop(AF_INET6, &in6Addr, &buf, socklen_t(INET6_ADDRSTRLEN))
+                return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
+            default:
+                return nil
+            }
         }
-    }
+    #endif
 }
 
 /// Connect to `connectIP` while HTTP Host and TLS SNI stay `originalHost`.
