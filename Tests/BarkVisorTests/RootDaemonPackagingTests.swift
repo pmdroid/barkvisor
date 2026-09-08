@@ -38,6 +38,7 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("RuntimeDirectoryMode=0770"))
             #expect(unit.contains("UMask=0007"))
             #expect(unit.contains("Group=barkvisor"))
+            #expect(unit.contains("LimitMEMLOCK=infinity"), "\(relative) must pin guest RAM for VFIO")
         }
     }
 
