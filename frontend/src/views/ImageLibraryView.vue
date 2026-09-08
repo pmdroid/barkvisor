@@ -25,8 +25,10 @@ import { formatBytes } from '../utils/format'
 import { imageStorageLine } from '../utils/imageStorage'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
-import { deviceImagePath, owningMemberDevice } from '../utils/homeDeviceApi'
+import { canCallDeviceAPI, isSelfDevice, owningMemberDevice } from '../utils/homeDeviceApi'
+import { reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { imageProgressPercent } from '../utils/imageProgress'
+import { DEVICE_LABEL } from '../utils/terminology'
 import { librarySpaceCopy, onLibrarySettingsChanged } from '../utils/librarySpace'
 import {
   detectImageArch,
@@ -101,8 +103,10 @@ function imageRowsFromLibrary(images: HomeImage[]): LibraryImageRow[] {
   )
 }
 
+const useHomeUnion = computed(() => devicesStore.devices.length > 0)
+
 const visibleImages = computed<LibraryImageRow[] | Image[]>(() => {
-  if (homeLibrary.images.length > 0) {
+  if (useHomeUnion.value) {
     return scopeRows(imageRowsFromLibrary(homeLibrary.images), deviceScope.selectedHostId)
   }
   if (
@@ -114,6 +118,33 @@ const visibleImages = computed<LibraryImageRow[] | Image[]>(() => {
   }
   return store.images
 })
+
+const listError = computed(() => homeLibrary.imagesError || store.error)
+
+const skippedDevices = computed(() =>
+  scopeRows(
+    devicesStore.devices.filter((device) => !isSelfDevice(device) && !canCallDeviceAPI(device)),
+    deviceScope.selectedHostId,
+  ),
+)
+
+const skippedLine = computed(() => {
+  if (skippedDevices.value.length === 0) return null
+  return skippedDevices.value.map((device) => {
+    const name = deviceDisplayLabel(device)
+    const why = reachabilityHint(device) || reachabilityLabel(device.reachability)
+    return `${name}: ${why}`
+  }).join(' · ')
+})
+
+const listLoading = computed(() => store.loading || homeLibrary.imagesLoading)
+
+const showEmpty = computed(() =>
+  visibleImages.value.length === 0
+  && !listLoading.value
+  && !listError.value
+  && !skippedLine.value,
+)
 
 async function fetchLibrarySpace() {
   try {
@@ -506,16 +537,20 @@ async function doDeleteImage() {
   try {
     const owner = owningMemberDevice(hostId, devicesStore.deviceByHostId)
     if (owner) {
-      await api.delete(deviceImagePath(owner, id))
+      if (!canCallDeviceAPI(owner)) {
+        deleteError.value = `Device is unreachable. Workloads on this ${DEVICE_LABEL} keep running locally.`
+        return
+      }
+      await homeLibrary.removeCopy(owner, id)
     } else {
       await store.remove(id)
     }
     await homeLibrary.fetchImages(devicesStore.devices)
+    confirmTarget.value = null
   } catch (e: unknown) {
     deleteError.value = apiErrorMessage(e, 'Failed to delete image')
   } finally {
     deleting.value = false
-    confirmTarget.value = null
   }
 }
 
@@ -543,9 +578,13 @@ async function doDeleteImage() {
     @saved="onLibraryFolderSaved"
   />
 
-  <EmptyState v-else-if="libraryFolderReady && visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+  <template v-else-if="libraryFolderReady">
+  <FormError v-if="listError" :message="listError" />
+  <p v-if="skippedLine" class="ops-sub">Not queried: {{ skippedLine }}</p>
 
-  <div v-else-if="libraryFolderReady" class="sheet">
+  <EmptyState v-if="showEmpty" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+
+  <div v-else-if="visibleImages.length > 0" class="sheet">
   <FormError v-if="deleteError" :message="deleteError" />
   <table>
     <thead>
@@ -579,6 +618,7 @@ async function doDeleteImage() {
     </tbody>
   </table>
   </div>
+  </template>
   </div>
 
   <!-- Upload Modal -->

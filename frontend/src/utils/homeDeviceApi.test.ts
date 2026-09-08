@@ -80,6 +80,7 @@ describe('homeDeviceApi (PAS-52)', () => {
     expect(canFetchDeviceWorkloads(member)).toBe(true)
     expect(canFetchDeviceWorkloads(down)).toBe(false)
     expect(canCallDeviceAPI(down)).toBe(false)
+    expect(canCallDeviceAPI({ ...member, reachability: 'memberHTTP' })).toBe(false)
   })
 })
 
