@@ -191,14 +191,6 @@ Run the binary named **`barkvisor-agent`** — it serves the API without the SPA
 
 The `LD_LIBRARY_PATH` export is required for **every** CLI invocation of this binary (doctor, join, the unit below) — the binary links the bundled Swift runtime in that directory and does not embed an rpath for the home prefix.
 
-Now verify the host:
-
-```sh
-barkvisor-agent doctor
-```
-
-It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
-
 ### systemd user unit
 
 ```ini
@@ -211,6 +203,9 @@ After=network-online.target
 Environment=LD_LIBRARY_PATH=%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/swift:%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/compat
 ExecStart=%h/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent serve
 Restart=on-failure
+RestartSec=3
+# Keep running Workloads alive across daemon restarts (matches the packaged unit).
+KillMode=process
 
 [Install]
 WantedBy=default.target
@@ -222,6 +217,16 @@ systemctl --user enable --now barkvisor-agent.service
 loginctl enable-linger "$USER"   # keep running after logout
 journalctl --user -u barkvisor-agent.service -f
 ```
+
+### Verify the host
+
+With the unit running (`/api/health` must answer, or doctor fails `api-health`):
+
+```sh
+barkvisor-agent doctor
+```
+
+It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
 
 Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`, with the `LD_LIBRARY_PATH` export above in your shell), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
 
