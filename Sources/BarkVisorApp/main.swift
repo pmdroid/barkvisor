@@ -7,6 +7,7 @@ import Foundation
 #elseif canImport(Glibc)
     import Glibc
 #elseif canImport(WinSDK)
+    import ucrt
     import WinSDK
 #endif
 import Logging
@@ -195,7 +196,7 @@ func runDaemon() async {
 
     #if os(Windows)
         _ = SetConsoleCtrlHandler({ _ in
-            exit(1)
+            _exit(1)
             return true
         }, true)
     #else

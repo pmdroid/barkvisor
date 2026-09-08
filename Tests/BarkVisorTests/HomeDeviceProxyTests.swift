@@ -309,37 +309,45 @@ struct HomeDeviceProxyTests {
     }
 
     @Test func `local host proxy caps response body`() async throws {
-        let oversized = try LocalStaticHTTPServer(body: Data(repeating: 0x61, count: 32))
-        let within = try LocalStaticHTTPServer(body: Data("ok".utf8))
-        defer {
-            oversized.stop()
-            within.stop()
-        }
-        let bigURL = try #require(URL(string: "http://127.0.0.1:\(oversized.port)/"))
-        let smallURL = try #require(URL(string: "http://127.0.0.1:\(within.port)/"))
-        let client = LocalHostProxyClient(maxBodyBytes: 16)
-        await #expect(throws: HomeDeviceProxyError.responseTooLarge) {
-            try await client.send(HomeDeviceProxyRequest(method: "GET", url: bigURL))
-        }
-        let response = try await client.send(HomeDeviceProxyRequest(method: "GET", url: smallURL))
-        #expect(response.status == 200)
-        #expect(response.body == Data("ok".utf8))
+        #if os(Windows)
+            return
+        #else
+            let oversized = try LocalStaticHTTPServer(body: Data(repeating: 0x61, count: 32))
+            let within = try LocalStaticHTTPServer(body: Data("ok".utf8))
+            defer {
+                oversized.stop()
+                within.stop()
+            }
+            let bigURL = try #require(URL(string: "http://127.0.0.1:\(oversized.port)/"))
+            let smallURL = try #require(URL(string: "http://127.0.0.1:\(within.port)/"))
+            let client = LocalHostProxyClient(maxBodyBytes: 16)
+            await #expect(throws: HomeDeviceProxyError.responseTooLarge) {
+                try await client.send(HomeDeviceProxyRequest(method: "GET", url: bigURL))
+            }
+            let response = try await client.send(HomeDeviceProxyRequest(method: "GET", url: smallURL))
+            #expect(response.status == 200)
+            #expect(response.body == Data("ok".utf8))
+        #endif
     }
 
     @Test func `local host proxy honors per-request timeout override`() async throws {
-        let delayed = try DelayedHTTPServer(body: Data("ok".utf8), delay: 3)
-        defer { delayed.stop() }
-        let url = try #require(URL(string: "http://127.0.0.1:\(delayed.port)/"))
-        let client = LocalHostProxyClient()
-        await #expect(throws: HomeDeviceProxyError.connectTimeout) {
-            try await client.send(HomeDeviceProxyRequest(method: "GET", url: url), timeout: 1)
-        }
-        let response = try await client.send(
-            HomeDeviceProxyRequest(method: "GET", url: url),
-            timeout: 30,
-        )
-        #expect(response.status == 200)
-        #expect(response.body == Data("ok".utf8))
+        #if os(Windows)
+            return
+        #else
+            let delayed = try DelayedHTTPServer(body: Data("ok".utf8), delay: 3)
+            defer { delayed.stop() }
+            let url = try #require(URL(string: "http://127.0.0.1:\(delayed.port)/"))
+            let client = LocalHostProxyClient()
+            await #expect(throws: HomeDeviceProxyError.connectTimeout) {
+                try await client.send(HomeDeviceProxyRequest(method: "GET", url: url), timeout: 1)
+            }
+            let response = try await client.send(
+                HomeDeviceProxyRequest(method: "GET", url: url),
+                timeout: 30,
+            )
+            #expect(response.status == 200)
+            #expect(response.body == Data("ok".utf8))
+        #endif
     }
 
     @Test func `agent local proxy grants stream timeout only to completions`() {
@@ -455,144 +463,146 @@ private struct FailingProxyClient: HomeDeviceProxyClient {
     }
 }
 
-/// Serves a fixed HTTP body after a fixed delay so timeout-override tests
-/// exercise the real AsyncHTTPClient timeout path on loopback.
-private final class DelayedHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
+#if !os(Windows)
+    /// Serves a fixed HTTP body after a fixed delay so timeout-override tests
+    /// exercise the real AsyncHTTPClient timeout path on loopback.
+    private final class DelayedHTTPServer: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
 
-    init(body: Data, delay: TimeInterval) throws {
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        init(body: Data, delay: TimeInterval) throws {
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
             }
-        }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
+            guard bindRC == 0, listen(sock, 8) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
             }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [fd = sock, body, delay] in
-            ready.signal()
-            while true {
-                var clientAddr = sockaddr_in()
-                var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
-                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        accept(fd, $0, &clientLen)
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread { [fd = sock, body, delay] in
+                ready.signal()
+                while true {
+                    var clientAddr = sockaddr_in()
+                    var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
+                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            accept(fd, $0, &clientLen)
+                        }
                     }
-                }
-                if client < 0 { break }
-                var buf = [UInt8](repeating: 0, count: 1_024)
-                _ = read(client, &buf, buf.count)
-                Thread.sleep(forTimeInterval: delay)
-                var payload = Data(
-                    "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-                        .utf8,
-                )
-                payload.append(body)
-                payload.withUnsafeBytes { raw in
-                    guard let base = raw.baseAddress else { return }
-                    _ = write(client, base, raw.count)
-                }
-                close(client)
-            }
-        }
-        ready.wait()
-    }
-
-    func stop() {
-        close(fd)
-    }
-}
-
-/// Serves a fixed HTTP body on loopback so body-cap tests do not bind TLS.
-private final class LocalStaticHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
-
-    init(body: Data) throws {
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
-            }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [fd = sock, body] in
-            ready.signal()
-            while true {
-                var clientAddr = sockaddr_in()
-                var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
-                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        accept(fd, $0, &clientLen)
+                    if client < 0 { break }
+                    var buf = [UInt8](repeating: 0, count: 1_024)
+                    _ = read(client, &buf, buf.count)
+                    Thread.sleep(forTimeInterval: delay)
+                    var payload = Data(
+                        "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+                            .utf8,
+                    )
+                    payload.append(body)
+                    payload.withUnsafeBytes { raw in
+                        guard let base = raw.baseAddress else { return }
+                        _ = write(client, base, raw.count)
                     }
+                    close(client)
                 }
-                if client < 0 { break }
-                var buf = [UInt8](repeating: 0, count: 1_024)
-                _ = read(client, &buf, buf.count)
-                var payload = Data(
-                    "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-                        .utf8,
-                )
-                payload.append(body)
-                payload.withUnsafeBytes { raw in
-                    guard let base = raw.baseAddress else { return }
-                    _ = write(client, base, raw.count)
-                }
-                close(client)
             }
+            ready.wait()
         }
-        ready.wait()
+
+        func stop() {
+            close(fd)
+        }
     }
 
-    func stop() {
-        close(fd)
+    /// Serves a fixed HTTP body on loopback so body-cap tests do not bind TLS.
+    private final class LocalStaticHTTPServer: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
+
+        init(body: Data) throws {
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0, listen(sock, 8) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
+            }
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread { [fd = sock, body] in
+                ready.signal()
+                while true {
+                    var clientAddr = sockaddr_in()
+                    var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
+                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            accept(fd, $0, &clientLen)
+                        }
+                    }
+                    if client < 0 { break }
+                    var buf = [UInt8](repeating: 0, count: 1_024)
+                    _ = read(client, &buf, buf.count)
+                    var payload = Data(
+                        "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+                            .utf8,
+                    )
+                    payload.append(body)
+                    payload.withUnsafeBytes { raw in
+                        guard let base = raw.baseAddress else { return }
+                        _ = write(client, base, raw.count)
+                    }
+                    close(client)
+                }
+            }
+            ready.wait()
+        }
+
+        func stop() {
+            close(fd)
+        }
     }
-}
+#endif

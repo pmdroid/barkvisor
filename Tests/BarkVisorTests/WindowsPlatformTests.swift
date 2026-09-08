@@ -19,11 +19,12 @@ struct WindowsPlatformTests {
     }
 
     @Test func `data dir override is honored`() {
+        let override = "/tmp/barkvisor-windows-data"
         let dir = PlatformPaths.dataDir(
             isInstalled: true,
-            dataDirOverride: "/tmp/barkvisor-windows-data",
+            dataDirOverride: override,
         )
-        #expect(dir.path == "/tmp/barkvisor-windows-data")
+        #expect(dir.path == URL(fileURLWithPath: override, isDirectory: true).path)
     }
 
     @Test func `path list separator is semicolon on windows`() {

@@ -119,14 +119,18 @@ struct PairingHTTPTests {
     }
 
     @Test func `pairing HTTP client does not follow redirects`() async throws {
-        let server = try LocalRedirectHTTPServer(location: "http://127.0.0.1:9/api/contract")
-        defer { server.stop() }
-        // Default timeout: a 2s budget expires under parallel CI load.
-        let client = URLSessionPairingHTTPClient()
-        let url = try #require(URL(string: "http://127.0.0.1:\(server.port)/api/contract"))
-        let response = try await client.get(url: url)
-        #expect((300 ... 399).contains(response.status))
-        #expect(server.connectionCount == 1)
+        #if os(Windows)
+            return
+        #else
+            let server = try LocalRedirectHTTPServer(location: "http://127.0.0.1:9/api/contract")
+            defer { server.stop() }
+            // Default timeout: a 2s budget expires under parallel CI load.
+            let client = URLSessionPairingHTTPClient()
+            let url = try #require(URL(string: "http://127.0.0.1:\(server.port)/api/contract"))
+            let response = try await client.get(url: url)
+            #expect((300 ... 399).contains(response.status))
+            #expect(server.connectionCount == 1)
+        #endif
     }
 
     @Test func `issue advertisedHost valid persists and invalid is 400`() throws {
@@ -163,87 +167,89 @@ struct PairingHTTPTests {
     }
 }
 
-/// Serves a 302 so tests can prove pairing HTTP does not follow it.
-private final class LocalRedirectHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
-    private let lock = NSLock()
-    private var _connections = 0
+#if !os(Windows)
+    /// Serves a 302 so tests can prove pairing HTTP does not follow it.
+    private final class LocalRedirectHTTPServer: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
+        private let lock = NSLock()
+        private var _connections = 0
 
-    var connectionCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return _connections
-    }
+        var connectionCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return _connections
+        }
 
-    init(location: String) throws {
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        init(location: String) throws {
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
             }
-        }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
+            guard bindRC == 0, listen(sock, 8) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
             }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        // Dedicated thread: global GCD is starved by parallel Swift Testing.
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [fd = sock, location] in
-            ready.signal()
-            while true {
-                var clientAddr = sockaddr_in()
-                var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
-                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        accept(fd, $0, &clientLen)
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+            // Dedicated thread: global GCD is starved by parallel Swift Testing.
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread { [fd = sock, location] in
+                ready.signal()
+                while true {
+                    var clientAddr = sockaddr_in()
+                    var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
+                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            accept(fd, $0, &clientLen)
+                        }
                     }
+                    if client < 0 { break }
+                    self.lock.lock()
+                    self._connections += 1
+                    self.lock.unlock()
+                    var buf = [UInt8](repeating: 0, count: 1_024)
+                    _ = read(client, &buf, buf.count)
+                    let payload = Data(
+                        "HTTP/1.1 302 Found\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .utf8,
+                    )
+                    payload.withUnsafeBytes { raw in
+                        guard let base = raw.baseAddress else { return }
+                        _ = write(client, base, raw.count)
+                    }
+                    close(client)
                 }
-                if client < 0 { break }
-                self.lock.lock()
-                self._connections += 1
-                self.lock.unlock()
-                var buf = [UInt8](repeating: 0, count: 1_024)
-                _ = read(client, &buf, buf.count)
-                let payload = Data(
-                    "HTTP/1.1 302 Found\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                        .utf8,
-                )
-                payload.withUnsafeBytes { raw in
-                    guard let base = raw.baseAddress else { return }
-                    _ = write(client, base, raw.count)
-                }
-                close(client)
+            }
+            // Bounded so a stuck accept thread fails this test instead of hanging CI.
+            if ready.wait(timeout: .now() + .seconds(5)) != .success {
+                close(sock)
+                throw BarkVisorError.badRequest("accept thread did not start")
             }
         }
-        // Bounded so a stuck accept thread fails this test instead of hanging CI.
-        if ready.wait(timeout: .now() + .seconds(5)) != .success {
-            close(sock)
-            throw BarkVisorError.badRequest("accept thread did not start")
+
+        func stop() {
+            close(fd)
         }
     }
-
-    func stop() {
-        close(fd)
-    }
-}
+#endif

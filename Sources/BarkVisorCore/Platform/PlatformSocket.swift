@@ -13,6 +13,8 @@ public enum PlatformSocket {
     public static var stream: Int32 {
         #if os(Linux)
             return Int32(SOCK_STREAM.rawValue)
+        #elseif os(Windows)
+            return 1
         #else
             return SOCK_STREAM
         #endif

@@ -284,250 +284,252 @@ struct SSRFProtectionTests {
         }
     }
 
-    @Test func `pinned 200 body is delivered`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+    #if !os(Windows)
+        @Test func `pinned 200 body is delivered`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
 
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/ok") {
-                return (200, [:], "pinned-ok")
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/ok") {
+                    return (200, [:], "pinned-ok")
+                }
+                return (404, [:], "missing")
             }
-            return (404, [:], "missing")
+            defer { server.stop() }
+
+            let host = "ssrf-body.test"
+            pinLoopback(host: host)
+            let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
+            let session = SSRFGuard.urlSession(resourceTimeout: 5)
+            defer { session.invalidateAndCancel() }
+
+            let (data, response) = try await session.data(from: start)
+            await waitForHopShutdown()
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 200)
+            #expect(String(data: data, encoding: .utf8) == "pinned-ok")
+            #expect(server.hitCount() == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
         }
-        defer { server.stop() }
 
-        let host = "ssrf-body.test"
-        pinLoopback(host: host)
-        let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
-        let session = SSRFGuard.urlSession(resourceTimeout: 5)
-        defer { session.invalidateAndCancel() }
+        @Test func `one HTTPClient across hops and shutdown once`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
 
-        let (data, response) = try await session.data(from: start)
-        await waitForHopShutdown()
-        let http = try #require(response as? HTTPURLResponse)
-        #expect(http.statusCode == 200)
-        #expect(String(data: data, encoding: .utf8) == "pinned-ok")
-        #expect(server.hitCount() == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-    }
-
-    @Test func `one HTTPClient across hops and shutdown once`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/a") {
-                return (302, ["Location": "/b"], "")
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/a") {
+                    return (302, ["Location": "/b"], "")
+                }
+                if path.hasPrefix("/b") {
+                    return (200, [:], "pinned-ok")
+                }
+                return (404, [:], "missing")
             }
-            if path.hasPrefix("/b") {
-                return (200, [:], "pinned-ok")
-            }
-            return (404, [:], "missing")
+            defer { server.stop() }
+
+            let host = "ssrf-hop.test"
+            pinLoopback(host: host)
+            let start = try #require(URL(string: "http://\(host):\(server.port)/a"))
+            let session = SSRFGuard.urlSession(resourceTimeout: 5)
+            defer { session.invalidateAndCancel() }
+
+            let (data, response) = try await session.data(from: start)
+            await waitForHopShutdown()
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 200)
+            #expect(String(data: data, encoding: .utf8) == "pinned-ok")
+            #expect(server.hitCount() == 2)
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+            #expect(SSRFPinnedURLProtocol.dnsOverrides == [[host: "127.0.0.1"], [host: "127.0.0.1"]])
+            #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/a") })
+            #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/b") })
         }
-        defer { server.stop() }
 
-        let host = "ssrf-hop.test"
-        pinLoopback(host: host)
-        let start = try #require(URL(string: "http://\(host):\(server.port)/a"))
-        let session = SSRFGuard.urlSession(resourceTimeout: 5)
-        defer { session.invalidateAndCancel() }
+        @Test func `one hop client reused when redirect host changes`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
 
-        let (data, response) = try await session.data(from: start)
-        await waitForHopShutdown()
-        let http = try #require(response as? HTTPURLResponse)
-        #expect(http.statusCode == 200)
-        #expect(String(data: data, encoding: .utf8) == "pinned-ok")
-        #expect(server.hitCount() == 2)
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-        #expect(SSRFPinnedURLProtocol.dnsOverrides == [[host: "127.0.0.1"], [host: "127.0.0.1"]])
-        #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/a") })
-        #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/b") })
-    }
-
-    @Test func `one hop client reused when redirect host changes`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let portBox = HopPortBox()
-        let hostA = "example.com"
-        let hostB = "example.net"
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/a") {
-                return (302, ["Location": "http://\(hostB):\(portBox.port)/b"], "")
+            let portBox = HopPortBox()
+            let hostA = "example.com"
+            let hostB = "example.net"
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/a") {
+                    return (302, ["Location": "http://\(hostB):\(portBox.port)/b"], "")
+                }
+                if path.hasPrefix("/b") {
+                    return (200, [:], "cross-host-ok")
+                }
+                return (404, [:], "missing")
             }
-            if path.hasPrefix("/b") {
-                return (200, [:], "cross-host-ok")
+            defer { server.stop() }
+            portBox.port = server.port
+            SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+                guard let requestHost = url.host, requestHost == hostA || requestHost == hostB else {
+                    throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+                }
+                return PinnedEndpoint(
+                    originalHost: requestHost,
+                    connectIP: "127.0.0.1",
+                    port: url.port ?? server.port,
+                    usesTLS: false,
+                )
             }
-            return (404, [:], "missing")
+            let start = try #require(URL(string: "http://\(hostA):\(server.port)/a"))
+            let session = SSRFGuard.urlSession(resourceTimeout: 5)
+            defer { session.invalidateAndCancel() }
+
+            let (data, response) = try await session.data(from: start)
+            await waitForHopShutdown()
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 200)
+            #expect(String(data: data, encoding: .utf8) == "cross-host-ok")
+            #expect(server.hitCount() == 2)
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+            #expect(SSRFPinnedURLProtocol.dnsOverrides == [
+                [hostA: "127.0.0.1"],
+                [hostB: "127.0.0.1"],
+            ])
         }
-        defer { server.stop() }
-        portBox.port = server.port
-        SSRFPinnedURLProtocol.pinEndpointOverride = { url in
-            guard let requestHost = url.host, requestHost == hostA || requestHost == hostB else {
-                throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+
+        @Test func `private Location is not followed`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/public") {
+                    return (302, ["Location": "http://127.0.0.1/secret"], "")
+                }
+                if path.hasPrefix("/secret") {
+                    return (200, [:], "leaked")
+                }
+                return (404, [:], "missing")
             }
-            return PinnedEndpoint(
-                originalHost: requestHost,
-                connectIP: "127.0.0.1",
-                port: url.port ?? server.port,
-                usesTLS: false,
+            defer { server.stop() }
+
+            let host = "ssrf-hop.test"
+            pinLoopback(host: host)
+            let start = try #require(URL(string: "http://\(host):\(server.port)/public"))
+            let session = SSRFGuard.urlSession(resourceTimeout: 5)
+            defer { session.invalidateAndCancel() }
+
+            let (data, response) = try await session.data(from: start)
+            await waitForHopShutdown()
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 302)
+            #expect(String(data: data, encoding: .utf8) != "leaked")
+            #expect(server.hitCount() == 1)
+            #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("127.0.0.1") })
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        }
+
+        @Test func `allowed host session does not follow redirect off allowlist`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+            let portBox = HopPortBox()
+            let allowedHost = "ssrf-allow.test"
+            let otherHost = "example.com"
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/public") {
+                    return (302, ["Location": "http://\(otherHost):\(portBox.port)/secret"], "")
+                }
+                if path.hasPrefix("/secret") {
+                    return (200, [:], "leaked")
+                }
+                return (404, [:], "missing")
+            }
+            defer { server.stop() }
+            portBox.port = server.port
+            SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+                guard let requestHost = url.host, requestHost == allowedHost || requestHost == otherHost
+                else {
+                    throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+                }
+                return PinnedEndpoint(
+                    originalHost: requestHost,
+                    connectIP: "127.0.0.1",
+                    port: url.port ?? 80,
+                    usesTLS: false,
+                )
+            }
+
+            let start = try #require(URL(string: "http://\(allowedHost):\(server.port)/public"))
+            let session = SSRFGuard.urlSession(resourceTimeout: 5, allowedHosts: [allowedHost])
+            defer { session.invalidateAndCancel() }
+
+            let request = SSRFGuard.request(url: start, timeout: 5, allowedHosts: [allowedHost])
+            #expect(SSRFPinnedURLProtocol.allowedHosts(in: request) == [allowedHost])
+            let (data, response) = try await session.data(for: request)
+            await waitForHopShutdown()
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 302)
+            #expect(String(data: data, encoding: .utf8) != "leaked")
+            #expect(server.hitCount() == 1)
+            #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains(otherHost) })
+        }
+
+        @Test func `pinned hop streams body to file`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+            let server = try SSRFHopHTTPServer { path in
+                if path.hasPrefix("/ok") {
+                    return (200, [:], "pinned-ok")
+                }
+                return (404, [:], "missing")
+            }
+            defer { server.stop() }
+
+            let host = "ssrf-file.test"
+            pinLoopback(host: host)
+            let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ssrf-file-\(UUID().uuidString).bin")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            let received = try await SSRFPinnedFileDownload.streamToFile(
+                from: start, to: dest, timeout: 5,
             )
+            await waitForHopShutdown()
+            #expect(received == 9)
+            #expect(try String(contentsOf: dest, encoding: .utf8) == "pinned-ok")
+            #expect(server.hitCount() == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
         }
-        let start = try #require(URL(string: "http://\(hostA):\(server.port)/a"))
-        let session = SSRFGuard.urlSession(resourceTimeout: 5)
-        defer { session.invalidateAndCancel() }
 
-        let (data, response) = try await session.data(from: start)
-        await waitForHopShutdown()
-        let http = try #require(response as? HTTPURLResponse)
-        #expect(http.statusCode == 200)
-        #expect(String(data: data, encoding: .utf8) == "cross-host-ok")
-        #expect(server.hitCount() == 2)
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-        #expect(SSRFPinnedURLProtocol.dnsOverrides == [
-            [hostA: "127.0.0.1"],
-            [hostB: "127.0.0.1"],
-        ])
-    }
+        @Test func `file stream treats final HTTP error as downloadFailed`() async throws {
+            SSRFPinnedURLProtocol.resetTestHooks()
+            defer { SSRFPinnedURLProtocol.resetTestHooks() }
 
-    @Test func `private Location is not followed`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/public") {
-                return (302, ["Location": "http://127.0.0.1/secret"], "")
+            let server = try SSRFHopHTTPServer { _ in
+                (404, [:], "missing")
             }
-            if path.hasPrefix("/secret") {
-                return (200, [:], "leaked")
+            defer { server.stop() }
+
+            let host = "ssrf-file-404.test"
+            pinLoopback(host: host)
+            let start = try #require(URL(string: "http://\(host):\(server.port)/missing"))
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ssrf-file-404-\(UUID().uuidString).bin")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            do {
+                _ = try await SSRFPinnedFileDownload.streamToFile(from: start, to: dest, timeout: 5)
+                Issue.record("expected downloadFailed")
+            } catch let BarkVisorError.downloadFailed(message) {
+                #expect(message.contains("HTTP 404"))
             }
-            return (404, [:], "missing")
+            await waitForHopShutdown()
+            #expect(!FileManager.default.fileExists(atPath: dest.path))
+            #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+            #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
         }
-        defer { server.stop() }
-
-        let host = "ssrf-hop.test"
-        pinLoopback(host: host)
-        let start = try #require(URL(string: "http://\(host):\(server.port)/public"))
-        let session = SSRFGuard.urlSession(resourceTimeout: 5)
-        defer { session.invalidateAndCancel() }
-
-        let (data, response) = try await session.data(from: start)
-        await waitForHopShutdown()
-        let http = try #require(response as? HTTPURLResponse)
-        #expect(http.statusCode == 302)
-        #expect(String(data: data, encoding: .utf8) != "leaked")
-        #expect(server.hitCount() == 1)
-        #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("127.0.0.1") })
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-    }
-
-    @Test func `allowed host session does not follow redirect off allowlist`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let portBox = HopPortBox()
-        let allowedHost = "ssrf-allow.test"
-        let otherHost = "example.com"
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/public") {
-                return (302, ["Location": "http://\(otherHost):\(portBox.port)/secret"], "")
-            }
-            if path.hasPrefix("/secret") {
-                return (200, [:], "leaked")
-            }
-            return (404, [:], "missing")
-        }
-        defer { server.stop() }
-        portBox.port = server.port
-        SSRFPinnedURLProtocol.pinEndpointOverride = { url in
-            guard let requestHost = url.host, requestHost == allowedHost || requestHost == otherHost
-            else {
-                throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
-            }
-            return PinnedEndpoint(
-                originalHost: requestHost,
-                connectIP: "127.0.0.1",
-                port: url.port ?? 80,
-                usesTLS: false,
-            )
-        }
-
-        let start = try #require(URL(string: "http://\(allowedHost):\(server.port)/public"))
-        let session = SSRFGuard.urlSession(resourceTimeout: 5, allowedHosts: [allowedHost])
-        defer { session.invalidateAndCancel() }
-
-        let request = SSRFGuard.request(url: start, timeout: 5, allowedHosts: [allowedHost])
-        #expect(SSRFPinnedURLProtocol.allowedHosts(in: request) == [allowedHost])
-        let (data, response) = try await session.data(for: request)
-        await waitForHopShutdown()
-        let http = try #require(response as? HTTPURLResponse)
-        #expect(http.statusCode == 302)
-        #expect(String(data: data, encoding: .utf8) != "leaked")
-        #expect(server.hitCount() == 1)
-        #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains(otherHost) })
-    }
-
-    @Test func `pinned hop streams body to file`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let server = try SSRFHopHTTPServer { path in
-            if path.hasPrefix("/ok") {
-                return (200, [:], "pinned-ok")
-            }
-            return (404, [:], "missing")
-        }
-        defer { server.stop() }
-
-        let host = "ssrf-file.test"
-        pinLoopback(host: host)
-        let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ssrf-file-\(UUID().uuidString).bin")
-        defer { try? FileManager.default.removeItem(at: dest) }
-
-        let received = try await SSRFPinnedFileDownload.streamToFile(
-            from: start, to: dest, timeout: 5,
-        )
-        await waitForHopShutdown()
-        #expect(received == 9)
-        #expect(try String(contentsOf: dest, encoding: .utf8) == "pinned-ok")
-        #expect(server.hitCount() == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-    }
-
-    @Test func `file stream treats final HTTP error as downloadFailed`() async throws {
-        SSRFPinnedURLProtocol.resetTestHooks()
-        defer { SSRFPinnedURLProtocol.resetTestHooks() }
-
-        let server = try SSRFHopHTTPServer { _ in
-            (404, [:], "missing")
-        }
-        defer { server.stop() }
-
-        let host = "ssrf-file-404.test"
-        pinLoopback(host: host)
-        let start = try #require(URL(string: "http://\(host):\(server.port)/missing"))
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ssrf-file-404-\(UUID().uuidString).bin")
-        defer { try? FileManager.default.removeItem(at: dest) }
-
-        do {
-            _ = try await SSRFPinnedFileDownload.streamToFile(from: start, to: dest, timeout: 5)
-            Issue.record("expected downloadFailed")
-        } catch let BarkVisorError.downloadFailed(message) {
-            #expect(message.contains("HTTP 404"))
-        }
-        await waitForHopShutdown()
-        #expect(!FileManager.default.fileExists(atPath: dest.path))
-        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
-        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-    }
+    #endif
 
     @Test func `writeBody streams buffers to file and reports progress`() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -610,98 +612,100 @@ private func pinLoopback(host: String) {
     }
 }
 
-/// Tiny HTTP/1.1 responder for pinned-redirect tests.
-private final class SSRFHopHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
-    private let lock = NSLock()
-    private var hits = 0
-    private let handler: @Sendable (String) -> (Int, [String: String], String)
+#if !os(Windows)
+    /// Tiny HTTP/1.1 responder for pinned-redirect tests.
+    private final class SSRFHopHTTPServer: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
+        private let lock = NSLock()
+        private var hits = 0
+        private let handler: @Sendable (String) -> (Int, [String: String], String)
 
-    init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
-        self.handler = handler
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
+            self.handler = handler
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0, listen(sock, 8) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
+            }
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+            let listenFD = sock
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread { [weak self] in
+                ready.signal()
+                while let server = self {
+                    let client = accept(listenFD, nil, nil)
+                    if client < 0 { break }
+                    server.handle(client: client)
+                }
+            }
+            ready.wait()
+        }
+
+        func hitCount() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return hits
+        }
+
+        func stop() {
+            shutdown(fd, Int32(SHUT_RDWR))
+            close(fd)
+        }
+
+        private func handle(client: Int32) {
+            defer { close(client) }
+            var buf = [UInt8](repeating: 0, count: 1_024)
+            let n = recv(client, &buf, buf.count, 0)
+            guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
+            let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+            lock.lock()
+            hits += 1
+            lock.unlock()
+            let (status, headers, body) = handler(path)
+            var response = "HTTP/1.1 \(status) X\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n"
+            for (key, value) in headers {
+                response += "\(key): \(value)\r\n"
+            }
+            response += "\r\n\(body)"
+            sendAll(client, Array(response.utf8))
+        }
+    }
+
+    private func sendAll(_ fd: Int32, _ bytes: [UInt8]) {
+        bytes.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var sent = 0
+            let total = raw.count
+            while sent < total {
+                let n = send(fd, base.advanced(by: sent), total - sent, 0)
+                if n <= 0 { return }
+                sent += n
             }
         }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
-            }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        let listenFD = sock
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [weak self] in
-            ready.signal()
-            while let server = self {
-                let client = accept(listenFD, nil, nil)
-                if client < 0 { break }
-                server.handle(client: client)
-            }
-        }
-        ready.wait()
     }
-
-    func hitCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return hits
-    }
-
-    func stop() {
-        shutdown(fd, Int32(SHUT_RDWR))
-        close(fd)
-    }
-
-    private func handle(client: Int32) {
-        defer { close(client) }
-        var buf = [UInt8](repeating: 0, count: 1_024)
-        let n = recv(client, &buf, buf.count, 0)
-        guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
-        let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-        lock.lock()
-        hits += 1
-        lock.unlock()
-        let (status, headers, body) = handler(path)
-        var response = "HTTP/1.1 \(status) X\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n"
-        for (key, value) in headers {
-            response += "\(key): \(value)\r\n"
-        }
-        response += "\r\n\(body)"
-        sendAll(client, Array(response.utf8))
-    }
-}
-
-private func sendAll(_ fd: Int32, _ bytes: [UInt8]) {
-    bytes.withUnsafeBytes { raw in
-        guard let base = raw.baseAddress else { return }
-        var sent = 0
-        let total = raw.count
-        while sent < total {
-            let n = send(fd, base.advanced(by: sent), total - sent, 0)
-            if n <= 0 { return }
-            sent += n
-        }
-    }
-}
+#endif

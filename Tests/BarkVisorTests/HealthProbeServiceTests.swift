@@ -196,13 +196,17 @@ struct HealthProbeServiceTests {
     }
 
     @Test func `live tcp probe against localhost`() async throws {
-        let listener = try LocalTCPListener()
-        defer { listener.stop() }
-        let transport = HealthProbeTransport.live
-        let ok = await transport.tcp("127.0.0.1", listener.port, 1)
-        #expect(ok)
-        let closed = await transport.tcp("127.0.0.1", 1, 0.2)
-        #expect(!closed)
+        #if os(Windows)
+            return
+        #else
+            let listener = try LocalTCPListener()
+            defer { listener.stop() }
+            let transport = HealthProbeTransport.live
+            let ok = await transport.tcp("127.0.0.1", listener.port, 1)
+            #expect(ok)
+            let closed = await transport.tcp("127.0.0.1", 1, 0.2)
+            #expect(!closed)
+        #endif
     }
 
     @Test func `exec check is rejected on vms`() {
@@ -394,44 +398,48 @@ struct HealthProbeServiceTests {
     }
 
     @Test func `http probe does not follow redirects`() async throws {
-        let internalServer = try LocalHTTPServer { _ in
-            (200, [:], "internal")
-        }
-        defer { internalServer.stop() }
-        let guestServer = try LocalHTTPServer { _ in
-            (
-                302,
-                ["Location": "http://127.0.0.1:\(internalServer.port)/secret"],
-                "",
-            )
-        }
-        defer { guestServer.stop() }
+        #if os(Windows)
+            return
+        #else
+            let internalServer = try LocalHTTPServer { _ in
+                (200, [:], "internal")
+            }
+            defer { internalServer.stop() }
+            let guestServer = try LocalHTTPServer { _ in
+                (
+                    302,
+                    ["Location": "http://127.0.0.1:\(internalServer.port)/secret"],
+                    "",
+                )
+            }
+            defer { guestServer.stop() }
 
-        var ok = false
-        for _ in 0 ..< 8 {
-            ok = await HealthProbeLive.http(
+            var ok = false
+            for _ in 0 ..< 8 {
+                ok = await HealthProbeLive.http(
+                    host: "127.0.0.1",
+                    port: guestServer.port,
+                    path: "/health",
+                    timeout: 2,
+                    expectedStatus: 200,
+                )
+                if guestServer.hitCount() >= 1 { break }
+            }
+            #expect(!ok)
+            #expect(internalServer.hitCount() == 0)
+            #expect(guestServer.hitCount() == 1)
+
+            let redirectedStatus = await HealthProbeLive.http(
                 host: "127.0.0.1",
                 port: guestServer.port,
                 path: "/health",
                 timeout: 2,
-                expectedStatus: 200,
+                expectedStatus: nil,
             )
-            if guestServer.hitCount() >= 1 { break }
-        }
-        #expect(!ok)
-        #expect(internalServer.hitCount() == 0)
-        #expect(guestServer.hitCount() == 1)
-
-        let redirectedStatus = await HealthProbeLive.http(
-            host: "127.0.0.1",
-            port: guestServer.port,
-            path: "/health",
-            timeout: 2,
-            expectedStatus: nil,
-        )
-        // 302 is the terminal response (200...399) and must not hit Location.
-        #expect(redirectedStatus)
-        #expect(internalServer.hitCount() == 0)
+            // 302 is the terminal response (200...399) and must not hit Location.
+            #expect(redirectedStatus)
+            #expect(internalServer.hitCount() == 0)
+        #endif
     }
 }
 
@@ -470,134 +478,136 @@ private actor ProbeOverlapGate {
     }
 }
 
-/// Minimal IPv4 TCP listener for live probe tests (macOS + Linux).
-private final class LocalTCPListener: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
+#if !os(Windows)
+    /// Minimal IPv4 TCP listener for live probe tests (macOS + Linux).
+    private final class LocalTCPListener: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
 
-    init() throws {
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        init() throws {
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0, listen(sock, 1) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
+            }
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+        }
+
+        func stop() {
+            close(fd)
+        }
+    }
+
+    /// Tiny HTTP/1.1 responder for redirect / SSRF tests.
+    private final class LocalHTTPServer: @unchecked Sendable {
+        let port: Int
+        private let fd: Int32
+        private let lock = NSLock()
+        private var hits = 0
+        private var running = true
+        private let handler: @Sendable (String) -> (Int, [String: String], String)
+
+        init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
+            self.handler = handler
+            let sock = socket(AF_INET, PlatformSocket.stream, 0)
+            guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+            var yes: Int32 = 1
+            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            addr.sin_port = 0
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0, listen(sock, 8) == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("bind")
+            }
+            var got = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(sock, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                close(sock)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.fd = sock
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+            let listenFD = sock
+            // Dedicated thread + ready gate: a global-queue accept loop can miss
+            // the first URLSession connect on a busy CI runner (hitCount stays 0).
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread { [weak self] in
+                ready.signal()
+                while let server = self, server.running {
+                    let client = accept(listenFD, nil, nil)
+                    if client < 0 { continue }
+                    server.handle(client: client)
+                }
+            }
+            ready.wait()
+        }
+
+        func hitCount() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return hits
+        }
+
+        func stop() {
+            running = false
+            close(fd)
+        }
+
+        private func handle(client: Int32) {
+            defer { close(client) }
+            var buf = [UInt8](repeating: 0, count: 1_024)
+            let n = recv(client, &buf, buf.count, 0)
+            guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
+            let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+            lock.lock()
+            hits += 1
+            lock.unlock()
+            let (status, headers, body) = handler(path)
+            var response = "HTTP/1.1 \(status) X\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n"
+            for (key, value) in headers {
+                response += "\(key): \(value)\r\n"
+            }
+            response += "\r\n\(body)"
+            let bytes = Array(response.utf8)
+            _ = bytes.withUnsafeBytes { raw in
+                send(client, raw.baseAddress, raw.count, 0)
             }
         }
-        guard bindRC == 0, listen(sock, 1) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
-            }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
     }
-
-    func stop() {
-        close(fd)
-    }
-}
-
-/// Tiny HTTP/1.1 responder for redirect / SSRF tests.
-private final class LocalHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
-    private let lock = NSLock()
-    private var hits = 0
-    private var running = true
-    private let handler: @Sendable (String) -> (Int, [String: String], String)
-
-    init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
-        self.handler = handler
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
-            }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        let listenFD = sock
-        // Dedicated thread + ready gate: a global-queue accept loop can miss
-        // the first URLSession connect on a busy CI runner (hitCount stays 0).
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [weak self] in
-            ready.signal()
-            while let server = self, server.running {
-                let client = accept(listenFD, nil, nil)
-                if client < 0 { continue }
-                server.handle(client: client)
-            }
-        }
-        ready.wait()
-    }
-
-    func hitCount() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return hits
-    }
-
-    func stop() {
-        running = false
-        close(fd)
-    }
-
-    private func handle(client: Int32) {
-        defer { close(client) }
-        var buf = [UInt8](repeating: 0, count: 1_024)
-        let n = recv(client, &buf, buf.count, 0)
-        guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
-        let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-        lock.lock()
-        hits += 1
-        lock.unlock()
-        let (status, headers, body) = handler(path)
-        var response = "HTTP/1.1 \(status) X\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n"
-        for (key, value) in headers {
-            response += "\(key): \(value)\r\n"
-        }
-        response += "\r\n\(body)"
-        let bytes = Array(response.utf8)
-        _ = bytes.withUnsafeBytes { raw in
-            send(client, raw.baseAddress, raw.count, 0)
-        }
-    }
-}
+#endif
