@@ -1,6 +1,6 @@
 # Installation (Linux)
 
-This page is the Ubuntu / Debian appliance. Install the matching `.deb`. The Device daemon runs as **root**.
+This page is the Ubuntu / Debian appliance. Install the matching `.deb`. The Device daemon runs as **root**. Other distros (Arch, SteamOS, Fedora) and no-root hosts: see [Other distros: portable tarball, no root](#other-distros-portable-tarball-no-root).
 
 This milestone is **Ubuntu / Debian `.deb`** and **macOS `.pkg`**. Not rpm, not Fedora, not Arch as the operator channel. Packaging still knows how to emit those formats for builders. See [Building releases](getting-started-building-releases.md).
 
@@ -143,6 +143,96 @@ Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot
 Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Pairing → Add a Device). The short code alone is not enough.
 
 Then manage Workloads from the other Device SPA. See [Home and pairing](home-and-pairing.md), [Product terminology](product-terminology.md), and [First launch](getting-started-first-launch.md).
+
+## Other distros: portable tarball, no root
+
+Ubuntu / Debian is the packaged appliance. The release tarball (`barkvisor-<version>-linux-<arch>.tar.gz`) runs on any glibc host with distro QEMU — Arch, SteamOS, Fedora, openSUSE. Without root, install it into your home prefix and run the agent as your user under `systemctl --user`.
+
+### Dependencies (install first)
+
+QEMU, firmware, and ISO tools are distro packages — never bundled:
+
+| Need | Arch / SteamOS | Fedora | Ubuntu / Debian |
+|------|----------------|--------|-----------------|
+| QEMU system | `qemu-base` (x86_64; aarch64 Arch hosts need `qemu-emulators-full`) | `qemu-kvm` | `qemu-system-x86` |
+| Display device modules | `qemu-hw-display-virtio-gpu` + `qemu-hw-display-virtio-gpu-pci` | included | included |
+| `qemu-img` | `qemu-base` (x86_64) or the standalone `qemu-img` package | `qemu-img` | `qemu-utils` |
+| UEFI firmware | `edk2-ovmf` (x86_64), `edk2-aarch64` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
+| Cloud-init seed ISO | `cdrtools` | `genisoimage` or `xorriso` | `genisoimage` |
+| swtpm (Windows guests) | `swtpm` | `swtpm` | `swtpm` |
+
+Arch and SteamOS split QEMU device modules out of `qemu-base`: without `qemu-hw-display-virtio-gpu` and `qemu-hw-display-virtio-gpu-pci`, VM start fails with `'virtio-gpu-pci' is not a valid device model name`. The `.deb` dependency list above does not apply here.
+
+SteamOS only: initialize signing keys before `pacman -S` if pacman reports unknown trust:
+
+```sh
+sudo pacman-key --init
+sudo pacman-key --populate archlinux holo
+```
+
+If SteamOS reports a read-only root filesystem, enable SteamOS developer mode first (`steamos-readonly disable` or `steamos-devmode enable`, depending on the SteamOS version).
+
+### Install the tarball into your home prefix
+
+Do **not** run the tarball's `install.sh` without root — it installs system units and requires root. For a user install:
+
+```sh
+tar -xzf barkvisor-<version>-linux-<arch>.tar.gz
+mkdir -p ~/.local/opt
+mv barkvisor-<version>-linux-<arch> ~/.local/opt/barkvisor-<version>
+ln -sfn ~/.local/opt/barkvisor-<version> ~/.local/opt/barkvisor
+rm -rf ~/.local/opt/barkvisor/root/usr/local/share/barkvisor/frontend
+mkdir -p ~/.local/bin
+ln -sf ~/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent ~/.local/bin/barkvisor-agent
+export LD_LIBRARY_PATH=~/.local/opt/barkvisor/root/usr/local/lib/barkvisor/swift:~/.local/opt/barkvisor/root/usr/local/lib/barkvisor/compat
+```
+
+Run the binary named **`barkvisor-agent`** — it serves the API without the SPA. Removing the bundled SPA keeps this a **user** install: data lives under `~/.local/share/barkvisor` (or set `BARKVISOR_DATA_DIR`). If the SPA stays on disk, the daemon treats the prefix as an installed appliance and expects `/var/lib/barkvisor`, which your user cannot write. Run it as your user, not with `sudo`.
+
+The `LD_LIBRARY_PATH` export is required for **every** CLI invocation of this binary (doctor, join, the unit below) — the binary links the bundled Swift runtime in that directory and does not embed an rpath for the home prefix.
+
+### systemd user unit
+
+```ini
+# ~/.config/systemd/user/barkvisor-agent.service
+[Unit]
+Description=BarkVisor agent (API-only Device)
+After=network-online.target
+
+[Service]
+Environment=LD_LIBRARY_PATH=%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/swift:%h/.local/opt/barkvisor/root/usr/local/lib/barkvisor/compat
+ExecStart=%h/.local/opt/barkvisor/root/usr/local/bin/barkvisor-agent serve
+Restart=on-failure
+RestartSec=3
+# Keep running Workloads alive across daemon restarts (matches the packaged unit).
+KillMode=process
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now barkvisor-agent.service
+loginctl enable-linger "$USER"   # keep running after logout
+journalctl --user -u barkvisor-agent.service -f
+```
+
+### Verify the host
+
+With the unit running (`/api/health` must answer, or doctor fails `api-health`):
+
+```sh
+barkvisor-agent doctor
+```
+
+It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
+
+Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`, with the `LD_LIBRARY_PATH` export above in your shell), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
+
+Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`) and VFIO passthrough need root. Doctor's agent-as-user note lists exactly that.
+
+Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, **repeat the SPA removal** from the install step, then `systemctl --user restart barkvisor-agent.service`.
 
 ## What gets installed
 

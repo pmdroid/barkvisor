@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF) and **Ubuntu / Debian** (`.deb` + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
+**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF), **Ubuntu / Debian** (`.deb` + systemd / KVM), and a portable **`.tar.gz`** for other glibc distros (Arch, SteamOS, Fedora) — including an agent-only, no-root install. See [Linux install](docs/getting-started-linux.md).
 
 In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
 
@@ -56,6 +56,8 @@ sudo bash get-barkvisor.sh
 # → http://localhost:7777
 # API-only Device: enable barkvisor-agent.service instead (do not run both)
 ```
+
+Other distros or no-root hosts: grab the `.tar.gz` from [Releases](https://github.com/pmdroid/barkvisor/releases) and follow **[Other distros: portable tarball, no root](docs/getting-started-linux.md#other-distros-portable-tarball-no-root)** (Arch/SteamOS package names included — `qemu-base` alone is not enough for VM display).
 
 ## Quick Start
 
