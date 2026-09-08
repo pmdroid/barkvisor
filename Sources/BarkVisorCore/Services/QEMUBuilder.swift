@@ -298,7 +298,7 @@ public enum QEMUBuilder {
             ctx.sockets,
             vdagentClipboard: QEMUChardev.supportsVdagent(binary: qemuBinary),
         )
-        args += displayAndInputArgs(spec: spec)
+        args += displayAndInputArgs(spec: spec, accelerator: backend.accelerator)
         args += try usbPassthroughArgs(spec: spec)
         args += try gpuPassthroughArgs(spec: spec)
         args += try miscArgs(spec: spec, vmID: vmID)
@@ -608,9 +608,12 @@ public enum QEMUBuilder {
         )
     }
 
-    private static func displayAndInputArgs(spec: WorkloadSpec) -> [String] {
+    static func displayAndInputArgs(spec: WorkloadSpec, accelerator: String) -> [String] {
         let resolution = spec.spec.display?.resolution ?? "1280x800"
-        var args = ["-device", "ramfb"]
+        var args: [String] = []
+        if accelerator != "hvf" {
+            args += ["-device", "ramfb"]
+        }
         if let (w, h) = try? validateResolution(resolution) {
             args += ["-device", "virtio-gpu-pci,xres=\(w),yres=\(h)"]
         } else {

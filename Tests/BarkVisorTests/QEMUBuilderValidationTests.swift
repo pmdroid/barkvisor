@@ -295,6 +295,21 @@ struct QEMUBuilderValidationTests {
         #expect(!args.contains { $0.contains("reconnect") })
     }
 
+    @Test func `hvf display omits ramfb so VNC follows virtio-gpu scanout`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(id: "vm-disp", name: "disp"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 1, memoryMb: 512),
+            ),
+        )
+        let hvf = QEMUBuilder.displayAndInputArgs(spec: spec, accelerator: "hvf")
+        #expect(!hvf.contains("ramfb"))
+        #expect(hvf.contains("virtio-gpu-pci,xres=1280,yres=800"))
+        let kvm = QEMUBuilder.displayAndInputArgs(spec: spec, accelerator: "kvm")
+        #expect(kvm.contains("ramfb"))
+        #expect(kvm.contains("virtio-gpu-pci,xres=1280,yres=800"))
+    }
+
     @Test func `arm hvf tpm disables PPI so HVF can map the device`() {
         #expect(
             QEMUBuilder.tpmFrontendDevice(isX86: false, accelerator: "hvf")
