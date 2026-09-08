@@ -20,9 +20,7 @@ public enum PlatformHost {
             sysctlbyname("hw.ncpu", &ncpu, &size, nil, 0)
             return max(Int(ncpu), 1)
         #elseif os(Windows)
-            var info = SYSTEM_INFO()
-            GetSystemInfo(&info)
-            let n = Int(info.dwNumberOfProcessors)
+            let n = Int(GetActiveProcessorCount(ALL_PROCESSOR_GROUPS))
             return n > 0 ? n : max(ProcessInfo.processInfo.processorCount, 1)
         #else
             let n = sysconf(Int32(_SC_NPROCESSORS_ONLN))
@@ -143,34 +141,22 @@ public enum PlatformHost {
         return min(Double(busy) / Double(total) * 100.0, 100.0)
     }
 
-    /// Host CPU utilization proxy from 1-minute load average (0…100).
     public static var cpuLoadPercent: Double {
         #if os(Windows)
-            var idle = FILETIME()
-            var kernel = FILETIME()
-            var user = FILETIME()
-            guard GetSystemTimes(&idle, &kernel, &user) else { return 0 }
-            let idleTicks = fileTimeUInt64(low: idle.dwLowDateTime, high: idle.dwHighDateTime)
-            let kernelTicks = fileTimeUInt64(low: kernel.dwLowDateTime, high: kernel.dwHighDateTime)
-            let userTicks = fileTimeUInt64(low: user.dwLowDateTime, high: user.dwHighDateTime)
-            windowsCPUState.lock.lock()
-            defer { windowsCPUState.lock.unlock() }
-            let previous = windowsCPUState.last
-            windowsCPUState.last = (idleTicks, kernelTicks, userTicks)
-            guard let previous else { return 0 }
-            return cpuLoadPercent(
-                idleTicks: idleTicks,
-                kernelTicks: kernelTicks,
-                userTicks: userTicks,
-                previousIdleTicks: previous.idle,
-                previousKernelTicks: previous.kernel,
-                previousUserTicks: previous.user,
-            )
+            windowsCpuLoad.publishedPercent()
         #else
             var loadAvg = [Double](repeating: 0, count: 3)
             let loadCount = getloadavg(&loadAvg, 3)
             let load1m = loadCount >= 1 ? loadAvg[0] : 0.0
             return min(load1m / Double(max(cpuCount, 1)) * 100.0, 100.0)
+        #endif
+    }
+
+    public static func pollCpuLoadPercent() -> Double {
+        #if os(Windows)
+            windowsCpuLoad.poll()
+        #else
+            cpuLoadPercent
         #endif
     }
 
@@ -254,10 +240,44 @@ public enum PlatformHost {
 }
 
 #if os(Windows)
-    private final class WindowsCPUSampleState: @unchecked Sendable {
-        let lock = NSLock()
-        var last: (idle: UInt64, kernel: UInt64, user: UInt64)?
+    private final class WindowsCpuLoad: @unchecked Sendable {
+        private let lock = NSLock()
+        private var last: (idle: UInt64, kernel: UInt64, user: UInt64)?
+        private var published: Double = 0
+
+        func publishedPercent() -> Double {
+            lock.lock()
+            defer { lock.unlock() }
+            return published
+        }
+
+        func poll() -> Double {
+            lock.lock()
+            defer { lock.unlock() }
+            var idle = FILETIME()
+            var kernel = FILETIME()
+            var user = FILETIME()
+            guard GetSystemTimes(&idle, &kernel, &user) else { return published }
+            let idleTicks = PlatformHost.fileTimeUInt64(low: idle.dwLowDateTime, high: idle.dwHighDateTime)
+            let kernelTicks = PlatformHost.fileTimeUInt64(low: kernel.dwLowDateTime, high: kernel.dwHighDateTime)
+            let userTicks = PlatformHost.fileTimeUInt64(low: user.dwLowDateTime, high: user.dwHighDateTime)
+            let previous = last
+            last = (idleTicks, kernelTicks, userTicks)
+            guard let previous else {
+                published = 0
+                return 0
+            }
+            published = PlatformHost.cpuLoadPercent(
+                idleTicks: idleTicks,
+                kernelTicks: kernelTicks,
+                userTicks: userTicks,
+                previousIdleTicks: previous.idle,
+                previousKernelTicks: previous.kernel,
+                previousUserTicks: previous.user,
+            )
+            return published
+        }
     }
 
-    private let windowsCPUState = WindowsCPUSampleState()
+    private let windowsCpuLoad = WindowsCpuLoad()
 #endif

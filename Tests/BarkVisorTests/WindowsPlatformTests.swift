@@ -222,8 +222,37 @@ struct WindowsPlatformTests {
             listenPortFree: false,
         ))
         #expect(report.checks.first { $0.id == "data-dir" }?.status == .fail)
+        #expect(report.checks.first { $0.id == "data-dir" }?.detail.contains("not writable") == true)
         #expect(report.checks.first { $0.id == "listen-port" }?.status == .fail)
         #expect(report.checks.first { $0.id == "listen-port" }?.detail.contains("7777") == true)
+        #expect(!report.ok)
+    }
+
+    @Test func `doctor fails when data dir is missing`() {
+        let report = DoctorService.assemble(from: DoctorFactInputs(
+            os: "Windows",
+            uid: 1_000,
+            qemuPath: #"C:\Program Files\qemu\qemu-system-x86_64.exe"#,
+            kvmPresent: false,
+            swtpmRequired: false,
+            healthOK: true,
+            healthDetail: "HTTP 200",
+            hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            qemuImgPath: #"C:\Program Files\qemu\qemu-img.exe"#,
+            isoToolPath: #"C:\msys64\ucrt64\bin\xorriso.exe"#,
+            qemuMissingDevices: [],
+            whpxPresent: true,
+            firmwarePath: #"C:\Program Files\qemu\share\edk2-x86_64-code.fd"#,
+            dataDirPath: #"C:\barkvisor"#,
+            dataDirExists: false,
+            dataDirWritable: false,
+            listenPort: 7_777,
+            listenPortFree: true,
+        ))
+        let dataDir = report.checks.first { $0.id == "data-dir" }
+        #expect(dataDir?.status == .fail)
+        #expect(dataDir?.detail.contains("missing") == true)
+        #expect(dataDir?.detail.localizedCaseInsensitiveContains("not writable") != true)
         #expect(!report.ok)
     }
 
@@ -256,28 +285,35 @@ struct WindowsPlatformTests {
             WindowsAdapterRow(
                 friendlyName: "Ethernet",
                 ifType: 6,
-                ipv4: "192.168.1.10",
+                address: "192.168.1.10",
                 prefixLength: 24,
+                operUp: true,
+            ),
+            WindowsAdapterRow(
+                friendlyName: "Ethernet",
+                ifType: 6,
+                address: "fe80::1%12",
+                prefixLength: 64,
                 operUp: true,
             ),
             WindowsAdapterRow(
                 friendlyName: "Wi-Fi",
                 ifType: 71,
-                ipv4: "10.0.0.5",
+                address: "10.0.0.5",
                 prefixLength: 24,
                 operUp: true,
             ),
             WindowsAdapterRow(
                 friendlyName: "Loopback Pseudo-Interface 1",
                 ifType: HostInfoService.windowsLoopbackIfType,
-                ipv4: "127.0.0.1",
+                address: "127.0.0.1",
                 prefixLength: 8,
                 operUp: true,
             ),
             WindowsAdapterRow(
                 friendlyName: "Bluetooth Network Connection",
                 ifType: 6,
-                ipv4: nil,
+                address: nil,
                 operUp: false,
             ),
         ]
@@ -287,6 +323,10 @@ struct WindowsPlatformTests {
         #expect(HostInfoService.interfaceExists("Ethernet", windowsRows: rows))
         #expect(HostInfoService.interfaceExists("Loopback", windowsRows: rows))
         #expect(!HostInfoService.interfaceExists("eth0", windowsRows: rows))
+        let addrs = HostInfoService.listInterfaceAddresses(fromWindowsRows: rows)
+        #expect(addrs.contains { $0.name == "Ethernet" && $0.ipAddress == "192.168.1.10" })
+        #expect(addrs.contains { $0.name == "Ethernet" && $0.ipAddress == "fe80::1" })
+        #expect(!addrs.contains { $0.ipAddress.contains("%") })
         let flags = HostInfoService.linkFlags(fromWindowsRows: rows)
         #expect(flags["Ethernet"]?.operState == "up")
         #expect(flags["Bluetooth Network Connection"]?.operState == "down")

@@ -67,20 +67,20 @@ public struct HostInterfaceSnapshot: Sendable {
 public struct WindowsAdapterRow: Sendable, Equatable {
     public var friendlyName: String
     public var ifType: UInt32
-    public var ipv4: String?
+    public var address: String?
     public var prefixLength: Int?
     public var operUp: Bool
 
     public init(
         friendlyName: String,
         ifType: UInt32,
-        ipv4: String? = nil,
+        address: String? = nil,
         prefixLength: Int? = nil,
         operUp: Bool = true,
     ) {
         self.friendlyName = friendlyName
         self.ifType = ifType
-        self.ipv4 = ipv4
+        self.address = address
         self.prefixLength = prefixLength
         self.operUp = operUp
     }
@@ -96,12 +96,21 @@ public enum HostInfoService {
         return friendlyName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    public static func strippedNumericHost(_ ip: String) -> String {
+        if let zone = ip.firstIndex(of: "%") {
+            return String(ip[..<zone])
+        }
+        return ip
+    }
+
     public static func listInterfaces(fromWindowsRows rows: [WindowsAdapterRow]) -> [HostInterfaceInfo] {
         var seen = Set<String>()
         var interfaces: [HostInterfaceInfo] = []
         for row in rows {
             let name = windowsInterfaceName(friendlyName: row.friendlyName, ifType: row.ifType)
-            guard !name.isEmpty, let ip = row.ipv4, !ip.isEmpty else { continue }
+            guard !name.isEmpty, let raw = row.address, !raw.isEmpty else { continue }
+            let ip = strippedNumericHost(raw)
+            guard !ip.contains(":") else { continue }
             guard seen.insert(name).inserted else { continue }
             interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip, prefixLength: row.prefixLength))
         }
@@ -113,10 +122,13 @@ public enum HostInfoService {
         var interfaces: [HostInterfaceInfo] = []
         for row in rows {
             let name = windowsInterfaceName(friendlyName: row.friendlyName, ifType: row.ifType)
-            guard !name.isEmpty, let ip = row.ipv4, !ip.isEmpty else { continue }
+            guard !name.isEmpty, let raw = row.address, !raw.isEmpty else { continue }
+            let ip = strippedNumericHost(raw)
+            guard !ip.isEmpty else { continue }
             let key = "\(name)\0\(ip)"
             guard seen.insert(key).inserted else { continue }
-            interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip, prefixLength: row.prefixLength))
+            let prefix = ip.contains(":") ? nil : row.prefixLength
+            interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip, prefixLength: prefix))
         }
         return interfaces
     }
@@ -514,7 +526,7 @@ public enum HostInfoService {
                 result = buffer.withUnsafeMutableBytes { raw -> ULONG in
                     guard let base = raw.baseAddress else { return ULONG(ERROR_INVALID_PARAMETER) }
                     let ptr = base.bindMemory(to: IP_ADAPTER_ADDRESSES.self, capacity: 1)
-                    return GetAdaptersAddresses(ULONG(AF_INET), flags, nil, ptr, &size)
+                    return GetAdaptersAddresses(ULONG(AF_UNSPEC), flags, nil, ptr, &size)
                 }
                 if result == NO_ERROR { break }
                 if result != ERROR_BUFFER_OVERFLOW { return [] }
@@ -539,18 +551,15 @@ public enum HostInfoService {
                     var unicast = adapter.pointee.FirstUnicastAddress
                     while let addr = unicast {
                         if let sa = addr.pointee.Address.lpSockaddr,
-                           sa.pointee.sa_family == ADDRESS_FAMILY(AF_INET) {
-                            let ipv4 = ipv4String(sa)
-                            if let ipv4, !ipv4.isEmpty {
-                                rows.append(WindowsAdapterRow(
-                                    friendlyName: friendly,
-                                    ifType: ifType,
-                                    ipv4: ipv4,
-                                    prefixLength: Int(addr.pointee.OnLinkPrefixLength),
-                                    operUp: operUp,
-                                ))
-                                emitted = true
-                            }
+                           let ip = numericAddress(sa), !ip.isEmpty {
+                            rows.append(WindowsAdapterRow(
+                                friendlyName: friendly,
+                                ifType: ifType,
+                                address: ip,
+                                prefixLength: Int(addr.pointee.OnLinkPrefixLength),
+                                operUp: operUp,
+                            ))
+                            emitted = true
                         }
                         unicast = addr.pointee.Next
                     }
@@ -558,7 +567,7 @@ public enum HostInfoService {
                         rows.append(WindowsAdapterRow(
                             friendlyName: friendly,
                             ifType: ifType,
-                            ipv4: nil,
+                            address: nil,
                             prefixLength: nil,
                             operUp: operUp,
                         ))
@@ -569,15 +578,29 @@ public enum HostInfoService {
             return rows
         }
 
-        private static func ipv4String(_ sa: UnsafeMutablePointer<sockaddr>) -> String? {
-            sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
-                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                var inAddr = sin.pointee.sin_addr
-                guard inet_ntop(AF_INET, &inAddr, &buf, Int(INET_ADDRSTRLEN)) != nil else {
-                    return nil
+        private static func numericAddress(_ sa: UnsafeMutablePointer<sockaddr>) -> String? {
+            let family = Int32(sa.pointee.sa_family)
+            if family == AF_INET {
+                return sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+                    var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    var inAddr = sin.pointee.sin_addr
+                    guard inet_ntop(AF_INET, &inAddr, &buf, Int(INET_ADDRSTRLEN)) != nil else {
+                        return nil
+                    }
+                    return String(cString: buf)
                 }
-                return String(cString: buf)
             }
+            if family == AF_INET6 {
+                return sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
+                    var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    var in6 = sin6.pointee.sin6_addr
+                    guard inet_ntop(AF_INET6, &in6, &buf, Int(INET6_ADDRSTRLEN)) != nil else {
+                        return nil
+                    }
+                    return strippedNumericHost(String(cString: buf))
+                }
+            }
+            return nil
         }
     #endif
 }

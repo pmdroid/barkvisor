@@ -87,6 +87,7 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var whpxPresent: Bool
     public var firmwarePath: String?
     public var dataDirPath: String
+    public var dataDirExists: Bool
     public var dataDirWritable: Bool
     public var listenPort: Int
     public var listenPortFree: Bool
@@ -114,6 +115,7 @@ public struct DoctorFactInputs: Sendable, Equatable {
         whpxPresent: Bool = false,
         firmwarePath: String? = nil,
         dataDirPath: String = "",
+        dataDirExists: Bool = true,
         dataDirWritable: Bool = true,
         listenPort: Int = 7_777,
         listenPortFree: Bool = true,
@@ -140,6 +142,7 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.whpxPresent = whpxPresent
         self.firmwarePath = firmwarePath
         self.dataDirPath = dataDirPath
+        self.dataDirExists = dataDirExists
         self.dataDirWritable = dataDirWritable
         self.listenPort = listenPort
         self.listenPortFree = listenPortFree
@@ -172,6 +175,23 @@ public struct LiveDoctorFactSource: DoctorFactSource {
                 QEMUDeviceSupport.requiredLaunchDevices.subtracting(supported).sorted()
             }
         }
+        #if os(Windows)
+            let whpxPresent = PlatformCapabilities.whpxPresent()
+            let firmwarePath = Self.locateFirmware()
+            let dataDirPath = Config.dataDir.path
+            let dataDirExists = Self.dataDirExists(dataDirPath)
+            let dataDirWritable = PlatformPaths.isWritableDirectory(Config.dataDir)
+            let listenPort = Config.port
+            let listenPortFree = PortRegistry.probeListen(port: listenPort, proto: "tcp")
+        #else
+            let whpxPresent = false
+            let firmwarePath: String? = nil
+            let dataDirPath = ""
+            let dataDirExists = true
+            let dataDirWritable = true
+            let listenPort = 7_777
+            let listenPortFree = true
+        #endif
         return DoctorFactInputs(
             os: PlatformHost.platformName,
             uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(WorkloadPrivilegeDrop.currentEUID())),
@@ -192,12 +212,13 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             qemuImgPath: Self.locateQemuImg(),
             isoToolPath: CloudInitService.locateCloudInitISOTool()?.path,
             qemuMissingDevices: qemuMissingDevices,
-            whpxPresent: PlatformCapabilities.whpxPresent(),
-            firmwarePath: Self.locateFirmware(),
-            dataDirPath: Config.dataDir.path,
-            dataDirWritable: Self.dataDirWritable(Config.dataDir.path),
-            listenPort: Config.port,
-            listenPortFree: PortRegistry.probeListen(port: Config.port, proto: "tcp"),
+            whpxPresent: whpxPresent,
+            firmwarePath: firmwarePath,
+            dataDirPath: dataDirPath,
+            dataDirExists: dataDirExists,
+            dataDirWritable: dataDirWritable,
+            listenPort: listenPort,
+            listenPortFree: listenPortFree,
         )
     }
 
@@ -213,12 +234,9 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         }
     }
 
-    static func dataDirWritable(_ path: String) -> Bool {
+    static func dataDirExists(_ path: String) -> Bool {
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-            return false
-        }
-        return FileManager.default.isWritableFile(atPath: path)
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
     }
 
     static func locateQemuImg() -> String? {
@@ -585,6 +603,13 @@ public enum DoctorService {
         let path = inputs.dataDirPath.isEmpty ? "(unset)" : inputs.dataDirPath
         if inputs.dataDirWritable {
             return DoctorCheck(id: "data-dir", status: .ok, detail: path)
+        }
+        if !inputs.dataDirExists {
+            return DoctorCheck(
+                id: "data-dir",
+                status: .fail,
+                detail: "Data directory is missing: \(path)",
+            )
         }
         return DoctorCheck(
             id: "data-dir",

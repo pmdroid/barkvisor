@@ -120,7 +120,7 @@ public actor MetricsCollector {
     private func pollSystemStats() {
         let sample = SystemStatsSample(
             timestamp: iso8601.string(from: Date()),
-            hostCpuPercent: PlatformHost.cpuLoadPercent,
+            hostCpuPercent: PlatformHost.pollCpuLoadPercent(),
             hostMemoryUsedMB: PlatformHost.memoryUsedMB,
             hostMemoryTotalMB: PlatformHost.physicalMemoryMB,
             hostGpuPercent: PlatformGPU.utilizationPercent(),
@@ -315,8 +315,7 @@ public actor MetricsCollector {
             prevCPUTime[vmID] = totalTime
             let delta = Double(totalTime - prev)
             let seconds = delta / 10_000_000.0
-            let percent = (seconds / Double(Self.systemStatsPollIntervalSeconds))
-                / Double(max(PlatformHost.cpuCount, 1)) * 100.0
+            let percent = (seconds / Double(Self.systemStatsPollIntervalSeconds)) * 100.0
             return min(max(percent, 0), 100.0)
         #else
             return 0
