@@ -40,6 +40,27 @@ struct QEMUDeviceSupportTests {
         #expect(windowsRequired.subtracting(supported).sorted() == ["nvme", "usb-storage", "virtio-gpu-pci"])
     }
 
+    @Test func `cache key changes when module files appear`() {
+        let binary = URL(fileURLWithPath: "/usr/bin/qemu-system-x86_64")
+        let before = QEMUDeviceSupport.cacheKey(for: binary)
+        let dir = QEMUDeviceSupport.moduleDirectories(for: binary)
+            .first { FileManager.default.fileExists(atPath: $0) }
+        let added: URL? = dir.map {
+            let url = URL(fileURLWithPath: $0).appendingPathComponent("qemu-test-\(UUID().uuidString).so")
+            try? Data("x".utf8).write(to: url)
+            return url
+        }
+        defer {
+            if let added { try? FileManager.default.removeItem(at: added) }
+        }
+        let after = QEMUDeviceSupport.cacheKey(for: binary)
+        if added != nil {
+            #expect(before != after)
+        } else {
+            #expect(before == after)
+        }
+    }
+
     @Test func `firmware vars candidates match the 4m token case-insensitively`() {
         let candidates = [
             "/usr/share/OVMF/OVMF_VARS.fd",
