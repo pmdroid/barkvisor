@@ -154,7 +154,7 @@ QEMU, firmware, and ISO tools are distro packages — never bundled:
 
 | Need | Arch / SteamOS | Fedora | Ubuntu / Debian |
 |------|----------------|--------|-----------------|
-| QEMU system | `qemu-base` | `qemu-kvm` | `qemu-system-x86` |
+| QEMU system | `qemu-base` (x86_64; aarch64 Arch hosts need `qemu-emulators-full`) | `qemu-kvm` | `qemu-system-x86` |
 | Display device modules | `qemu-hw-display-virtio-gpu` + `qemu-hw-display-virtio-gpu-pci` | included | included |
 | `qemu-img` | `qemu-base` | `qemu-img` | `qemu-utils` |
 | UEFI firmware | `edk2-ovmf` (x86_64), `edk2-aarch64` (arm64) | `edk2-ovmf` | `ovmf` / `qemu-efi-aarch64` |
@@ -163,7 +163,7 @@ QEMU, firmware, and ISO tools are distro packages — never bundled:
 
 Arch and SteamOS split QEMU device modules out of `qemu-base`: without `qemu-hw-display-virtio-gpu` and `qemu-hw-display-virtio-gpu-pci`, VM start fails with `'virtio-gpu-pci' is not a valid device model name`. The `.deb` dependency list above does not apply here.
 
-Run **`barkvisor-agent doctor`** after installing dependencies. It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start.
+Run **`barkvisor-agent doctor`** after installing dependencies. It checks `qemu-img`, the mkisofs-compatible ISO tool, the QEMU device modules (`virtio-gpu-pci`, `virtio-blk-pci`, `qemu-xhci`), and KVM — the same resolvers the daemon uses at VM start. Older builds without these checks report only the QEMU system binary.
 
 SteamOS only: initialize signing keys before `pacman -S` if pacman reports unknown trust:
 
@@ -218,7 +218,7 @@ journalctl --user -u barkvisor-agent.service -f
 
 Join a Home from this Device (`barkvisor-agent join --code 'barkvisor://pair/v1?…'`), or set `BARKVISOR_JOIN_CODE` in the unit's `Environment=` — first boot only, same semantics as the packaged unit.
 
-Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. `barkvisor-agent doctor` reports this as agent-as-user.
+Unprivileged means **NAT networking only**: bridged networking (`qemu-bridge-helper`), host block devices, and VFIO passthrough need root. Doctor reports unprivileged runs with an agent-as-user note listing those limits.
 
 Updates are manual: extract the newer tarball into a fresh versioned directory (`~/.local/opt/barkvisor-<new>`), repoint the `~/.local/opt/barkvisor` symlink with `ln -sfn`, then `systemctl --user restart barkvisor-agent.service`.
 
