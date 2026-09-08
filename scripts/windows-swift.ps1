@@ -137,6 +137,7 @@ Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue 
         $next = $next.Replace("count: length)", "count: Int(length))")
         $next = $next.Replace("count: INET_ADDRSTRLEN", "count: Int(INET_ADDRSTRLEN)")
         $next = $next.Replace("count: INET6_ADDRSTRLEN", "count: Int(INET6_ADDRSTRLEN)")
+        $next = $next.Replace("socklen_t(pointer.count)", "numericCast(pointer.count)")
         $next = $next.Replace("statObj.st_mode & S_IFDIR", "CInt(statObj.st_mode) & CInt(S_IFDIR)")
         $next = $next.Replace("buffer.st_mode & S_IFMT) != S_IFLNK", "CInt(buffer.st_mode) & CInt(S_IFMT)) != 0")
         if ($_.Name -eq "PosixPort.swift" -and $next.IndexOf("private func mlock(") -lt 0) {
@@ -162,7 +163,7 @@ private func readlink(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer
             $dirStubs = @"
 #if os(Windows)
 private let S_IFLNK: CInt = 0
-private func opendir(_ path: String) -> OpaquePointer { OpaquePointer(bitPattern: 1)! }
+private func opendir(_ path: String) -> OpaquePointer? { OpaquePointer(bitPattern: 1) }
 private func readdir(_ dir: OpaquePointer) -> UnsafeMutablePointer<dirent>? { nil }
 private func closedir(_ dir: OpaquePointer) {}
 private struct dirent {
