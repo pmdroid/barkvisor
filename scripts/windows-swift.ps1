@@ -106,5 +106,53 @@ $all += @(
     "-Xcxx", $prefixPath,
     "-Xlinker", "/LIBPATH:$sqliteLibDir"
 )
+
+& swift package resolve
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$nioSsl = Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "swift-nio-ssl*" } |
+    Select-Object -First 1
+if ($nioSsl) {
+    $unsupported = @"
+#else
+#error("unsupported os")
+#endif
+"@
+    $windowsImport = @"
+#elseif canImport(ucrt)
+import ucrt
+import WinSDK
+#else
+#error("unsupported os")
+#endif
+"@
+    Get-ChildItem -LiteralPath (Join-Path $nioSsl.FullName "Sources\NIOSSL") -Filter *.swift | ForEach-Object {
+        $text = [System.IO.File]::ReadAllText($_.FullName)
+        $next = $text.Replace($unsupported, $windowsImport)
+        if ($_.Name -eq "PosixPort.swift" -and $next.IndexOf("private func mlock(") -lt 0) {
+            $stubs = @"
+#if os(Windows)
+private func mlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
+private func munlock(_ addr: UnsafeRawPointer?, _ len: Int) -> CInt { 0 }
+private func lstat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<stat>?) -> CInt {
+    stat(path, buf)
+}
+private func readlink(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<CChar>?, _ bufsiz: Int) -> Int { -1 }
+#endif
+
+"@
+            $needle = "private let sysFopen = fopen"
+            $idx = $next.IndexOf($needle)
+            if ($idx -ge 0) {
+                $next = $next.Insert($idx, $stubs)
+            }
+        }
+        if ($next -ne $text) {
+            [System.IO.File]::WriteAllText($_.FullName, $next)
+        }
+    }
+}
+
 & swift @all
 exit $LASTEXITCODE
