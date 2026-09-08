@@ -112,12 +112,15 @@ $all += @(
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & swift package config set-mirror --original-url https://github.com/apple/swift-nio-ssl.git --mirror-url https://github.com/pmdroid/swift-nio-ssl.git
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& swift package config set-mirror --original-url https://github.com/vapor/websocket-kit.git --mirror-url https://github.com/pmdroid/websocket-kit.git
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $resolvedPath = Join-Path (Get-Location) "Package.resolved"
 if (Test-Path -LiteralPath $resolvedPath) {
     $resolved = [System.IO.File]::ReadAllText($resolvedPath)
     $resolved = $resolved.Replace("abcf5312eb8ed2fb11916078aef7c46b06f20813", "962499a2c269657f425fdab711e4d06f6ad6aaf1")
     $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "04510a23b581cd8111ddeccd3f6bdf236cfd1878")
+    $resolved = $resolved.Replace("8666c92dbbb3c8eefc8008c9c8dcf50bfd302167", "3aaa8ccffd696b2109ed74a2608d3c58913daa0d")
     [System.IO.File]::WriteAllText($resolvedPath, $resolved)
 }
 
