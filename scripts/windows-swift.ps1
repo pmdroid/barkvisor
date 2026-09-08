@@ -130,7 +130,7 @@ if (Test-Path -LiteralPath $resolvedPath) {
     $resolved = $resolved.Replace("abcf5312eb8ed2fb11916078aef7c46b06f20813", "962499a2c269657f425fdab711e4d06f6ad6aaf1")
     $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "04510a23b581cd8111ddeccd3f6bdf236cfd1878")
     $resolved = $resolved.Replace("8666c92dbbb3c8eefc8008c9c8dcf50bfd302167", "3aaa8ccffd696b2109ed74a2608d3c58913daa0d")
-    $resolved = $resolved.Replace("c5784ca81535cc6a92d900f84abd070dfb0e9392", "e5a9ef6299bfb25ead165adbdd571c727a62461c")
+    $resolved = $resolved.Replace("c5784ca81535cc6a92d900f84abd070dfb0e9392", "25e948d9bfa7cf0a135a7469cc730f34c00b01c6")
     [System.IO.File]::WriteAllText($resolvedPath, $resolved)
 }
 
