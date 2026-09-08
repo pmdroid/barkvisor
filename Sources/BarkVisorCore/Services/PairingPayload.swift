@@ -1,8 +1,10 @@
 import Foundation
 #if canImport(Darwin)
     import Darwin
-#else
+#elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// QR / typed-code payload for PAS-45.
@@ -320,7 +322,11 @@ public struct PairingPayload: Sendable, Equatable {
 
     private static func parseIPv4Octets(_ host: String) -> (UInt8, UInt8, UInt8, UInt8)? {
         var addr = in_addr()
-        guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+        #if os(Windows)
+            guard host.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else { return nil }
+        #else
+            guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+        #endif
         var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
             return nil

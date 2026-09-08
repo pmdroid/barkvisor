@@ -230,28 +230,29 @@ public enum BlockDeviceService {
     package static func openPathReadWrite(_ path: String) throws {
         #if canImport(Darwin)
             let fd = path.withCString { Darwin.open($0, O_RDWR) }
+            if fd < 0 {
+                let code = errno
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+            }
+            _ = Darwin.close(fd)
         #elseif canImport(Glibc)
             let fd = path.withCString { Glibc.open($0, O_RDWR) }
+            if fd < 0 {
+                let code = errno
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+            }
+            _ = Glibc.close(fd)
         #else
             let handle = try FileHandle(forUpdating: URL(fileURLWithPath: path))
             try handle.close()
-            return
-        #endif
-        if fd < 0 {
-            let code = errno
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
-        }
-        #if canImport(Darwin)
-            _ = Darwin.close(fd)
-        #elseif canImport(Glibc)
-            _ = Glibc.close(fd)
         #endif
     }
 
     private static func isPermissionDenied(_ error: Error) -> Bool {
         let ns = error as NSError
         if ns.domain == NSPOSIXErrorDomain {
-            return ns.code == Int(EACCES) || ns.code == Int(EPERM)
+            return ns.code == Int(POSIXErrorCode.EACCES.rawValue)
+                || ns.code == Int(POSIXErrorCode.EPERM.rawValue)
         }
         if ns.domain == NSCocoaErrorDomain {
             return ns.code == NSFileReadNoPermissionError

@@ -8,9 +8,9 @@ import Foundation
 #endif
 
 #if os(Windows)
-    typealias pid_t = Int32
-    typealias uid_t = UInt32
-    typealias gid_t = UInt32
+    public typealias pid_t = Int32
+    public typealias uid_t = UInt32
+    public typealias gid_t = UInt32
 
     let SIGTERM: Int32 = 15
     let SIGKILL: Int32 = 9

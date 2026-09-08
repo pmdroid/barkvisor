@@ -43,7 +43,7 @@ enum SSEResponse {
                     try await writer.write(.end)
                 } catch {
                     let isBrokenPipe =
-                        (error as? IOError)?.errnoCode == EPIPE
+                        (error as? IOError)?.errnoCode == POSIXErrorCode.EPIPE.rawValue
                             || "\(error)".contains("Broken pipe")
                     if !isBrokenPipe {
                         Log.server.error("SSE stream error: \(error)")
