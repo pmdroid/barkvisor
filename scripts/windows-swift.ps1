@@ -146,17 +146,27 @@ Get-ChildItem -Path ".build\checkouts" -Directory -ErrorAction SilentlyContinue 
         $next = $next.Replace("fflush(stdout)", "fflush(nil)")
         if ($_.Name -eq "WritePCAPHandler.swift") {
             $next = $next.Replace(".sin_addr.s_addr", ".sin_addr.S_un.S_addr")
-            $next = $next.Replace("open(pathPtr, O_WRONLY | oflag, 0o600)", "_open(pathPtr, O_WRONLY | oflag, 0o600)")
-            if ($next.IndexOf("func gettimeofday(") -lt 0) {
+            $next = $next.Replace("open(pathPtr, O_WRONLY | oflag, 0o600)", "pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            $next = $next.Replace("_open(pathPtr, O_WRONLY | oflag, 0o600)", "pcap_open(pathPtr, O_WRONLY | oflag, 0o600)")
+            $next = $next.Replace("let sysWrite = write", "let sysWrite = pcap_write")
+            if ($next.IndexOf("func pcap_open(") -lt 0) {
                 $gtod = @"
 #if os(Windows)
+@_silgen_name("_open")
+private func pcap_open(_ path: UnsafePointer<CChar>?, _ oflag: CInt, _ pmode: CInt) -> CInt
+private func pcap_write(_ fd: CInt, _ buf: UnsafeRawPointer?, _ nbyte: Int) -> Int {
+    Int(_write(fd, buf, UInt32(nbyte)))
+}
 private func gettimeofday(_ tv: UnsafeMutablePointer<timeval>?, _ tz: UnsafeMutableRawPointer?) -> CInt {
     var now = timeval()
-    now.tv_sec = time(nil)
+    now.tv_sec = numericCast(time(nil) & 0x7fffffff)
     now.tv_usec = 0
     tv?.pointee = now
     return 0
 }
+#else
+private let pcap_open = open
+private let pcap_write = write
 #endif
 
 "@
