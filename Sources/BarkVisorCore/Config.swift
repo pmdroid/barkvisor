@@ -199,6 +199,17 @@ public enum Config {
         return PlatformPaths.isInstalled(
             prefix: prefix,
             binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
+            binaryDirectory: binDir.path,
+        )
+    }
+
+    public static let windowsAllowTCGSettingsKey = "windowsAllowTCG"
+
+    public static var windowsAllowTCG: Bool {
+        PlatformPaths.settingsBool(
+            forKey: windowsAllowTCGSettingsKey,
+            dataDir: dataDir,
+            default: false,
         )
     }
 
@@ -294,6 +305,7 @@ public enum Config {
                 try FileManager.default.removeItem(at: file)
             }
             try FileManager.default.moveItem(at: temp, to: file)
+            try PrivateFileAccess.restrict(path: file.path)
         } catch {
             try? FileManager.default.removeItem(at: temp)
             throw error

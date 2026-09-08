@@ -4,21 +4,38 @@ import Foundation
 public enum PlatformPaths {
     /// Application data directory.
     /// - Override: `BARKVISOR_DATA_DIR` (absolute path)
-    /// - Installed: `/var/lib/barkvisor` on all platforms (pkg, Homebrew, Linux)
+    /// - Installed: `/var/lib/barkvisor` (pkg, Homebrew, Linux); `%PROGRAMDATA%\BarkVisor` on Windows
     /// - Dev macOS: `~/Library/Application Support/BarkVisor`
     /// - Dev Linux: `~/.local/share/barkvisor` (or `$XDG_DATA_HOME/barkvisor`)
     public static func dataDir(isInstalled: Bool) -> URL {
-        dataDir(
-            isInstalled: isInstalled,
-            dataDirOverride: ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
-        )
+        let env = ProcessInfo.processInfo.environment
+        #if os(Windows)
+            return dataDir(
+                isInstalled: isInstalled,
+                dataDirOverride: env["BARKVISOR_DATA_DIR"],
+                windowsProgramData: env["PROGRAMDATA"] ?? "C:\\ProgramData",
+            )
+        #else
+            return dataDir(
+                isInstalled: isInstalled,
+                dataDirOverride: env["BARKVISOR_DATA_DIR"],
+            )
+        #endif
     }
 
-    public static func dataDir(isInstalled: Bool, dataDirOverride: String?) -> URL {
+    public static func dataDir(
+        isInstalled: Bool,
+        dataDirOverride: String?,
+        windowsProgramData: String? = nil,
+    ) -> URL {
         if let override = dataDirOverride, !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         if isInstalled {
+            if let programData = windowsProgramData {
+                let root = programData.isEmpty ? "C:\\ProgramData" : programData
+                return URL(fileURLWithPath: root).appendingPathComponent("BarkVisor")
+            }
             return URL(fileURLWithPath: "/var/lib/barkvisor")
         }
         #if os(macOS)
@@ -60,11 +77,17 @@ public enum PlatformPaths {
         #else
             tmp = env["TMPDIR"] ?? env["TMP"] ?? "/tmp"
         #endif
+        #if os(Windows)
+            let windowsInstalled = true
+        #else
+            let windowsInstalled = false
+        #endif
         let dir = resolveSocketDir(
             isInstalled: isInstalled,
             dataDir: dataDir(isInstalled: isInstalled),
             socketDirOverride: env["BARKVISOR_SOCKET_DIR"],
             temporaryDirectory: tmp,
+            windowsInstalled: windowsInstalled,
         )
         // /var/run/barkvisor is created by packaging (Homebrew postinstall,
         // pkg, systemd). Swallowing mkdir here hides brew services failures.
@@ -103,10 +126,18 @@ public enum PlatformPaths {
         dataDir: URL,
         socketDirOverride: String?,
         temporaryDirectory: String,
+        windowsInstalled: Bool = false,
     ) -> URL {
         if let override = socketDirOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        if windowsInstalled {
+            if isInstalled {
+                return dataDir.appendingPathComponent("run", isDirectory: true)
+            }
+            return URL(fileURLWithPath: temporaryDirectory, isDirectory: true)
+                .appendingPathComponent("barkvisor", isDirectory: true)
         }
         let standardized = dataDir.standardizedFileURL.path
         if isInstalled || standardized == "/var/lib/barkvisor" {
@@ -194,12 +225,17 @@ public enum PlatformPaths {
         return argument
     }
 
-    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Otherwise `/usr/local`.
+    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Windows `.exe` → exe dir. Otherwise `/usr/local`.
     public static func installPrefix(executablePath: String) -> String {
         let resolved = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
-        let binDir = resolved.deletingLastPathComponent()
-        guard binDir.lastPathComponent == "bin" else { return "/usr/local" }
-        return binDir.deletingLastPathComponent().path
+        let exeDir = resolved.deletingLastPathComponent()
+        if exeDir.lastPathComponent == "bin" {
+            return exeDir.deletingLastPathComponent().path
+        }
+        if resolved.lastPathComponent.lowercased().hasSuffix(".exe") {
+            return exeDir.path
+        }
+        return "/usr/local"
     }
 
     /// Packaged SPA path used to detect an installed layout (PAS-293).
@@ -209,18 +245,21 @@ public enum PlatformPaths {
 
     /// Installed daemon vs `swift run`. Does not require libexec QEMU (PAS-287).
     ///
-    /// True when the binary lives in `*/bin` and
-    /// `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    /// True when `$prefix/share/barkvisor/frontend/dist/index.html` exists and the
+    /// binary lives in `*/bin`, or the exe directory is the prefix (Windows layout).
     /// `BARKVISOR_DATA_DIR` only relocates `dataDir`; it does not mark the layout
     /// installed (unprivileged smoke/dev runs would otherwise bind QEMU sockets
     /// under `/var/run/barkvisor`).
     public static func isInstalled(
         prefix: String,
         binaryDirectoryIsBin: Bool,
+        binaryDirectory: String? = nil,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
     ) -> Bool {
-        guard binaryDirectoryIsBin else { return false }
-        return fileExists(shareFrontendIndexPath(prefix: prefix))
+        guard fileExists(shareFrontendIndexPath(prefix: prefix)) else { return false }
+        if binaryDirectoryIsBin { return true }
+        guard let binaryDirectory else { return false }
+        return normalizePath(binaryDirectory) == normalizePath(prefix)
     }
 
     // MARK: - Settings (UserDefaults on macOS, JSON on Linux)

@@ -18,7 +18,7 @@ public final class AppDatabase: Sendable {
         }
         self.pool = try DatabasePool(path: path, configuration: config)
         // Restrict database file to owner-only access (contains credentials and API key hashes)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        try? PrivateFileAccess.restrict(path: path)
     }
 
     public func migrate() throws {

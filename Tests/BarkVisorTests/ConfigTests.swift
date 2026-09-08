@@ -159,6 +159,17 @@ struct ConfigTests {
         #expect(perms & 0o777 == 0o600)
     }
 
+    @Test func `private file dacl is system plus user without users write`() {
+        let sddl = PrivateFileAccess.windowsProtectedDACLSDDL(userSID: "S-1-5-21-1-2-3-1001")
+        #expect(sddl.hasPrefix("D:P"))
+        #expect(sddl.contains("(A;;FA;;;SY)"))
+        #expect(sddl.contains("(A;;FA;;;S-1-5-21-1-2-3-1001)"))
+        #expect(!sddl.contains(";;;WD)"))
+        #expect(!sddl.contains(";;;BU)"))
+        let systemOnly = PrivateFileAccess.windowsProtectedDACLSDDL(userSID: "S-1-5-18")
+        #expect(systemOnly == "D:P(A;;FA;;;SY)")
+    }
+
     @Test func `persist hmac and jwt secrets are 0600`() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

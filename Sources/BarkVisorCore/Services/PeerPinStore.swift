@@ -123,10 +123,7 @@ public final class PeerPinStore: @unchecked Sendable {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(pins)
         try data.write(to: fileURL, options: [.atomic])
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: fileURL.path,
-        )
+        try PrivateFileAccess.restrict(path: fileURL.path)
         cachedPins = pins
         cachedGeneration = fileGenerationLocked()
     }

@@ -395,6 +395,49 @@ struct CapabilityDetailTests {
         }
     }
 
+    @Test func `windows start refuses tcg when opt in is default off`() {
+        #expect(Config.windowsAllowTCGSettingsKey == "windowsAllowTCG")
+        let err = #expect(throws: BarkVisorError.self) {
+            try PlatformCapabilities.requireStartAccelerator(
+                "tcg",
+                os: "Windows",
+                allowTCG: false,
+            )
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator(
+                "whpx",
+                os: "Windows",
+                allowTCG: false,
+            )
+        }
+    }
+
+    @Test func `windows start allows tcg when opted in`() {
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator(
+                "tcg",
+                os: "Windows",
+                allowTCG: true,
+            )
+        }
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator(
+                "whpx",
+                os: "Windows",
+                allowTCG: true,
+            )
+        }
+        let backend = WorkloadBackendProjector.project(
+            guestType: "linux-amd64",
+            accelerator: "tcg",
+            hostArch: "x86_64",
+        )
+        #expect(backend.accelerator == "tcg")
+        #expect(backend.emulated)
+    }
+
     @Test func `cpuModel for whpx is qemu64`() {
         #expect(WorkloadSpecResolver.cpuModel(for: "whpx") == "qemu64")
         #expect(QEMUBuilder.cpuModel(for: "whpx") == "qemu64")
