@@ -95,6 +95,9 @@ If Windows is selected and the VirtIO Windows drivers ISO (`virtio-win.iso`)
 is not already downloaded, the wizard prompts you to download it. This ISO is
 automatically attached as a secondary drive during VM creation.
 
+If setup stops on **This PC must support Secure Boot**, use the LabConfig
+bypass in [Troubleshooting](getting-started-troubleshooting.md#windows-setup-this-pc-must-support-secure-boot).
+
 ### Step 4: Storage
 
 - **New disk** -- Specify the disk size in GB (minimum 1 GB, up to 8,192 GB).
