@@ -46,12 +46,21 @@ public enum LinuxHostNetwork {
         }
         return entries.filter { name in
             guard !name.hasPrefix("."), name != "lo" else { return false }
-            if name.hasPrefix("veth") || name.hasPrefix("docker")
-                || name.hasPrefix("cni") || name.hasPrefix("flannel") {
-                return false
-            }
+            if isHiddenContainerInterface(name) { return false }
             return interfaceExists(name)
         }.sorted()
+    }
+
+    public static func isHiddenContainerInterface(_ name: String) -> Bool {
+        if name.hasPrefix("veth") || name.hasPrefix("docker")
+            || name.hasPrefix("cni") || name.hasPrefix("flannel") {
+            return true
+        }
+        if name.hasPrefix("br-") {
+            let rest = name.dropFirst(3)
+            if rest.count == 12, rest.allSatisfy(\.isHexDigit) { return true }
+        }
+        return false
     }
 
     /// `operstate` from sysfs (`up`, `down`, `dormant`, …). Nil when unreadable.
