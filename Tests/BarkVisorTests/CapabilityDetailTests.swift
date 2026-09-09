@@ -85,6 +85,10 @@ struct CapabilityDetailTests {
         let tcg = CapabilityDetailBuilder.detail(for: .tcgOnly, inventory: inv)
         #expect(!tcg.supported)
 
+        let whpx = CapabilityDetailBuilder.detail(for: .whpx, inventory: inv)
+        #expect(!whpx.supported)
+        #expect(whpx.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
         #expect(update.supported)
         #expect(update.reasonCode == nil)
@@ -201,6 +205,15 @@ struct CapabilityDetailTests {
             #expect(byCode[.inAppUpdate]?.supported == false)
             #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
             #expect(caps.accelerator == "whpx" || caps.accelerator == "tcg")
+            #expect(byCode[.whpx]?.supported == (caps.accelerator == "whpx"))
+            #expect(byCode[.kvmDevice]?.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+            if caps.accelerator == "tcg" {
+                #expect(byCode[.tcgOnly]?.supported == true)
+                #expect(byCode[.tcgOnly]?.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+                #expect(byCode[.whpx]?.supported == false)
+                #expect(byCode[.whpx]?.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+                #expect(byCode[.whpx]?.remediation?.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
+            }
         #endif
         #expect(byCode[.gpuPassthrough]?.supported == caps.supportsGPUPassthrough)
         #expect(byCode[.vfio]?.supported == caps.supportsVFIO)
@@ -324,6 +337,78 @@ struct CapabilityDetailTests {
         )
     }
 
+    @Test func `windows without whpx reports tcgOnly and whpx missing`() {
+        let inv = windowsInventory(accelerator: "tcg")
+        let kvm = CapabilityDetailBuilder.detail(for: .kvmDevice, inventory: inv)
+        #expect(!kvm.supported)
+        #expect(kvm.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+
+        let whpx = CapabilityDetailBuilder.detail(for: .whpx, inventory: inv)
+        #expect(!whpx.supported)
+        #expect(whpx.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+        #expect(whpx.remediation?.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
+        #expect(whpx.remediation?.localizedCaseInsensitiveContains("reboot") == true)
+
+        let tcg = CapabilityDetailBuilder.detail(for: .tcgOnly, inventory: inv)
+        #expect(tcg.supported)
+        #expect(tcg.reasonCode == CapabilityReasonCode.whpxMissing.rawValue)
+        #expect(tcg.remediation?.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
+
+        let bridged = CapabilityDetailBuilder.detail(for: .bridgedNetworking, inventory: inv)
+        #expect(!bridged.supported)
+        #expect(bridged.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+    }
+
+    @Test func `windows with whpx is not tcg-only`() {
+        let inv = windowsInventory(accelerator: "whpx")
+        let whpx = CapabilityDetailBuilder.detail(for: .whpx, inventory: inv)
+        #expect(whpx.supported)
+        #expect(whpx.reasonCode == nil)
+
+        let tcg = CapabilityDetailBuilder.detail(for: .tcgOnly, inventory: inv)
+        #expect(!tcg.supported)
+
+        let kvm = CapabilityDetailBuilder.detail(for: .kvmDevice, inventory: inv)
+        #expect(!kvm.supported)
+        #expect(kvm.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+    }
+
+    @Test func `windows start refuses tcg`() {
+        let err = #expect(throws: BarkVisorError.self) {
+            try PlatformCapabilities.requireStartAccelerator("tcg", os: "Windows")
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.localizedDescription.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
+        #expect(err?.localizedDescription.localizedCaseInsensitiveContains("TCG") == true)
+
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator("whpx", os: "Windows")
+        }
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator("tcg", os: "macOS")
+        }
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator("tcg", os: "Linux")
+        }
+        #expect(throws: Never.self) {
+            try PlatformCapabilities.requireStartAccelerator("hvf", os: "macOS")
+        }
+    }
+
+    @Test func `cpuModel for whpx is qemu64`() {
+        #expect(WorkloadSpecResolver.cpuModel(for: "whpx") == "qemu64")
+        #expect(QEMUBuilder.cpuModel(for: "whpx") == "qemu64")
+        #expect(PlatformCapabilities.cpuModel(for: "whpx") == "qemu64")
+        #expect(PlatformCapabilities.cpuModel(for: "tcg") == "max")
+        #expect(PlatformCapabilities.cpuModel(for: "kvm") == "host")
+        #expect(PlatformCapabilities.cpuModel(for: "hvf") == "host")
+    }
+
+    @Test func `whpxPresent follows WinHvPlatform dll probe`() {
+        #expect(PlatformCapabilities.whpxPresent(fileExists: { $0.hasSuffix("WinHvPlatform.dll") }))
+        #expect(!PlatformCapabilities.whpxPresent(fileExists: { _ in false }))
+    }
+
     @Test func `requireBridgedNetworking matches capabilities product flag`() {
         let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
         if advertised {
@@ -390,6 +475,23 @@ private func macOSHVFInventory() -> HostInventory {
     )
 }
 
+private func windowsInventory(accelerator: String) -> HostInventory {
+    makeInventory(
+        os: "Windows",
+        arch: "x86_64",
+        accelerator: accelerator,
+        features: VirtualizationFeatures(
+            bridgedNetworking: false,
+            managedBridgeDaemon: false,
+            usbPassthrough: false,
+            inAppUpdate: false,
+            kvmDevice: false,
+            qemuBridgeHelper: false,
+            whpx: accelerator == "whpx",
+        ),
+    )
+}
+
 private func linuxGPUInventory(
     kvm: Bool = true,
     gpuPassthrough: Bool = false,
@@ -432,7 +534,7 @@ private func makeInventory(
         networking: NetworkingInfo(interfaces: []),
         virtualization: VirtualizationInfo(
             accelerator: accelerator,
-            qemuCPUModel: accelerator == "tcg" ? "max" : "host",
+            qemuCPUModel: PlatformCapabilities.cpuModel(for: accelerator),
             defaultGuestArch: arch == "arm64" ? "aarch64" : "x86_64",
             features: features,
             vfioProbe: vfioProbe,

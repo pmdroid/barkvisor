@@ -28,6 +28,17 @@ struct WorkloadBackendProjectorTests {
         #expect(backend.qemuBinary == GuestProfiles.profile(for: nativeLinux)?.qemuBinaryName)
     }
 
+    @Test func `native guest on WHPX is not emulated`() {
+        let backend = WorkloadBackendProjector.project(
+            guestType: nativeLinux,
+            accelerator: "whpx",
+            hostArch: hostArch,
+        )
+        #expect(backend.emulated == false)
+        #expect(backend.warning == nil)
+        #expect(backend.accelerator == "whpx")
+    }
+
     @Test func `native guest on TCG is emulated`() {
         let backend = WorkloadBackendProjector.project(
             guestType: nativeLinux,

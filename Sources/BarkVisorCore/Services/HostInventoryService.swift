@@ -52,6 +52,7 @@ public enum HostInventoryService {
             qemuBridgeHelper: qemuBridgeHelper,
             gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
             vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
+            whpx: accelerator == "whpx",
         )
 
         // Only advertise guest types this host can run natively (PAS-48).

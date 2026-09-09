@@ -1,6 +1,13 @@
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
+#endif
 import Foundation
 
 /// SSRF protection utilities for validating URLs against private/internal hosts.
@@ -52,30 +59,32 @@ public enum SSRFGuard {
     /// Returns an empty array when DNS fails so the caller can decide policy.
     public static func resolvedIPStrings(_ host: String) -> [String] {
         #if os(Windows)
-            _ = host
-            return []
-        #else
-            var hints = addrinfo()
-            hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
-            hints.ai_socktype = PlatformSocket.stream
-
-            var result: UnsafeMutablePointer<addrinfo>?
-            let status = getaddrinfo(host, nil, &hints, &result)
-            guard status == 0, let addrList = result else {
+            do {
+                try PlatformSocket.ensureStarted()
+            } catch {
                 return []
             }
-            defer { freeaddrinfo(addrList) }
-
-            var ips: [String] = []
-            var current: UnsafeMutablePointer<addrinfo>? = addrList
-            while let info = current {
-                if let ipString = ipStringFromAddrInfo(info.pointee) {
-                    ips.append(ipString)
-                }
-                current = info.pointee.ai_next
-            }
-            return ips
         #endif
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
+        hints.ai_socktype = PlatformSocket.stream
+
+        var result: UnsafeMutablePointer<addrinfo>?
+        let status = getaddrinfo(host, nil, &hints, &result)
+        guard status == 0, let addrList = result else {
+            return []
+        }
+        defer { freeaddrinfo(addrList) }
+
+        var ips: [String] = []
+        var current: UnsafeMutablePointer<addrinfo>? = addrList
+        while let info = current {
+            if let ipString = ipStringFromAddrInfo(info.pointee) {
+                ips.append(ipString)
+            }
+            current = info.pointee.ai_next
+        }
+        return ips
     }
 
     /// Check if a hostname resolves to any private/internal IP via DNS.
@@ -236,30 +245,42 @@ public enum SSRFGuard {
 
     // MARK: - Private helpers
 
-    #if !os(Windows)
-        private static func ipStringFromAddrInfo(_ info: addrinfo) -> String? {
-            switch info.ai_family {
-            case AF_INET:
-                guard let addr = info.ai_addr else { return nil }
-                var sin = sockaddr_in()
-                memcpy(&sin, addr, MemoryLayout<sockaddr_in>.size)
-                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                var inAddr = sin.sin_addr
-                inet_ntop(AF_INET, &inAddr, &buf, socklen_t(INET_ADDRSTRLEN))
-                return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
-            case AF_INET6:
-                guard let addr = info.ai_addr else { return nil }
-                var sin6 = sockaddr_in6()
-                memcpy(&sin6, addr, MemoryLayout<sockaddr_in6>.size)
-                var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                var in6Addr = sin6.sin6_addr
-                inet_ntop(AF_INET6, &in6Addr, &buf, socklen_t(INET6_ADDRSTRLEN))
-                return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
-            default:
-                return nil
-            }
+    private static func ipStringFromAddrInfo(_ info: addrinfo) -> String? {
+        switch info.ai_family {
+        case AF_INET:
+            guard let addr = info.ai_addr else { return nil }
+            var sin = sockaddr_in()
+            memcpy(&sin, addr, MemoryLayout<sockaddr_in>.size)
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            var inAddr = sin.sin_addr
+            inetNtop(AF_INET, &inAddr, &buf, Int(INET_ADDRSTRLEN))
+            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
+        case AF_INET6:
+            guard let addr = info.ai_addr else { return nil }
+            var sin6 = sockaddr_in6()
+            memcpy(&sin6, addr, MemoryLayout<sockaddr_in6>.size)
+            var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            var in6Addr = sin6.sin6_addr
+            inetNtop(AF_INET6, &in6Addr, &buf, Int(INET6_ADDRSTRLEN))
+            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
+        default:
+            return nil
         }
-    #endif
+    }
+
+    @discardableResult
+    private static func inetNtop(
+        _ family: Int32,
+        _ addr: UnsafeRawPointer,
+        _ buf: UnsafeMutablePointer<CChar>,
+        _ size: Int,
+    ) -> UnsafePointer<CChar>? {
+        #if os(Windows)
+            inet_ntop(family, addr, buf, size)
+        #else
+            inet_ntop(family, addr, buf, socklen_t(size))
+        #endif
+    }
 }
 
 /// Connect to `connectIP` while HTTP Host and TLS SNI stay `originalHost`.

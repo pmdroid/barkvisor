@@ -987,7 +987,7 @@ export interface SystemCapabilities {
   supportsGPUPassthrough?: boolean
   /** IOMMU groups and vfio-pci (or /dev/vfio/vfio). */
   supportsVFIO?: boolean
-  accelerator: 'hvf' | 'kvm' | string
+  accelerator: 'hvf' | 'kvm' | 'whpx' | string
   hostArch: 'arm64' | 'x86_64' | string
   /** Online logical CPUs on the host (max vCPUs per VM). */
   hostCpuCount?: number

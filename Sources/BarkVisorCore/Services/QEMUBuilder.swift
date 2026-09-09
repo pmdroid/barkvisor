@@ -239,6 +239,7 @@ public enum QEMUBuilder {
             guestType: guestType,
         )
         let accelerator = effective.accelerator ?? QEMUBuilder.accelerator
+        try PlatformCapabilities.requireStartAccelerator(accelerator)
         let backend = WorkloadBackendProjector.project(
             guestType: guestType,
             accelerator: accelerator,

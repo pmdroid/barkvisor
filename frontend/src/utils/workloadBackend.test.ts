@@ -17,6 +17,7 @@ describe('acceleratorLabel', () => {
   test('uppercases known backends', () => {
     expect(acceleratorLabel('hvf')).toBe('HVF')
     expect(acceleratorLabel('kvm')).toBe('KVM')
+    expect(acceleratorLabel('whpx')).toBe('WHPX')
     expect(acceleratorLabel('tcg')).toBe('TCG')
     expect(acceleratorLabel('')).toBe('unknown')
   })
@@ -26,6 +27,7 @@ describe('listBackendBadge', () => {
   test('hidden for native hardware acceleration', () => {
     expect(listBackendBadge(backend({ emulated: false, accelerator: 'hvf' }))).toBeNull()
     expect(listBackendBadge(backend({ emulated: false, accelerator: 'kvm' }))).toBeNull()
+    expect(listBackendBadge(backend({ emulated: false, accelerator: 'whpx' }))).toBeNull()
     expect(listBackendBadge(null)).toBeNull()
   })
 

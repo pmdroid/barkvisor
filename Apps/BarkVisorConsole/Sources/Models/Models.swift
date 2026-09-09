@@ -832,6 +832,7 @@ enum DeviceDoctor {
         case "kvmDevice": "KVM device"
         case "qemuBridgeHelper": "QEMU bridge helper"
         case "tcgOnly": "TCG software emulation"
+        case "whpx": "WHPX"
         case "vfio": "VFIO"
         case "gpuPassthrough": "GPU passthrough"
         default: code

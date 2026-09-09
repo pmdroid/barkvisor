@@ -396,6 +396,9 @@ struct WorkloadSpecOverrideTests {
         #expect(QEMUBuilder.cpuModel(for: "tcg") == "max")
         #expect(QEMUBuilder.cpuModel(for: "kvm") == "host")
         #expect(QEMUBuilder.cpuModel(for: "hvf") == "host")
+        #expect(QEMUBuilder.cpuModel(for: "whpx") == "qemu64")
+        #expect(WorkloadSpecResolver.cpuModel(for: "whpx") == "qemu64")
+        #expect(PlatformCapabilities.cpuModel(for: "whpx") == "qemu64")
     }
 
     @Test func `active overlay guestType is rejected when foreign to this host`() {

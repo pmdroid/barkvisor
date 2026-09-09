@@ -226,6 +226,8 @@ public enum TemplateCompatibility {
             return features.kvmDevice
         case CapabilityCode.qemuBridgeHelper.rawValue:
             return features.qemuBridgeHelper
+        case CapabilityCode.whpx.rawValue:
+            return features.whpx || inventory.virtualization.accelerator == "whpx"
         case CapabilityCode.vfio.rawValue:
             return features.vfio
         case CapabilityCode.gpuPassthrough.rawValue:
