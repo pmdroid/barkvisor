@@ -3,6 +3,9 @@ import Foundation
 import NIOCore
 import NIOPosix
 import Testing
+#if canImport(WinSDK)
+    import WinSDK
+#endif
 @testable import BarkVisor
 @testable import BarkVisorCore
 
@@ -126,6 +129,90 @@ struct WebSocketHopTests {
         #expect(!remote.isClosed)
         #expect(inbound.sentBinaryByteCount() == 1_000_000)
     }
+
+    @Test func `unix hop missing socket closes inbound`() async {
+        let inbound = FakeHopPeer()
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-missing-vnc-\(UUID().uuidString).sock")
+            .path
+        await WebSocketHop.run(inbound: inbound, unixSocketPath: path)
+        #expect(inbound.isClosed)
+    }
+
+    #if os(Windows)
+        @Test func `unix hop on windows af_unix carries bytes both ways`() async throws {
+            try PlatformSocket.ensureStarted()
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "hop-win-\(UUID().uuidString)",
+            )
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let path = dir.appendingPathComponent("vnc.sock").path
+            let server = socket(PlatformSocket.unixFamily, PlatformSocket.stream, 0)
+            #expect(server != INVALID_SOCKET)
+            defer { closesocket(server) }
+            let bindResult = try PlatformSocket.withUnixSockaddr(path: path) { addr, len in
+                bind(server, addr, len)
+            }
+            #expect(bindResult == 0)
+            #expect(listen(server, 1) == 0)
+
+            let acceptedBox = WindowsAcceptedSocket()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let client = accept(server, nil, nil)
+                acceptedBox.set(client)
+            }
+
+            let inbound = FakeHopPeer()
+            let task = Task {
+                await WebSocketHop.run(inbound: inbound, unixSocketPath: path)
+            }
+            let accepted = try await acceptedBox.take()
+            #expect(accepted != INVALID_SOCKET)
+            defer { closesocket(accepted) }
+
+            let fromClient = WindowsReceivedBytes()
+            DispatchQueue.global(qos: .userInitiated).async {
+                var chunk = [UInt8](repeating: 0, count: 64)
+                while true {
+                    let n = chunk.withUnsafeMutableBytes { raw in
+                        recv(accepted, raw.baseAddress?.assumingMemoryBound(to: CChar.self), 64, 0)
+                    }
+                    if n <= 0 { return }
+                    fromClient.append(chunk.prefix(Int(n)))
+                }
+            }
+
+            inbound.inject(.binary(byteBuffer("rfb")))
+            var payload = [UInt8](repeating: 0x5A, count: 40_000)
+            var sentTotal = 0
+            while sentTotal < payload.count {
+                let sent = payload.withUnsafeBytes { raw in
+                    send(
+                        accepted,
+                        raw.baseAddress!.assumingMemoryBound(to: CChar.self) + sentTotal,
+                        Int32(payload.count - sentTotal),
+                        0,
+                    )
+                }
+                #expect(sent > 0)
+                sentTotal += Int(sent)
+            }
+            #expect(sentTotal == 40_000)
+            try await waitUntil {
+                inbound.sentBinaryByteCount() == 40_000 && fromClient.count >= 3
+            }
+            #expect(String(data: fromClient.data(), encoding: .utf8) == "rfb")
+            let sizes = inbound.sentBinarySizes()
+            #expect(!sizes.isEmpty)
+            #expect(sizes.allSatisfy { $0 <= WebSocketHop.maxBinaryFrameBytes })
+            #expect(sizes.reduce(0, +) == 40_000)
+
+            inbound.close()
+            await task.value
+            #expect(inbound.isClosed)
+        }
+    #endif
 
     #if !os(Windows)
         @Test func `unix socket close closes the client`() async throws {
@@ -558,6 +645,78 @@ struct WebSocketHopTests {
             lock.lock()
             defer { lock.unlock() }
             return String(data: bytes, encoding: .utf8) ?? ""
+        }
+    }
+#endif
+
+#if os(Windows)
+    private final class WindowsReceivedBytes: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return buffer.count
+        }
+
+        func append(_ bytes: some Sequence<UInt8>) {
+            lock.lock()
+            buffer.append(contentsOf: bytes)
+            lock.unlock()
+        }
+
+        func data() -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return buffer
+        }
+    }
+
+    private final class WindowsAcceptedSocket: @unchecked Sendable {
+        private let lock = NSLock()
+        private var sock: SOCKET = INVALID_SOCKET
+        private var waiter: CheckedContinuation<SOCKET, Error>?
+
+        func set(_ sock: SOCKET) {
+            lock.lock()
+            if let waiter {
+                self.waiter = nil
+                lock.unlock()
+                waiter.resume(returning: sock)
+                return
+            }
+            self.sock = sock
+            lock.unlock()
+        }
+
+        func take() async throws -> SOCKET {
+            try await withThrowingTaskGroup(of: SOCKET.self) { group in
+                group.addTask { try await self.takeOnce() }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    throw BarkVisorError.timeout("windows unix accept")
+                }
+                guard let sock = try await group.next() else {
+                    throw BarkVisorError.timeout("windows unix accept")
+                }
+                group.cancelAll()
+                return sock
+            }
+        }
+
+        private func takeOnce() async throws -> SOCKET {
+            lock.lock()
+            if sock != INVALID_SOCKET {
+                let ready = sock
+                sock = INVALID_SOCKET
+                lock.unlock()
+                return ready
+            }
+            return try await withCheckedThrowingContinuation { cont in
+                waiter = cont
+                lock.unlock()
+            }
         }
     }
 #endif
