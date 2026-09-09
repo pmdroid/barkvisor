@@ -61,6 +61,71 @@ final class ApplicationLifecycleServiceTests {
         }
     }
 
+    @Test func `restart inspect failure releases PortRegistry claims`() async throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(
+                os: "Linux",
+                dockerPath: "/usr/bin/docker",
+                dockerVersion: "27.0.0",
+                daemonRunning: true,
+                composeVersion: "Docker Compose version v2.29.7",
+                composeOK: true,
+            )
+        }
+        ComposeRuntime.runner = SucceedingComposeRunner()
+        DockerInspect.jsonForContainers = { names in
+            let ports: [String: Any] = [
+                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "8080"]],
+            ]
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": ports]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }
+        defer {
+            HostInfoService.lanBindIPv4Provider = nil
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            ComposeRuntime.runner = LiveComposeCommandRunner()
+            DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        }
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-restart")
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "8080:80"
+        """
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+        let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
+        #expect(afterStart.contains { $0.hostPort == 8_080 && $0.workloadId == "whoami-restart" })
+
+        DockerInspect.jsonForContainers = { _ in Data("[]".utf8) }
+        do {
+            try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
+            Issue.record("expected restart inspect failure")
+        } catch {
+            let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+            #expect(claims.isEmpty)
+            #expect(vm.decodedPortForwards.isEmpty)
+            try await PortRegistry.assertAvailable(
+                [PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80)],
+                db: db,
+            )
+        }
+    }
+
     @Test func `down removes the project when compose fails`() async throws {
         let previous = ComposeRuntime.runner
         ComposeRuntime.runner = FailingComposeRunner()
@@ -155,6 +220,23 @@ private func applicationVM(id: String) -> VM {
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
     )
+}
+
+private struct SucceedingComposeRunner: ComposeCommandRunning {
+    func run(
+        arguments: [String],
+        projectDirectory _: URL,
+        timeout _: TimeInterval,
+    ) throws -> CommandResult {
+        if arguments.contains("ps") {
+            return CommandResult(
+                exitCode: 0,
+                stdout: Data(#"[{"State":"running"}]"#.utf8),
+                stderr: Data(),
+            )
+        }
+        return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+    }
 }
 
 private struct FailingComposeRunner: ComposeCommandRunning {
