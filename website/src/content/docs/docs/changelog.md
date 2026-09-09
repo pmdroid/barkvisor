@@ -37,7 +37,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Device detail (web and Console) shows that Device's version, platform, arch, accelerator, uptime, and GPU passthrough readiness. Self uses `/api/system/about` and capabilities; members go through the Home proxy. Unreachable members keep the unknown copy, with no invented numbers. Console Settings keeps Connection and the phone sign-in QR; About is no longer origin-global.
 - Home hop errors no longer all say **Device is unreachable**. A connect timeout, cancel, or TLS failure is **Home cannot hop**; a member HTTP 5xx is the Device answering badly (Ollama down on that hop); HTTP 4xx on that hop is the Device rejecting the request, not Ollama down. Only a failed health probe is offline. Web and Console Device pills use those `reachability` codes (`memberHTTP` is **HTTP error**, not Unreachable). The same codes land on `/api/home/devices/health` `reachability` / `reachabilityError`.
 - Ollama Models: **Export JSON** (web download and Console share sheet) is a point-in-time snapshot of `/api/ps` fields already on the catalog — `name`, `size`, `sizeVRAM`, `running`, `host`. No history table.
-- Ollama Models shows the Home completions URL (`:7777/v1/chat/completions`), not Device `:11434`. Coding Agent cloud-init still writes a real inference key when a grant is supplied.
+- Ollama Models shows the Home completions URL (`:7777/v1/chat/completions`), not Device `:11434`.
 - Settings → Updates applies a checksummed Ubuntu / Debian `.deb` or macOS `.pkg` on a root appliance. `swift run` and a leftover Homebrew keg stay fail-closed. Do not `brew upgrade barkvisor`.
 - macOS no longer ships a privileged XPC helper. Install Homebrew `socket_vmnet` as your user (`brew install socket_vmnet`). Do not `sudo brew install`. The root Device daemon starts the service.
 - Bridged start on Linux denies when `/etc/qemu/bridge.conf` is missing or unreadable (same as the Networks UI).
@@ -106,6 +106,20 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Linux packages (appliance channel is `.deb`; builders still emit `.rpm` / tarball), systemd, NAT and bridged networking, USB passthrough.
 - Native console app talks to the dashboard Device only (Local Network permission is for `:7777`).
 - Phone and Mac Console / Display open a Workload on a reachable member the same way the Home web UI does (Home WebSocket tunnel). Create VM stays web-only.
+
+## 1.0.0-alpha.4 — 2026-09-09
+
+- Windows Device: zip (arm64 and amd64), optional MSI and Windows Service, WHPX, live browser VNC. Windows guests run on a Windows Device. Apple Silicon can start Windows ARM64 guests on QEMU 11 / HVF.
+- Create VM no longer offers Coding Agent or a House/Agent class picker. New Workloads omit `workloadClass`. Existing agent Workloads keep their cage until deleted.
+- Images lists every Device in the Home, including skipped members (HTTP error, unreachable). Empty state only when every queried Device returned no images. Delete runs on the owning Device.
+- Doctor checks qemu-img, ISO tooling, and QEMU device modules. 4m firmware pairing is fixed.
+- Cloned boot disks must have a partition table. qcow2 clones no longer run sgdisk.
+- After a pairing join, the agent reloads its mTLS identity without a restart.
+- Create VM guest arch follows the pinned image. A mismatch is a blocking reason, not a silent wrong binary.
+- Ollama completions through a member loopback hop keep the stream timeout.
+- VFIO GPU passthrough raises systemd memlock so QEMU can pin guest RAM.
+- Non-Debian hosts: portable tarball and user-prefix agent install. Guide: [Installation (Linux)](/docs/linux/).
+- Site `og:image` URLs are absolute so X previews work.
 
 ## 0.x — single Device
 
