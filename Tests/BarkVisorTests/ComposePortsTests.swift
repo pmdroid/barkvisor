@@ -113,4 +113,13 @@ struct ComposePortsTests {
         }
         #expect(error != nil)
     }
+
+    @Test func `inspect with no expected ports does not require a bind host`() throws {
+        try ComposePorts.requireLANHostIP(
+            [],
+            bindHost: "",
+            expected: [],
+            allowWildcard: false,
+        )
+    }
 }

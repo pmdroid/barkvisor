@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
+@Suite(.serialized)
 struct ComposeAllowlistTests {
     private var stateDir: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("bv-compose-\(UUID().uuidString)")
@@ -440,6 +441,23 @@ struct ComposeAllowlistTests {
             return
         }
         #expect(message == "unsupported compose feature: host network")
+    }
+
+    @Test func `compose without published ports does not require a bind host`() throws {
+        HostInfoService.lanBindIPv4Provider = { nil }
+        defer { HostInfoService.lanBindIPv4Provider = nil }
+        let yaml = """
+        services:
+          worker:
+            image: alpine
+            command: sleep 3600
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml, workloadID: "worker-1", stateDir: stateDir,
+        )
+        #expect(render.publishedPorts.isEmpty)
+        #expect(render.bindHost.isEmpty)
+        #expect(render.yaml.contains("alpine"))
     }
 
     @Test func `wildcard bind host is rejected`() {

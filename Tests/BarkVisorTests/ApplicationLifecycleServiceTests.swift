@@ -40,6 +40,56 @@ final class ApplicationLifecycleServiceTests {
         #expect(rules.contains { $0.protocol == "tcp" && $0.hostPort == 8_080 })
     }
 
+    @Test func `prepare without published ports does not require a LAN address`() throws {
+        HostInfoService.lanBindIPv4Provider = { nil }
+        defer { HostInfoService.lanBindIPv4Provider = nil }
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-app-nolan-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let yaml = """
+        services:
+          worker:
+            image: alpine
+            command: sleep 3600
+        """
+        let render = try ApplicationLifecycleService.prepare(
+            id: "worker-1",
+            composeYaml: yaml,
+            env: nil,
+            dataDir: dataDir,
+        )
+        #expect(render.publishedPorts.isEmpty)
+        #expect(render.bindHost.isEmpty)
+    }
+
+    @Test func `prepare with published ports still requires a LAN address`() throws {
+        HostInfoService.lanBindIPv4Provider = { nil }
+        defer { HostInfoService.lanBindIPv4Provider = nil }
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-app-needslan-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let yaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "8080:80"
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ApplicationLifecycleService.prepare(
+                id: "whoami-nolan",
+                composeYaml: yaml,
+                env: nil,
+                dataDir: dataDir,
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "No LAN address to bind published ports")
+    }
+
     @Test func `inspect wildcard HostIp fails closed off macOS`() throws {
         let data = Data(
             """
