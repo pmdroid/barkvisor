@@ -28,6 +28,7 @@ public struct LiveComposeCommandRunner: ComposeCommandRunning {
 
 public enum ComposeRuntime {
     public nonisolated(unsafe) static var runner: any ComposeCommandRunning = LiveComposeCommandRunner()
+    public nonisolated(unsafe) static var labeledStatesProvider: (() -> [String: String]?)?
 
     public static func projectDirectory(id: String, dataDir: URL = Config.dataDir) -> URL {
         dataDir.appendingPathComponent("workloads", isDirectory: true)
@@ -101,6 +102,9 @@ public enum ComposeRuntime {
     }
 
     public static func listLabeledStates() -> [String: String]? {
+        if let labeledStatesProvider {
+            return labeledStatesProvider()
+        }
         guard let docker = try? DockerEngine.dockerURL() else { return nil }
         guard let result = try? PlatformProcess.run(
             executable: docker,

@@ -516,6 +516,11 @@ public final class VaporServer: @unchecked Sendable {
                 await healthProbes.pollDue()
             }
         }
+        await backgroundTasks.schedulePeriodicTask(
+            id: "application-reconcile", interval: 5 * 1_000_000_000,
+        ) {
+            await ApplicationLifecycleService.reconcile(db: pool)
+        }
         let ollamaRefreshNs = UInt64(OllamaHomeMap.refreshInterval * 1_000_000_000)
         await backgroundTasks.schedulePeriodicTask(id: "ollama-map", interval: ollamaRefreshNs) {
             let ollama = OllamaController(backgroundTasks: backgroundTasks)

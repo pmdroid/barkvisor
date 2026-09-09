@@ -259,6 +259,33 @@ struct ComposeAllowlistTests {
         }
     }
 
+    @Test func `malformed ports are rejected`() {
+        let short = """
+        services:
+          x:
+            image: alpine
+            ports:
+              - "8080-8090:80"
+        """
+        let object = """
+        services:
+          x:
+            image: alpine
+            ports:
+              - target: 80
+        """
+        for yaml in [short, object] {
+            let error = #expect(throws: BarkVisorError.self) {
+                _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            }
+            guard case let .badRequest(message) = error else {
+                Issue.record("expected badRequest")
+                continue
+            }
+            #expect(message == "unsupported compose feature: ports")
+        }
+    }
+
     @Test func `cap_add and devices are rejected`() {
         let cap = """
         services:

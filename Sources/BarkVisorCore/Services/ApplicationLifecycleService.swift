@@ -2,6 +2,13 @@ import Foundation
 import GRDB
 
 public enum ApplicationLifecycleService {
+    private actor Serial {
+        func run<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
+            try await body()
+        }
+    }
+
+    private static let serial = Serial()
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
 
     public static func lastError(for id: String) -> String? {
@@ -44,73 +51,45 @@ public enum ApplicationLifecycleService {
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
     ) async throws {
-        try DockerEngine.requireDeviceRuntime()
-        if vm.state == "running" {
-            try await start(vm: &vm, db: db, dataDir: dataDir)
-            return
-        }
-        if let yaml = vm.composeYaml {
-            let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
-            try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
-            try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
+        let snapshot = vm
+        vm = try await serial.run { () -> VM in
+            var current = snapshot
+            try await syncProjectLocked(vm: &current, db: db, dataDir: dataDir)
+            return current
         }
     }
 
     public static func start(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        try DockerEngine.requireDeviceRuntime()
-        let project = projectName(vm)
-        let yaml = vm.composeYaml ?? ""
-        let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
-        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
-        do {
-            try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
-        } catch {
-            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            vm.setPortForwards(nil)
-            try await setState(&vm, state: "error", error: message, db: db)
-            throw error
+        let snapshot = vm
+        vm = try await serial.run { () -> VM in
+            var current = snapshot
+            try await startLocked(vm: &current, db: db, dataDir: dataDir)
+            return current
         }
     }
 
     public static func stop(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        let project = projectName(vm)
-        do {
-            try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
-            try await setState(&vm, state: "stopped", error: nil, db: db)
-        } catch {
-            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            try await setState(&vm, state: "error", error: message, db: db)
-            throw error
+        let snapshot = vm
+        vm = try await serial.run { () -> VM in
+            var current = snapshot
+            try await stopLocked(vm: &current, db: db, dataDir: dataDir)
+            return current
         }
     }
 
     public static func restart(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        try DockerEngine.requireDeviceRuntime()
-        let project = projectName(vm)
-        let yaml = vm.composeYaml ?? ""
-        let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
-        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
-        do {
-            try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
-            try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
-        } catch {
-            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            try await setState(&vm, state: "error", error: message, db: db)
-            throw error
+        let snapshot = vm
+        vm = try await serial.run { () -> VM in
+            var current = snapshot
+            try await restartLocked(vm: &current, db: db, dataDir: dataDir)
+            return current
         }
     }
 
-    public static func down(vm: VM, dataDir: URL = Config.dataDir) throws {
-        let project = projectName(vm)
-        do {
-            try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
-        } catch {
-            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
+    public static func down(vm: VM, dataDir: URL = Config.dataDir) async {
+        try? await serial.run { () -> Void in
+            downLocked(vm: vm, dataDir: dataDir)
         }
-        ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
     public static func refreshState(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
@@ -138,6 +117,7 @@ public enum ApplicationLifecycleService {
             return
         }
         for var vm in apps {
+            if vm.state == "deleting" { continue }
             let observed = labeled[vm.id]
             if let observed {
                 if vm.state != observed {
@@ -172,6 +152,103 @@ public enum ApplicationLifecycleService {
         return ComposeRuntime.composeProjectName(id: vm.id)
     }
 
+    private static func syncProjectLocked(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
+        try await refuseDeleting(id: vm.id, db: db)
+        try DockerEngine.requireDeviceRuntime()
+        if vm.state == "running" {
+            try await startLocked(vm: &vm, db: db, dataDir: dataDir)
+            return
+        }
+        if let yaml = vm.composeYaml {
+            let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+            try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
+            try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
+        }
+    }
+
+    private static func startLocked(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
+        try await refuseDeleting(id: vm.id, db: db)
+        try DockerEngine.requireDeviceRuntime()
+        let project = projectName(vm)
+        let yaml = vm.composeYaml ?? ""
+        let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
+        do {
+            try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try await setState(&vm, state: "running", error: nil, db: db)
+        } catch {
+            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            vm.setPortForwards(nil)
+            try await setState(&vm, state: "error", error: message, db: db)
+            throw error
+        }
+    }
+
+    private static func stopLocked(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
+        try await refuseDeleting(id: vm.id, db: db)
+        let project = projectName(vm)
+        do {
+            try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+            try await setState(&vm, state: "stopped", error: nil, db: db)
+        } catch {
+            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            try await setState(&vm, state: "error", error: message, db: db)
+            throw error
+        }
+    }
+
+    private static func restartLocked(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
+        try await refuseDeleting(id: vm.id, db: db)
+        try DockerEngine.requireDeviceRuntime()
+        let project = projectName(vm)
+        let yaml = vm.composeYaml ?? ""
+        let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
+        do {
+            try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+            try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try await setState(&vm, state: "running", error: nil, db: db)
+        } catch {
+            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            try await setState(&vm, state: "error", error: message, db: db)
+            throw error
+        }
+    }
+
+    private static func downLocked(vm: VM, dataDir: URL) {
+        let project = projectName(vm)
+        do {
+            try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        } catch {
+            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
+        }
+        ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
+    }
+
+    private static func refuseDeleting(id: String, db: DatabasePool) async throws {
+        let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
+        if state == "deleting" {
+            throw BarkVisorError.conflict("Workload is deleting")
+        }
+    }
+
     private static func applyPublishedPorts(
         _ ports: [PublishedPort],
         to vm: inout VM,
@@ -199,8 +276,18 @@ public enum ApplicationLifecycleService {
         setLastError(id: next.id, error)
         next.syncSpecProjection(bumpGeneration: false)
         let persisted = next
-        try await db.write { db in
+        let applied = try await db.write { db -> Bool in
+            guard let current = try VM.fetchOne(db, key: persisted.id) else {
+                throw BarkVisorError.notFound()
+            }
+            if current.state == "deleting" {
+                return false
+            }
             try persisted.update(db)
+            return true
+        }
+        if !applied {
+            throw BarkVisorError.conflict("Workload is deleting")
         }
         vm = persisted
         if let error {

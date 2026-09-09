@@ -423,27 +423,33 @@ public enum ComposeAllowlist {
         var result: [PublishedPort] = []
         for item in items {
             if let text = stringValue(item) {
-                if let port = parsePortString(text) { result.append(port) }
+                guard let port = parsePortString(text) else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
+                }
+                result.append(port)
                 continue
             }
             if let object = asObject(item) {
                 let published = intValue(object["published"]) ?? intValue(object["host_port"])
                 let target = intValue(object["target"]) ?? intValue(object["container_port"])
                 let proto = (stringValue(object["protocol"]) ?? "tcp").lowercased()
-                if let published, let target, (1 ... 65_535).contains(published),
-                   (1 ... 65_535).contains(target) {
-                    let port = PublishedPort(hostPort: published, containerPort: target, proto: proto)
-                    result.append(
-                        PublishedPort(
-                            hostPort: port.hostPort,
-                            containerPort: port.containerPort,
-                            proto: port.proto,
-                            url: port.openURL,
-                        ),
-                    )
+                guard let published, let target, (1 ... 65_535).contains(published),
+                      (1 ... 65_535).contains(target)
+                else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
                 }
+                let port = PublishedPort(hostPort: published, containerPort: target, proto: proto)
+                result.append(
+                    PublishedPort(
+                        hostPort: port.hostPort,
+                        containerPort: port.containerPort,
+                        proto: port.proto,
+                        url: port.openURL,
+                    ),
+                )
                 continue
             }
+            throw BarkVisorError.badRequest("unsupported compose feature: ports")
         }
         return result
     }

@@ -1,10 +1,11 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
-    @Test func `down removes the project when compose fails`() throws {
+    @Test func `down removes the project when compose fails`() async throws {
         let previous = ComposeRuntime.runner
         ComposeRuntime.runner = FailingComposeRunner()
         defer { ComposeRuntime.runner = previous }
@@ -21,8 +22,52 @@ final class ApplicationLifecycleServiceTests {
             encoding: .utf8,
         )
 
-        try ApplicationLifecycleService.down(vm: applicationVM(id: id), dataDir: dataDir)
+        await ApplicationLifecycleService.down(vm: applicationVM(id: id), dataDir: dataDir)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test func `reconcile writes docker state while the daemon stays up`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-live")
+        vm.state = "running"
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        ComposeRuntime.labeledStatesProvider = { ["whoami-live": "stopped"] }
+        defer { ComposeRuntime.labeledStatesProvider = nil }
+
+        await ApplicationLifecycleService.reconcile(db: db, dataDir: tmp)
+        let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-live")?.state }
+        #expect(state == "stopped")
+    }
+
+    @Test func `start refuses a deleting application`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-del")
+        vm.state = "deleting"
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+        }
+        guard case let .conflict(message) = error else {
+            Issue.record("expected conflict")
+            return
+        }
+        #expect(message == "Workload is deleting")
+        let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-del")?.state }
+        #expect(state == "deleting")
     }
 }
 

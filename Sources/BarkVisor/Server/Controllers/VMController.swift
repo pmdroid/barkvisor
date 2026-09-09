@@ -412,7 +412,6 @@ struct VMController: RouteCollection {
             if app.state != "stopped", app.state != "error" {
                 throw BarkVisorError.conflict("Workload state changed concurrently — cannot delete")
             }
-            try ApplicationLifecycleService.down(vm: app)
         }
         let (taskID, vmName) = try await VMLifecycleService.deleteVM(
             id: id, keepDisk: keepDisk, vmManager: vmManager,
