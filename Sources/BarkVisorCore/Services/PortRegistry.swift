@@ -53,7 +53,7 @@ public enum PortRegistry {
                     PortClaim(
                         hostPort: rule.hostPort,
                         proto: Self.normalizedProtocol(rule.protocol),
-                        workloadKind: "vm",
+                        workloadKind: vm.isApplication ? "workload" : "vm",
                         workloadId: vm.id,
                         workloadName: vm.name,
                     ),

@@ -23,6 +23,9 @@ struct VNCController {
                 guard await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil else {
                     throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
                 }
+                if try await req.db.read({ db in try VM.fetchOne(db, key: vmID)?.isApplication == true }) {
+                    throw Abort(.notFound)
+                }
                 return [:]
             },
             onUpgrade: { req, ws in

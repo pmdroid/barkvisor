@@ -158,7 +158,13 @@ public enum VMLifecycleService {
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)
-            try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
+            if !vm.isApplication {
+                try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
+            } else {
+                try PortRegistry.assertAvailable(
+                    vm.decodedPortForwards, excludingVM: vm.id, db: db,
+                )
+            }
             try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: id, db: db)
             try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: id, db: db)
             if isRunning, detectHardwareChanges(before: before, after: vm) {
@@ -544,7 +550,9 @@ extension VMLifecycleService {
                 return nil
             }
             guard let vm = try VM.fetchOne(db, key: vmID) else { return nil }
-            guard let disk = try Disk.fetchOne(db, key: vm.bootDiskId) else { return nil }
+            guard let bootDiskId = vm.bootDiskId,
+                  let disk = try Disk.fetchOne(db, key: bootDiskId)
+            else { return nil }
             return (vm, disk)
         }
         guard let (existing, disk) = placeholder else { return nil }

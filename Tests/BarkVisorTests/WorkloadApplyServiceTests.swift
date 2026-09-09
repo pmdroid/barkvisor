@@ -3,6 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+@Suite(.serialized)
 final class WorkloadApplyServiceTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
@@ -21,9 +22,22 @@ final class WorkloadApplyServiceTests {
         dbPool = pool
         hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
         fixtureCPUCount = min(2, max(1, PlatformHost.cpuCount))
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(
+                os: "Linux",
+                dockerPath: "/usr/bin/docker",
+                dockerVersion: "27.0.0",
+                daemonRunning: true,
+                composeVersion: "Docker Compose version v2.29.7",
+                composeOK: true,
+            )
+        }
+        ComposeRuntime.runner = FakeComposeRunner()
     }
 
     deinit {
+        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        ComposeRuntime.runner = LiveComposeCommandRunner()
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
@@ -205,7 +219,7 @@ final class WorkloadApplyServiceTests {
     @Test func `unsupported kind is rejected`() async throws {
         let doc: [String: Any] = [
             "apiVersion": WorkloadSpec.currentAPIVersion,
-            "kind": "Application",
+            "kind": "Pod",
             "metadata": ["name": "app"],
             "spec": ["resources": ["cpu": fixtureCPUCount, "memoryMb": 512]],
         ]
@@ -216,6 +230,113 @@ final class WorkloadApplyServiceTests {
             Issue.record("expected unsupported kind to fail")
         } catch let BarkVisorError.badRequest(message) {
             #expect(message.contains("VirtualMachine"))
+            #expect(message.contains("Application"))
+        }
+    }
+
+    @Test func `application dry-run create does not insert`() async throws {
+        let created = try await WorkloadApplyService.apply(
+            document: whoamiDocument(name: "whoami-dry"),
+            dryRun: true,
+            db: dbPool,
+            backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        #expect(try await vmCount() == 0)
+    }
+
+    @Test func `application apply creates without a disk`() async throws {
+        let created = try await WorkloadApplyService.apply(
+            document: whoamiDocument(name: "whoami"),
+            dryRun: false,
+            db: dbPool,
+            backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        let vm = try await fetchVM(created.id)
+        #expect(vm.isApplication)
+        #expect(vm.bootDiskId == nil)
+        #expect(vm.startOnBoot)
+        #expect(vm.composeYaml?.contains("traefik/whoami") == true)
+        #expect(vm.kind == WorkloadSpec.kindApplication)
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        #expect(spec.kind == WorkloadSpec.kindApplication)
+        #expect(spec.spec.runtime == WorkloadSpec.runtimeDevice)
+        #expect(spec.spec.workloadClass == nil)
+    }
+
+    @Test func `application with workloadClass is 400`() async throws {
+        var doc = whoamiDocument(name: "classed")
+        var spec = doc["spec"] as? [String: Any] ?? [:]
+        spec["workloadClass"] = "house"
+        doc["spec"] = spec
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.errorDescription?.contains("workloadClass") == true)
+    }
+
+    @Test func `runtime workload is 400`() async throws {
+        var doc = whoamiDocument(name: "host-vm")
+        var spec = doc["spec"] as? [String: Any] ?? [:]
+        spec["runtime"] = WorkloadSpec.runtimeWorkload
+        doc["spec"] = spec
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+    }
+
+    @Test func `runtime device without compose is helperMissing`() async throws {
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(os: "macOS", composeOK: false)
+        }
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: self.whoamiDocument(name: "no-docker"),
+                dryRun: true,
+                db: self.dbPool,
+                backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.code == "helper_missing")
+        #expect(error?.httpStatus == 400)
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(
+                os: "Linux",
+                dockerPath: "/usr/bin/docker",
+                composeVersion: "v2",
+                composeOK: true,
+            )
+        }
+    }
+
+    @Test func `runtime device on windows is os_unsupported`() async throws {
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(os: "Windows")
+        }
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: self.whoamiDocument(name: "win-app"),
+                dryRun: true,
+                db: self.dbPool,
+                backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.code == "os_unsupported")
+        #expect(error?.httpStatus == 400)
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(
+                os: "Linux",
+                dockerPath: "/usr/bin/docker",
+                composeVersion: "v2",
+                composeOK: true,
+            )
         }
     }
 
@@ -434,5 +555,38 @@ final class WorkloadApplyServiceTests {
 
     private func vmCount() async throws -> Int {
         try await dbPool.read { db in try VM.fetchCount(db) }
+    }
+
+    private func whoamiDocument(name: String) -> [String: Any] {
+        [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindApplication,
+            "metadata": ["name": name],
+            "spec": [
+                "runtime": WorkloadSpec.runtimeDevice,
+                "compose": """
+                services:
+                  whoami:
+                    image: traefik/whoami
+                    ports:
+                      - "8080:80"
+                    restart: unless-stopped
+                """,
+            ],
+        ]
+    }
+}
+
+private struct FakeComposeRunner: ComposeCommandRunning {
+    func run(
+        arguments: [String],
+        projectDirectory _: URL,
+        timeout _: TimeInterval,
+    ) throws -> CommandResult {
+        if arguments.contains("ps") {
+            let body = #"[{"State":"running"}]"#
+            return CommandResult(exitCode: 0, stdout: Data(body.utf8), stderr: Data())
+        }
+        return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
     }
 }

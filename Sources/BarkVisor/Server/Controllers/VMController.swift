@@ -16,7 +16,13 @@ struct VMResponse: Content {
     let health: WorkloadHealth
     let cpuCount: Int
     let memoryMB: Int
-    let bootDiskId: String
+    let bootDiskId: String?
+    let kind: String
+    let runtime: String?
+    let openUrl: String?
+    let publishedPorts: [PublishedPort]?
+    let image: String?
+    let digest: String?
     let isoId: String? // first isoIds element
     let isoIds: [String]?
     let networkId: String?
@@ -62,6 +68,21 @@ struct VMResponse: Content {
         self.cpuCount = vm.cpuCount
         self.memoryMB = vm.memoryMb
         self.bootDiskId = vm.bootDiskId
+        self.kind = vm.kind
+        self.runtime = vm.runtime
+        let published = vm.isApplication
+            ? vm.decodedPortForwards.map {
+                PublishedPort(
+                    hostPort: $0.hostPort,
+                    containerPort: $0.guestPort,
+                    proto: $0.protocol,
+                )
+            }
+            : []
+        self.publishedPorts = published.isEmpty ? nil : published
+        self.openUrl = ApplicationLifecycleService.openURL(from: published)
+        self.image = vm.isApplication ? ComposeAllowlist.firstImage(yaml: vm.composeYaml) : nil
+        self.digest = nil
         let decodedIsoIds = vm.decodedISOIds
         self.isoIds = decodedIsoIds.isEmpty ? nil : decodedIsoIds
         self.isoId = decodedIsoIds.first
@@ -160,6 +181,7 @@ struct CreateVMRequest: Content, Validatable {
 
 /// CloudInitConfig moved to BarkVisorCore
 extension CloudInitConfig: Content {}
+extension PublishedPort: Content {}
 
 struct UpdateVMRequest: Content, Validatable {
     let name: String?
@@ -383,6 +405,9 @@ struct VMController: RouteCollection {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         let keepDisk = (try? req.query.get(Bool.self, at: "keepDisk")) ?? false
 
+        if let app = try await application(id, db: req.db) {
+            try ApplicationLifecycleService.down(vm: app)
+        }
         let (taskID, vmName) = try await VMLifecycleService.deleteVM(
             id: id, keepDisk: keepDisk, vmManager: vmManager,
             backgroundTasks: backgroundTasks, db: req.db,
@@ -400,7 +425,11 @@ struct VMController: RouteCollection {
     @Sendable
     func start(req: Vapor.Request) async throws -> HTTPStatus {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        try await vmManager.start(vmID: id)
+        if var app = try await application(id, db: req.db) {
+            try await ApplicationLifecycleService.start(vm: &app, db: req.db)
+        } else {
+            try await vmManager.start(vmID: id)
+        }
         AuditService.log(action: VMLifecycleAction.started, resourceType: "vm", resourceId: id, req: req)
         return .noContent
     }
@@ -414,7 +443,11 @@ struct VMController: RouteCollection {
         guard allowedMethods.contains(method) else {
             throw Abort(.badRequest, reason: "Invalid stop method. Must be one of: acpi, force")
         }
-        try await vmManager.stop(vmID: id, force: body?.force ?? false, method: method)
+        if var app = try await application(id, db: req.db) {
+            try await ApplicationLifecycleService.stop(vm: &app, db: req.db)
+        } else {
+            try await vmManager.stop(vmID: id, force: body?.force ?? false, method: method)
+        }
         let detailJSON =
             try String(data: JSONEncoder().encode(["method": method]), encoding: .utf8) ?? "{}"
         AuditService.log(
@@ -427,9 +460,20 @@ struct VMController: RouteCollection {
     @Sendable
     func restart(req: Vapor.Request) async throws -> HTTPStatus {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        try await vmManager.restart(vmID: id)
+        if var app = try await application(id, db: req.db) {
+            try await ApplicationLifecycleService.restart(vm: &app, db: req.db)
+        } else {
+            try await vmManager.restart(vmID: id)
+        }
         AuditService.log(action: VMLifecycleAction.restarted, resourceType: "vm", resourceId: id, req: req)
         return .noContent
+    }
+
+    private func application(_ id: String, db: DatabasePool) async throws -> VM? {
+        try await db.read { db in
+            guard let vm = try VM.fetchOne(db, key: id) else { return nil }
+            return vm.isApplication ? vm : nil
+        }
     }
 
     @Sendable

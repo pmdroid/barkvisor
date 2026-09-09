@@ -39,6 +39,9 @@ public enum WorkloadSpecProjector {
     // MARK: - Read (columns → spec)
 
     public static func fromVM(_ vm: VM) -> WorkloadSpec {
+        if vm.isApplication {
+            return applicationSpec(from: vm)
+        }
         let profile = GuestProfiles.profile(for: vm.vmType)
         let boot = WorkloadDisk(role: "boot", diskId: vm.bootDiskId, bus: "virtio")
         let dataDisks = vm.decodedAdditionalDiskIds.map {
@@ -64,6 +67,7 @@ public enum WorkloadSpecProjector {
         let gpu = vm.decodedGPUDevices.map { GPUPassthroughService.workload(from: $0) }
         let shared = vm.decodedSharedPaths
         return WorkloadSpec(
+            kind: WorkloadSpec.kindVirtualMachine,
             metadata: WorkloadMetadata(
                 id: vm.id,
                 name: vm.name,
@@ -119,6 +123,10 @@ public enum WorkloadSpecProjector {
     /// Apply spec fields onto an existing VM. Preserves host-only columns.
     public static func apply(_ spec: WorkloadSpec, to vm: inout VM) throws {
         try validate(spec, existingID: vm.id)
+        if spec.kind == WorkloadSpec.kindApplication {
+            try applyApplication(spec, to: &vm)
+            return
+        }
         if let bootId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId,
            bootId != vm.bootDiskId {
             throw BarkVisorError.badRequest("spec update cannot change the boot disk")
@@ -185,9 +193,13 @@ public enum WorkloadSpecProjector {
                 "Unsupported apiVersion \(spec.apiVersion). Expected \(WorkloadSpec.currentAPIVersion)",
             )
         }
+        if spec.kind == WorkloadSpec.kindApplication {
+            try validateApplication(spec, existingID: existingID)
+            return
+        }
         if spec.kind != WorkloadSpec.kindVirtualMachine {
             throw BarkVisorError.badRequest(
-                "Unsupported kind \(spec.kind). Expected \(WorkloadSpec.kindVirtualMachine)",
+                "Unsupported kind \(spec.kind). Expected \(WorkloadSpec.kindVirtualMachine) or \(WorkloadSpec.kindApplication)",
             )
         }
         let name = spec.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -266,6 +278,88 @@ public enum WorkloadSpecProjector {
             guestType: spec.spec.guestType,
             osFamily: spec.spec.osFamily,
             arch: spec.spec.arch,
+        )
+    }
+
+    private static func applicationSpec(from vm: VM) -> WorkloadSpec {
+        return WorkloadSpec(
+            kind: WorkloadSpec.kindApplication,
+            metadata: WorkloadMetadata(
+                id: vm.id,
+                name: vm.name,
+                description: vm.description,
+            ),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
+                health: vm.decodedHealth,
+                runtime: vm.runtime ?? WorkloadSpec.runtimeDevice,
+                compose: vm.composeYaml,
+                env: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
+                runtimeWorkloadId: vm.runtimeWorkloadId,
+            ),
+        )
+    }
+
+    private static func applyApplication(_ spec: WorkloadSpec, to vm: inout VM) throws {
+        vm.name = spec.metadata.name
+        vm.description = spec.metadata.description
+        vm.kind = WorkloadSpec.kindApplication
+        vm.vmType = WorkloadSpec.applicationGuestType
+        vm.runtime = spec.spec.runtime ?? WorkloadSpec.runtimeDevice
+        vm.runtimeWorkloadId = spec.spec.runtimeWorkloadId
+        vm.composeYaml = spec.spec.compose
+        if vm.composeProject == nil || vm.composeProject?.isEmpty == true {
+            vm.composeProject = ComposeRuntime.composeProjectName(id: vm.id)
+        }
+        vm.cpuCount = spec.spec.resources.cpu
+        vm.memoryMb = spec.spec.resources.memoryMb
+        vm.bootDiskId = nil
+        vm.workloadClass = WorkloadClass.house.rawValue
+        if let health = spec.spec.health {
+            try WorkloadHealthSpec.validate(health)
+        }
+        vm.setHealth(spec.spec.health)
+        vm.setOverrides(nil)
+    }
+
+    private static func validateApplication(_ spec: WorkloadSpec, existingID: String?) throws {
+        if spec.apiVersion != WorkloadSpec.currentAPIVersion {
+            throw BarkVisorError.badRequest(
+                "Unsupported apiVersion \(spec.apiVersion). Expected \(WorkloadSpec.currentAPIVersion)",
+            )
+        }
+        let name = spec.metadata.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1 ... 128).contains(name.count) else {
+            throw BarkVisorError.badRequest("metadata.name must be 1...128 characters")
+        }
+        if let existingID, let specID = spec.metadata.id, specID != existingID {
+            throw BarkVisorError.badRequest("metadata.id does not match VM \(existingID)")
+        }
+        if let klass = spec.spec.workloadClass, !klass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw BarkVisorError.badRequest("workloadClass is not supported on Application")
+        }
+        let runtime = spec.spec.runtime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if runtime.isEmpty {
+            throw BarkVisorError.badRequest("spec.runtime is required")
+        }
+        if runtime == WorkloadSpec.runtimeWorkload {
+            throw BarkVisorError.badRequest("runtime: workload is not available")
+        }
+        if runtime != WorkloadSpec.runtimeDevice {
+            throw BarkVisorError.badRequest("spec.runtime must be device")
+        }
+        let compose = spec.spec.compose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if compose.isEmpty {
+            throw BarkVisorError.badRequest("spec.compose is required")
+        }
+        if let health = spec.spec.health {
+            try WorkloadHealthSpec.validate(health)
+        }
+        let dummy = URL(fileURLWithPath: "/tmp/barkvisor-compose-validate/\(existingID ?? "new")")
+        _ = try ComposeAllowlist.render(
+            yaml: spec.spec.compose ?? "",
+            workloadID: existingID ?? spec.metadata.id ?? "new",
+            stateDir: dummy,
         )
     }
 
