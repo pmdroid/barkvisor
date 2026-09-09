@@ -398,17 +398,16 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         let yaml = vm.composeYaml ?? ""
         let dir = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir)
-        let named: [String]
-        if yaml.isEmpty {
-            named = []
+        let named: [String] = if yaml.isEmpty {
+            []
         } else if let render = try? ComposeAllowlist.render(
             yaml: yaml,
             workloadID: vm.id,
             stateDir: dir,
         ) {
-            named = render.namedVolumes
+            render.namedVolumes
         } else {
-            named = []
+            []
         }
         try await persistRuntime(vm: &vm, namedVolumes: named, db: db, dataDir: dataDir)
         try await refreshCatalogDigest(vm: &vm, db: db)
