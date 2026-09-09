@@ -129,6 +129,10 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try protected.register(collection: RemoteAccessController())
 
     try protected.register(
+        collection: ApplicationOpsController(backgroundTasks: deps.backgroundTasks),
+    )
+
+    try protected.register(
         collection: MetricsController(
             vmState: deps.vmManager, metricsCollector: deps.metricsCollector,
         ),

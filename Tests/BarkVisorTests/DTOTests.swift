@@ -114,6 +114,35 @@ struct DTOTests {
         #expect(response.isoId == nil)
         #expect(response.health == .stopped)
         #expect(response.startOnBoot == false)
+        #expect(response.updateAvailable == false)
+        #expect(response.volumeRoots == nil)
+        #expect(response.catalogDigest == nil)
+    }
+
+    @Test func `application response exposes digest and volume roots`() {
+        var vm = VM(
+            id: "app-1", name: "Jellyfin", vmType: WorkloadSpec.applicationGuestType, state: "running",
+            cpuCount: 1, memoryMb: 256, bootDiskId: nil,
+            kind: WorkloadSpec.kindApplication,
+            composeYaml: "services:\n  jellyfin:\n    image: jellyfin/jellyfin:latest\n",
+            networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+            uefi: false, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil, portForwards: nil,
+            autoCreated: false, pendingChanges: false,
+            imageRef: "jellyfin/jellyfin:latest",
+            digest: "sha256:aaa111",
+            catalogDigest: "sha256:bbb222",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        vm.setVolumeRoots(["/var/lib/barkvisor/workloads/app-1"])
+        let response = VMResponse(from: vm)
+        #expect(response.kind == WorkloadSpec.kindApplication)
+        #expect(response.image == "jellyfin/jellyfin:latest")
+        #expect(response.digest == "sha256:aaa111")
+        #expect(response.catalogDigest == "sha256:bbb222")
+        #expect(response.updateAvailable)
+        #expect(response.volumeRoots == ["/var/lib/barkvisor/workloads/app-1"])
     }
 
     @Test func `vm response iso id backwards compat`() {

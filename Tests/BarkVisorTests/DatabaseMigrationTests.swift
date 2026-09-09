@@ -63,6 +63,10 @@ struct DatabaseMigrationTests {
         try queue.read { db in
             let columns = try db.columns(in: "vms").map(\.name)
             #expect(columns.contains("guestAddressingJson"))
+            #expect(columns.contains("imageRef"))
+            #expect(columns.contains("digest"))
+            #expect(columns.contains("catalogDigest"))
+            #expect(columns.contains("volumeRootsJson"))
         }
     }
 

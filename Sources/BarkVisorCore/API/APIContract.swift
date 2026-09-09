@@ -181,10 +181,14 @@ public enum APIContract {
         Route(method: "PUT", path: "/api/vms/{id}/health", stability: .evolving),
         Route(method: "POST", path: "/api/vms/{id}/health/probe", stability: .evolving),
         Route(method: "GET", path: "/api/vms/{id}/events", stability: .evolving),
+        Route(method: "GET", path: "/api/vms/{id}/logs", stability: .evolving),
+        Route(method: "POST", path: "/api/vms/{id}/update", stability: .evolving),
+        Route(method: "POST", path: "/api/vms/{id}/check-update", stability: .evolving),
         Route(method: "GET", path: "/api/workloads/health-summary", stability: .evolving),
 
         // Out-of-band transports (documented, not JSON contract)
         Route(method: "GET", path: "/api/vms/{id}/state", stability: .outOfBand),
+        Route(method: "GET", path: "/api/vms/{id}/logs/stream", stability: .outOfBand),
         Route(method: "POST", path: "/api/auth/ws-ticket", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/console", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/vnc", stability: .outOfBand),

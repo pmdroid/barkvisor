@@ -95,8 +95,120 @@ public enum ComposeRuntime {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    public static func volumeRoots(
+        id: String,
+        named: [String],
+        dataDir: URL = Config.dataDir,
+    ) -> [String] {
+        let root = projectDirectory(id: id, dataDir: dataDir)
+        var paths = [root.path]
+        let volumes = root.appendingPathComponent("volumes", isDirectory: true)
+        paths.append(volumes.path)
+        for name in named.sorted() {
+            paths.append(volumes.appendingPathComponent(name, isDirectory: true).path)
+        }
+        return paths
+    }
+
     public static func up(id: String, project: String, dataDir: URL = Config.dataDir) throws {
         try invoke(id: id, project: project, command: ["up", "-d"], timeout: 180, dataDir: dataDir)
+    }
+
+    public static func pull(id: String, project: String, dataDir: URL = Config.dataDir) throws {
+        try invoke(id: id, project: project, command: ["pull"], timeout: 300, dataDir: dataDir)
+    }
+
+    public static func logs(
+        id: String,
+        project: String,
+        tail: Int = 200,
+        dataDir: URL = Config.dataDir,
+    ) throws -> String {
+        let result = try invokeResult(
+            id: id,
+            project: project,
+            command: ["logs", "--no-color", "--timestamps", "--tail", String(tail)],
+            timeout: 30,
+            dataDir: dataDir,
+        )
+        if result.succeeded || !result.stdoutString.isEmpty {
+            return result.stdoutString
+        }
+        return result.stderrString
+    }
+
+    public static func containerIDs(
+        id: String,
+        project: String,
+        dataDir: URL = Config.dataDir,
+    ) throws -> [String] {
+        let result = try invokeResult(
+            id: id,
+            project: project,
+            command: ["ps", "-q", "-a"],
+            timeout: 20,
+            dataDir: dataDir,
+        )
+        if !result.succeeded { return [] }
+        return result.stdoutString
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    public static func followLogs(
+        id: String,
+        project: String,
+        tail: Int = 200,
+        dataDir: URL = Config.dataDir,
+    ) throws -> AsyncThrowingStream<String, Error> {
+        let docker = try DockerEngine.dockerURL()
+        let dir = projectDirectory(id: id, dataDir: dataDir)
+        let file = dir.appendingPathComponent("compose.yml").path
+        let arguments = [
+            "compose",
+            "-p", project,
+            "-f", file,
+            "--project-directory", dir.path,
+            "logs", "-f", "--no-color", "--timestamps",
+            "--tail", String(tail),
+        ]
+        return AsyncThrowingStream { continuation in
+            let process = Process()
+            process.executableURL = docker
+            process.arguments = arguments
+            process.currentDirectoryURL = dir
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            do {
+                try process.run()
+            } catch {
+                continuation.finish(throwing: error)
+                return
+            }
+            let buffer = ComposeLogLineBuffer()
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    for line in buffer.flush() {
+                        continuation.yield(line)
+                    }
+                    continuation.finish()
+                    return
+                }
+                for line in buffer.append(chunk) {
+                    continuation.yield(line)
+                }
+            }
+            continuation.onTermination = { _ in
+                pipe.fileHandleForReading.readabilityHandler = nil
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+        }
     }
 
     public static func stop(id: String, project: String, dataDir: URL = Config.dataDir) throws {
@@ -243,5 +355,43 @@ public enum ComposeRuntime {
 
     private static func envValue(_ raw: String) -> String {
         "'" + raw.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+final class ComposeLogLineBuffer: @unchecked Sendable {
+    private var pending = Data()
+    private let lock = NSLock()
+
+    func append(_ chunk: Data) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        pending.append(chunk)
+        return drain(flushRemainder: false)
+    }
+
+    func flush() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return drain(flushRemainder: true)
+    }
+
+    private func drain(flushRemainder: Bool) -> [String] {
+        var lines: [String] = []
+        while let idx = pending.firstIndex(of: 0x0A) {
+            let piece = pending.subdata(in: pending.startIndex ..< idx)
+            pending.removeSubrange(pending.startIndex ... idx)
+            if let line = String(data: piece, encoding: .utf8) {
+                let trimmed = line.hasSuffix("\r") ? String(line.dropLast()) : line
+                if !trimmed.isEmpty { lines.append(trimmed) }
+            }
+        }
+        if flushRemainder, !pending.isEmpty {
+            if let line = String(data: pending, encoding: .utf8) {
+                let trimmed = line.trimmingCharacters(in: .newlines)
+                if !trimmed.isEmpty { lines.append(trimmed) }
+            }
+            pending.removeAll()
+        }
+        return lines
     }
 }

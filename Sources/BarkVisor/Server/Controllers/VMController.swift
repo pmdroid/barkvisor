@@ -23,6 +23,11 @@ struct VMResponse: Content {
     let publishedPorts: [PublishedPort]?
     let image: String?
     let digest: String?
+    let catalogDigest: String?
+    let updateAvailable: Bool
+    let volumeRoots: [String]?
+    let updateTaskID: String?
+    let updateProgress: Double?
     let isoId: String? // first isoIds element
     let isoIds: [String]?
     let networkId: String?
@@ -55,6 +60,8 @@ struct VMResponse: Content {
         lastProgress: ImageProgressEvent? = nil,
         provisionTaskStatus: BackgroundTaskManager.TaskStatus? = nil,
         imageStatus: String? = nil,
+        updateTaskID: String? = nil,
+        updateProgress: Double? = nil,
     ) {
         self.spec = AppTemplate.redact(WorkloadSpecProjector.fromVM(vm))
         let status = WorkloadSpecProjector.status(from: vm, signals: signals)
@@ -82,8 +89,16 @@ struct VMResponse: Content {
             : []
         self.publishedPorts = published.isEmpty ? nil : published
         self.openUrl = ApplicationLifecycleService.openURL(from: published)
-        self.image = vm.isApplication ? ComposeAllowlist.firstImage(yaml: vm.composeYaml) : nil
-        self.digest = nil
+        self.image = vm.isApplication
+            ? (vm.imageRef ?? ComposeAllowlist.firstImage(yaml: vm.composeYaml))
+            : nil
+        self.digest = vm.isApplication ? vm.digest : nil
+        self.catalogDigest = vm.isApplication ? vm.catalogDigest : nil
+        self.updateAvailable = vm.isApplication && vm.updateAvailable
+        let roots = vm.decodedVolumeRoots
+        self.volumeRoots = vm.isApplication && !roots.isEmpty ? roots : nil
+        self.updateTaskID = vm.isApplication ? updateTaskID : nil
+        self.updateProgress = vm.isApplication ? updateProgress : nil
         let decodedIsoIds = vm.decodedISOIds
         self.isoIds = decodedIsoIds.isEmpty ? nil : decodedIsoIds
         self.isoId = decodedIsoIds.first
