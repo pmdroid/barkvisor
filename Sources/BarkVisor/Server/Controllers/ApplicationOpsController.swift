@@ -3,12 +3,12 @@ import Foundation
 import GRDB
 import Vapor
 
-struct ComposeLogSnapshot: Content, Sendable {
+struct ComposeLogSnapshot: Content {
     let lines: [String]
     let tail: Int
 }
 
-struct ComposeLogLine: Content, Sendable {
+struct ComposeLogLine: Content {
     let line: String
 }
 
@@ -94,11 +94,10 @@ struct ApplicationOpsController: RouteCollection {
         var vm = try await requireApplication(req)
         try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: req.db)
         let updateID = ApplicationLifecycleService.updateTaskID(for: vm.id)
-        let updateEvent: BackgroundTaskManager.TaskEvent?
-        if let updateID {
-            updateEvent = await backgroundTasks.status(updateID)
+        let updateEvent: BackgroundTaskManager.TaskEvent? = if let updateID {
+            await backgroundTasks.status(updateID)
         } else {
-            updateEvent = nil
+            nil
         }
         return VMResponse(
             from: vm,

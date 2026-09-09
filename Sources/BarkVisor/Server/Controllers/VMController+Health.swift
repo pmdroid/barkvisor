@@ -94,11 +94,10 @@ extension VMController {
         let progress = overlay.flatMap { lastProgressMap[$0.pendingImageId] }
         let task = await provisionTask(for: vm.id)
         let updateID = ApplicationLifecycleService.updateTaskID(for: vm.id)
-        let updateEvent: BackgroundTaskManager.TaskEvent?
-        if let updateID {
-            updateEvent = await backgroundTasks.status(updateID)
+        let updateEvent: BackgroundTaskManager.TaskEvent? = if let updateID {
+            await backgroundTasks.status(updateID)
         } else {
-            updateEvent = nil
+            nil
         }
         return VMResponse(
             from: vm,
