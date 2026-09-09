@@ -2,7 +2,16 @@ import BarkVisorZlibInflate
 import Foundation
 
 enum CatalogZip {
-    static func files(from data: Data) throws -> [String: Data] {
+    static let maxFiles = 8_192
+    static let maxEntryBytes = 8 * 1_024 * 1_024
+    static let maxTotalBytes = 128 * 1_024 * 1_024
+
+    static func files(
+        from data: Data,
+        maxFiles: Int = CatalogZip.maxFiles,
+        maxEntryBytes: Int = CatalogZip.maxEntryBytes,
+        maxTotalBytes: Int = CatalogZip.maxTotalBytes,
+    ) throws -> [String: Data] {
         guard data.count >= 22 else {
             throw BarkVisorError.repositorySyncFailed("App catalog archive is not a zip")
         }
@@ -17,7 +26,13 @@ enum CatalogZip {
         }
         var files: [String: Data] = [:]
         var cursor = cdOffset
+        var fileCount = 0
+        var totalBytes = 0
         while cursor + 46 <= cdEnd {
+            fileCount += 1
+            if fileCount > maxFiles {
+                throw BarkVisorError.repositorySyncFailed("App catalog zip has too many files")
+            }
             guard u32(data, cursor) == 0x0201_4B50 else { break }
             let method = Int(u16(data, cursor + 10))
             let compressed = Int(u32(data, cursor + 20))
@@ -30,15 +45,25 @@ enum CatalogZip {
             let nameEnd = nameStart + nameLen
             guard nameEnd <= data.count else { break }
             let name = String(data: data.subdata(in: nameStart ..< nameEnd), encoding: .utf8) ?? ""
+            if uncompressed > maxEntryBytes || uncompressed > maxTotalBytes - totalBytes {
+                throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
+            }
+            let remaining = min(maxEntryBytes, maxTotalBytes - totalBytes)
             let payload = try payloadBytes(
                 data: data,
                 localOffset: localOffset,
                 method: method,
                 compressed: compressed,
-                uncompressed: uncompressed,
+                maxBytes: remaining,
             )
-            if !name.isEmpty, !name.hasSuffix("/"), let payload {
-                files[name] = payload
+            if let payload {
+                if payload.count > remaining {
+                    throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
+                }
+                totalBytes += payload.count
+                if !name.isEmpty, !name.hasSuffix("/") {
+                    files[name] = payload
+                }
             }
             cursor = nameEnd + extraLen + commentLen
         }
@@ -73,7 +98,7 @@ enum CatalogZip {
         localOffset: Int,
         method: Int,
         compressed: Int,
-        uncompressed: Int,
+        maxBytes: Int,
     ) throws -> Data? {
         guard localOffset + 30 <= data.count else { return nil }
         guard u32(data, localOffset) == 0x0403_4B50 else { return nil }
@@ -83,8 +108,13 @@ enum CatalogZip {
         let end = start + compressed
         guard start >= 0, end <= data.count else { return nil }
         let slice = data.subdata(in: start ..< end)
-        if method == 0 { return slice }
-        if method == 8 { return try inflateRaw(slice, uncompressed: uncompressed) }
+        if method == 0 {
+            if slice.count > maxBytes {
+                throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
+            }
+            return slice
+        }
+        if method == 8 { return try inflateRaw(slice, maxBytes: maxBytes) }
         return nil
     }
 
@@ -109,34 +139,36 @@ enum CatalogZip {
             | (UInt32(data[offset + 3]) << 24)
     }
 
-    private static func inflateRaw(_ input: Data, uncompressed: Int) throws -> Data {
+    private static func inflateRaw(_ input: Data, maxBytes: Int) throws -> Data {
         if input.isEmpty { return Data() }
-        var destCount = max(uncompressed, 4_096)
-        if destCount < input.count {
-            destCount = max(input.count * 16, 4_096)
+        if maxBytes <= 0 {
+            throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
         }
-        while destCount <= 32_000_000 {
-            var output = Data(count: destCount)
-            let result: (Int32, UInt32) = output.withUnsafeMutableBytes { dest in
-                input.withUnsafeBytes { src in
-                    guard let srcBase = src.bindMemory(to: UInt8.self).baseAddress,
-                          let destBase = dest.bindMemory(to: UInt8.self).baseAddress
-                    else { return (-1, 0) }
-                    var written: UInt32 = 0
-                    let status = bv_inflate_raw(
-                        srcBase,
-                        UInt32(input.count),
-                        destBase,
-                        UInt32(destCount),
-                        &written,
-                    )
-                    return (status, written)
-                }
+        var output = Data(count: maxBytes)
+        let result: (Int32, UInt32) = output.withUnsafeMutableBytes { dest in
+            input.withUnsafeBytes { src in
+                guard let srcBase = src.bindMemory(to: UInt8.self).baseAddress,
+                      let destBase = dest.bindMemory(to: UInt8.self).baseAddress
+                else { return (-1, 0) }
+                var written: UInt32 = 0
+                let status = bv_inflate_raw(
+                    srcBase,
+                    UInt32(input.count),
+                    destBase,
+                    UInt32(maxBytes),
+                    &written,
+                )
+                return (status, written)
             }
-            if result.0 == 0 {
-                return output.prefix(Int(result.1))
+        }
+        if result.0 == 0 {
+            if result.1 > maxBytes {
+                throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
             }
-            destCount *= 2
+            return output.prefix(Int(result.1))
+        }
+        if result.1 >= maxBytes {
+            throw BarkVisorError.repositorySyncFailed("App catalog zip is too large")
         }
         throw BarkVisorError.repositorySyncFailed("App catalog zip could not be inflated")
     }
