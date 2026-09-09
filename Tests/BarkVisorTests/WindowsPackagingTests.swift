@@ -65,6 +65,15 @@ struct WindowsPackagingTests {
         #expect(logs.contains("asyncStreamFile"))
     }
 
+    @Test func `windows outbound tls uses system trust roots`() throws {
+        let hop = try read("Sources/BarkVisorCore/Helpers/SSRFPinnedHopClient.swift")
+        #expect(hop.contains("WindowsSystemTrustRoots.clientTLSConfiguration()"))
+        let roots = try read("Sources/BarkVisorCore/Platform/WindowsSystemTrustRoots.swift")
+        #expect(roots.contains("CertOpenSystemStoreA"))
+        #expect(roots.contains("NIOSSLCertificate"))
+        #expect(roots.contains("trustRoots"))
+    }
+
     @Test func `windows payload stages swift runtime and vcruntime dlls`() throws {
         let stage = try read("scripts/stage-windows-payload.ps1")
         #expect(stage.contains("swiftCore.dll"))

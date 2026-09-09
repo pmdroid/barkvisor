@@ -46,7 +46,13 @@ final class SSRFPinnedHopClient: @unchecked Sendable {
             if let existing = self.sslContext {
                 sslContext = existing
             } else {
-                let created = try NIOSSLContext(configuration: .makeClientConfiguration())
+                #if os(Windows)
+                    let created = try NIOSSLContext(
+                        configuration: WindowsSystemTrustRoots.clientTLSConfiguration(),
+                    )
+                #else
+                    let created = try NIOSSLContext(configuration: .makeClientConfiguration())
+                #endif
                 self.sslContext = created
                 sslContext = created
             }

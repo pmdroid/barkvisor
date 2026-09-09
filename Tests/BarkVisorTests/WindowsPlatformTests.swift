@@ -1,4 +1,5 @@
 import Foundation
+import NIOSSL
 import Testing
 #if canImport(WinSDK)
     import WinSDK
@@ -34,6 +35,21 @@ struct WindowsPlatformTests {
             dataDirOverride: override,
         )
         #expect(dir.path == URL(fileURLWithPath: override, isDirectory: true).path)
+    }
+
+    @Test func `windows system trust roots load for outbound tls`() throws {
+        #if os(Windows)
+            let roots = WindowsSystemTrustRoots.certificates()
+            #expect(!roots.isEmpty)
+            let config = WindowsSystemTrustRoots.clientTLSConfiguration()
+            switch config.trustRoots {
+            case let .certificates(certs):
+                #expect(certs.count == roots.count)
+            default:
+                Issue.record("expected Windows trustRoots.certificates")
+            }
+            _ = try NIOSSLContext(configuration: config)
+        #endif
     }
 
     @Test func `path list separator is semicolon on windows`() {
