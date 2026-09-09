@@ -50,6 +50,20 @@ struct WindowsPackagingTests {
         #expect(build.contains("-arch x64"))
     }
 
+    @Test func `windows serves spa without nio filesystem stat`() throws {
+        let server = try read("Sources/BarkVisor/Server/VaporServer.swift")
+        #expect(server.contains("FoundationStaticFileMiddleware"))
+        #expect(server.contains("#if os(Windows)"))
+        #expect(server.contains("FileMiddleware("))
+        let files = try read("Sources/BarkVisor/Server/Middleware/FoundationStaticFileMiddleware.swift")
+        #expect(files.contains("Data(contentsOf:"))
+        #expect(files.contains("contains(\"..\")"))
+        let logs = try read("Sources/BarkVisor/Server/Controllers/LogController.swift")
+        #expect(logs.contains("#if os(Windows)"))
+        #expect(logs.contains("Data(contentsOf:"))
+        #expect(logs.contains("asyncStreamFile"))
+    }
+
     @Test func `windows payload stages swift runtime and vcruntime dlls`() throws {
         let stage = try read("scripts/stage-windows-payload.ps1")
         #expect(stage.contains("swiftCore.dll"))

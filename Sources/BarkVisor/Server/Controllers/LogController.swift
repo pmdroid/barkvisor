@@ -136,7 +136,12 @@ struct LogController: RouteCollection {
         let archiveName = rawName.replacingOccurrences(of: "\"", with: "_")
             .replacingOccurrences(of: "\n", with: "_")
             .replacingOccurrences(of: "\r", with: "_")
+        #if os(Windows)
+        let data = try Data(contentsOf: URL(fileURLWithPath: resolvedPath))
+        let response = Response(status: .ok, body: .init(data: data))
+        #else
         let response = try await req.fileio.asyncStreamFile(at: resolvedPath)
+        #endif
         response.headers.add(
             name: .contentDisposition, value: "attachment; filename=\"\(archiveName)\"",
         )
