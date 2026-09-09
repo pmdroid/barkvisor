@@ -4,6 +4,34 @@ import Foundation
 ///
 /// Missing resource / health fields mean the member was unreachable or the
 /// probe returned no body. Listing still includes the Device.
+public struct HomeDeviceDoctorFailure: Codable, Sendable, Equatable {
+    public var id: String
+    public var detail: String
+
+    public init(id: String, detail: String) {
+        self.id = id
+        self.detail = detail
+    }
+}
+
+public struct HomeDeviceDoctorSummary: Codable, Sendable, Equatable {
+    public var ok: Bool
+    public var failures: [HomeDeviceDoctorFailure]
+
+    public init(ok: Bool, failures: [HomeDeviceDoctorFailure] = []) {
+        self.ok = ok
+        self.failures = failures
+    }
+
+    public static func from(report: DoctorReport) -> HomeDeviceDoctorSummary {
+        let failures = report.checks.compactMap { check -> HomeDeviceDoctorFailure? in
+            guard check.status == .fail else { return nil }
+            return HomeDeviceDoctorFailure(id: check.id, detail: check.detail)
+        }
+        return HomeDeviceDoctorSummary(ok: failures.isEmpty, failures: failures)
+    }
+}
+
 public struct HomeDeviceLiveFacts: Sendable, Equatable {
     public var displayName: String?
     public var collectedAt: String?
@@ -12,6 +40,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
     public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
+    public var doctor: HomeDeviceDoctorSummary?
 
     public init(
         displayName: String? = nil,
@@ -21,6 +50,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
+        doctor: HomeDeviceDoctorSummary? = nil,
     ) {
         self.displayName = displayName
         self.collectedAt = collectedAt
@@ -29,6 +59,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
+        self.doctor = doctor
     }
 }
 
@@ -156,6 +187,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
     public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
+    public var doctor: HomeDeviceDoctorSummary?
 
     public init(
         hostId: String,
@@ -173,6 +205,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
+        doctor: HomeDeviceDoctorSummary? = nil,
     ) {
         self.hostId = hostId
         self.role = role
@@ -189,6 +222,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
+        self.doctor = doctor
     }
 
     public var label: String {

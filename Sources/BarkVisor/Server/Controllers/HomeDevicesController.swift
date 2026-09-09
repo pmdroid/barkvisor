@@ -325,6 +325,9 @@ struct HomeDevicesController: RouteCollection {
             features: HostInventoryService.featureSummary(),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
+            doctor: HomeDeviceDoctorSummary.from(
+                report: DoctorService.probe(source: LiveDoctorFactSource(assumeHealthOK: true)),
+            ),
         )
     }
 
@@ -386,12 +389,16 @@ struct HomeDevicesController: RouteCollection {
         }
         let inventoryURL: URL
         let summaryURL: URL
+        let doctorURL: URL
         do {
             inventoryURL = try HomeDeviceProxy.memberURL(
                 host: agentHost, port: device.agentPort, path: "/api/agent/inventory",
             )
             summaryURL = try HomeDeviceProxy.memberURL(
                 host: agentHost, port: device.agentPort, path: "/api/workloads/health-summary",
+            )
+            doctorURL = try HomeDeviceProxy.memberURL(
+                host: agentHost, port: device.agentPort, path: "/api/system/doctor",
             )
         } catch {
             return .unreachable("Device address is not reachable")
@@ -401,14 +408,47 @@ struct HomeDevicesController: RouteCollection {
             async let summary = loadMemberHealthSummary(
                 url: summaryURL, client: client, bearer: bearer, hostId: device.hostId,
             )
+            async let doctor = loadMemberDoctor(
+                url: doctorURL, client: client, bearer: bearer, hostId: device.hostId,
+            )
             let inventory = try await HomeDeviceHealthAggregator.decodeInventory(inventoryData)
-            return await .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
+            let summaryValue = await summary
+            let doctorValue = await doctor
+            return .ok(HomeDeviceHealthAggregator.facts(
+                from: inventory,
+                summary: summaryValue,
+                doctor: doctorValue,
+            ))
         } catch {
             return .failed(HomeDeviceProxyError.classify(error))
         }
     }
 
-    /// Inventory already succeeded; a missing/broken summary is unknown, not empty-ok.
+    func loadMemberDoctor(
+        url: URL,
+        client: any HomeDeviceProxyClient,
+        bearer: String?,
+        hostId: String,
+    ) async -> HomeDeviceDoctorSummary? {
+        let data: Data
+        do {
+            data = try await getJSON(url: url, client: client, bearer: bearer)
+        } catch {
+            Log.server.warning(
+                "Device \(hostId) doctor fetch failed; treating required deps as unknown: \(error.localizedDescription)",
+            )
+            return nil
+        }
+        do {
+            return try HomeDeviceDoctorSummary.from(report: HomeDeviceHealthAggregator.decodeDoctor(data))
+        } catch {
+            Log.server.warning(
+                "Device \(hostId) doctor decode failed; treating required deps as unknown: \(error.localizedDescription)",
+            )
+            return nil
+        }
+    }
+
     func loadMemberHealthSummary(
         url: URL,
         client: any HomeDeviceProxyClient,

@@ -138,6 +138,16 @@ struct HomeDeviceResourceSummary: Decodable, Hashable {
     var cpuLoadPercent: Double?
 }
 
+struct HomeDeviceDoctorFailure: Decodable, Hashable {
+    var id: String
+    var detail: String
+}
+
+struct HomeDeviceDoctorSummary: Decodable, Hashable {
+    var ok: Bool
+    var failures: [HomeDeviceDoctorFailure]
+}
+
 struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var hostId: String
     var role: String
@@ -153,6 +163,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var resources: HomeDeviceResourceSummary?
     var workloadCount: Int?
     var healthCounts: [String: Int]?
+    var doctor: HomeDeviceDoctorSummary? = nil
 
     var id: String {
         hostId

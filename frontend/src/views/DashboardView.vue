@@ -22,7 +22,15 @@ import {
 } from '../utils/dashboardWidgets'
 import { scopeRows } from '../utils/deviceScope'
 import { formatCores, formatMemoryMB } from '../utils/format'
-import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
+import {
+  doctorBannerSub,
+  doctorBannerTitle,
+  doctorFailures,
+  hasDoctorFailures,
+  isReachabilityOk,
+  reachabilityHint,
+  reachabilityLabel,
+} from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { opsStatusLabel, vmHealth } from '../utils/workloadHealth'
@@ -66,6 +74,9 @@ const stoppedRows = computed(() => homeRows.value.filter((row) => bucketOf(row.v
 const unreachableDevices = computed(() =>
   scopedDevices.value.filter((row) => !isReachabilityOk(row.reachability)),
 )
+const doctorDevices = computed(() =>
+  scopedDevices.value.filter((row) => isReachabilityOk(row.reachability) && hasDoctorFailures(row)),
+)
 
 const workloadTotal = computed(() => {
   if (!deviceScope.isAll) {
@@ -80,12 +91,14 @@ const toolbarSub = computed(() => {
   const total = workloadTotal.value
   const failed = failedRows.value.length
   const down = unreachableDevices.value.length
+  const missing = doctorDevices.value.length
   const parts = [
     `${n} ${n === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}`,
     total ? `${running} of ${total} workloads running` : 'No workloads',
   ]
   if (failed) parts.push(`${failed} failed`)
   if (down) parts.push(`${down} unreachable`)
+  if (missing) parts.push(`${missing} missing deps`)
   return parts.join(' · ')
 })
 
@@ -98,7 +111,7 @@ const sideModules = computed(() =>
 
 const showAttention = computed(() =>
   isModuleOn(layout.value, 'attention')
-  && (failedRows.value.length > 0 || unreachableDevices.value.length > 0),
+  && (failedRows.value.length > 0 || unreachableDevices.value.length > 0 || doctorDevices.value.length > 0),
 )
 
 function persist(next: DashboardModule[]) {
@@ -156,6 +169,7 @@ function homeDevSub(row: HomeDeviceHealthSnapshot): string {
   const bits = [os, arch].filter(Boolean)
   if (!isReachabilityOk(row.reachability)) bits.push('unreachable')
   else if ((row.healthCounts?.failed ?? 0) > 0) bits.push(`${row.healthCounts?.failed} failed`)
+  else if (hasDoctorFailures(row)) bits.push('missing deps')
   return bits.join(' · ')
 }
 
@@ -228,6 +242,13 @@ onUnmounted(() => {
           <span class="spacer"></span>
           <AppButton @click="openDevice(row)">{{ DEVICE_LABEL }}</AppButton>
         </div>
+        <div v-for="row in doctorDevices" :key="'doc-' + row.hostId" class="incident">
+          <span class="pill failed">Missing</span>
+          <strong>{{ devices.deviceLabel(row) }}</strong>
+          <span>{{ doctorBannerSub(doctorFailures(row)) || doctorBannerTitle(doctorFailures(row)) }}</span>
+          <span class="spacer"></span>
+          <AppButton @click="openDevice(row)">{{ DEVICE_LABEL }}</AppButton>
+        </div>
       </div>
 
       <div class="triage-body" :class="{ full: !sideModules.length }">
@@ -235,7 +256,7 @@ onUnmounted(() => {
           <template v-for="mod in feedModules" :key="mod.id">
             <div v-if="mod.id === 'needs'" class="feed-block">
               <div class="section-label">Needs you</div>
-              <div v-if="failedRows.length || unreachableDevices.length" class="feed">
+              <div v-if="failedRows.length || unreachableDevices.length || doctorDevices.length" class="feed">
                 <article
                   v-for="row in failedRows"
                   :key="'need-' + row.vm.id"
@@ -261,6 +282,19 @@ onUnmounted(() => {
                   </div>
                   <span class="chip">{{ DEVICE_LABEL }}</span>
                   <span class="pill unreach">Unreachable</span>
+                </article>
+                <article
+                  v-for="row in doctorDevices"
+                  :key="'need-doc-' + row.hostId"
+                  class="row loud"
+                  @click="openDevice(row)"
+                >
+                  <div>
+                    <h3>{{ devices.deviceLabel(row) }}</h3>
+                    <div class="meta">{{ doctorBannerSub(doctorFailures(row)) }}</div>
+                  </div>
+                  <span class="chip">{{ DEVICE_LABEL }}</span>
+                  <span class="pill failed">Missing</span>
                 </article>
               </div>
               <div v-else class="empty">Nothing needs you</div>

@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   deviceResourcesLine,
   deviceWorkloadLine,
+  doctorBannerSub,
+  doctorBannerTitle,
+  doctorFailures,
+  doctorFailuresFromReport,
+  hasDoctorFailures,
   hasKnownHealthCounts,
   homeWorkloadsRunningLine,
   isReachabilityOk,
@@ -137,5 +142,50 @@ describe('resolveHealthCounts', () => {
       failed: 1,
     })
     expect(resolveHealthCounts({ running: 0 }, { running: 4 })).toEqual({ running: 0 })
+  })
+})
+
+describe('doctor failures', () => {
+  test('ok or missing doctor is not a failure', () => {
+    expect(doctorFailures(undefined)).toEqual([])
+    expect(hasDoctorFailures({ doctor: null })).toBe(false)
+    expect(hasDoctorFailures({ doctor: { ok: true, failures: [] } })).toBe(false)
+    expect(hasDoctorFailures({ doctor: { ok: true, failures: [{ id: 'qemu', detail: 'no' }] } })).toBe(false)
+  })
+
+  test('every fail check is listed', () => {
+    const failures = [
+      { id: 'qemu', detail: 'qemu-system-aarch64 not found. brew install qemu' },
+      { id: 'swtpm', detail: 'swtpm not found.' },
+      { id: 'kvm', detail: '/dev/kvm is missing. Linux Workloads expect KVM.' },
+    ]
+    const device = { doctor: { ok: false, failures } }
+    expect(doctorFailures(device)).toEqual(failures)
+    expect(hasDoctorFailures(device)).toBe(true)
+    expect(doctorBannerTitle(failures)).toBe('3 missing required dependencies')
+    expect(doctorBannerTitle(failures.slice(0, 1))).toBe('Missing required dependency')
+    expect(doctorBannerSub(failures)).toContain('qemu-system-aarch64')
+    expect(doctorBannerSub(failures)).toContain('swtpm not found')
+    expect(doctorBannerSub(failures)).toContain('/dev/kvm')
+  })
+
+  test('report mapping keeps fail checks and drops warn/skip', () => {
+    expect(doctorFailuresFromReport(undefined)).toEqual([])
+    expect(doctorFailuresFromReport({ ok: true, checks: [] })).toEqual([])
+    expect(
+      doctorFailuresFromReport({
+        ok: false,
+        checks: [
+          { id: 'qemu', status: 'fail', detail: 'qemu-system-aarch64 not found.' },
+          { id: 'daemon-uid', status: 'warn', detail: 'uid=501' },
+          { id: 'kvm', status: 'skip', detail: 'Not used on macOS.' },
+          { id: 'swtpm', status: 'fail', detail: 'swtpm not found.' },
+          { id: 'qemu-img', status: 'ok', detail: '/usr/bin/qemu-img' },
+        ],
+      }),
+    ).toEqual([
+      { id: 'qemu', detail: 'qemu-system-aarch64 not found.' },
+      { id: 'swtpm', detail: 'swtpm not found.' },
+    ])
   })
 })

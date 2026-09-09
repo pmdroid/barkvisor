@@ -99,7 +99,14 @@ struct APIDecodingTests {
                 "cpuLoadPercent": 12.5
               },
               "workloadCount": 2,
-              "healthCounts": { "running": 1, "stopped": 1, "failed": 0 }
+              "healthCounts": { "running": 1, "stopped": 1, "failed": 0 },
+              "doctor": {
+                "ok": false,
+                "failures": [
+                  { "id": "qemu", "detail": "qemu-system-aarch64 not found." },
+                  { "id": "swtpm", "detail": "swtpm not found." }
+                ]
+              }
             },
             {
               "hostId": "dev-peer",
@@ -126,6 +133,9 @@ struct APIDecodingTests {
         #expect(report.devices[0].isReachable)
         #expect(report.devices[0].title == "Studio Mac")
         #expect(report.devices[0].workloadLine == "2 workloads")
+        #expect(report.devices[0].doctor?.ok == false)
+        #expect(report.devices[0].doctor?.failures.map(\.id) == ["qemu", "swtpm"])
+        #expect(report.devices[1].doctor == nil)
         #expect(report.devices[1].isReachable == false)
         #expect(report.devices[1].workloadLine == "Health unavailable")
         #expect(report.totals.reachable == 1)

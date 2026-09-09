@@ -104,6 +104,31 @@ struct DoctorServiceTests {
         #expect(check(report, "qemu").detail.contains(DoctorService.qemuBinaryName()))
     }
 
+    @Test func `doctor summary lists every fail and drops warns`() {
+        let report = DoctorService.assemble(from: inputs(
+            uid: 501,
+            qemuPath: nil,
+            kvmPresent: false,
+            swtpmPath: nil,
+            healthOK: false,
+            qemuImgPath: nil,
+            isoToolPath: nil,
+            qemuMissingDevices: nil,
+        ))
+        let summary = HomeDeviceDoctorSummary.from(report: report)
+        #expect(!summary.ok)
+        let ids = Set(summary.failures.map(\.id))
+        #expect(ids.contains("qemu"))
+        #expect(ids.contains("qemu-img"))
+        #expect(ids.contains("cloud-init-iso"))
+        #expect(ids.contains("swtpm"))
+        #expect(ids.contains("kvm"))
+        #expect(ids.contains("api-health"))
+        #expect(!ids.contains("daemon-uid"))
+        #expect(!ids.contains("qemu-devices"))
+        #expect(summary.failures.allSatisfy { !$0.detail.isEmpty })
+    }
+
     @Test func `qemu binary name follows host guest arch`() {
         let name = DoctorService.qemuBinaryName()
         #expect(name == "qemu-system-\(PlatformCapabilities.defaultGuestArch)")

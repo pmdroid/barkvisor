@@ -155,7 +155,11 @@ public protocol DoctorFactSource: Sendable {
 
 /// Live host probes. Read-only: never installs, starts, stops, or writes.
 public struct LiveDoctorFactSource: DoctorFactSource {
-    public init() {}
+    public var assumeHealthOK: Bool
+
+    public init(assumeHealthOK: Bool = false) {
+        self.assumeHealthOK = assumeHealthOK
+    }
 
     public func inputs() -> DoctorFactInputs {
         let qemuName = DoctorService.qemuBinaryName()
@@ -163,7 +167,11 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         let processes = DoctorProcessList.live()
         let qemuProcesses = processes.filter { $0.command.contains("qemu-system") }
         let healthURL = DoctorService.healthURL()
-        let health = DoctorHealthClient.get(url: healthURL)
+        let health = if assumeHealthOK {
+            (true, "local")
+        } else {
+            DoctorHealthClient.get(url: healthURL)
+        }
         let facts = HostBridgeFactsService.probe()
         let suggested = facts.suggestedBridge
         let address = HostInfoService.listInterfaces()
@@ -200,7 +208,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             kvmPresent: HostInventoryService.kvmDevicePresent(),
             kvmAccessible: FileManager.default.isReadableFile(atPath: "/dev/kvm"),
             swtpmPath: (try? BundleResolver.helper("swtpm"))?.path,
-            swtpmRequired: DoctorService.swtpmRequired(),
+            swtpmRequired: true,
             healthURL: healthURL.absoluteString,
             healthOK: health.ok,
             healthDetail: health.detail,

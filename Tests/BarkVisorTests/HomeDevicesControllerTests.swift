@@ -126,12 +126,14 @@ struct HomeDevicesControllerTests {
         #expect(facts.features?.kvmDevice == false)
         #expect(facts.features?.bridgedNetworking == false)
         #expect(facts.features?.usbPassthrough == false)
+        #expect(facts.doctor == nil)
 
         let calls = client.calls
-        #expect(calls.count == 2)
+        #expect(calls.count == 3)
         #expect(Set(calls.map(\.url.path)) == [
             "/api/agent/inventory",
             "/api/workloads/health-summary",
+            "/api/system/doctor",
         ])
         for call in calls {
             #expect(call.method == "GET")
@@ -274,6 +276,7 @@ struct HomeDevicesControllerTests {
         #expect(hosts == ["10.0.0.2", "10.0.0.3"])
         #expect(client.calls.contains { $0.url.path == "/api/agent/inventory" && $0.url.host == "10.0.0.2" })
         #expect(client.calls.contains { $0.url.path == "/api/workloads/health-summary" && $0.url.host == "10.0.0.2" })
+        #expect(client.calls.contains { $0.url.path == "/api/system/doctor" && $0.url.host == "10.0.0.2" })
         #expect(client.calls.contains { $0.url.path == "/api/agent/inventory" && $0.url.host == "10.0.0.3" })
         #expect(client.calls.allSatisfy { header("Authorization", in: $0.headers) == "Bearer home-jwt" })
     }
@@ -337,6 +340,89 @@ struct HomeDevicesControllerTests {
         #expect(transportFacts.workloadCount == nil)
         #expect(transportFacts.healthCounts == nil)
         #expect(transportFacts.resources?.cpuCount == 2)
+        #expect(transportFacts.doctor == nil)
+    }
+
+    @Test func `probeMember maps doctor failures and ignores a broken doctor hop`() async throws {
+        let dir = try isolatedDir("probe-doctor")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let peerId = "doctor-peer"
+        let client = RecordingProxyClient()
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "desk")),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 1)),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/system/doctor",
+            status: 200,
+            body: JSONEncoder().encode(DoctorReport(
+                ok: false,
+                privileged: true,
+                checks: [
+                    DoctorCheck(id: "qemu", status: .fail, detail: "qemu-system-aarch64 not found."),
+                    DoctorCheck(id: "swtpm", status: .fail, detail: "swtpm not found."),
+                    DoctorCheck(id: "daemon-uid", status: .warn, detail: "uid=501"),
+                ],
+                hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            )),
+        )
+        let outcome = await controller(dir: dir, hostId: "self", mtlsClient: client).probeMember(
+            HomeDevice(hostId: peerId, role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
+            bearer: "home-jwt",
+        )
+        guard case let .ok(facts) = outcome else {
+            Issue.record("expected reachable member, got \(outcome)")
+            return
+        }
+        let doctor = try #require(facts.doctor)
+        #expect(!doctor.ok)
+        #expect(doctor.failures.map(\.id) == ["qemu", "swtpm"])
+        #expect(doctor.failures.contains { $0.detail.contains("qemu-system") })
+
+        let broken = RecordingProxyClient()
+        try broken.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "desk")),
+        )
+        try broken.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 1)),
+        )
+        broken.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/system/doctor",
+            status: 200,
+            body: Data("{".utf8),
+        )
+        let decoded = await controller(dir: dir, hostId: "self", mtlsClient: broken).probeMember(
+            HomeDevice(hostId: peerId, role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
+            bearer: nil,
+        )
+        guard case let .ok(brokenFacts) = decoded else {
+            Issue.record("expected reachable member after doctor decode failure, got \(decoded)")
+            return
+        }
+        #expect(brokenFacts.doctor == nil)
+        #expect(brokenFacts.workloadCount == 1)
     }
 
     @Test func `healthReport budget times out a hung member and keeps this Device`() async throws {

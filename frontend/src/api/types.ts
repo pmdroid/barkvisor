@@ -1074,6 +1074,30 @@ export interface HomeDeviceFeatureSummary {
   vfio?: boolean
 }
 
+export interface HomeDeviceDoctorFailure {
+  id: string
+  detail: string
+}
+
+export interface HomeDeviceDoctorSummary {
+  ok: boolean
+  failures: HomeDeviceDoctorFailure[]
+}
+
+export type DoctorCheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
+
+export interface DoctorCheck {
+  id: string
+  status: DoctorCheckStatus | string
+  detail: string
+}
+
+export interface DoctorReport {
+  ok: boolean
+  privileged?: boolean
+  checks: DoctorCheck[]
+}
+
 export interface HomeDeviceHealthSnapshot {
   hostId: string
   role: HomeDeviceRole | string
@@ -1090,6 +1114,7 @@ export interface HomeDeviceHealthSnapshot {
   features?: HomeDeviceFeatureSummary | null
   workloadCount?: number | null
   healthCounts?: Record<string, number> | null
+  doctor?: HomeDeviceDoctorSummary | null
 }
 
 export interface HomePlacementScoreRequest {

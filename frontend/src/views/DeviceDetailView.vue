@@ -13,7 +13,7 @@ import {
 import { apiErrorMessage } from '../api/errors'
 import { saveDeviceName } from '../api/deviceName'
 import api from '../api/client'
-import type { DiskSettings, HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
+import type { DiskSettings, DoctorReport, HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import FolderPicker from '../components/FolderPicker.vue'
@@ -29,9 +29,13 @@ import {
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
-import { canFetchDeviceWorkloads, deviceAboutPath, deviceDiskSettingsPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { canFetchDeviceWorkloads, deviceAboutPath, deviceDiskSettingsPath, deviceDoctorPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
+  doctorBannerSub,
+  doctorBannerTitle,
+  doctorFailures,
+  doctorFailuresFromReport,
   reachabilityHint,
   reachabilityLabel,
 } from '../utils/homeDeviceHealth'
@@ -80,6 +84,7 @@ const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 const showCreate = ref(false)
 const deviceAbout = ref<SystemAbout | null>(null)
+const deviceDoctor = ref<DoctorReport | null>(null)
 const deviceStats = ref<SystemStats | null>(null)
 const renaming = ref(false)
 const nameDraft = ref('')
@@ -103,6 +108,10 @@ const diskDirCanEdit = computed(() => {
 })
 
 const failedVms = computed(() => vms.value.filter((vm) => vmHealth(vm) === 'failed'))
+const missingDeps = computed(() => {
+  if (deviceDoctor.value) return doctorFailuresFromReport(deviceDoctor.value)
+  return doctorFailures(device.value)
+})
 
 function formatUptime(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return ''
@@ -271,6 +280,22 @@ async function refreshAbout(row: HomeDeviceHealthSnapshot | null = device.value)
   }
 }
 
+async function refreshDoctor(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    deviceDoctor.value = null
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get<DoctorReport>(deviceDoctorPath(row))
+    if (hostId.value !== host) return
+    deviceDoctor.value = data
+  } catch {
+    if (hostId.value !== host) return
+    deviceDoctor.value = null
+  }
+}
+
 async function refreshStats(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
     deviceStats.value = null
@@ -417,6 +442,7 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
   if (!row) return
   await workloads.fetchFor(row)
   await refreshAbout(row)
+  await refreshDoctor(row)
   await refreshStats(row)
   await refreshHistory(row)
   if (canFetchDeviceWorkloads(row)) {
@@ -463,6 +489,7 @@ watch(hostId, () => {
   clearHostTransientState()
   resetHistory()
   deviceAbout.value = null
+  deviceDoctor.value = null
   deviceStats.value = null
   void refresh(true)
 })
@@ -601,6 +628,17 @@ async function doStop() {
         <div>
           <div class="ops-banner-title">{{ reachLabel }}</div>
           <div class="ops-banner-sub">{{ reachHint }} Workload counts are not shown.</div>
+        </div>
+      </div>
+
+      <div v-if="missingDeps.length" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+        <div>
+          <div class="ops-banner-title">
+            <span class="ops-dot bad pulse"></span>
+            {{ doctorBannerTitle(missingDeps) }}
+          </div>
+          <div class="ops-banner-sub">{{ doctorBannerSub(missingDeps) }}</div>
         </div>
       </div>
 

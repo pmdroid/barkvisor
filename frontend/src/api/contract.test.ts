@@ -90,6 +90,8 @@ describe('API contract (PAS-78)', () => {
     }
     expect(yaml).toContain('x-barkvisor-transport: sse')
     expect(yaml).toContain('x-barkvisor-transport: websocket')
+    expect(yaml).toContain('HomeDeviceDoctorSummary:')
+    expect(yaml).toContain('HomeDeviceDoctorFailure:')
   })
 
   test('frontend types cover the frozen resource shapes', () => {

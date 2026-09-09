@@ -259,6 +259,8 @@ struct DeviceDetailTests {
         #expect(source.contains("Section(\"Doctor\")"))
         #expect(source.contains("DeviceDoctor.rows(from: deviceCaps)"))
         #expect(source.contains("DeviceDoctor.note(for: detail)"))
+        #expect(source.contains("Section(\"Missing dependencies\")"))
+        #expect(source.contains("device.doctor"))
         #expect(!source.contains("system/doctor"))
     }
 

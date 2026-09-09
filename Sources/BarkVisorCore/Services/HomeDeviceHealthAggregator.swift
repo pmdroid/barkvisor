@@ -58,6 +58,7 @@ public enum HomeDeviceHealthAggregator {
     public static func facts(
         from inventory: HostInventory,
         summary: WorkloadHealthSummary? = nil,
+        doctor: HomeDeviceDoctorSummary? = nil,
     ) -> HomeDeviceLiveFacts {
         HomeDeviceLiveFacts(
             displayName: inventory.displayName,
@@ -75,6 +76,7 @@ public enum HomeDeviceHealthAggregator {
             features: HomeDeviceFeatureSummary(from: inventory.virtualization.features),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
+            doctor: doctor,
         )
     }
 
@@ -84,6 +86,10 @@ public enum HomeDeviceHealthAggregator {
 
     public static func decodeHealthSummary(_ data: Data) throws -> WorkloadHealthSummary {
         try JSONDecoder().decode(WorkloadHealthSummary.self, from: data)
+    }
+
+    public static func decodeDoctor(_ data: Data) throws -> DoctorReport {
+        try JSONDecoder().decode(DoctorReport.self, from: data)
     }
 
     public static func snapshot(
@@ -114,6 +120,7 @@ public enum HomeDeviceHealthAggregator {
             features: live ? facts?.features : nil,
             workloadCount: live ? facts?.workloadCount : nil,
             healthCounts: live ? facts?.healthCounts : nil,
+            doctor: live ? facts?.doctor : nil,
         )
     }
 

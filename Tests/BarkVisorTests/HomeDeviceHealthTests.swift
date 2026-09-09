@@ -62,6 +62,7 @@ struct HomeDeviceHealthTests {
         #expect(peer.features == nil)
         #expect(peer.workloadCount == nil)
         #expect(peer.healthCounts == nil)
+        #expect(peer.doctor == nil)
         #expect(report.totals.devices == 2)
         #expect(report.totals.reachable == 1)
         #expect(report.totals.unreachable == 1)
@@ -165,6 +166,38 @@ struct HomeDeviceHealthTests {
         let inventoryOnly = HomeDeviceHealthAggregator.facts(from: decoded, summary: nil)
         #expect(inventoryOnly.workloadCount == nil)
         #expect(inventoryOnly.healthCounts == nil)
+        #expect(inventoryOnly.doctor == nil)
+    }
+
+    @Test func `reachable snapshot keeps doctor failures; unreachable drops them`() {
+        var local = facts(name: "a", cpuCount: 2, running: 1)
+        local.doctor = HomeDeviceDoctorSummary(
+            ok: false,
+            failures: [HomeDeviceDoctorFailure(id: "qemu", detail: "qemu-system-aarch64 not found.")],
+        )
+        var peerFacts = facts(name: "b", cpuCount: 2, running: 2)
+        peerFacts.doctor = HomeDeviceDoctorSummary(ok: true)
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "a"),
+            HomeDevice(hostId: "ok-peer", role: "member", agentHost: "10.0.0.2"),
+            HomeDevice(hostId: "down-peer", role: "member", agentHost: "10.0.0.3"),
+        ])
+        let report = HomeDeviceHealthAggregator.report(
+            listed: listed,
+            local: local,
+            members: [
+                "ok-peer": .ok(peerFacts),
+                "down-peer": .unreachable("peer down"),
+            ],
+        )
+        let selfRow = report.devices.first { $0.role == "self" }
+        #expect(selfRow?.doctor?.ok == false)
+        #expect(selfRow?.doctor?.failures.map(\.id) == ["qemu"])
+        let okPeer = report.devices.first { $0.hostId == "ok-peer" }
+        #expect(okPeer?.doctor?.ok == true)
+        #expect(okPeer?.doctor?.failures.isEmpty == true)
+        let down = report.devices.first { $0.hostId == "down-peer" }
+        #expect(down?.doctor == nil)
     }
 
     @Test func `reachable device with unknown health is not counted as zero workloads`() {
