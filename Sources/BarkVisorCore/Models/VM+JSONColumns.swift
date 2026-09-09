@@ -95,5 +95,4 @@ extension VM {
             healthJson = nil
         }
     }
-
 }

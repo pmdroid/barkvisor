@@ -97,7 +97,7 @@ public enum VMLifecycleService {
 
         let encodedFields = encodeUpdateFields(params: normalized)
 
-        let vm = try await db.write { db -> VM in
+        return try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -126,7 +126,6 @@ public enum VMLifecycleService {
             try vm.update(db)
             return vm
         }
-        return vm
     }
 
     /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
