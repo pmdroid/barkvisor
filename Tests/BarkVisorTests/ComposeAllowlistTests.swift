@@ -399,6 +399,30 @@ struct ComposeAllowlistTests {
         #expect(render.yaml.contains("192.168.8.10"))
     }
 
+    @Test func `plex image match is the image name not a substring`() {
+        #expect(ComposePorts.isPlexImage("lscr.io/linuxserver/plex:latest"))
+        #expect(ComposePorts.isPlexImage("localhost:5000/linuxserver/plex"))
+        #expect(ComposePorts.isPlexImage("plexinc/pms-docker"))
+        #expect(!ComposePorts.isPlexImage("myduplex/app"))
+        #expect(!ComposePorts.isPlexImage("complex/server"))
+        let yaml = """
+        services:
+          x:
+            image: myduplex/app
+            network_mode: host
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: host network")
+    }
+
     @Test func `non-plex host network stays rejected`() {
         let yaml = """
         services:

@@ -157,7 +157,13 @@ enum ComposePorts {
     }
 
     static func isPlexImage(_ image: String) -> Bool {
-        image.lowercased().contains("plex")
+        let lower = image.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let noDigest = lower.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
+            .first.map(String.init) ?? lower
+        let lastPath = noDigest.split(separator: "/").last.map(String.init) ?? noDigest
+        let name = lastPath.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            .first.map(String.init) ?? lastPath
+        return name == "plex" || name == "pms-docker"
     }
 
     static func parsePorts(_ value: Any?) -> [PublishedPort] {
