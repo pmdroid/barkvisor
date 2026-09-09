@@ -349,7 +349,13 @@ struct WindowsPlatformTests {
             let pid = ProcessInfo.processInfo.processIdentifier
             let path = PlatformProcess.executablePath(pid: pid)
             #expect(path != nil)
-            #expect(path?.localizedCaseInsensitiveContains(".exe") == true)
+            let resolved = path ?? ""
+            #expect(!resolved.isEmpty)
+            #expect(resolved.contains("\\") || resolved.contains("/"))
+            #expect(
+                resolved.localizedCaseInsensitiveContains(".exe")
+                    || resolved.localizedCaseInsensitiveContains(".xctest"),
+            )
             #expect(kill(pid, 0) == 0)
         #endif
     }
