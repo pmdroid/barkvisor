@@ -295,7 +295,7 @@ struct QEMUBuilderValidationTests {
         #expect(!args.contains { $0.contains("reconnect") })
     }
 
-    @Test func `hvf windows puts ramfb before virtio-gpu for installer GOP`() {
+    @Test func `hvf windows puts ramfb before virtio-gpu for installer GOP`() throws {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(id: "vm-disp", name: "disp"),
             spec: WorkloadSpecBody(
@@ -305,7 +305,9 @@ struct QEMUBuilderValidationTests {
         let win = QEMUBuilder.displayAndInputArgs(
             spec: spec, accelerator: "hvf", windows: true,
         )
-        #expect(win.firstIndex(of: "ramfb")! < win.firstIndex(of: "virtio-gpu-pci,xres=1280,yres=800")!)
+        let ramfb = try #require(win.firstIndex(of: "ramfb"))
+        let virtio = try #require(win.firstIndex(of: "virtio-gpu-pci,xres=1280,yres=800"))
+        #expect(ramfb < virtio)
         let linux = QEMUBuilder.displayAndInputArgs(
             spec: spec, accelerator: "hvf", windows: false,
         )
