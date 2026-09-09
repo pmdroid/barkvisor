@@ -57,7 +57,7 @@ public enum PlatformQEMU {
 
     /// NVRAM var store templates matching common CODE images (must copy, not zero-fill).
     public static var edk2X86VarsCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_VARS_4M.fd",
             "/usr/share/OVMF/OVMF_VARS.fd",
             "/usr/share/edk2/ovmf/OVMF_VARS.fd",
@@ -72,6 +72,17 @@ public enum PlatformQEMU {
             // x86_64 CODE with the shared i386 vars template.
             "/usr/share/qemu/edk2-i386-vars.fd",
         ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_VARS_4M.fd",
+                    "\(dir)\\OVMF_VARS.fd",
+                    "\(dir)\\edk2-x86_64-vars.fd",
+                    "\(dir)\\edk2-i386-vars.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     /// AAVMF / ARM64 NVRAM templates when available.
@@ -99,7 +110,7 @@ public enum PlatformQEMU {
     /// System paths for x86_64 OVMF secure-boot firmware (Windows amd64 guests).
     /// Prefer `OVMF_CODE.secboot` / 4M, then fall back to non-secboot OVMF.
     public static var ovmfSecureBootCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
             "/usr/share/OVMF/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
@@ -118,11 +129,24 @@ public enum PlatformQEMU {
             "/usr/share/qemu/OVMF.fd",
             "/usr/share/qemu/edk2-x86_64-code.fd",
         ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_CODE_4M.secboot.fd",
+                    "\(dir)\\OVMF_CODE.secboot.fd",
+                    "\(dir)\\edk2-x86_64-secure-code.fd",
+                    "\(dir)\\OVMF_CODE_4M.fd",
+                    "\(dir)\\OVMF_CODE.fd",
+                    "\(dir)\\edk2-x86_64-code.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     /// NVRAM templates matching OVMF secure-boot CODE (4M / secboot first).
     public static var ovmfSecureBootVarsCandidates: [String] {
-        [
+        var paths = [
             "/usr/share/OVMF/OVMF_VARS_4M.secboot.fd",
             "/usr/share/OVMF/OVMF_VARS.secboot.fd",
             "/usr/share/OVMF/OVMF_VARS_4M.ms.fd",
@@ -141,6 +165,21 @@ public enum PlatformQEMU {
             "/usr/share/qemu/edk2-x86_64-vars.fd",
             "/usr/share/qemu/edk2-i386-vars.fd",
         ]
+        #if os(Windows)
+            paths += windowsQEMUShareDirs.flatMap { dir in
+                [
+                    "\(dir)\\OVMF_VARS_4M.secboot.fd",
+                    "\(dir)\\OVMF_VARS.secboot.fd",
+                    "\(dir)\\OVMF_VARS_4M.ms.fd",
+                    "\(dir)\\OVMF_VARS.ms.fd",
+                    "\(dir)\\OVMF_VARS_4M.fd",
+                    "\(dir)\\OVMF_VARS.fd",
+                    "\(dir)\\edk2-x86_64-vars.fd",
+                    "\(dir)\\edk2-i386-vars.fd",
+                ]
+            }
+        #endif
+        return paths
     }
 
     // MARK: - Install hints
@@ -195,7 +234,7 @@ public enum PlatformQEMU {
 
     public static func firmwareInstallHintX86(os: String) -> String {
         if os.caseInsensitiveCompare("Windows") == .orderedSame {
-            return "install QEMU so share\\edk2-x86_64-code.fd is next to qemu-system-x86_64.exe (C:\\Program Files\\qemu\\share)"
+            return "install QEMU so share\\OVMF_CODE_4M.secboot.fd (or OVMF_CODE.secboot.fd / edk2-x86_64-code.fd) is next to qemu-system-x86_64.exe (C:\\Program Files\\qemu\\share)"
         }
         if os.caseInsensitiveCompare("macOS") == .orderedSame {
             return "brew install qemu"
@@ -219,11 +258,16 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install swtpm"
         #elseif os(Windows)
-            "install swtpm.exe (MSYS2: pacman -S mingw-w64-ucrt-x86_64-swtpm) and keep it on PATH"
+            swtpmUnixIOUnavailableMessage
         #else
             "apt/pacman/apk/dnf: swtpm"
         #endif
     }
+
+    public static let swtpmUnixIOUnavailableMessage =
+        "TPM 2.0 emulation is not available on Windows Devices. "
+            + "QEMU -tpmdev emulator needs unixio ctrl (CMD_SET_DATAFD); native swtpm.exe is not packaged. "
+            + "Set firmware.tpm=false to start without TPM, or use a Linux/macOS Device for Windows 11 guests that require TPM 2.0."
 
     /// How to install qemu-img (provisioning disks from images).
     public static var qemuImgInstallHint: String {

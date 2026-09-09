@@ -677,6 +677,20 @@ public enum DoctorService {
     }
 
     private static func swtpmCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if !QEMUBuilder.swtpmUnixIOSupported(os: inputs.os) {
+            if !inputs.swtpmRequired {
+                return DoctorCheck(
+                    id: "swtpm",
+                    status: .skip,
+                    detail: "swtpm is not required on this Device.",
+                )
+            }
+            return DoctorCheck(
+                id: "swtpm",
+                status: .fail,
+                detail: PlatformQEMU.swtpmUnixIOUnavailableMessage,
+            )
+        }
         if let path = inputs.swtpmPath, !path.isEmpty {
             return DoctorCheck(id: "swtpm", status: .ok, detail: path)
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct QEMULaunchConfig {
+public struct QEMULaunchConfig: Sendable {
     public let executable: URL
     public let arguments: [String]
     // Optional swtpm process for TPM 2.0 emulation
@@ -392,11 +392,11 @@ public enum QEMUBuilder {
     private static func tpmArgs(spec: WorkloadSpec, vmID: String, guestType: String) throws
         -> (args: [String], exe: URL?, swtpmArgs: [String]?, dir: URL?) {
         guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
+        let exe = try requireTPMEmulator()
         let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
         try FileManager.default.createDirectory(at: tpmStateDir, withIntermediateDirectories: true)
         try WorkloadPrivilegeDrop.handoffWritable(tpmStateDir)
         let tpmSock = tpmStateDir.appendingPathComponent("swtpm.sock")
-        let exe = try resolveSwtpm()
         let swtpmArgs = [
             "socket",
             "--tpmstate", "dir=\(tpmStateDir.path)",
@@ -848,18 +848,28 @@ public enum QEMUBuilder {
     }
 
     private static func resolveOVMFSecureBoot() throws -> URL {
-        if let url = BundleResolver.qemuResource("OVMF_CODE.secboot.fd") {
-            return url
+        for name in ["OVMF_CODE.secboot.fd", "OVMF_CODE_4M.secboot.fd"] {
+            if let url = BundleResolver.qemuResource(name) {
+                return url
+            }
         }
-        if let url = BundleResolver.qemuResource("OVMF_CODE_4M.secboot.fd") {
-            return url
-        }
+        #if os(Windows)
+            for name in [
+                "edk2-x86_64-secure-code.fd",
+                "OVMF_CODE_4M.fd",
+                "OVMF_CODE.fd",
+                "edk2-x86_64-code.fd",
+            ] {
+                if let url = BundleResolver.qemuResource(name) {
+                    return url
+                }
+            }
+        #endif
         if let found = PlatformQEMU.ovmfSecureBootCandidates.first(where: {
             FileManager.default.fileExists(atPath: $0)
         }) {
             return URL(fileURLWithPath: found)
         }
-        // Prefer secboot; fall back to regular OVMF when the host only ships that.
         return try resolveEDK2X86_64()
     }
 
@@ -876,6 +886,17 @@ public enum QEMUBuilder {
         throw BarkVisorError.firmwareNotFound(
             "AAVMF secure-boot firmware not found. \(PlatformQEMU.aavmfSecureBootInstallHint)",
         )
+    }
+
+    package static func swtpmUnixIOSupported(os: String = PlatformHost.platformName) -> Bool {
+        os.caseInsensitiveCompare("Windows") != .orderedSame
+    }
+
+    package static func requireTPMEmulator(os: String = PlatformHost.platformName) throws -> URL {
+        guard swtpmUnixIOSupported(os: os) else {
+            throw BarkVisorError.badRequest(PlatformQEMU.swtpmUnixIOUnavailableMessage)
+        }
+        return try resolveSwtpm()
     }
 
     private static func resolveSwtpm() throws -> URL {

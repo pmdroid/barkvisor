@@ -104,11 +104,15 @@ extension VMManager {
 
     func startSwtpmIfNeeded(
         launch: QEMULaunchConfig, vmID: String, vmName: String,
+        unixIOSupported: Bool = QEMUBuilder.swtpmUnixIOSupported(),
     ) async throws -> Process? {
         guard let swtpmExe = launch.swtpmExecutable,
               let swtpmArgs = launch.swtpmArguments
         else {
             return nil
+        }
+        guard unixIOSupported else {
+            throw BarkVisorError.badRequest(PlatformQEMU.swtpmUnixIOUnavailableMessage)
         }
 
         let tpmProc = Process()

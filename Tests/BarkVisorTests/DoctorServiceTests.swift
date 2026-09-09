@@ -171,6 +171,17 @@ struct DoctorServiceTests {
         #expect(report.ok)
     }
 
+    @Test func `windows doctor fails closed on unixio even if swtpm path exists`() {
+        let report = DoctorService.assemble(from: inputs(
+            os: "Windows",
+            swtpmPath: #"C:\msys64\usr\bin\swtpm.exe"#,
+            swtpmRequired: true,
+        ))
+        #expect(check(report, "swtpm").status == .fail)
+        #expect(check(report, "swtpm").detail.contains("firmware.tpm=false"))
+        #expect(!report.ok)
+    }
+
     @Test func `health failure fails the report`() {
         let report = DoctorService.assemble(from: inputs(
             healthOK: false,
