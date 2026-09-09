@@ -168,7 +168,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         let qemuProcesses = processes.filter { $0.command.contains("qemu-system") }
         let healthURL = DoctorService.healthURL()
         let health = if assumeHealthOK {
-            (true, "local")
+            (ok: true, detail: "local")
         } else {
             DoctorHealthClient.get(url: healthURL)
         }
