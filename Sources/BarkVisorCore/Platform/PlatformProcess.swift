@@ -20,7 +20,7 @@ import Foundation
     public let SIGUSR1: Int32 = 10
 
     func usleep(_ usec: UInt32) {
-        let ms = (usec + 999) / 1000
+        let ms = (usec + 999) / 1_000
         Sleep(DWORD(ms == 0 && usec > 0 ? 1 : ms))
     }
 
