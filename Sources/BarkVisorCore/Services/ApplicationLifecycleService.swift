@@ -50,7 +50,9 @@ public enum ApplicationLifecycleService {
             return
         }
         if let yaml = vm.composeYaml {
-            _ = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+            let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+            try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
+            try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
         }
     }
 
