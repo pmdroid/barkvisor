@@ -35,6 +35,15 @@ final class WorkloadApplyServiceTests {
         }
         ComposeRuntime.runner = FakeComposeRunner()
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        DockerInspect.jsonForContainers = { names in
+            let ports: [String: Any] = [
+                "80/tcp": [["HostIp": "0.0.0.0", "HostPort": "8080"]],
+            ]
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": ports]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }
     }
 
     deinit {
@@ -44,6 +53,7 @@ final class WorkloadApplyServiceTests {
         DockerInspect.jsonForContainers = DockerInspect.liveJSON
         ComposeTestIsolation.lock.unlock()
         try? FileManager.default.removeItem(at: tmpDir)
+        ComposeTestIsolation.lock.unlock()
     }
 
     // MARK: - Parse / merge

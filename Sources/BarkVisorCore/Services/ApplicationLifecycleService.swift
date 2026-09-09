@@ -36,7 +36,6 @@ public enum ApplicationLifecycleService {
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
-<<<<<<< HEAD
             bindHost: nil,
             allowedBinds: allowedBinds,
         )
