@@ -120,9 +120,16 @@ enum ComposePorts {
     ) throws {
         try requireBindHost(bindHost)
         if expected.isEmpty { return }
-        if bindings.isEmpty {
-            if allowWildcard { return }
-            throw BarkVisorError.internalError("docker inspect listed no published ports")
+        for port in expected {
+            let proto = port.proto.lowercased()
+            let found = bindings.contains {
+                $0.hostPort == port.hostPort && $0.proto == proto
+            }
+            if !found {
+                throw BarkVisorError.internalError(
+                    "docker inspect missing \(port.hostPort)/\(proto)",
+                )
+            }
         }
         for bind in bindings {
             if isWildcardHost(bind.hostIP) {

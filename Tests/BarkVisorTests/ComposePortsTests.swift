@@ -61,6 +61,41 @@ struct ComposePortsTests {
         )
     }
 
+    @Test func `inspect must include every expected published port`() throws {
+        let lan = "192.168.8.10"
+        let data = Data(
+            """
+            [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"192.168.8.10","HostPort":"8080"}]}}}]
+            """.utf8,
+        )
+        let bindings = try ComposePorts.parseInspectBindings(data)
+        let error = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                bindings,
+                bindHost: lan,
+                expected: [
+                    PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp"),
+                    PublishedPort(hostPort: 1_900, containerPort: 1_900, proto: "udp"),
+                ],
+                allowWildcard: false,
+            )
+        }
+        guard case let .internalError(message) = error else {
+            Issue.record("expected internalError")
+            return
+        }
+        #expect(message.contains("1900/udp"))
+        let empty = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                [],
+                bindHost: lan,
+                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+                allowWildcard: true,
+            )
+        }
+        #expect(empty != nil)
+    }
+
     @Test func `inspect IPv6 any HostIp is a wildcard`() throws {
         let data = Data(
             """
