@@ -83,6 +83,42 @@ struct ComposeAllowlistTests {
         #expect(message == "unsupported compose feature: bind")
     }
 
+    @Test func `named volume parent segments are rejected`() {
+        let short = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - a/../../etc:/etc
+        """
+        let parent = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - ..:/etc
+        """
+        let object = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - type: volume
+                source: a/../../etc
+                target: /etc
+        """
+        for yaml in [short, parent, object] {
+            let error = #expect(throws: BarkVisorError.self) {
+                _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            }
+            guard case let .badRequest(message) = error else {
+                Issue.record("expected badRequest")
+                continue
+            }
+            #expect(message == "unsupported compose feature: bind")
+        }
+    }
+
     @Test func `cap_add and devices are rejected`() {
         let cap = """
         services:
