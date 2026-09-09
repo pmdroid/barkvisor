@@ -82,7 +82,12 @@ public enum ApplicationLifecycleService {
 
     public static func down(vm: VM, dataDir: URL = Config.dataDir) throws {
         let project = projectName(vm)
-        try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        let dir = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir)
+        if FileManager.default.fileExists(atPath: dir.path) {
+            try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        } else {
+            try? ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        }
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
