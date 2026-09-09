@@ -36,6 +36,7 @@ import {
   resolveImageArch,
   type ImageArch,
 } from '../utils/imageArch'
+import { appArchLabel } from '../utils/appCatalog'
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
@@ -612,7 +613,7 @@ async function doDeleteImage() {
         <b>{{ app.name }}</b>
         <span class="app-tagline">{{ app.tagline || app.description || 'Application' }}</span>
         <div class="app-meta">
-          <span class="arch">{{ app.arches.join(' · ') || 'any' }}</span>
+          <span class="arch">{{ appArchLabel(app.arches) }}</span>
           <span class="src">{{ app.source }}</span>
         </div>
         <span v-if="app.unsupportedReasons.length" class="app-block">{{ app.unsupportedReasons.join(', ') }}</span>

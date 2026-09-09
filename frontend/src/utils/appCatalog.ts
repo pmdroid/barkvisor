@@ -33,10 +33,11 @@ export function appInstallBlockedReason(
 
 export function applicationSpecYaml(app: AppCatalogEntry, name: string): string {
   const compose = app.compose.replace(/\n/g, '\n    ')
+  const safeName = JSON.stringify(name.replace(/[\n\r]/g, ''))
   return `apiVersion: barkvisor.dev/v1
 kind: Application
 metadata:
-  name: ${name}
+  name: ${safeName}
 spec:
   runtime: device
   compose: |

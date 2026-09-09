@@ -47,7 +47,13 @@ describe('appCatalog', () => {
   test('renders an Application spec from the catalog compose', () => {
     const yaml = applicationSpecYaml(app(), 'my-whoami')
     expect(yaml).toContain('kind: Application')
-    expect(yaml).toContain('name: my-whoami')
+    expect(yaml).toContain('name: "my-whoami"')
     expect(yaml).toContain('traefik/whoami')
+  })
+
+  test('quotes Workload names that would break YAML', () => {
+    const yaml = applicationSpecYaml(app(), 'foo: bar')
+    expect(yaml).toContain('name: "foo: bar"')
+    expect(yaml).not.toContain('name: foo: bar')
   })
 })
