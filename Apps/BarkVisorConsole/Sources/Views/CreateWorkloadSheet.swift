@@ -16,10 +16,6 @@ struct CreateWorkloadSheet: View {
     @State private var imageLoadID = 0
     @State private var creating = false
     @State private var localError: String?
-    @State private var workloadClass = "house"
-    @State private var openaiPreset = "home-ollama"
-    @State private var byoOpenAIURL = CodingAgentImage.homeOllamaGrantURL
-    @State private var byoOpenAIAPIKey = ""
     @State private var networks: [NetworkRecord] = []
     @State private var networkID = ""
 
@@ -59,31 +55,6 @@ struct CreateWorkloadSheet: View {
                         ForEach(readyImages) { image in
                             Text("\(image.name) · \(image.arch)").tag(image.id)
                         }
-                    }
-                }
-
-                Picker("Class", selection: $workloadClass) {
-                    Text("House").tag("house")
-                    Text("Agent").tag("agent")
-                }
-
-                if isCodingAgent {
-                    Picker("OPENAI_BASE_URL", selection: $openaiPreset) {
-                        Text("Home Ollama grant").tag("home-ollama")
-                        Text("Bring your own").tag("byo")
-                    }
-                    if openaiPreset == "byo" {
-                        TextField("https://api.example/v1", text: $byoOpenAIURL)
-                        #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                        #endif
-                        SecureField("OPENAI_API_KEY", text: $byoOpenAIAPIKey)
-                        #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        #endif
                     }
                 }
             } footer: {
@@ -136,7 +107,6 @@ struct CreateWorkloadSheet: View {
             .task { await bootstrap() }
             .task(id: deviceID) { await loadImages() }
             .task(id: deviceID) { await loadNetworks() }
-            .onChange(of: imageID) { _, _ in applyCodingAgentDefaults() }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
@@ -162,10 +132,6 @@ struct CreateWorkloadSheet: View {
         readyImages.first { $0.id == imageID }
     }
 
-    private var isCodingAgent: Bool {
-        CodingAgentImage.matches(name: selectedImage?.name)
-    }
-
     private var bridgedNetworks: [NetworkRecord] {
         networks.filter { $0.mode.lowercased() == "bridged" }
     }
@@ -183,13 +149,7 @@ struct CreateWorkloadSheet: View {
     }
 
     private var footerCopy: String {
-        if isCodingAgent {
-            let url = openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL
-            return "Agent cage. OPENAI_BASE_URL \(url). Presets share this Library image. \(CreateWorkload.webEditCopy)"
-        }
-        return workloadClass == "agent"
-            ? "\(CreateWorkload.agentGrantCopy) NAT out only; no USB. \(CreateWorkload.webEditCopy)"
-            : "Default disk and implicit NAT. \(CreateWorkload.webEditCopy)"
+        "Default disk and implicit NAT. \(CreateWorkload.webEditCopy)"
     }
 
     private var canSubmit: Bool {
@@ -233,14 +193,6 @@ struct CreateWorkloadSheet: View {
         ) else { return }
         images = loaded ?? []
         imageID = CreateWorkload.ready(loaded ?? []).first?.id ?? ""
-        applyCodingAgentDefaults()
-    }
-
-    private func applyCodingAgentDefaults() {
-        workloadClass = CodingAgentImage.defaultClass(forName: selectedImage?.name)
-        if !CodingAgentImage.matches(name: selectedImage?.name) {
-            openaiPreset = "home-ollama"
-        }
     }
 
     private func loadNetworks() async {
@@ -262,17 +214,10 @@ struct CreateWorkloadSheet: View {
         creating = true
         localError = nil
         defer { creating = false }
-        let openaiURL = isCodingAgent
-            ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL)
-            : nil
-        let openaiKey = isCodingAgent && openaiPreset == "byo" ? byoOpenAIAPIKey : nil
         guard let created = await model.createWorkload(
             name: name,
             image: selectedImage,
             on: device,
-            workloadClass: workloadClass,
-            openaiBaseURL: openaiURL,
-            openaiAPIKey: openaiKey,
             network: selectedNetwork,
         ) else {
             localError = model.banner ?? "Could not create the Workload"

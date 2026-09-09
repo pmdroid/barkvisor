@@ -27,10 +27,6 @@ struct CreateVMWizardView: View {
     @State private var networkID = ""
     @State private var diskSource: CreateVMWizard.DiskSource = .new
     @State private var existingDiskID = ""
-    @State private var workloadClass = "house"
-    @State private var openaiPreset = "home-ollama"
-    @State private var byoOpenAIURL = CodingAgentImage.homeOllamaGrantURL
-    @State private var byoOpenAIAPIKey = ""
     @State private var loading = false
     @State private var creating = false
     @State private var localError: String?
@@ -119,11 +115,6 @@ struct CreateVMWizardView: View {
                     }
                 }
             }
-            if CreateVMWizard.codingAgentImage(in: images) != nil {
-                galleryCard(title: "Coding Agent", subtitle: "Sandboxed dev environment", selected: kind == .codingAgent) {
-                    pickCodingAgent()
-                }
-            }
             if CreateVMWizard.windowsImage(in: images) != nil {
                 galleryCard(title: "Windows", subtitle: "Windows desktop from a ready ISO", selected: kind == .windows) {
                     pickWindows()
@@ -191,29 +182,6 @@ struct CreateVMWizardView: View {
                         Text(CreateVMWizard.sshKeyLabel(key, keyCount: sshKeys.count)).tag(key.id)
                     }
                 }
-            }
-        }
-
-        if kind == .codingAgent {
-            Section("Agent") {
-                Picker("OPENAI_BASE_URL", selection: $openaiPreset) {
-                    Text("Home Ollama grant").tag("home-ollama")
-                    Text("Bring your own").tag("byo")
-                }
-                if openaiPreset == "byo" {
-                    TextField("https://api.example/v1", text: $byoOpenAIURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    SecureField("OPENAI_API_KEY", text: $byoOpenAIAPIKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-            }
-        } else if kind != .template {
-            Picker("Class", selection: $workloadClass) {
-                Text("House").tag("house")
-                Text("Agent").tag("agent")
             }
         }
 
@@ -285,7 +253,7 @@ struct CreateVMWizardView: View {
     }
 
     private var showsSharedFolders: Bool {
-        kind != .codingAgent && workloadClass != "agent"
+        true
     }
 
     private func galleryCard(title: String, subtitle: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -337,7 +305,6 @@ struct CreateVMWizardView: View {
     private var resolvedImage: LibraryImage? {
         switch kind {
         case .windows: CreateVMWizard.windowsImage(in: images)
-        case .codingAgent: CreateVMWizard.codingAgentImage(in: images)
         case .custom: selectedImage
         default: nil
         }
@@ -355,7 +322,6 @@ struct CreateVMWizardView: View {
         switch kind {
         case .template: true
         case .custom: resolvedImage.map { !CreateWorkload.isISO($0) } ?? false
-        case .codingAgent: true
         default: false
         }
     }
@@ -451,16 +417,6 @@ struct CreateVMWizardView: View {
         step = .configure
     }
 
-    private func pickCodingAgent() {
-        kind = .codingAgent
-        selectedTemplate = nil
-        selectedImage = CreateVMWizard.codingAgentImage(in: images)
-        name = CreateVMWizard.defaultName(for: .codingAgent, template: nil)
-        workloadClass = "agent"
-        presetID = "medium"
-        step = .configure
-    }
-
     private func goBack() {
         localError = nil
         switch step {
@@ -495,9 +451,6 @@ struct CreateVMWizardView: View {
             diskSource: diskSource,
             diskSizeGB: diskGB,
             existingDiskID: existingDiskID,
-            workloadClass: workloadClass,
-            openaiBaseURL: kind == .codingAgent ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL) : nil,
-            openaiAPIKey: kind == .codingAgent && openaiPreset == "byo" ? byoOpenAIAPIKey : nil,
             sharedPaths: sharedPaths,
         ) {
             onCreated(HomeWorkloadRow(workload: created, device: device))

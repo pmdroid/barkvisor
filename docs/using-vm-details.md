@@ -24,7 +24,7 @@ Read-only facts grouped into sections: **Hardware**, **Network**, **Guest**, **D
 
 ### Console
 
-A console in the browser (serial console, or **Terminal** for coding-agent Workloads).
+A console in the browser (serial console).
 
 ### VNC
 

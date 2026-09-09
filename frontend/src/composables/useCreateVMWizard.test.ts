@@ -215,25 +215,12 @@ describe('useCreateVMWizard (magazine)', () => {
     expect(wizard.rawDiskAvailable.value).toBe(false)
   })
 
-  test('coding agent card uses cloud-init hostname hint', async () => {
-    const library = useHomeLibraryStore()
-    const coding = readyImage({
-      id: 'ca',
-      name: 'Coding Agent',
-      imageType: 'cloud-image',
-      arch: 'arm64',
-    })
-    library.images = [{
-      ...coding,
-      libraryKey: homeImageKey(coding),
-      sourceHostIds: ['desk'],
-      copies: [{ hostId: 'desk', imageId: coding.id, status: 'ready' }],
-    }]
+  test('custom cloud image uses cloud-init hostname hint', async () => {
     const wizard = useCreateVMWizard(() => {})
-    wizard.selectGalleryCodingAgent()
+    wizard.selectGalleryCustom()
+    wizard.mode.value = 'cloud'
     await nextTick()
     expect(wizard.showHostnameHint.value).toBe(true)
-    expect(wizard.workloadClass.value).toBe('agent')
   })
 })
 
@@ -950,12 +937,4 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.currentStepLabel.value).toBe('Gallery')
   })
 
-  test('coding agent card is hidden when no ready agent image exists', () => {
-    const library = useHomeLibraryStore()
-    library.images = []
-    const wizard = useCreateVMWizard(() => {})
-    expect(wizard.showCodingAgentCard.value).toBe(false)
-    wizard.selectGalleryCodingAgent()
-    expect(wizard.galleryKind.value).toBeNull()
-  })
 })

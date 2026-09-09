@@ -38,13 +38,11 @@ const blockedReason = computed(() => {
         <CreateVMGalleryStep
           v-if="wizard.currentStepLabel.value === 'Gallery'"
           :templates="wizard.galleryTemplates.value"
-          :show-coding-agent="wizard.showCodingAgentCard.value"
           :selected-kind="wizard.galleryKind.value"
           :selected-template-slug="wizard.selectedTemplateSlug.value"
           @select-template="wizard.selectGalleryTemplate"
           @select-windows="wizard.selectGalleryWindows"
           @select-custom="wizard.selectGalleryCustom"
-          @select-coding-agent="wizard.selectGalleryCodingAgent"
         />
 
         <CreateVMConfigureStep
@@ -108,7 +106,7 @@ const blockedReason = computed(() => {
           :block-device-path="wizard.blockDevicePath.value"
           :format-bytes="wizard.formatBytes"
           :shared-paths="wizard.sharedPaths.value"
-          :show-shared-folders="!wizard.isAgent.value"
+          :show-shared-folders="true"
           :device="wizard.selectedDevice.value"
           @update:disk-source="wizard.diskSource.value = $event"
           @update:disk-size-g-b="wizard.diskSizeGB.value = $event"

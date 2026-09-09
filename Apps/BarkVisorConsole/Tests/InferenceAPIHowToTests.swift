@@ -79,7 +79,7 @@ struct InferenceAPIHowToTests {
         #expect(howTo.cageDnsLine == InferenceAPIHowTo.cageDnsLine)
         #expect(!howTo.cageDnsLine.lowercased().contains("mtls"))
         #expect(!howTo.cageDnsLine.lowercased().contains("cidr"))
-        #expect(howTo.cageBaseURL == CodingAgentImage.homeOllamaGrantURL)
+        #expect(howTo.cageBaseURL == "http://10.0.2.2:11434/v1")
     }
 
     @Test func `ipv 6 origin is bracketed cage stays I pv 4`() {
@@ -151,7 +151,7 @@ struct InferenceAPIHowToTests {
             tailnetHost: "100.64.1.2",
         )
         #expect(tailnet.lanBaseURL == "http://100.64.1.2:7777/v1")
-        #expect(tailnet.cageBaseURL == CodingAgentImage.homeOllamaGrantURL)
+        #expect(tailnet.cageBaseURL == "http://10.0.2.2:11434/v1")
 
         let lan = InferenceAPIHowTo.snippets(
             role: .thisDevice,
@@ -159,6 +159,6 @@ struct InferenceAPIHowToTests {
             memberHost: nil,
         )
         #expect(lan.lanBaseURL == "http://192.168.30.1:7777/v1")
-        #expect(lan.cageBaseURL == CodingAgentImage.homeOllamaGrantURL)
+        #expect(lan.cageBaseURL == "http://10.0.2.2:11434/v1")
     }
 }

@@ -35,7 +35,7 @@ import type {
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
 import ConsolePanel from '../components/ConsolePanel.vue'
-import ChatPanel from '../components/ChatPanel.vue'
+
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
 import LogsPanel from '../components/LogsPanel.vue'
@@ -94,15 +94,6 @@ import {
   startOnBootFooterFromWorkload,
   startOnBootLabel,
 } from '../utils/workloadStartOnBoot'
-import {
-  consoleTabLabel,
-  isCodingAgentSession,
-  SESSION_NO_PUSH,
-  sessionReceiptCopy,
-  sessionWarningCopy,
-} from '../utils/codingAgentSession'
-import { chatIsVisible } from '../utils/chatCompletions'
-import { useOllamaStore } from '../stores/ollama'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -176,15 +167,7 @@ const vm = computed(() => {
 
 const agentCage = computed(() => isAgentWorkload(vm.value))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
-
-const ollamaStore = useOllamaStore()
-const codingAgent = computed(() => isCodingAgentSession(vm.value))
-const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
-const consoleLabel = computed(() => consoleTabLabel(vm.value))
-const session = computed(() => vm.value?.session ?? null)
-const sessionReceipt = computed(() => sessionReceiptCopy(session.value?.receipt, vm.value?.state))
-const showResetDialog = ref(false)
-const showBurnDialog = ref(false)
+const consoleLabel = 'Console'
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -200,10 +183,6 @@ watch(isMemberDetail, (remote) => {
 watch(showMemberConnect, (ok) => {
   if (!isMemberDetail.value || !memberDevice.value) return
   if (!ok && (tab.value === 'console' || tab.value === 'vnc')) tab.value = 'overview'
-})
-
-watch(showAgentChat, (ok) => {
-  if (!ok && tab.value === 'chat') tab.value = 'overview'
 })
 
 watch(tab, (value) => {
@@ -692,31 +671,6 @@ async function startWorkload() {
     return
   }
   await store.start(vmId.value)
-}
-
-async function sessionAction(kind: 'resume' | 'reset' | 'burn') {
-  if (isMemberDetail.value) {
-    const device = memberDevice.value
-    if (!device || !canFetchDeviceWorkloads(device)) return
-    if (kind === 'burn') {
-      await homeWorkloads.burnSession(device, vmId.value)
-      router.push('/vms')
-      return
-    }
-    if (kind === 'resume') await homeWorkloads.resumeSession(device, vmId.value)
-    else await homeWorkloads.resetSession(device, vmId.value)
-    guestInfo.value = null
-    guestInfoLoaded.value = false
-    await fetchGuestInfo()
-    return
-  }
-  if (kind === 'burn') {
-    await store.burnSession(vmId.value)
-    router.push('/vms')
-    return
-  }
-  if (kind === 'resume') await store.resumeSession(vmId.value)
-  else await store.resetSession(vmId.value)
 }
 
 async function restartWorkload() {
@@ -1441,7 +1395,6 @@ const healthBanner = computed(() => {
 
     <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="showAgentChat" class="tab" :class="{ active: tab === 'chat' }" @click="tab = 'chat'">Chat</div>
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
@@ -1449,7 +1402,6 @@ const healthBanner = computed(() => {
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="showAgentChat" class="tab" :class="{ active: tab === 'chat' }" @click="tab = 'chat'">Chat</div>
       <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
@@ -1475,24 +1427,6 @@ const healthBanner = computed(() => {
         </div>
         <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
 
-        <div v-if="codingAgent && session?.warning" class="ops-banner amber">
-          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
-          <div>
-            <div class="ops-banner-title">{{ sessionWarningCopy(session.remainingSeconds) }}</div>
-          </div>
-        </div>
-
-        <div v-if="codingAgent && sessionReceipt" class="ops-banner" :class="{ amber: !sessionReceipt.loud }">
-          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
-          <div>
-            <div class="ops-banner-title">Stopped at {{ sessionReceipt.stoppedAt }}.</div>
-            <div class="ops-banner-sub">
-              <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
-              <span v-else>Last git push {{ sessionReceipt.git }}.</span>
-            </div>
-          </div>
-        </div>
-
         <div v-if="vm.pendingChanges" class="ops-banner amber">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
           <div>
@@ -1517,31 +1451,6 @@ const healthBanner = computed(() => {
             <div v-else class="ops-banner-sub">The VM cannot start until the bridge is set up.</div>
           </div>
           <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :loading="!!bridgeLoading" loading-text="Setting up..." @click="setupBridgeFromDetail">Setup Bridge</AppButton>
-        </div>
-
-        <div v-if="codingAgent && session" class="sheet">
-          <div class="sheet-head"><h3>Session</h3></div>
-          <div class="facts">
-            <div class="detail-row">
-              <span class="detail-label">Session TTL</span>
-              <span>{{ session.expiryAction === 'stop' ? 'Stop (keep disk)' : session.expiryAction }}</span>
-            </div>
-            <div v-if="session.expiresAt" class="detail-row">
-              <span class="detail-label">Expires</span>
-              <span class="mono">{{ session.expiresAt }}</span>
-            </div>
-          </div>
-          <div class="item" style="gap:8px;flex-wrap:wrap">
-            <AppButton
-              v-if="vm.state === 'stopped' || vm.state === 'error'"
-              variant="primary"
-              size="sm"
-              :disabled="controlDisabled"
-              @click="action('resume', () => sessionAction('resume'))"
-            >Resume</AppButton>
-            <AppButton size="sm" :disabled="controlDisabled" @click="showResetDialog = true">Reset to Library image</AppButton>
-            <AppButton size="sm" variant="danger" :disabled="controlDisabled" @click="showBurnDialog = true">Burn</AppButton>
-          </div>
         </div>
 
         <div class="sheet">
@@ -1898,10 +1807,6 @@ const healthBanner = computed(() => {
       </div>
     </div>
 
-    <ChatPanel
-      v-if="tab === 'chat' && showAgentChat"
-      compact
-    />
     <ConsolePanel
       v-if="tab === 'console' && showMemberConnect"
       :key="`console-${vmId}-${isMemberDetail ? hostId : 'local'}`"
@@ -2165,31 +2070,6 @@ const healthBanner = computed(() => {
     </template>
   </AppModal>
 
-  <!-- Delete VM Dialog -->
-  <div v-if="showResetDialog" class="modal-overlay" @click.self="showResetDialog = false">
-    <div class="modal" style="max-width:420px">
-      <h2>Reset to Library image</h2>
-      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
-        Replace the boot disk with a fresh Coding Agent image. Guest files that were not pushed are lost.
-      </p>
-      <div class="modal-actions">
-        <AppButton @click="showResetDialog = false">Cancel</AppButton>
-        <AppButton variant="danger" :disabled="controlDisabled" @click="showResetDialog = false; action('reset', () => sessionAction('reset'))">Reset</AppButton>
-      </div>
-    </div>
-  </div>
-  <div v-if="showBurnDialog" class="modal-overlay" @click.self="showBurnDialog = false">
-    <div class="modal" style="max-width:420px">
-      <h2>Burn session</h2>
-      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
-        Destroy <strong>{{ vm?.name }}</strong> and unload the local-model grant. This does not keep the disk.
-      </p>
-      <div class="modal-actions">
-        <AppButton @click="showBurnDialog = false">Cancel</AppButton>
-        <AppButton variant="danger" :disabled="controlDisabled" @click="showBurnDialog = false; action('burn', () => sessionAction('burn'))">Burn</AppButton>
-      </div>
-    </div>
-  </div>
   <div v-if="showDeleteDialog" class="modal-overlay" @click.self="!deletingVM && (showDeleteDialog = false)">
     <div class="modal" style="max-width:420px">
       <h2>Delete VM</h2>

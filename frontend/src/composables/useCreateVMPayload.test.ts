@@ -45,33 +45,16 @@ describe('useCreateVMPayload (PAS-240)', () => {
     expect(req.workloadClass).toBeUndefined()
   })
 
-  test('coding-agent create carries Agent class and cloud-init OPENAI_BASE_URL', () => {
+  test('create payload omits workloadClass', () => {
     const req = buildCreateVMPayload({
       ...base,
       mode: 'cloud',
-      imageId: 'img-coding',
-      workloadClass: 'agent',
-      userData: 'packages:\n  - git\nwrite_files:\n  - path: /etc/profile.d/barkvisor-openai.sh\n    content: |\n      export OPENAI_BASE_URL="http://10.0.2.2:11434/v1"\n',
+      imageId: 'img-cloud',
+      userData: 'packages:\n  - git\n',
     })
-    expect(req.workloadClass).toBe('agent')
-    expect(req.cloudImageId).toBe('img-coding')
-    expect(req.cloudInit?.userData).toContain('OPENAI_BASE_URL="http://10.0.2.2:11434/v1"')
+    expect(req.workloadClass).toBeUndefined()
+    expect(req.cloudImageId).toBe('img-cloud')
     expect(req.cloudInit?.userData).toContain('git')
-  })
-
-  test('agent class strips USB, shares, and hostfwds', () => {
-    const req = buildCreateVMPayload({
-      ...base,
-      usbAvailable: true,
-      usbDevices: [{ vendorId: '0x1234', productId: '0x5678' }],
-      sharedPaths: ['/tmp/share'],
-      portForwards: [{ protocol: 'tcp', hostPort: 8080, guestPort: 80 }],
-      workloadClass: 'agent',
-    })
-    expect(req.workloadClass).toBe('agent')
-    expect(req.usbDevices).toBeUndefined()
-    expect(req.sharedPaths).toBeUndefined()
-    expect(req.portForwards).toBeUndefined()
   })
 
   test('guest-type is a call-site value, not resolved here', () => {

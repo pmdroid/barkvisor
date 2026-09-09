@@ -11,24 +11,7 @@ public enum VMLifecycleService {
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> CreateVMResult {
-        var params = params
-        if let imageId = params.cloudImageId {
-            let identified = try await db.read { db -> (name: String?, slug: String?) in
-                guard let image = try VMImage.fetchOne(db, key: imageId) else {
-                    return (nil, nil)
-                }
-                let slug = try RepositoryImage
-                    .filter(Column("name") == image.name)
-                    .filter(Column("arch") == image.arch)
-                    .fetchOne(db)?.slug
-                return (image.name, slug)
-            }
-            params = try CodingAgentImage.applyingCreateDefaults(
-                params: params,
-                imageName: identified.name,
-                imageSlug: identified.slug,
-            )
-        }
+        let params = params.droppingAgentClass()
         try await validateCreateVMInputs(params: params, db: db)
 
         let now = iso8601.string(from: Date())
@@ -114,7 +97,7 @@ public enum VMLifecycleService {
 
         let encodedFields = encodeUpdateFields(params: normalized)
 
-        let vm = try await db.write { db -> VM in
+        return try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -143,10 +126,6 @@ public enum VMLifecycleService {
             try vm.update(db)
             return vm
         }
-        if params.gpuDevices != nil {
-            try syncCodingAgentCloudInitForGPU(vm: vm)
-        }
-        return vm
     }
 
     /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
@@ -172,7 +151,7 @@ public enum VMLifecycleService {
             normalized.spec.gpu = gpuDevices.map { GPUPassthroughService.workload(from: $0) }
         }
         let spec = normalized
-        let (vm, gpuChanged) = try await db.write { db -> (VM, Bool) in
+        return try await db.write { db in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -188,12 +167,8 @@ public enum VMLifecycleService {
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
-            return (vm, before.gpuDevices != vm.gpuDevices)
+            return vm
         }
-        if gpuChanged {
-            try syncCodingAgentCloudInitForGPU(vm: vm)
-        }
-        return vm
     }
 
     // MARK: - Delete VM
@@ -384,9 +359,7 @@ extension VMLifecycleService {
             vmID: vmID, vmName: params.name,
             sshKeys: ciKeys,
             userData: ciUserData,
-            instanceID: CodingAgentImage.cloudInitInstanceID(
-                vmID: vmID, userData: ciUserData, gpuDevices: params.gpuDevices,
-            ),
+            instanceID: vmID,
             macAddress: macAddress,
         )
         return isoURL.path
@@ -452,18 +425,6 @@ extension VMLifecycleService {
         )
         vm.setOverrides(params.overrides)
         vm.setHealth(params.health)
-        if (try? WorkloadClass.parse(params.workloadClass)) == .agent {
-            let grant = CodingAgentSession.usesHomeOllamaGrant(userData: params.cloudInit?.userData)
-                ? CodingAgentSession.grant
-                : "byo"
-            vm.setSession(
-                CodingAgentLifecycle.seed(
-                    grant: grant,
-                    cloudImageId: params.cloudImageId,
-                    diskSizeGB: params.diskSizeGB,
-                ),
-            )
-        }
         vm.syncSpecProjection(bumpGeneration: false)
         return vm
     }
@@ -511,7 +472,6 @@ extension VMLifecycleService {
         let sshKeys = params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? []
         let userData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
         let vmName = params.name
-        let gpuDevices = params.gpuDevices
         let hasCloudInit = !sshKeys.isEmpty || !(userData ?? "").isEmpty
 
         await backgroundTasks.submit(taskID, kind: .vmProvision) { @Sendable in
@@ -529,9 +489,7 @@ extension VMLifecycleService {
                         try CloudInitService.generateISO(
                             vmID: vmID, vmName: vmName,
                             sshKeys: sshKeys, userData: userData,
-                            instanceID: CodingAgentImage.cloudInitInstanceID(
-                                vmID: vmID, userData: userData, gpuDevices: gpuDevices,
-                            ),
+                            instanceID: vmID,
                             macAddress: mac,
                         ).path
                     } else {

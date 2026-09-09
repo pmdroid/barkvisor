@@ -18,8 +18,6 @@ extension VMManager {
             )
             return
         }
-        await CodingAgentSessionStore.shared.remove(vmID: vmID)
-
         let newState = status == 0 ? "stopped" : "error"
         let errorMsg = status != 0 ? "QEMU exited with status \(status)" : nil
         if let errorMsg {
@@ -59,8 +57,6 @@ extension VMManager {
         } catch {
             Log.vm.error("Failed to update DB state for terminated VM \(vmID): \(error)", vm: vmID)
         }
-
-        await CodingAgentLifecycleService.onTerminated(vmID: vmID, db: dbPool)
 
         // Notify SSE listeners
         let event = VMStateEvent(id: vmID, state: newState, error: errorMsg)
@@ -220,7 +216,6 @@ extension VMManager {
     }
 
     public func cleanup(vmID: String) async {
-        await CodingAgentSessionStore.shared.remove(vmID: vmID)
         if let running = runningVMs[vmID] {
             let remainingAgentVMs = await remainingAgentVMIDs(excluding: vmID)
             AgentNetworkCage.removeLinuxFilter(vmID: vmID, remainingAgentVMs: remainingAgentVMs)

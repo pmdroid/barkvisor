@@ -6,7 +6,6 @@ enum CreateVMWizard {
         case template
         case windows
         case custom
-        case codingAgent
     }
 
     enum Step: Int, CaseIterable {
@@ -65,10 +64,6 @@ enum CreateVMWizard {
         CreateWorkload.ready(images).first { CreateWorkload.isWindowsImageName($0.name) }
     }
 
-    static func codingAgentImage(in images: [LibraryImage]) -> LibraryImage? {
-        CreateWorkload.ready(images).first { CodingAgentImage.matches(name: $0.name) }
-    }
-
     static func sshKeyLabel(_ key: SSHKeyRecord, keyCount: Int) -> String {
         key.isDefault && keyCount > 1 ? "\(key.name) (default)" : key.name
     }
@@ -78,7 +73,6 @@ enum CreateVMWizard {
         case .template:
             template?.name.lowercased().replacingOccurrences(of: " ", with: "-") ?? "workload"
         case .windows: "windows"
-        case .codingAgent: "agent"
         case .custom: "workload"
         }
     }
@@ -125,7 +119,7 @@ enum CreateVMWizard {
             guard let template else { return false }
             if template.declaresSSHKeys, sshKey == nil { return false }
             return templateInputsComplete(template, values: templateInputs)
-        case .windows, .custom, .codingAgent:
+        case .windows, .custom:
             guard let image, image.isReady else { return false }
             if requiresSSH, sshKey == nil { return false }
             return true
@@ -150,7 +144,6 @@ enum CreateVMWizard {
         switch kind {
         case .template: template?.declaresSSHKeys == true
         case .windows: false
-        case .codingAgent: false
         case .custom: image.map { !CreateWorkload.isISO($0) } ?? false
         }
     }

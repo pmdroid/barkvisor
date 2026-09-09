@@ -54,10 +54,6 @@ extension VM {
         JSONColumnCoding.decode(WorkloadHealthSpec.self, from: healthJson)
     }
 
-    public var decodedSession: CodingAgentSessionState? {
-        JSONColumnCoding.decode(CodingAgentSessionState.self, from: sessionJson)
-    }
-
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
@@ -98,9 +94,5 @@ extension VM {
         } else {
             healthJson = nil
         }
-    }
-
-    public mutating func setSession(_ session: CodingAgentSessionState?) {
-        sessionJson = JSONColumnCoding.encode(session)
     }
 }

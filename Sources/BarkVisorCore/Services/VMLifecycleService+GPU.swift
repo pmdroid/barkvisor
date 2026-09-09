@@ -75,25 +75,6 @@ extension VMLifecycleService {
         )
     }
 
-    static func syncCodingAgentCloudInitForGPU(vm: VM) throws {
-        let stored = CloudInitService.storedUserData(vmID: vm.id)
-        guard CodingAgentImage.isManagedUserData(stored) else { return }
-        let gpuAttached = GPUPassthroughService.hasDisplayGPU(vm.decodedGPUDevices)
-        let userData = CodingAgentImage.userDataForGPU(
-            gpuAttached: gpuAttached, existingUserData: stored,
-        )
-        try CloudInitService.validateUserData(userData)
-        let keys = CloudInitService.sshAuthorizedKeys(from: stored)
-        _ = try CloudInitService.generateISO(
-            vmID: vm.id,
-            vmName: vm.name,
-            sshKeys: keys,
-            userData: userData,
-            instanceID: CodingAgentImage.cloudInitInstanceID(vmID: vm.id, gpuAttached: gpuAttached),
-            macAddress: vm.macAddress,
-        )
-    }
-
     static func releaseGPUDevices(_ devices: [GPUPassthroughDevice]?) {
         GPUPassthroughService.releaseVFIO(devices ?? [])
     }
