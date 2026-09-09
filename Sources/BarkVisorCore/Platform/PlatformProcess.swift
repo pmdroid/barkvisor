@@ -14,24 +14,34 @@ import Foundation
     public typealias gid_t = UInt32
     // swiftlint:enable type_name
 
-    let SIGTERM: Int32 = 15
-    let SIGKILL: Int32 = 9
-    let SIGINT: Int32 = 2
-    let SIGUSR1: Int32 = 10
+    public let SIGTERM: Int32 = 15
+    public let SIGKILL: Int32 = 9
+    public let SIGINT: Int32 = 2
+    public let SIGUSR1: Int32 = 10
+
+    func usleep(_ usec: UInt32) {
+        let ms = (usec + 999) / 1000
+        Sleep(DWORD(ms == 0 && usec > 0 ? 1 : ms))
+    }
+
+    func openWindowsProcess(_ pid: Int32, terminate: Bool) -> HANDLE? {
+        var access = UInt32(truncatingIfNeeded: PROCESS_QUERY_LIMITED_INFORMATION)
+        if terminate {
+            access |= UInt32(truncatingIfNeeded: PROCESS_TERMINATE)
+        }
+        let handle = OpenProcess(DWORD(access), WindowsBool(false), DWORD(UInt32(bitPattern: pid)))
+        guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+        return handle
+    }
 
     @discardableResult
     func kill(_ pid: Int32, _ signal: Int32) -> Int32 {
         guard pid > 0 else { return -1 }
-        var access = DWORD(PROCESS_QUERY_LIMITED_INFORMATION)
-        if signal != 0 {
-            access |= DWORD(PROCESS_TERMINATE)
-        }
-        let handle = OpenProcess(access, false, DWORD(bitPattern: UInt32(bitPattern: pid)))
-        guard let handle, handle != INVALID_HANDLE_VALUE else { return -1 }
+        guard let handle = openWindowsProcess(pid, terminate: signal != 0) else { return -1 }
         defer { CloseHandle(handle) }
         var code: DWORD = 0
         guard GetExitCodeProcess(handle, &code) else { return -1 }
-        if code != DWORD(STILL_ACTIVE) { return -1 }
+        if code != DWORD(UInt32(bitPattern: STILL_ACTIVE)) { return -1 }
         if signal == 0 { return 0 }
         return TerminateProcess(handle, 1) ? 0 : -1
     }
@@ -240,11 +250,7 @@ public enum PlatformProcess {
     #if os(Windows)
         private static func windowsExecutablePath(pid: Int32) -> String? {
             guard pid > 0 else { return nil }
-            let handle = OpenProcess(
-                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
-                false,
-                DWORD(bitPattern: UInt32(bitPattern: pid)),
-            )
+            let handle = openWindowsProcess(pid, terminate: false)
             guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
             defer { CloseHandle(handle) }
             var buf = [WCHAR](repeating: 0, count: 32_768)

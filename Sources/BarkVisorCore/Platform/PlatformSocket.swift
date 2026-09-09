@@ -97,7 +97,7 @@ public enum PlatformSocket {
 #if os(Windows)
     private enum WindowsSockets {
         private static let lock = NSLock()
-        private static var started = false
+        nonisolated(unsafe) private static var started = false
 
         static func start() throws {
             lock.lock()

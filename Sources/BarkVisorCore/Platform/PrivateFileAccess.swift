@@ -40,8 +40,8 @@ public enum PrivateFileAccess {
                 throw CocoaError(.fileWriteUnknown)
             }
             defer { _ = LocalFree(descriptor) }
-            var present: BOOL = false
-            var defaulted: BOOL = false
+            var present = WindowsBool(false)
+            var defaulted = WindowsBool(false)
             var acl: PACL?
             guard GetSecurityDescriptorDacl(descriptor, &present, &acl, &defaulted),
                   present != false,

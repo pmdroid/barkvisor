@@ -292,12 +292,7 @@ public actor MetricsCollector {
             let percent = (delta / ticks) / 5.0 * 100.0
             return min(max(percent, 0), 100.0)
         #elseif os(Windows)
-            let handle = OpenProcess(
-                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
-                false,
-                DWORD(bitPattern: UInt32(bitPattern: pid)),
-            )
-            guard let handle, handle != INVALID_HANDLE_VALUE else { return 0 }
+            guard let handle = openWindowsProcess(pid, terminate: false) else { return 0 }
             defer { CloseHandle(handle) }
             var created = FILETIME()
             var exited = FILETIME()
@@ -324,16 +319,11 @@ public actor MetricsCollector {
 
     private func processWorkingSetMB(pid: Int32) -> Int {
         #if os(Windows)
-            let handle = OpenProcess(
-                DWORD(PROCESS_QUERY_LIMITED_INFORMATION),
-                false,
-                DWORD(bitPattern: UInt32(bitPattern: pid)),
-            )
-            guard let handle, handle != INVALID_HANDLE_VALUE else { return 0 }
+            guard let handle = openWindowsProcess(pid, terminate: false) else { return 0 }
             defer { CloseHandle(handle) }
             var counters = PROCESS_MEMORY_COUNTERS()
-            counters.cb = DWORD(MemoryLayout<PROCESS_MEMORY_COUNTERS>.size)
-            guard GetProcessMemoryInfo(handle, &counters, counters.cb) else { return 0 }
+            counters.cb = DWORD(UInt32(MemoryLayout<PROCESS_MEMORY_COUNTERS>.size))
+            guard K32GetProcessMemoryInfo(handle, &counters, counters.cb) else { return 0 }
             return Int(counters.WorkingSetSize / (1_024 * 1_024))
         #else
             _ = pid
