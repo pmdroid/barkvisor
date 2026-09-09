@@ -130,7 +130,7 @@ $resolvedPath = Join-Path (Get-Location) "Package.resolved"
 if (Test-Path -LiteralPath $resolvedPath) {
     $resolved = [System.IO.File]::ReadAllText($resolvedPath)
     $resolved = $resolved.Replace("abcf5312eb8ed2fb11916078aef7c46b06f20813", "962499a2c269657f425fdab711e4d06f6ad6aaf1")
-    $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "59928ccd4f13c7dc665aec90ed11fde3803cd3b0")
+    $resolved = $resolved.Replace("df9c3406028e3297246e6e7081977a167318b692", "f0de289ffaa0e605df9193428b0865603c0b261f")
     $resolved = $resolved.Replace("8666c92dbbb3c8eefc8008c9c8dcf50bfd302167", "3aaa8ccffd696b2109ed74a2608d3c58913daa0d")
     $resolved = $resolved.Replace("c5784ca81535cc6a92d900f84abd070dfb0e9392", "25e948d9bfa7cf0a135a7469cc730f34c00b01c6")
     $resolved = $resolved.Replace("a8db2dbda8b3cdc8a61bd35128590bd296e85563", "25532789b15adeb93098a5793bb06a3d39edce55")
