@@ -162,6 +162,13 @@ final class ApplicationLifecycleServiceTests {
                 try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
                 Issue.record("expected restart inspect failure")
             } catch {
+                if let stored = try await db.read({ db in
+                    try VM.fetchOne(db, key: "whoami-restart")
+                }) {
+                    vm = stored
+                } else {
+                    Issue.record("whoami-restart row missing after restart failure")
+                }
                 let claims = try await db.read { db in try PortRegistry.claims(db: db) }
                 #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
                 #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
