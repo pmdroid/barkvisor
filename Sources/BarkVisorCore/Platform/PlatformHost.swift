@@ -20,7 +20,7 @@ public enum PlatformHost {
             sysctlbyname("hw.ncpu", &ncpu, &size, nil, 0)
             return max(Int(ncpu), 1)
         #elseif os(Windows)
-            let n = Int(GetActiveProcessorCount(ALL_PROCESSOR_GROUPS))
+            let n = Int(GetActiveProcessorCount(WORD(truncatingIfNeeded: ALL_PROCESSOR_GROUPS)))
             return n > 0 ? n : max(ProcessInfo.processInfo.processorCount, 1)
         #else
             let n = sysconf(Int32(_SC_NPROCESSORS_ONLN))
@@ -37,7 +37,7 @@ public enum PlatformHost {
             return memSize
         #elseif os(Windows)
             var status = MEMORYSTATUSEX()
-            status.dwLength = DWORD(MemoryLayout<MEMORYSTATUSEX>.size)
+            status.dwLength = DWORD(UInt32(MemoryLayout<MEMORYSTATUSEX>.size))
             guard GlobalMemoryStatusEx(&status) else {
                 return ProcessInfo.processInfo.physicalMemory
             }
@@ -81,7 +81,7 @@ public enum PlatformHost {
             return Int(used / (1_024 * 1_024))
         #elseif os(Windows)
             var status = MEMORYSTATUSEX()
-            status.dwLength = DWORD(MemoryLayout<MEMORYSTATUSEX>.size)
+            status.dwLength = DWORD(UInt32(MemoryLayout<MEMORYSTATUSEX>.size))
             guard GlobalMemoryStatusEx(&status) else { return 0 }
             return memoryUsedMB(
                 totalBytes: UInt64(status.ullTotalPhys),

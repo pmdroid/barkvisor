@@ -264,12 +264,21 @@ public final class VaporServer: @unchecked Sendable {
         let distPath = Config.serveFrontend ? Self.findFrontendDist() : nil
         if let distPath {
             app.middleware.use(SPAFallbackMiddleware(indexPath: distPath + "/index.html"))
-            app.middleware.use(
-                FileMiddleware(
-                    publicDirectory: distPath + "/",
-                    defaultFile: "index.html",
-                ),
-            )
+            #if os(Windows)
+                app.middleware.use(
+                    FoundationStaticFileMiddleware(
+                        publicDirectory: distPath + "/",
+                        defaultFile: "index.html",
+                    ),
+                )
+            #else
+                app.middleware.use(
+                    FileMiddleware(
+                        publicDirectory: distPath + "/",
+                        defaultFile: "index.html",
+                    ),
+                )
+            #endif
         }
     }
 
@@ -615,7 +624,14 @@ public final class VaporServer: @unchecked Sendable {
         }
 
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let exeDir = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
         let candidates: [String] = [
+            exeDir.appendingPathComponent("share")
+                .appendingPathComponent("barkvisor")
+                .appendingPathComponent("frontend")
+                .appendingPathComponent("dist").path,
             projectRoot?.appendingPathComponent("Sources/BarkVisor/Resources/frontend/dist").path,
             projectRoot?.appendingPathComponent("frontend/dist").path,
             cwd.appendingPathComponent("Sources/BarkVisor/Resources/frontend/dist").path,

@@ -27,7 +27,7 @@ public enum DiskSettings {
 
     public static func isAcceptableStoredPath(_ raw: String) -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("/") else { return false }
+        guard PlatformPaths.isAbsolutePath(trimmed) else { return false }
         if isHostDevicePath(trimmed) { return false }
         return (try? QEMUBuilder.sanitizeQEMUArg(trimmed, label: "Disk directory")) != nil
     }
@@ -37,7 +37,7 @@ public enum DiskSettings {
         if trimmed.isEmpty {
             return nil
         }
-        guard trimmed.hasPrefix("/") else {
+        guard PlatformPaths.isAbsolutePath(trimmed) else {
             throw BarkVisorError.badRequest("Disk directory must be an absolute path")
         }
         if isHostDevicePath(trimmed) {

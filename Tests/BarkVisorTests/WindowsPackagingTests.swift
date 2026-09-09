@@ -50,6 +50,45 @@ struct WindowsPackagingTests {
         #expect(build.contains("-arch x64"))
     }
 
+    @Test func `windows serves spa without nio filesystem stat`() throws {
+        let server = try read("Sources/BarkVisor/Server/VaporServer.swift")
+        #expect(server.contains("FoundationStaticFileMiddleware"))
+        #expect(server.contains("#if os(Windows)"))
+        #expect(server.contains("FileMiddleware("))
+        #expect(server.contains("appendingPathComponent(\"share\")"))
+        let files = try read("Sources/BarkVisor/Server/Middleware/FoundationStaticFileMiddleware.swift")
+        #expect(files.contains("Data(contentsOf:"))
+        #expect(files.contains("contains(\"..\")"))
+        let logs = try read("Sources/BarkVisor/Server/Controllers/LogController.swift")
+        #expect(logs.contains("#if os(Windows)"))
+        #expect(logs.contains("Data(contentsOf:"))
+        #expect(logs.contains("asyncStreamFile"))
+    }
+
+    @Test func `windows outbound tls uses system trust roots`() throws {
+        let hop = try read("Sources/BarkVisorCore/Helpers/SSRFPinnedHopClient.swift")
+        #expect(hop.contains("WindowsSystemTrustRoots.clientTLSConfiguration()"))
+        let roots = try read("Sources/BarkVisorCore/Platform/WindowsSystemTrustRoots.swift")
+        #expect(roots.contains("CertOpenSystemStoreA"))
+        #expect(roots.contains("NIOSSLCertificate"))
+        #expect(roots.contains("trustRoots"))
+    }
+
+    @Test func `windows payload stages swift runtime and vcruntime dlls`() throws {
+        let stage = try read("scripts/stage-windows-payload.ps1")
+        #expect(stage.contains("swiftCore.dll"))
+        #expect(stage.contains("msvcp140.dll"))
+        #expect(stage.contains("vcruntime140.dll"))
+        #expect(stage.contains("*Concurrency*.dll"))
+        #expect(stage.contains("Runtimes"))
+        #expect(stage.contains("missing runtime DLL"))
+        #expect(stage.contains("VC\\Redist\\MSVC"))
+        let workflow = try read(".github/workflows/windows-package.yml")
+        #expect(workflow.contains("stage-windows-payload.ps1"))
+        #expect(workflow.contains("swiftCore.dll"))
+        #expect(workflow.contains("share\\barkvisor\\frontend\\dist\\index.html"))
+    }
+
     @Test func `install script fails without qemu and uses localsystem`() throws {
         let install = try read("packaging/windows/install.ps1")
         #expect(install.contains("ProgramFiles"))

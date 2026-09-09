@@ -1,4 +1,5 @@
 import Foundation
+import NIOSSL
 import Testing
 #if canImport(WinSDK)
     import WinSDK
@@ -36,9 +37,26 @@ struct WindowsPlatformTests {
         #expect(dir.path == URL(fileURLWithPath: override, isDirectory: true).path)
     }
 
+    @Test func `windows system trust roots load for outbound tls`() throws {
+        #if os(Windows)
+            let roots = WindowsSystemTrustRoots.certificates()
+            #expect(!roots.isEmpty)
+            let config = WindowsSystemTrustRoots.clientTLSConfiguration()
+            switch config.trustRoots {
+            case let .certificates(certs):
+                #expect(certs.count == roots.count)
+            default:
+                Issue.record("expected Windows trustRoots.certificates")
+            }
+            _ = try NIOSSLContext(configuration: config)
+        #endif
+    }
+
     @Test func `path list separator is semicolon on windows`() {
         #if os(Windows)
             #expect(PlatformPaths.pathListSeparator == ";")
+            #expect(PlatformPaths.isAbsolutePath(#"C:\Program Files\qemu\qemu-system-x86_64.exe"#))
+            #expect(PlatformPaths.isAbsolutePath("C:/ProgramData/BarkVisor/images"))
             #expect(PlatformPaths.isAbsoluteExecutablePath(#"C:\Program Files\qemu\qemu-system-x86_64.exe"#))
             let exe = PlatformPaths.resolvedExecutablePath(
                 argument: "qemu-system-x86_64.exe",
@@ -349,7 +367,13 @@ struct WindowsPlatformTests {
             let pid = ProcessInfo.processInfo.processIdentifier
             let path = PlatformProcess.executablePath(pid: pid)
             #expect(path != nil)
-            #expect(path?.localizedCaseInsensitiveContains(".exe") == true)
+            let resolved = path ?? ""
+            #expect(!resolved.isEmpty)
+            #expect(resolved.contains("\\") || resolved.contains("/"))
+            #expect(
+                resolved.localizedCaseInsensitiveContains(".exe")
+                    || resolved.localizedCaseInsensitiveContains(".xctest"),
+            )
             #expect(kill(pid, 0) == 0)
         #endif
     }

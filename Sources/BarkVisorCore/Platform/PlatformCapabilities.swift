@@ -6,6 +6,8 @@ import Foundation
     import Glibc
 #elseif canImport(Musl)
     import Musl
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// Static capability flags and remediation messages for the current host platform.
@@ -99,12 +101,36 @@ public enum PlatformCapabilities {
 
     public static func whpxPresent(
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        hypervisorPresent: () -> Bool = { whpxHypervisorPresent() },
     ) -> Bool {
         let dlls = [
             "C:\\Windows\\System32\\WinHvPlatform.dll",
             "C:\\Windows\\Sysnative\\WinHvPlatform.dll",
         ]
-        return dlls.contains(where: fileExists)
+        guard dlls.contains(where: fileExists) else { return false }
+        return hypervisorPresent()
+    }
+
+    public static func whpxHypervisorPresent() -> Bool {
+        #if os(Windows)
+            guard let module = LoadLibraryA("WinHvPlatform.dll") else { return false }
+            defer { FreeLibrary(module) }
+            guard let raw = GetProcAddress(module, "WHvGetCapability") else { return false }
+            typealias CapabilityFn = @convention(c) (
+                UInt32, UnsafeMutableRawPointer?, UInt32, UnsafeMutablePointer<UInt32>?,
+            ) -> HRESULT
+            let fn = unsafeBitCast(raw, to: CapabilityFn.self)
+            var present: Int32 = 0
+            var written: UInt32 = 0
+            let presentHR = fn(0, &present, UInt32(MemoryLayout<Int32>.size), &written)
+            guard presentHR >= 0, present != 0 else { return false }
+            var width: UInt32 = 0
+            written = 0
+            let widthHR = fn(0x0000_000D, &width, UInt32(MemoryLayout<UInt32>.size), &written)
+            return widthHR >= 0 && width > 0
+        #else
+            return true
+        #endif
     }
 
     /// QEMU `-cpu` model matching the accelerator.

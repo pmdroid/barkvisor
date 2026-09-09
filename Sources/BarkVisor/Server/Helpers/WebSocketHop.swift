@@ -549,7 +549,7 @@ private enum UnixSocketHopFrames {
                     let count = min(raw.count, Int(Int32.max))
                     guard let base = raw.baseAddress else { return 0 }
                     return Int(
-                        send(
+                        WinSDK.send(
                             sock,
                             base.assumingMemoryBound(to: CChar.self),
                             Int32(count),

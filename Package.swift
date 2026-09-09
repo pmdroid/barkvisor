@@ -20,6 +20,10 @@ var coreDependencies: [Target.Dependency] = [
     .product(name: "WebAuthn", package: "webauthn-swift"),
 ]
 
+#if os(Windows)
+coreDependencies.insert(.target(name: "WindowsPOSIXShims"), at: 0)
+#endif
+
 var testDependencies: [Target.Dependency] = [
     "BarkVisor",
     "BarkVisorCore",
@@ -37,6 +41,15 @@ var testDependencies: [Target.Dependency] = [
 ]
 
 var packageTargets: [Target] = []
+
+#if os(Windows)
+packageTargets.append(
+    .target(
+        name: "WindowsPOSIXShims",
+        path: "Sources/WindowsPOSIXShims",
+    )
+)
+#endif
 
 packageTargets.append(contentsOf: [
     // Core library: services, models, helpers — no Vapor dependency
@@ -92,7 +105,7 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.0.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),

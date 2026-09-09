@@ -184,8 +184,8 @@ public enum PortRegistry {
 
     private static func isPortFree(_ port: Int, sockType: Int32) -> Bool {
         #if os(Windows)
-            isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
-                && isBindFree(port, saddr: INADDR_LOOPBACK, sockType: sockType)
+            isBindFree(port, saddr: ULONG(truncatingIfNeeded: INADDR_ANY), sockType: sockType)
+                && isBindFree(port, saddr: ULONG(truncatingIfNeeded: INADDR_LOOPBACK), sockType: sockType)
         #else
             isBindFree(port, saddr: INADDR_ANY, sockType: sockType)
                 && isBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian, sockType: sockType)

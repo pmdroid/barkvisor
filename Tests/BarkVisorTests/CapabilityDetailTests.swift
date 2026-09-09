@@ -450,8 +450,19 @@ struct CapabilityDetailTests {
     }
 
     @Test func `whpxPresent follows WinHvPlatform dll probe`() {
-        #expect(PlatformCapabilities.whpxPresent(fileExists: { $0.hasSuffix("WinHvPlatform.dll") }))
-        #expect(!PlatformCapabilities.whpxPresent(fileExists: { _ in false }))
+        #expect(
+            PlatformCapabilities.whpxPresent(
+                fileExists: { $0.hasSuffix("WinHvPlatform.dll") },
+                hypervisorPresent: { true },
+            ),
+        )
+        #expect(!PlatformCapabilities.whpxPresent(fileExists: { _ in false }, hypervisorPresent: { true }))
+        #expect(
+            !PlatformCapabilities.whpxPresent(
+                fileExists: { $0.hasSuffix("WinHvPlatform.dll") },
+                hypervisorPresent: { false },
+            ),
+        )
     }
 
     @Test func `requireBridgedNetworking matches capabilities product flag`() {

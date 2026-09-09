@@ -1,0 +1,107 @@
+name: Windows Package
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows arm64
+            runs-on: windows-11-arm
+            build_arch: arm64
+            triple: aarch64-unknown-windows-msvc
+            artifact: barkvisor-windows-arm64
+          - name: Windows amd64
+            runs-on: windows-latest
+            build_arch: amd64
+            triple: x86_64-unknown-windows-msvc
+            artifact: barkvisor-windows-amd64
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
+
+      - uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6 # v0.4.1
+        with:
+          source: swift.org
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
+          build_arch: ${{ matrix.build_arch }}
+          cache: true
+
+      - name: Build SPA
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+          if (-not (Test-Path -LiteralPath "dist\index.html")) { exit 1 }
+        shell: pwsh
+
+      - name: Build release binary
+        run: .\scripts\windows-swift.ps1 --% build -c release --product BarkVisorApp
+        shell: pwsh
+
+      - name: Stage payload
+        run: |
+          $candidates = @(
+            ".build\release",
+            ".build\${{ matrix.triple }}\release"
+          )
+          $source = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ "BarkVisorApp.exe") } | Select-Object -First 1
+          if (-not $source) {
+            Write-Error "BarkVisorApp.exe not found under .build"
+            exit 1
+          }
+          & scripts\stage-windows-payload.ps1 `
+            -SourceDir $source `
+            -FrontendDir "frontend\dist" `
+            -OutDir "build\windows-payload"
+          foreach ($name in @("BarkVisor.exe", "swiftCore.dll", "msvcp140.dll", "vcruntime140.dll")) {
+            if (-not (Test-Path -LiteralPath (Join-Path "build\windows-payload" $name))) {
+              Write-Error "payload missing $name"
+              exit 1
+            }
+          }
+          if (-not (Get-ChildItem -LiteralPath "build\windows-payload" -Filter "*Concurrency*.dll" -File)) {
+            Write-Error "payload missing Swift concurrency DLL"
+            exit 1
+          }
+          $spaIndex = "build\windows-payload\share\barkvisor\frontend\dist\index.html"
+          if (-not (Test-Path -LiteralPath $spaIndex)) {
+            Write-Error "payload missing $spaIndex"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Zip payload
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $zip = "build\${{ matrix.artifact }}.zip"
+          if (Test-Path -LiteralPath $zip) {
+            Remove-Item -LiteralPath $zip -Force
+          }
+          Compress-Archive -Path "build\windows-payload\*" -DestinationPath $zip -Force
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 14

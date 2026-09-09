@@ -706,17 +706,22 @@ struct WebSocketHopTests {
         }
 
         private func takeOnce() async throws -> SOCKET {
+            try await withCheckedThrowingContinuation { cont in
+                enqueue(cont)
+            }
+        }
+
+        private func enqueue(_ cont: CheckedContinuation<SOCKET, Error>) {
             lock.lock()
             if sock != INVALID_SOCKET {
                 let ready = sock
                 sock = INVALID_SOCKET
                 lock.unlock()
-                return ready
+                cont.resume(returning: ready)
+                return
             }
-            return try await withCheckedThrowingContinuation { cont in
-                waiter = cont
-                lock.unlock()
-            }
+            waiter = cont
+            lock.unlock()
         }
     }
 #endif
