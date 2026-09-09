@@ -239,7 +239,10 @@ public enum QEMUBuilder {
             guestType: guestType,
         )
         let accelerator = effective.accelerator ?? QEMUBuilder.accelerator
-        try PlatformCapabilities.requireStartAccelerator(accelerator)
+        try PlatformCapabilities.requireStartAccelerator(
+            accelerator,
+            allowTCG: Config.windowsAllowTCG,
+        )
         let backend = WorkloadBackendProjector.project(
             guestType: guestType,
             accelerator: accelerator,

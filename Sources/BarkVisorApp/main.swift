@@ -14,6 +14,113 @@ import Logging
 
 #if os(Windows)
     nonisolated(unsafe) var windowsShutdownEvent: HANDLE?
+    nonisolated(unsafe) var windowsServiceStatusHandle: SERVICE_STATUS_HANDLE?
+    nonisolated(unsafe) var windowsServiceStatus = SERVICE_STATUS()
+    nonisolated(unsafe) var windowsServiceStoppedEvent: HANDLE?
+    nonisolated(unsafe) let windowsServiceReady = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) let windowsServiceDispatcherDone = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var windowsServiceName: [WCHAR] = Array("BarkVisor".utf16) + [0]
+
+    func windowsReportServiceStatus(
+        _ state: DWORD,
+        accepted: Bool,
+        win32Exit: DWORD = 0,
+        specific: DWORD = 0,
+    ) {
+        windowsServiceStatus.dwServiceType = DWORD(SERVICE_WIN32_OWN_PROCESS)
+        windowsServiceStatus.dwCurrentState = state
+        windowsServiceStatus.dwControlsAccepted = accepted
+            ? DWORD(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN)
+            : 0
+        windowsServiceStatus.dwWin32ExitCode = win32Exit
+        windowsServiceStatus.dwServiceSpecificExitCode = specific
+        windowsServiceStatus.dwCheckPoint = 0
+        let pending = state == DWORD(SERVICE_STOP_PENDING) || state == DWORD(SERVICE_START_PENDING)
+        windowsServiceStatus.dwWaitHint = pending ? 30_000 : 0
+        if let handle = windowsServiceStatusHandle {
+            _ = SetServiceStatus(handle, &windowsServiceStatus)
+        }
+    }
+
+    func windowsServiceControl(_ control: DWORD) {
+        if control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN {
+            windowsReportServiceStatus(DWORD(SERVICE_STOP_PENDING), accepted: false)
+            if let event = windowsShutdownEvent {
+                _ = SetEvent(event)
+            }
+        }
+    }
+
+    func windowsServiceMain(_ argc: DWORD, _ argv: UnsafeMutablePointer<LPWSTR>?) {
+        var name: [WCHAR] = Array("BarkVisor".utf16) + [0]
+        windowsServiceStatusHandle = name.withUnsafeMutableBufferPointer { buf in
+            RegisterServiceCtrlHandlerW(buf.baseAddress, windowsServiceControl)
+        }
+        windowsReportServiceStatus(DWORD(SERVICE_START_PENDING), accepted: false)
+        windowsServiceReady.signal()
+        if let event = windowsServiceStoppedEvent {
+            _ = WaitForSingleObject(event, INFINITE)
+        }
+        windowsReportServiceStatus(DWORD(SERVICE_STOPPED), accepted: false)
+    }
+
+    enum WindowsService {
+        static func attach() {
+            if windowsShutdownEvent == nil {
+                windowsShutdownEvent = CreateEventW(nil, true, false, nil)
+            }
+            if windowsServiceStoppedEvent == nil {
+                windowsServiceStoppedEvent = CreateEventW(nil, true, false, nil)
+            }
+            _ = SetConsoleCtrlHandler({ _ in
+                if let event = windowsShutdownEvent {
+                    _ = SetEvent(event)
+                }
+                return true
+            }, true)
+
+            Thread.detachNewThread {
+                let started = windowsServiceName.withUnsafeMutableBufferPointer { buf -> Bool in
+                    var entries = [
+                        SERVICE_TABLE_ENTRYW(
+                            lpServiceName: buf.baseAddress,
+                            lpServiceProc: windowsServiceMain,
+                        ),
+                        SERVICE_TABLE_ENTRYW(lpServiceName: nil, lpServiceProc: nil),
+                    ]
+                    return entries.withUnsafeMutableBufferPointer { table in
+                        StartServiceCtrlDispatcherW(table.baseAddress)
+                    }
+                }
+                if !started {
+                    windowsServiceReady.signal()
+                }
+                windowsServiceDispatcherDone.signal()
+            }
+            windowsServiceReady.wait()
+        }
+
+        static func reportRunning() {
+            windowsReportServiceStatus(DWORD(SERVICE_RUNNING), accepted: true)
+        }
+
+        static func reportStartFailed() {
+            windowsReportServiceStatus(
+                DWORD(SERVICE_STOPPED),
+                accepted: false,
+                win32Exit: DWORD(ERROR_SERVICE_SPECIFIC_ERROR),
+                specific: 1,
+            )
+            notifyStopped()
+        }
+
+        static func notifyStopped() {
+            if let event = windowsServiceStoppedEvent {
+                _ = SetEvent(event)
+            }
+            windowsServiceDispatcherDone.wait()
+        }
+    }
 #endif
 
 /// Pipe for signal→async communication.
@@ -147,13 +254,7 @@ func runDaemon() async {
     }
 
     #if os(Windows)
-        windowsShutdownEvent = CreateEventW(nil, true, false, nil)
-        _ = SetConsoleCtrlHandler({ _ in
-            if let event = windowsShutdownEvent {
-                _ = SetEvent(event)
-            }
-            return true
-        }, true)
+        WindowsService.attach()
     #else
         pipe(&signalPipeFDs)
         signal(SIGTERM) { _ in
@@ -173,9 +274,15 @@ func runDaemon() async {
 
     do {
         try await server.start()
+        #if os(Windows)
+            WindowsService.reportRunning()
+        #endif
     } catch {
         Log.server.critical("Server failed to start: \(error)")
         FileHandle.standardError.write(Data("Server failed to start: \(error)\n".utf8))
+        #if os(Windows)
+            WindowsService.reportStartFailed()
+        #endif
         exit(1)
     }
 
@@ -217,9 +324,14 @@ func runDaemon() async {
     }
 
     #if os(Windows)
+        WindowsService.notifyStopped()
         if let event = windowsShutdownEvent {
             CloseHandle(event)
             windowsShutdownEvent = nil
+        }
+        if let event = windowsServiceStoppedEvent {
+            CloseHandle(event)
+            windowsServiceStoppedEvent = nil
         }
     #else
         close(signalPipeFDs[0])

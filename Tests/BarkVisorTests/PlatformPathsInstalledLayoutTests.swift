@@ -230,4 +230,83 @@ struct PlatformPathsInstalledLayoutTests {
         )
         #expect(dir.path == "/var/run/barkvisor")
     }
+
+    @Test func `windows exe next to share frontend is installed`() {
+        let prefix = "/Program Files/BarkVisor"
+        let index = PlatformPaths.shareFrontendIndexPath(prefix: prefix)
+        #expect(
+            PlatformPaths.isInstalled(
+                prefix: prefix,
+                binaryDirectoryIsBin: false,
+                binaryDirectory: prefix,
+                fileExists: { $0 == index },
+            ),
+        )
+        #expect(
+            PlatformPaths.installPrefix(executablePath: "\(prefix)/BarkVisor.exe") == prefix,
+        )
+    }
+
+    @Test func `windows swift run is not installed`() {
+        #expect(
+            !PlatformPaths.isInstalled(
+                prefix: "/.build/debug",
+                binaryDirectoryIsBin: false,
+                binaryDirectory: "/.build/debug",
+                fileExists: { _ in false },
+            ),
+        )
+        #expect(
+            !PlatformPaths.isInstalled(
+                prefix: usrLocalPrefix,
+                binaryDirectoryIsBin: false,
+                binaryDirectory: "/.build/debug",
+                fileExists: { $0 == PlatformPaths.shareFrontendIndexPath(prefix: usrLocalPrefix) },
+            ),
+        )
+    }
+
+    @Test func `data dir override does not mark windows layout installed`() {
+        #expect(
+            !PlatformPaths.isInstalled(
+                prefix: "/Program Files/BarkVisor",
+                binaryDirectoryIsBin: false,
+                binaryDirectory: "/.build/debug",
+                fileExists: { _ in true },
+            ),
+        )
+    }
+
+    @Test func `windows installed data dir is programdata barkvisor`() {
+        let dir = PlatformPaths.dataDir(
+            isInstalled: true,
+            dataDirOverride: nil,
+            windowsProgramData: "/ProgramData",
+        )
+        #expect(dir.lastPathComponent == "BarkVisor")
+        #expect(dir.deletingLastPathComponent().lastPathComponent == "ProgramData")
+        let unix = PlatformPaths.dataDir(isInstalled: true, dataDirOverride: nil)
+        #expect(unix.path == "/var/lib/barkvisor")
+    }
+
+    @Test func `windows installed sockets live under data run`() {
+        let data = URL(fileURLWithPath: "/ProgramData/BarkVisor", isDirectory: true)
+        let dir = PlatformPaths.resolveSocketDir(
+            isInstalled: true,
+            dataDir: data,
+            socketDirOverride: nil,
+            temporaryDirectory: "/tmp",
+            windowsInstalled: true,
+        )
+        #expect(dir.lastPathComponent == "run")
+        #expect(dir.deletingLastPathComponent().lastPathComponent == "BarkVisor")
+        let unix = PlatformPaths.resolveSocketDir(
+            isInstalled: true,
+            dataDir: URL(fileURLWithPath: "/var/lib/barkvisor"),
+            socketDirOverride: nil,
+            temporaryDirectory: "/tmp",
+            windowsInstalled: false,
+        )
+        #expect(unix.path == "/var/run/barkvisor")
+    }
 }

@@ -127,14 +127,21 @@ public enum PlatformCapabilities {
     public static func requireStartAccelerator(
         _ accelerator: String,
         os: String = PlatformHost.platformName,
+        allowTCG: Bool = false,
     ) throws {
         guard os.caseInsensitiveCompare("Windows") == .orderedSame else { return }
-        guard accelerator == "whpx" else {
+        if accelerator == "whpx" { return }
+        if accelerator == "tcg", allowTCG { return }
+        if accelerator == "tcg" {
             throw BarkVisorError.badRequest(
                 "Windows guests require WHPX. Enable Windows Hypervisor Platform and reboot. "
-                    + "TCG is inventory-only and cannot start guests.",
+                    + "TCG start is off unless windowsAllowTCG is true in settings.json.",
             )
         }
+        throw BarkVisorError.badRequest(
+            "Windows guests require WHPX. Enable Windows Hypervisor Platform and reboot. "
+                + "TCG is inventory-only and cannot start guests.",
+        )
     }
 
     /// Host CPU architecture for API/UI (`arm64` / `x86_64`).

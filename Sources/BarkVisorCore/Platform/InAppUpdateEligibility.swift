@@ -148,6 +148,7 @@ public enum InAppUpdateEligibility {
             isInstalledLayout: PlatformPaths.isInstalled(
                 prefix: prefix,
                 binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
+                binaryDirectory: binDir.path,
             ),
             dataDirIsVarLib: isApplianceDataDir(Config.dataDir.path),
             dataDirOverridden: !override.isEmpty && !isApplianceDataDir(override),

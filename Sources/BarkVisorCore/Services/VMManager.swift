@@ -194,6 +194,7 @@ public actor VMManager: VMStateQuerying {
         )
         try PlatformCapabilities.requireStartAccelerator(
             effective.accelerator ?? QEMUBuilder.accelerator,
+            allowTCG: Config.windowsAllowTCG,
         )
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)

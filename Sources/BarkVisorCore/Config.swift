@@ -199,6 +199,17 @@ public enum Config {
         return PlatformPaths.isInstalled(
             prefix: prefix,
             binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
+            binaryDirectory: binDir.path,
+        )
+    }
+
+    public static let windowsAllowTCGSettingsKey = "windowsAllowTCG"
+
+    public static var windowsAllowTCG: Bool {
+        PlatformPaths.settingsBool(
+            forKey: windowsAllowTCGSettingsKey,
+            dataDir: dataDir,
+            default: false,
         )
     }
 
@@ -271,18 +282,23 @@ public enum Config {
     static func persistPrivateFile(_ contents: String, at file: URL, directory dataDir: URL) throws {
         try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
         let temp = dataDir.appendingPathComponent(".\(file.lastPathComponent).\(UUID().uuidString).tmp")
-        let created = FileManager.default.createFile(
-            atPath: temp.path,
-            contents: Data(contents.utf8),
-            attributes: [.posixPermissions: 0o600],
-        )
+        #if os(Windows)
+            let created = FileManager.default.createFile(
+                atPath: temp.path,
+                contents: Data(contents.utf8),
+            )
+        #else
+            let created = FileManager.default.createFile(
+                atPath: temp.path,
+                contents: Data(contents.utf8),
+                attributes: [.posixPermissions: 0o600],
+            )
+        #endif
         guard created else {
             throw CocoaError(.fileWriteUnknown)
         }
         do {
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: temp.path,
-            )
+            try PrivateFileAccess.restrict(path: temp.path)
             var isDirectory: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory)
             if exists, isDirectory.boolValue {
