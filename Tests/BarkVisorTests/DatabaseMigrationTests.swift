@@ -417,6 +417,7 @@ struct DatabaseMigrationTests {
             "ollama_host_settings",
             "passkeys",
             "pending_deploys",
+            "app_catalog",
             "image_repositories", "images", "networks", "repository_images", "ssh_keys",
             "tus_uploads", "users", "vm_templates", "vms",
         ]

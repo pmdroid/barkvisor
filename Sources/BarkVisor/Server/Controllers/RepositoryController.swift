@@ -104,30 +104,30 @@ struct RepositoryController: RouteCollection {
             throw Abort(.badRequest, reason: ssrfError)
         }
 
-        guard body.repoType == "images" || body.repoType == "templates" else {
-            throw Abort(.badRequest, reason: "repoType must be 'images' or 'templates'")
+        guard HomeCatalogOrigin.repoTypes.contains(body.repoType) else {
+            throw Abort(.badRequest, reason: "repoType must be 'images', 'templates', or 'apps'")
         }
 
         let now = iso8601.string(from: Date())
         let id = UUID().uuidString
 
-        // Fetch the catalog to get the name. Do not use URLSession.shared:
-        // it follows redirects without re-running SSRFGuard.validate.
-        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200 ... 299).contains(httpResponse.statusCode)
-        else {
-            throw Abort(.badRequest, reason: "Failed to fetch repository catalog")
-        }
-
-        // Validate the catalog can be parsed
         let catalogName: String
-        if let catalog = try? JSONDecoder().decode(RepoCatalog.self, from: data) {
-            catalogName = catalog.name
-        } else if (try? JSONDecoder().decode(TemplateCatalog.self, from: data)) != nil {
-            catalogName = "Templates"
+        if body.repoType == "apps" {
+            catalogName = BigBearAppCatalog.catalogName
         } else {
-            throw Abort(.badRequest, reason: "Invalid catalog format")
+            let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200 ... 299).contains(httpResponse.statusCode)
+            else {
+                throw Abort(.badRequest, reason: "Failed to fetch repository catalog")
+            }
+            if let catalog = try? JSONDecoder().decode(RepoCatalog.self, from: data) {
+                catalogName = catalog.name
+            } else if (try? JSONDecoder().decode(TemplateCatalog.self, from: data)) != nil {
+                catalogName = "Templates"
+            } else {
+                throw Abort(.badRequest, reason: "Invalid catalog format")
+            }
         }
 
         let repo = ImageRepository(

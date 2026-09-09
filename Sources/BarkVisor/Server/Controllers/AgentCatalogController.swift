@@ -56,7 +56,7 @@ struct AgentCatalogController: RouteCollection {
     private static func requireRepoType(_ req: Vapor.Request) throws -> String {
         let repoType = try req.parameters.require("repoType")
         guard HomeCatalogOrigin.repoTypes.contains(repoType) else {
-            throw Abort(.badRequest, reason: "repoType must be images or templates")
+            throw Abort(.badRequest, reason: "repoType must be images, templates, or apps")
         }
         return repoType
     }

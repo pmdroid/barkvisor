@@ -128,6 +128,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M018_ApplicationWorkloads.identifier) { db in
             try M018_ApplicationWorkloads.migrate(db)
         }
+        migrator.registerMigration(M019_AppCatalog.identifier) { db in
+            try M019_AppCatalog.migrate(db)
+        }
     }
 }
 

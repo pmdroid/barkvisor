@@ -82,6 +82,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         ),
     )
 
+    try protected.register(collection: AppCatalogController())
     try protected.register(
         collection: TemplateController(
             vmManager: deps.vmManager,
