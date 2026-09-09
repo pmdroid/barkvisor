@@ -518,21 +518,21 @@ public enum HostInfoService {
             } catch {
                 return []
             }
-            let flags = ULONG(GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER)
+            let flags = ULONG(truncatingIfNeeded: GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER)
             var size: ULONG = 15_360
             var buffer = [UInt8](repeating: 0, count: Int(size))
-            var result: ULONG = ERROR_BUFFER_OVERFLOW
+            var result = ULONG(truncatingIfNeeded: ERROR_BUFFER_OVERFLOW)
             for _ in 0 ..< 3 {
                 result = buffer.withUnsafeMutableBytes { raw -> ULONG in
-                    guard let base = raw.baseAddress else { return ULONG(ERROR_INVALID_PARAMETER) }
+                    guard let base = raw.baseAddress else { return ULONG(truncatingIfNeeded: ERROR_INVALID_PARAMETER) }
                     let ptr = base.bindMemory(to: IP_ADAPTER_ADDRESSES.self, capacity: 1)
-                    return GetAdaptersAddresses(ULONG(AF_UNSPEC), flags, nil, ptr, &size)
+                    return GetAdaptersAddresses(ULONG(truncatingIfNeeded: AF_UNSPEC), flags, nil, ptr, &size)
                 }
-                if result == NO_ERROR { break }
-                if result != ERROR_BUFFER_OVERFLOW { return [] }
+                if result == ULONG(truncatingIfNeeded: NO_ERROR) { break }
+                if result != ULONG(truncatingIfNeeded: ERROR_BUFFER_OVERFLOW) { return [] }
                 buffer = [UInt8](repeating: 0, count: Int(size))
             }
-            guard result == NO_ERROR else { return [] }
+            guard result == ULONG(truncatingIfNeeded: NO_ERROR) else { return [] }
             var rows: [WindowsAdapterRow] = []
             buffer.withUnsafeMutableBytes { raw in
                 guard let base = raw.baseAddress else { return }

@@ -29,7 +29,7 @@ import Foundation
         if terminate {
             access |= UInt32(truncatingIfNeeded: PROCESS_TERMINATE)
         }
-        let handle = OpenProcess(DWORD(access), WindowsBool(false), DWORD(UInt32(bitPattern: pid)))
+        let handle = OpenProcess(DWORD(access), false, DWORD(UInt32(bitPattern: pid)))
         guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
         return handle
     }
@@ -41,7 +41,7 @@ import Foundation
         defer { CloseHandle(handle) }
         var code: DWORD = 0
         guard GetExitCodeProcess(handle, &code) else { return -1 }
-        if code != DWORD(UInt32(bitPattern: STILL_ACTIVE)) { return -1 }
+        if code != DWORD(truncatingIfNeeded: STILL_ACTIVE) { return -1 }
         if signal == 0 { return 0 }
         return TerminateProcess(handle, 1) ? 0 : -1
     }
