@@ -31,10 +31,12 @@ public enum ApplicationLifecycleService {
     ) throws -> ComposeRender {
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let bindHost = try HostInfoService.requireLanBindIPv4()
         let render = try ComposeAllowlist.render(
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
+            bindHost: bindHost,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -143,6 +145,22 @@ public enum ApplicationLifecycleService {
         }
     }
 
+    static func verifyInspectedBinds(
+        containerNames: [String],
+        bindHost: String,
+        expected: [PublishedPort],
+    ) throws {
+        let data = try DockerInspect.jsonForContainers(containerNames)
+        let bindings = try ComposePorts.parseInspectBindings(data)
+        let allowWildcard = PlatformHost.platformName == "macOS"
+        try ComposePorts.requireLANHostIP(
+            bindings,
+            bindHost: bindHost,
+            expected: expected,
+            allowWildcard: allowWildcard,
+        )
+    }
+
     public static func openURL(from ports: [PublishedPort]) -> String? {
         ports.compactMap(\.openURL).first
     }
@@ -183,6 +201,11 @@ public enum ApplicationLifecycleService {
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try verifyInspectedBinds(
+                containerNames: render.containerNames,
+                bindHost: render.bindHost,
+                expected: render.publishedPorts,
+            )
             try await setState(&vm, state: "running", error: nil, db: db)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
@@ -223,6 +246,11 @@ public enum ApplicationLifecycleService {
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try verifyInspectedBinds(
+                containerNames: render.containerNames,
+                bindHost: render.bindHost,
+                expected: render.publishedPorts,
+            )
             try await setState(&vm, state: "running", error: nil, db: db)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription

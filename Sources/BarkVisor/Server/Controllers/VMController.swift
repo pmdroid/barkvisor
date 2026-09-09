@@ -70,12 +70,14 @@ struct VMResponse: Content {
         self.bootDiskId = vm.bootDiskId
         self.kind = vm.kind
         self.runtime = vm.runtime
+        let bindHost = HostInfoService.lanBindIPv4()
         let published = vm.isApplication
             ? vm.decodedPortForwards.map {
                 PublishedPort(
                     hostPort: $0.hostPort,
                     containerPort: $0.guestPort,
                     proto: $0.protocol,
+                    hostAddress: bindHost,
                 )
             }
             : []

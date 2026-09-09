@@ -33,11 +33,23 @@ final class WorkloadApplyServiceTests {
             )
         }
         ComposeRuntime.runner = FakeComposeRunner()
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        DockerInspect.jsonForContainers = { names in
+            let ports: [String: Any] = [
+                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "8080"]],
+            ]
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": ports]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }
     }
 
     deinit {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         ComposeRuntime.runner = LiveComposeCommandRunner()
+        HostInfoService.lanBindIPv4Provider = nil
+        DockerInspect.jsonForContainers = DockerInspect.liveJSON
         try? FileManager.default.removeItem(at: tmpDir)
     }
 

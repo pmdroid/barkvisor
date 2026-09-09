@@ -5,6 +5,62 @@ import Testing
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
+    @Test func `prepare rewrites published ports onto the LAN address`() throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        defer { HostInfoService.lanBindIPv4Provider = nil }
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-app-lan-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let yaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "8080:80"
+              - "1900:1900/udp"
+        """
+        let render = try ApplicationLifecycleService.prepare(
+            id: "whoami-1",
+            composeYaml: yaml,
+            env: nil,
+            dataDir: dataDir,
+        )
+        #expect(render.bindHost == "192.168.8.10")
+        #expect(render.yaml.contains("192.168.8.10"))
+        #expect(!render.yaml.contains("0.0.0.0"))
+        let written = try String(
+            contentsOf: ComposeRuntime.projectDirectory(id: "whoami-1", dataDir: dataDir)
+                .appendingPathComponent("compose.yml"),
+            encoding: .utf8,
+        )
+        #expect(written.contains("192.168.8.10"))
+        #expect(!written.contains("0.0.0.0"))
+        let rules = ApplicationLifecycleService.portRules(render.publishedPorts)
+        #expect(rules.contains { $0.protocol == "udp" && $0.hostPort == 1_900 })
+        #expect(rules.contains { $0.protocol == "tcp" && $0.hostPort == 8_080 })
+    }
+
+    @Test func `inspect wildcard HostIp fails closed off macOS`() throws {
+        let data = Data(
+            """
+            [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
+            """.utf8,
+        )
+        DockerInspect.jsonForContainers = { _ in data }
+        defer { DockerInspect.jsonForContainers = DockerInspect.liveJSON }
+        do {
+            try ApplicationLifecycleService.verifyInspectedBinds(
+                containerNames: ["bv-whoami-1-whoami"],
+                bindHost: "192.168.8.10",
+                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+            )
+            #expect(PlatformHost.platformName == "macOS")
+        } catch let BarkVisorError.internalError(message) {
+            #expect(PlatformHost.platformName != "macOS")
+            #expect(message.contains("0.0.0.0"))
+        }
+    }
+
     @Test func `down removes the project when compose fails`() async throws {
         let previous = ComposeRuntime.runner
         ComposeRuntime.runner = FailingComposeRunner()
