@@ -1,5 +1,5 @@
+import BarkVisorZlibInflate
 import Foundation
-import zlib
 
 enum CatalogZip {
     static func files(from data: Data) throws -> [String: Data] {
@@ -21,6 +21,7 @@ enum CatalogZip {
             guard u32(data, cursor) == 0x0201_4B50 else { break }
             let method = Int(u16(data, cursor + 10))
             let compressed = Int(u32(data, cursor + 20))
+            let uncompressed = Int(u32(data, cursor + 24))
             let nameLen = Int(u16(data, cursor + 28))
             let extraLen = Int(u16(data, cursor + 30))
             let commentLen = Int(u16(data, cursor + 32))
@@ -34,6 +35,7 @@ enum CatalogZip {
                 localOffset: localOffset,
                 method: method,
                 compressed: compressed,
+                uncompressed: uncompressed,
             )
             if !name.isEmpty, !name.hasSuffix("/"), let payload {
                 files[name] = payload
@@ -71,6 +73,7 @@ enum CatalogZip {
         localOffset: Int,
         method: Int,
         compressed: Int,
+        uncompressed: Int,
     ) throws -> Data? {
         guard localOffset + 30 <= data.count else { return nil }
         guard u32(data, localOffset) == 0x0403_4B50 else { return nil }
@@ -81,7 +84,7 @@ enum CatalogZip {
         guard start >= 0, end <= data.count else { return nil }
         let slice = data.subdata(in: start ..< end)
         if method == 0 { return slice }
-        if method == 8 { return try inflateRaw(slice) }
+        if method == 8 { return try inflateRaw(slice, uncompressed: uncompressed) }
         return nil
     }
 
@@ -106,41 +109,35 @@ enum CatalogZip {
             | (UInt32(data[offset + 3]) << 24)
     }
 
-    private static func inflateRaw(_ input: Data) throws -> Data {
+    private static func inflateRaw(_ input: Data, uncompressed: Int) throws -> Data {
         if input.isEmpty { return Data() }
-        var stream = z_stream()
-        var status = inflateInit2_(
-            &stream,
-            -MAX_WBITS,
-            ZLIB_VERSION,
-            Int32(MemoryLayout<z_stream>.size),
-        )
-        guard status == Z_OK else {
-            throw BarkVisorError.repositorySyncFailed("App catalog zip could not be inflated")
+        var destCount = max(uncompressed, 4_096)
+        if destCount < input.count {
+            destCount = max(input.count * 16, 4_096)
         }
-        defer { inflateEnd(&stream) }
-        var source = input
-        var output = Data()
-        source.withUnsafeMutableBytes { raw in
-            guard let base = raw.bindMemory(to: Bytef.self).baseAddress else { return }
-            stream.next_in = base
-            stream.avail_in = uInt(input.count)
-            var buffer = [Bytef](repeating: 0, count: 32_768)
-            repeat {
-                buffer.withUnsafeMutableBufferPointer { dest in
-                    stream.next_out = dest.baseAddress
-                    stream.avail_out = uInt(dest.count)
-                    status = inflate(&stream, Z_NO_FLUSH)
+        while destCount <= 32_000_000 {
+            var output = Data(count: destCount)
+            let result: (Int32, UInt32) = output.withUnsafeMutableBytes { dest in
+                input.withUnsafeBytes { src in
+                    guard let srcBase = src.bindMemory(to: UInt8.self).baseAddress,
+                          let destBase = dest.bindMemory(to: UInt8.self).baseAddress
+                    else { return (-1, 0) }
+                    var written: UInt32 = 0
+                    let status = bv_inflate_raw(
+                        srcBase,
+                        UInt32(input.count),
+                        destBase,
+                        UInt32(destCount),
+                        &written,
+                    )
+                    return (status, written)
                 }
-                let produced = 32_768 - Int(stream.avail_out)
-                if produced > 0 {
-                    output.append(contentsOf: buffer.prefix(produced))
-                }
-            } while status == Z_OK
+            }
+            if result.0 == 0 {
+                return output.prefix(Int(result.1))
+            }
+            destCount *= 2
         }
-        guard status == Z_STREAM_END else {
-            throw BarkVisorError.repositorySyncFailed("App catalog zip inflate failed")
-        }
-        return output
+        throw BarkVisorError.repositorySyncFailed("App catalog zip could not be inflated")
     }
 }

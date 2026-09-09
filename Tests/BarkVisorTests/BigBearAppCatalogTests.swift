@@ -203,6 +203,53 @@ struct BigBearAppCatalogTests {
         #expect(AppCatalogArch.supports(arches: ["amd64"], deviceArch: "x86_64"))
     }
 
+    @Test func `host bind mounts are unsupported unless they are docker sock`() throws {
+        let files = sample(
+            slug: "gitea",
+            appJSON: appJSON(id: "gitea", name: "Gitea"),
+            compose: """
+            services:
+              app:
+                image: gitea/gitea
+                ports:
+                  - "3000:3000"
+                volumes:
+                  - gitea_data:/data
+                  - /etc/localtime:/etc/localtime:ro
+            volumes:
+              gitea_data:
+            """,
+        )
+        let app = try BigBearAppCatalog.parse(files: files).apps[0]
+        #expect(app.unsupportedReasons.contains("bind"))
+        #expect(!app.isInstallable)
+    }
+
+    @Test func `deflated zip of apps inflates`() throws {
+        let zip = dataFromHex(
+            [
+                "504b03041400000008003d75295d37160efc9f000000e600000014000000",
+                "617070732f77686f616d692f6170702e6a736f6e358e4b0ac3300c44efa2",
+                "75b22b5df80e5d77514a516c110be20fb6ec1242ee5e39d0ddbce109cd01",
+                "81041d0a8239801d18f8fa848161828881949f7fb628b4a6b26bf720c7a8",
+                "554dadd8212dbcce0b61995be44ea5e206e7049d6bd3640ecd42d647b617",
+                "0216eb591b69852a98176070f71bbcd57394b7b4078a32448a9d4b8a033f",
+                "1d0be3b25d07c36c3c8c6a3d5d3bbd48d64919c52b6912ce75fc3ecf1f50",
+                "4b03041400000008003d75295d75d6c09e290000002e0000001e00000061",
+                "7070732f77686f616d692f646f636b65722d636f6d706f73652e796d6c2b",
+                "4e2d2acb4c4e2db6e2525028cfc84fcccd04b11414327313d353ad144a8a",
+                "1253d332b3f521525c00504b010214031400000008003d75295d37160efc",
+                "9f000000e600000014000000000000000000000080010000000061707073",
+                "2f77686f616d692f6170702e6a736f6e504b010214031400000008003d75",
+                "295d75d6c09e290000002e0000001e00000000000000000000008001d100",
+                "0000617070732f77686f616d692f646f636b65722d636f6d706f73652e79",
+                "6d6c504b050600000000020002008e000000360100000000",
+            ].joined(),
+        )
+        let catalog = try BigBearAppCatalog.parseZip(zip)
+        #expect(catalog.apps.map(\.id) == ["whoami"])
+    }
+
     @Test func `zip of apps parses and skips converted`() throws {
         let whoami = sample(
             slug: "whoami",
@@ -318,6 +365,19 @@ struct BigBearAppCatalogTests {
         out.append(central)
         out.append(eocd)
         return out
+    }
+
+    private func dataFromHex(_ hex: String) -> Data {
+        var bytes: [UInt8] = []
+        var chars = Array(hex)
+        var i = 0
+        while i + 1 < chars.count {
+            let hi = chars[i].hexDigitValue ?? 0
+            let lo = chars[i + 1].hexDigitValue ?? 0
+            bytes.append(UInt8((hi << 4) | lo))
+            i += 2
+        }
+        return Data(bytes)
     }
 
     private func le16(_ value: UInt16) -> [UInt8] {

@@ -221,6 +221,7 @@ public enum BigBearAppCatalog {
             let volumeResult = parseVolumes(service["volumes"])
             mounts.append(contentsOf: volumeResult.mounts)
             named.append(contentsOf: volumeResult.named)
+            reasons.append(contentsOf: volumeResult.reasons)
             var cleaned: [String: Any] = [:]
             for key in allowedServiceKeys {
                 if let value = service[key] { cleaned[key] = value }
@@ -308,20 +309,22 @@ public enum BigBearAppCatalog {
     private struct VolumeParse {
         var mounts: [AppCatalogVolume]
         var named: [String]
+        var reasons: [String]
     }
 
     private static func parseVolumes(_ value: Any?) -> VolumeParse {
         guard let value, !(value is NSNull) else {
-            return VolumeParse(mounts: [], named: [])
+            return VolumeParse(mounts: [], named: [], reasons: [])
         }
         let items: [Any]
         if let array = value as? [Any] {
             items = array
         } else {
-            return VolumeParse(mounts: [], named: [])
+            return VolumeParse(mounts: [], named: [], reasons: [])
         }
         var mounts: [AppCatalogVolume] = []
         var named: [String] = []
+        var reasons: [String] = []
         for item in items {
             if let text = stringValue(item) {
                 let parts = text.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
@@ -329,6 +332,9 @@ public enum BigBearAppCatalog {
                     let source = parts[0]
                     let target = parts[1]
                     if source.hasPrefix("/") || source.hasPrefix(".") || source.hasPrefix("~") {
+                        if !source.contains("docker.sock") {
+                            reasons.append("bind")
+                        }
                         continue
                     }
                     named.append(source)
@@ -346,6 +352,14 @@ public enum BigBearAppCatalog {
                 let source = stringValue(object["source"])
                 let target = stringValue(object["target"]) ?? stringValue(object["destination"])
                 guard let target else { continue }
+                let type = stringValue(object["type"]) ?? "volume"
+                if type == "bind" || source?.hasPrefix("/") == true || source?.hasPrefix(".") == true
+                    || source?.hasPrefix("~") == true {
+                    if !mentionsDockerSock(item) {
+                        reasons.append("bind")
+                    }
+                    continue
+                }
                 if let source, !source.hasPrefix("/"), !source.hasPrefix("."), !source.hasPrefix("~") {
                     named.append(source)
                     mounts.append(
@@ -358,7 +372,7 @@ public enum BigBearAppCatalog {
                 }
             }
         }
-        return VolumeParse(mounts: mounts, named: named)
+        return VolumeParse(mounts: mounts, named: named, reasons: reasons)
     }
 
     private static func volumesFromCompose(
