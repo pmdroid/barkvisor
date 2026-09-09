@@ -583,13 +583,7 @@ async function doDeleteImage() {
     </button>
   </div>
 
-  <LibraryFolderForm
-    v-if="libraryNeedsFolder"
-    source="system"
-    @saved="onLibraryFolderSaved"
-  />
-
-  <template v-else-if="libraryTab === 'apps'">
+  <template v-if="libraryTab === 'apps'">
     <EmptyState
       v-if="homeLibrary.appsError && homeLibrary.apps.length === 0"
       icon="image"
