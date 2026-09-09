@@ -167,16 +167,20 @@ public enum PlatformPaths {
         #endif
     }
 
-    public static func isAbsoluteExecutablePath(_ argument: String) -> Bool {
+    public static func isAbsolutePath(_ path: String) -> Bool {
         #if os(Windows)
-            if argument.hasPrefix("/") || argument.hasPrefix("\\") {
+            if path.hasPrefix("/") || path.hasPrefix("\\") {
                 return true
             }
-            let scalars = Array(argument)
+            let scalars = Array(path)
             return scalars.count >= 2 && scalars[0].isLetter && scalars[1] == ":"
         #else
-            argument.hasPrefix("/")
+            path.hasPrefix("/")
         #endif
+    }
+
+    public static func isAbsoluteExecutablePath(_ argument: String) -> Bool {
+        isAbsolutePath(argument)
     }
 
     public static func resolvedExecutablePath(

@@ -68,7 +68,7 @@ public enum LibrarySettings {
     /// Absolute path that would pass ``validateAndPrepare`` format checks.
     public static func isAcceptableStoredPath(_ raw: String) -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("/") else { return false }
+        guard PlatformPaths.isAbsolutePath(trimmed) else { return false }
         return (try? QEMUBuilder.sanitizeQEMUArg(trimmed, label: "Library path")) != nil
     }
 
@@ -81,7 +81,7 @@ public enum LibrarySettings {
         if trimmed.isEmpty {
             return nil
         }
-        guard trimmed.hasPrefix("/") else {
+        guard PlatformPaths.isAbsolutePath(trimmed) else {
             throw BarkVisorError.badRequest("Library path must be an absolute path")
         }
         _ = try QEMUBuilder.sanitizeQEMUArg(trimmed, label: "Library path")
@@ -158,11 +158,24 @@ public enum LibrarySettings {
     }
 
     public static func isPath(_ resolvedPath: String, under root: URL) -> Bool {
-        let canonical = (root.path as NSString).resolvingSymlinksInPath
-        if resolvedPath == canonical {
-            return true
-        }
-        let prefix = canonical.hasSuffix("/") ? canonical : canonical + "/"
-        return resolvedPath.hasPrefix(prefix)
+        #if os(Windows)
+            func fold(_ value: String) -> String {
+                value.replacingOccurrences(of: "/", with: "\\").lowercased()
+            }
+            let resolved = fold((resolvedPath as NSString).resolvingSymlinksInPath)
+            let canonical = fold((root.path as NSString).resolvingSymlinksInPath)
+            if resolved == canonical {
+                return true
+            }
+            let prefix = canonical.hasSuffix("\\") ? canonical : canonical + "\\"
+            return resolved.hasPrefix(prefix)
+        #else
+            let canonical = (root.path as NSString).resolvingSymlinksInPath
+            if resolvedPath == canonical {
+                return true
+            }
+            let prefix = canonical.hasSuffix("/") ? canonical : canonical + "/"
+            return resolvedPath.hasPrefix(prefix)
+        #endif
     }
 }

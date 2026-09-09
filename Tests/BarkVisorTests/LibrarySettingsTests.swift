@@ -136,6 +136,17 @@ final class LibrarySettingsTests {
         }
     }
 
+    @Test func `windows drive letter library path is absolute`() {
+        #if os(Windows)
+            #expect(LibrarySettings.isAcceptableStoredPath(#"C:\ProgramData\BarkVisor\images"#))
+            #expect(LibrarySettings.isAcceptableStoredPath("C:/ProgramData/BarkVisor/images"))
+            #expect(!LibrarySettings.isAcceptableStoredPath("ProgramData/BarkVisor/images"))
+        #else
+            #expect(!LibrarySettings.isAcceptableStoredPath("C:/ProgramData/BarkVisor/images"))
+            #expect(LibrarySettings.isAcceptableStoredPath("/var/lib/barkvisor/images"))
+        #endif
+    }
+
     @Test func `comma in path is rejected`() {
         #expect(throws: BarkVisorError.self) {
             try LibrarySettings.validateAndPrepare("/tmp/lib,rary")

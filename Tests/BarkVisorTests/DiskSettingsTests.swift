@@ -68,6 +68,16 @@ final class DiskSettingsTests {
         }
     }
 
+    @Test func `windows drive letter disk path is absolute`() {
+        #if os(Windows)
+            #expect(DiskSettings.isAcceptableStoredPath(#"C:\ProgramData\BarkVisor\disks"#))
+            #expect(DiskSettings.isAcceptableStoredPath("C:/ProgramData/BarkVisor/disks"))
+            #expect(!DiskSettings.isAcceptableStoredPath("ProgramData/BarkVisor/disks"))
+        #else
+            #expect(!DiskSettings.isAcceptableStoredPath("C:/ProgramData/BarkVisor/disks"))
+        #endif
+    }
+
     @Test func `dev path is rejected as disk directory`() {
         #expect(throws: BarkVisorError.self) {
             try DiskSettings.validateAndPrepare("/dev/sdb")

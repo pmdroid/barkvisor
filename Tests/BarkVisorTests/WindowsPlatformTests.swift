@@ -39,6 +39,8 @@ struct WindowsPlatformTests {
     @Test func `path list separator is semicolon on windows`() {
         #if os(Windows)
             #expect(PlatformPaths.pathListSeparator == ";")
+            #expect(PlatformPaths.isAbsolutePath(#"C:\Program Files\qemu\qemu-system-x86_64.exe"#))
+            #expect(PlatformPaths.isAbsolutePath("C:/ProgramData/BarkVisor/images"))
             #expect(PlatformPaths.isAbsoluteExecutablePath(#"C:\Program Files\qemu\qemu-system-x86_64.exe"#))
             let exe = PlatformPaths.resolvedExecutablePath(
                 argument: "qemu-system-x86_64.exe",
