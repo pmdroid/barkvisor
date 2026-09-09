@@ -5,6 +5,7 @@ import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from './homeLibrary'
 
 const originalGet = api.get
+const originalDelete = api.delete
 
 function snapshot(
   partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>,
@@ -58,6 +59,7 @@ describe('homeLibrary store (PAS-34)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.delete = originalDelete
   })
 
   test('unions templates by slug across Devices and skips unreachable members', async () => {
@@ -346,5 +348,121 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.deviceHasImage(key, 'studio')).toBe(true)
     expect(store.imageForDevice(key, 'studio')?.id).toBe('peer-iso')
     expect(store.imagesError).toBeNull()
+  })
+
+  test('a non-array GET /images body is treated as no images', async () => {
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({ data: { items: [img({ id: 'hidden', name: 'ubuntu.iso' })] } })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([])
+    expect(store.images).toEqual([])
+    expect(store.imagesError).toBeNull()
+  })
+
+  test('unreachable members are skipped so a Steam Deck copy never appears', async () => {
+    const self = snapshot({ hostId: 'agentbox', role: 'self' })
+    const deck = snapshot({ hostId: 'steamdeck', role: 'member', reachability: 'unreachable' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, deck])
+    expect(store.images).toEqual([])
+    expect(store.imagesError).toBeNull()
+    expect(get.mock.calls.map((c) => c[0])).toEqual(['/images'])
+  })
+
+  test('memberHTTP is not fetched, same as unreachable', async () => {
+    const self = snapshot({ hostId: 'macmini', role: 'self' })
+    const box = snapshot({ hostId: 'agentbox', role: 'member', reachability: 'memberHTTP' })
+    const deck = snapshot({ hostId: 'steamdeck', role: 'member', reachability: 'memberHTTP' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, box, deck])
+    expect(store.images).toEqual([])
+    expect(store.imagesError).toBeNull()
+    expect(get.mock.calls.map((c) => c[0])).toEqual(['/images'])
+  })
+
+  test('when every Device GET fails the library is empty and imagesError is set', async () => {
+    const self = snapshot({ hostId: 'agentbox', role: 'self' })
+    const deck = snapshot({ hostId: 'steamdeck', role: 'member', reachability: 'ok' })
+    const get = mock(() => Promise.reject(new Error('proxy down')))
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, deck])
+    expect(store.images).toEqual([])
+    expect(store.imagesError).toBe('proxy down')
+  })
+
+  test('removeCopy DELETEs on the owning Device and drops that copy only', async () => {
+    const self = snapshot({ hostId: 'macmini', role: 'self' })
+    const deck = snapshot({ hostId: 'steamdeck', role: 'member', reachability: 'ok' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'mac-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      if (url === '/home/devices/steamdeck/v1/images') {
+        return Promise.resolve({
+          data: [img({ id: 'deck-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const del = mock((url: string) => {
+      expect(url).toBe('/home/devices/steamdeck/v1/images/deck-iso')
+      return Promise.resolve({ data: {} })
+    })
+    api.get = get as typeof api.get
+    api.delete = del as typeof api.delete
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, deck])
+    const key = homeImageKey(img({ id: 'mac-iso', name: 'ubuntu.iso', sha256: 'abc' }))
+    expect(store.deviceHasImage(key, 'steamdeck')).toBe(true)
+    await store.removeCopy(deck, 'deck-iso')
+    expect(del.mock.calls.map((c) => c[0])).toEqual(['/home/devices/steamdeck/v1/images/deck-iso'])
+    expect(store.deviceHasImage(key, 'steamdeck')).toBe(false)
+    expect(store.deviceHasImage(key, 'macmini')).toBe(true)
+    expect(store.imageForDevice(key, 'macmini')?.id).toBe('mac-iso')
+  })
+
+  test('removeCopy on This Device DELETEs /images/:id', async () => {
+    const self = snapshot({ hostId: 'macmini', role: 'self' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'mac-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const del = mock((url: string) => {
+      expect(url).toBe('/images/mac-iso')
+      return Promise.resolve({ data: {} })
+    })
+    api.get = get as typeof api.get
+    api.delete = del as typeof api.delete
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self])
+    await store.removeCopy(self, 'mac-iso')
+    expect(del.mock.calls.map((c) => c[0])).toEqual(['/images/mac-iso'])
+    expect(store.images).toEqual([])
   })
 })

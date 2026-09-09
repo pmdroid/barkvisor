@@ -5,6 +5,7 @@ import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
 import {
   canCallDeviceAPI,
+  deviceImagePath,
   devicePath,
   deviceTemplatesPath,
   isSelfDevice,
@@ -370,6 +371,21 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     }
   }
 
+  async function removeCopy(device: DeviceApiTarget, imageId: string): Promise<void> {
+    await api.delete(deviceImagePath(device, imageId))
+    images.value = images.value.flatMap((row) => {
+      const copies = row.copies.filter(
+        (copy) => !(copy.hostId === device.hostId && copy.imageId === imageId),
+      )
+      if (copies.length === 0) return []
+      return [{
+        ...row,
+        copies,
+        sourceHostIds: readySourceHostIds(copies),
+      }]
+    })
+  }
+
   function sourceLine(row: HomeTemplate, labelFor: (hostId: string) => string = (id) => id): string {
     return row.sourceHostIds.map(labelFor).join(', ')
   }
@@ -400,6 +416,7 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     resolveImageForCreate,
     fetchAll,
     fetchImages,
+    removeCopy,
     sourceLine,
     defaultLabelFor,
   }
