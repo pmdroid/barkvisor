@@ -43,6 +43,18 @@ public enum ApplicationLifecycleService {
         "app-update:\(id)"
     }
 
+    public static func publishedUpdate(
+        event: BackgroundTaskManager.TaskEvent?,
+    ) -> (taskID: String?, progress: Double?) {
+        guard let event else { return (nil, nil) }
+        switch event.status {
+        case .queued, .running:
+            return (event.taskID, event.progress ?? 0)
+        case .completed, .failed, .cancelled:
+            return (nil, nil)
+        }
+    }
+
     private static func setLastError(id: String, _ error: String?) {
         if let error {
             lastErrors[id] = error

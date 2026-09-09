@@ -378,6 +378,71 @@ final class ApplicationLifecycleServiceTests {
         let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-del")?.state }
         #expect(state == "deleting")
     }
+
+    @Test func `published update is only queued or running`() {
+        func event(
+            _ status: BackgroundTaskManager.TaskStatus,
+            progress: Double?,
+        ) -> BackgroundTaskManager.TaskEvent {
+            BackgroundTaskManager.TaskEvent(
+                taskID: "app-update:a",
+                kind: BackgroundTaskManager.TaskKind.appUpdate.rawValue,
+                status: status,
+                progress: progress,
+                error: nil,
+                resultPayload: nil,
+            )
+        }
+
+        let running = ApplicationLifecycleService.publishedUpdate(event: event(.running, progress: 0.4))
+        #expect(running.taskID == "app-update:a")
+        #expect(running.progress == 0.4)
+
+        let queued = ApplicationLifecycleService.publishedUpdate(event: event(.queued, progress: nil))
+        #expect(queued.taskID == "app-update:a")
+        #expect(queued.progress == 0)
+
+        for status: BackgroundTaskManager.TaskStatus in [.completed, .failed, .cancelled] {
+            let published = ApplicationLifecycleService.publishedUpdate(event: event(status, progress: 0.8))
+            #expect(published.taskID == nil)
+            #expect(published.progress == nil)
+        }
+
+        let missing = ApplicationLifecycleService.publishedUpdate(event: nil)
+        #expect(missing.taskID == nil)
+        #expect(missing.progress == nil)
+    }
+
+    @Test func `queued app update cancel is not published`() async throws {
+        let manager = BackgroundTaskManager()
+        await manager.submit("app-update:a", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+            return nil
+        }
+        await manager.submit("app-update:b", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+            return nil
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        await manager.submit("app-update:c", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+            return nil
+        }
+
+        let queued = await manager.status("app-update:c")
+        #expect(queued?.status == .queued)
+        let before = ApplicationLifecycleService.publishedUpdate(event: queued)
+        #expect(before.taskID == "app-update:c")
+
+        await manager.cancel("app-update:c")
+        let cancelled = await manager.status("app-update:c")
+        #expect(cancelled?.status == .cancelled)
+        let published = ApplicationLifecycleService.publishedUpdate(event: cancelled)
+        #expect(published.taskID == nil)
+        #expect(published.progress == nil)
+
+        await manager.cancelAll()
+    }
 }
 
 private func applicationVM(id: String) -> VM {
