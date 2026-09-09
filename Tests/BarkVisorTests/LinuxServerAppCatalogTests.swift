@@ -153,6 +153,51 @@ struct LinuxServerAppCatalogTests {
         #expect(rows.contains { $0.slug == "jellyfin" && $0.source == "linuxserver" })
         #expect(rows.allSatisfy { $0.source == "linuxserver" })
     }
+
+    @Test func `missing catalog-source prefers Big Bear when slugs collide`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let now = iso8601.string(from: Date())
+        try pool.write { db in
+            try ImageRepository(
+                id: "bb", name: "Big Bear", url: "https://example.com/apps",
+                isBuiltIn: true, repoType: "apps", lastSyncedAt: nil, lastError: nil,
+                syncStatus: "idle", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try ImageRepository(
+                id: "ls", name: LinuxServerAppCatalog.catalogName, url: LinuxServerAppCatalog.originURL,
+                isBuiltIn: true, repoType: "apps", lastSyncedAt: nil, lastError: nil,
+                syncStatus: "idle", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try AppCatalogRecord.from(
+                dto: AppCatalogEntryDTO(
+                    id: "plex", name: "Plex", category: "Media", arches: ["arm64"],
+                    source: AppCatalogEntryDTO.bigBearSource,
+                    compose: "services:\n  plex:\n    image: linuxserver/plex\n",
+                ),
+                repositoryId: "bb",
+                now: now,
+            ).insert(db)
+            try AppCatalogRecord.from(
+                dto: AppCatalogEntryDTO(
+                    id: "plex", name: "Plex", category: "Media", arches: ["arm64"],
+                    source: AppCatalogEntryDTO.linuxServerSource,
+                    compose: "services:\n  plex:\n    image: lscr.io/linuxserver/plex:latest\n",
+                ),
+                repositoryId: "ls",
+                now: now,
+            ).insert(db)
+            let unlabeled = try AppCatalogRecord.resolve(db: db, slug: "plex", source: nil)
+            #expect(unlabeled?.source == AppCatalogEntryDTO.bigBearSource)
+            let labeled = try AppCatalogRecord.resolve(
+                db: db, slug: "plex", source: AppCatalogEntryDTO.linuxServerSource,
+            )
+            #expect(labeled?.source == AppCatalogEntryDTO.linuxServerSource)
+        }
+    }
 }
 
 private actor RecordingLinuxServerFetcher: CatalogURLFetching {
