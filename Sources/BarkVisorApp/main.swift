@@ -42,7 +42,7 @@ import Logging
         }
     }
 
-    func windowsServiceControl(_ control: DWORD) {
+    let windowsServiceControlProc: LPHANDLER_FUNCTION = { control in
         if control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN {
             windowsReportServiceStatus(DWORD(SERVICE_STOP_PENDING), accepted: false)
             if let event = windowsShutdownEvent {
@@ -51,10 +51,10 @@ import Logging
         }
     }
 
-    func windowsServiceMain(_ argc: DWORD, _ argv: UnsafeMutablePointer<LPWSTR>?) {
+    let windowsServiceMainProc: LPSERVICE_MAIN_FUNCTIONW = { _, _ in
         var name: [WCHAR] = Array("BarkVisor".utf16) + [0]
         windowsServiceStatusHandle = name.withUnsafeMutableBufferPointer { buf in
-            RegisterServiceCtrlHandlerW(buf.baseAddress, windowsServiceControl)
+            RegisterServiceCtrlHandlerW(buf.baseAddress, windowsServiceControlProc)
         }
         windowsReportServiceStatus(DWORD(SERVICE_START_PENDING), accepted: false)
         windowsServiceReady.signal()
@@ -84,7 +84,7 @@ import Logging
                     var entries = [
                         SERVICE_TABLE_ENTRYW(
                             lpServiceName: buf.baseAddress,
-                            lpServiceProc: windowsServiceMain,
+                            lpServiceProc: windowsServiceMainProc,
                         ),
                         SERVICE_TABLE_ENTRYW(lpServiceName: nil, lpServiceProc: nil),
                     ]
