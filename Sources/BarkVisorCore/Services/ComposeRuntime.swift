@@ -63,10 +63,31 @@ public enum ComposeRuntime {
                 "\(key)=\(envValue(env[key] ?? ""))"
             }.joined(separator: "\n") + "\n"
             try body.write(to: envURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: envURL.path,
+            )
         } else if FileManager.default.fileExists(atPath: envURL.path) {
             try FileManager.default.removeItem(at: envURL)
         }
         return dir
+    }
+
+    public static func readEnv(id: String, dataDir: URL = Config.dataDir) -> [String: String]? {
+        let envURL = projectDirectory(id: id, dataDir: dataDir).appendingPathComponent(".env")
+        guard let body = try? String(contentsOf: envURL, encoding: .utf8) else { return nil }
+        var out: [String: String] = [:]
+        for line in body.split(whereSeparator: \.isNewline) {
+            let text = String(line)
+            guard let eq = text.firstIndex(of: "=") else { continue }
+            let key = String(text[..<eq])
+            var value = String(text[text.index(after: eq)...])
+            if value.hasPrefix("'"), value.hasSuffix("'"), value.count >= 2 {
+                value = String(value.dropFirst().dropLast()).replacingOccurrences(of: "'\\''", with: "'")
+            }
+            out[key] = value
+        }
+        return out.isEmpty ? nil : out
     }
 
     public static func removeProject(id: String, dataDir: URL = Config.dataDir) {

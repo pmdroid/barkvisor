@@ -28,6 +28,7 @@ public enum ApplicationLifecycleService {
         composeYaml: String,
         env: [String: String]?,
         dataDir: URL = Config.dataDir,
+        allowedBinds: [String] = [],
     ) throws -> ComposeRender {
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -35,7 +36,9 @@ public enum ApplicationLifecycleService {
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
+<<<<<<< HEAD
             bindHost: nil,
+            allowedBinds: allowedBinds,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -194,7 +197,13 @@ public enum ApplicationLifecycleService {
             return
         }
         if let yaml = vm.composeYaml {
-            let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+            let render = try prepare(
+                id: vm.id,
+                composeYaml: yaml,
+                env: decodeEnv(vm, dataDir: dataDir),
+                dataDir: dataDir,
+                allowedBinds: vm.decodedSharedPaths,
+            )
             try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
             try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
         }
@@ -302,8 +311,12 @@ public enum ApplicationLifecycleService {
         vm.setPortForwards(rules.isEmpty ? nil : rules)
     }
 
-    private static func decodeEnv(_ vm: VM) -> [String: String]? {
-        WorkloadSpecJSON.decode(vm.specJson)?.spec.env
+    private static func decodeEnv(_ vm: VM, dataDir: URL) -> [String: String]? {
+        AppTemplate.mergeEnv(
+            existing: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
+            incoming: nil,
+            disk: ComposeRuntime.readEnv(id: vm.id, dataDir: dataDir),
+        )
     }
 
     private static func setState(

@@ -40,12 +40,13 @@ struct WorkloadApplyController: RouteCollection {
                 req: req,
             )
         }
-        return result
+        return AppTemplate.redact(result)
     }
 
     @Sendable
     func getSpec(req: Vapor.Request) async throws -> WorkloadSpec {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        return try await WorkloadApplyService.loadSpec(id: id, db: req.db)
+        let spec = try await WorkloadApplyService.loadSpec(id: id, db: req.db)
+        return AppTemplate.redact(spec)
     }
 }

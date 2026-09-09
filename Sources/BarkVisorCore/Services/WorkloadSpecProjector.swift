@@ -291,6 +291,7 @@ public enum WorkloadSpecProjector {
             ),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
+                sharedPaths: vm.decodedSharedPaths.isEmpty ? nil : vm.decodedSharedPaths,
                 health: vm.decodedHealth,
                 runtime: vm.runtime ?? WorkloadSpec.runtimeDevice,
                 compose: vm.composeYaml,
@@ -308,6 +309,7 @@ public enum WorkloadSpecProjector {
         vm.runtime = spec.spec.runtime ?? WorkloadSpec.runtimeDevice
         vm.runtimeWorkloadId = spec.spec.runtimeWorkloadId
         vm.composeYaml = spec.spec.compose
+        vm.setSharedPaths(spec.spec.sharedPaths)
         if vm.composeProject == nil || vm.composeProject?.isEmpty == true {
             vm.composeProject = ComposeRuntime.composeProjectName(id: vm.id)
         }
@@ -365,6 +367,7 @@ public enum WorkloadSpecProjector {
             workloadID: existingID ?? spec.metadata.id ?? "new",
             stateDir: dummy,
             bindHost: bindHost,
+            allowedBinds: spec.spec.sharedPaths ?? [],
         )
     }
 

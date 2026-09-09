@@ -84,4 +84,20 @@ struct ComposeRuntimeTests {
         )
         #expect(body == "K='$HOME'\n")
     }
+
+    @Test func `writeProject sets env file mode 0600`() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-compose-env-mode-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let dir = try ComposeRuntime.writeProject(
+            id: "app-1",
+            yaml: "services: {}\n",
+            env: ["DB_PASSWORD": "hunter2"],
+            dataDir: dataDir,
+        )
+        let envURL = dir.appendingPathComponent(".env")
+        let attrs = try FileManager.default.attributesOfItem(atPath: envURL.path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        #expect((perms & 0o777) == 0o600)
+    }
 }

@@ -469,4 +469,34 @@ struct ComposeAllowlistTests {
         #expect(render.bindHost == "0.0.0.0")
         #expect(render.publishedPorts.contains { $0.hostPort == 8_080 && $0.hostAddress == "0.0.0.0" })
     }
+
+    @Test func `allowlisted host folder binds are rewritten`() throws {
+        let dir = stateDir
+        let media = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-media-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: media) }
+        let yaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+            volumes:
+              - type: bind
+                source: \(media.path)
+                target: /movies
+              - config:/config
+        volumes:
+          config:
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml,
+            workloadID: "plex-1",
+            stateDir: dir,
+            bindHost: "192.168.8.10",
+            allowedBinds: [media.path],
+        )
+        #expect(render.yaml.contains(media.path))
+        #expect(render.yaml.contains("/movies"))
+        #expect(render.namedVolumes == ["config"])
+    }
 }

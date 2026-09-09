@@ -572,6 +572,66 @@ final class WorkloadApplyServiceTests {
         try await dbPool.read { db in try VM.fetchCount(db) }
     }
 
+    @Test func `catalog template required folder names the field`() async throws {
+        let now = iso8601.string(from: Date())
+        let dto = AppCatalogEntryDTO(
+            id: "plex",
+            name: "Plex",
+            category: "Media",
+            arches: ["arm64"],
+            compose: """
+            services:
+              plex:
+                image: lscr.io/linuxserver/plex
+                ports:
+                  - "32400:32400"
+                volumes:
+                  - plex_config:/config
+                  - plex_movies:/movies
+            volumes:
+              plex_config:
+              plex_movies:
+            """,
+            volumes: [
+                AppCatalogVolume(containerPath: "/config", name: "plex_config", kind: "volume"),
+                AppCatalogVolume(containerPath: "/movies", name: "plex_movies", kind: "folder"),
+            ],
+            ports: [AppCatalogPort(container: 32_400, host: 32_400, proto: "tcp", ui: true)],
+        )
+        try await dbPool.write { db in
+            try ImageRepository(
+                id: "repo",
+                name: "Apps",
+                url: "https://example.com/apps",
+                isBuiltIn: true,
+                repoType: "apps",
+                lastSyncedAt: nil,
+                lastError: nil,
+                syncStatus: "idle",
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+            try AppCatalogRecord.from(dto: dto, repositoryId: "repo", now: now).insert(db)
+        }
+        let doc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindApplication,
+            "metadata": ["name": "plex-app", "labels": ["catalog": "plex"]],
+            "template": ["values": ["port-32400-tcp": "32400"]],
+            "spec": [
+                "runtime": WorkloadSpec.runtimeDevice,
+                "compose": dto.compose,
+            ],
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.errorDescription?.contains("Movies") == true)
+    }
+
     private func whoamiDocument(name: String) -> [String: Any] {
         [
             "apiVersion": WorkloadSpec.currentAPIVersion,

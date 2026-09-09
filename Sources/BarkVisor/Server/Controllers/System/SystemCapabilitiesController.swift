@@ -44,6 +44,10 @@ enum SystemCapabilitiesController {
             inventorySchemaVersion: inv.schemaVersion,
             runnableArches: [inv.platform.arch],
             networkModes: CapabilityDetailBuilder.networkModes(from: inv),
+            puid: AppTemplate.devicePrefill().puid,
+            pgid: AppTemplate.devicePrefill().pgid,
+            timezone: AppTemplate.devicePrefill().timezone,
+            lanIPv4: HostInfoService.lanBindIPv4(),
         )
     }
 }
