@@ -59,6 +59,9 @@ public enum ComposeAllowlist {
             if service["env_file"] != nil {
                 service["env_file"] = ".env"
             }
+            if let environment = service["environment"] {
+                service["environment"] = try rewriteEnvironment(environment)
+            }
             let rewritten = try rewriteVolumes(
                 service["volumes"],
                 serviceName: name,
@@ -312,6 +315,32 @@ public enum ComposeAllowlist {
             )
         }
         throw BarkVisorError.badRequest("unsupported compose feature: volumes")
+    }
+
+    private static func rewriteEnvironment(_ value: Any) throws -> [String: String] {
+        var out: [String: String] = [:]
+        if let object = asObject(value) {
+            for (key, raw) in object {
+                try ComposeRuntime.requireEnvKey(key)
+                guard let text = stringValue(raw) else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: environment")
+                }
+                out[key] = text
+            }
+            return out
+        }
+        if let array = value as? [Any] {
+            for item in array {
+                guard let text = stringValue(item), let eq = text.firstIndex(of: "=") else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: environment")
+                }
+                let key = String(text[..<eq])
+                try ComposeRuntime.requireEnvKey(key)
+                out[key] = String(text[text.index(after: eq)...])
+            }
+            return out
+        }
+        throw BarkVisorError.badRequest("unsupported compose feature: environment")
     }
 
     private static func namedVolume(

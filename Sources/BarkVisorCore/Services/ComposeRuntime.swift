@@ -199,7 +199,7 @@ public enum ComposeRuntime {
         return "stopped"
     }
 
-    private static func requireEnvKey(_ key: String) throws {
+    static func requireEnvKey(_ key: String) throws {
         guard let first = key.unicodeScalars.first else {
             throw BarkVisorError.badRequest("invalid compose env key")
         }
@@ -209,6 +209,10 @@ public enum ComposeRuntime {
         }
         let rest = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
         if !key.unicodeScalars.allSatisfy({ rest.contains($0) }) {
+            throw BarkVisorError.badRequest("invalid compose env key")
+        }
+        let upper = key.uppercased()
+        if upper.hasPrefix("COMPOSE_") || upper.hasPrefix("DOCKER_") {
             throw BarkVisorError.badRequest("invalid compose env key")
         }
     }
