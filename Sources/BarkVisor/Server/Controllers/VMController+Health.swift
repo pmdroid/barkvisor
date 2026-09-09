@@ -93,11 +93,12 @@ extension VMController {
     ) async -> VMResponse {
         let progress = overlay.flatMap { lastProgressMap[$0.pendingImageId] }
         let task = await provisionTask(for: vm.id)
-        let updateID = ApplicationLifecycleService.updateTaskID(for: vm.id)
-        let updateEvent: BackgroundTaskManager.TaskEvent? = if let updateID {
-            await backgroundTasks.status(updateID)
+        let published: (taskID: String?, progress: Double?) = if vm.isApplication {
+            await ApplicationLifecycleService.publishedUpdate(
+                event: backgroundTasks.status(ApplicationLifecycleService.taskID(forUpdate: vm.id)),
+            )
         } else {
-            nil
+            (nil, nil)
         }
         return VMResponse(
             from: vm,
@@ -107,8 +108,8 @@ extension VMController {
             lastProgress: progress,
             provisionTaskStatus: task?.status,
             imageStatus: overlay?.imageStatus,
-            updateTaskID: updateID,
-            updateProgress: updateEvent?.progress ?? ApplicationLifecycleService.updateProgress(for: vm.id),
+            updateTaskID: published.taskID,
+            updateProgress: published.progress,
         )
     }
 

@@ -58,26 +58,18 @@ struct ApplicationOpsController: RouteCollection {
     func update(req: Request) async throws -> Response {
         let vm = try await requireApplication(req)
         let taskID = ApplicationLifecycleService.taskID(forUpdate: vm.id)
-        ApplicationLifecycleService.beginUpdate(id: vm.id, taskID: taskID)
         let db = req.db
         let workloadID = vm.id
         let submitted = await backgroundTasks.submit(taskID, kind: .appUpdate) {
-            do {
-                guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
-                    throw BarkVisorError.notFound("Workload \(workloadID) not found")
-                }
-                try await ApplicationLifecycleService.updateImages(vm: &live, db: db) { value in
-                    Task {
-                        await backgroundTasks.reportProgress(taskID, progress: value)
-                    }
-                    ApplicationLifecycleService.reportUpdateProgress(id: workloadID, progress: value)
-                }
-                ApplicationLifecycleService.endUpdate(id: workloadID)
-                return workloadID
-            } catch {
-                ApplicationLifecycleService.endUpdate(id: workloadID)
-                throw error
+            guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
+                throw BarkVisorError.notFound("Workload \(workloadID) not found")
             }
+            try await ApplicationLifecycleService.updateImages(vm: &live, db: db) { value in
+                Task {
+                    await backgroundTasks.reportProgress(taskID, progress: value)
+                }
+            }
+            return workloadID
         }
         AuditService.log(
             action: "vm.update-image",
@@ -93,16 +85,13 @@ struct ApplicationOpsController: RouteCollection {
     func checkUpdate(req: Request) async throws -> VMResponse {
         var vm = try await requireApplication(req)
         try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: req.db)
-        let updateID = ApplicationLifecycleService.updateTaskID(for: vm.id)
-        let updateEvent: BackgroundTaskManager.TaskEvent? = if let updateID {
-            await backgroundTasks.status(updateID)
-        } else {
-            nil
-        }
+        let published = await ApplicationLifecycleService.publishedUpdate(
+            event: backgroundTasks.status(ApplicationLifecycleService.taskID(forUpdate: vm.id)),
+        )
         return VMResponse(
             from: vm,
-            updateTaskID: updateID,
-            updateProgress: updateEvent?.progress ?? ApplicationLifecycleService.updateProgress(for: vm.id),
+            updateTaskID: published.taskID,
+            updateProgress: published.progress,
         )
     }
 

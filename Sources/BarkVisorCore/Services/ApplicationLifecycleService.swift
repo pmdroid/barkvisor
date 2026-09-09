@@ -10,33 +10,9 @@ public enum ApplicationLifecycleService {
 
     private static let serial = Serial()
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
-    private nonisolated(unsafe) static var updateTaskIDs: [String: String] = [:]
-    private nonisolated(unsafe) static var updateProgressValues: [String: Double] = [:]
 
     public static func lastError(for id: String) -> String? {
         lastErrors[id]
-    }
-
-    public static func updateTaskID(for id: String) -> String? {
-        updateTaskIDs[id]
-    }
-
-    public static func updateProgress(for id: String) -> Double? {
-        updateProgressValues[id]
-    }
-
-    public static func beginUpdate(id: String, taskID: String) {
-        updateTaskIDs[id] = taskID
-        updateProgressValues[id] = 0
-    }
-
-    public static func reportUpdateProgress(id: String, progress: Double) {
-        updateProgressValues[id] = progress
-    }
-
-    public static func endUpdate(id: String) {
-        updateTaskIDs.removeValue(forKey: id)
-        updateProgressValues.removeValue(forKey: id)
     }
 
     public static func taskID(forUpdate id: String) -> String {
