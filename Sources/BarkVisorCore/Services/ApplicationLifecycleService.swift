@@ -31,12 +31,11 @@ public enum ApplicationLifecycleService {
     ) throws -> ComposeRender {
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let bindHost = try HostInfoService.requireLanBindIPv4()
         let render = try ComposeAllowlist.render(
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
-            bindHost: bindHost,
+            bindHost: HostInfoService.lanBindIPv4(),
         )
         for name in render.namedVolumes {
             let volume = dir

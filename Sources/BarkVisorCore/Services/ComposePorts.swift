@@ -32,12 +32,21 @@ enum ComposePorts {
         }
     }
 
-    static func rewritePublishedPorts(_ value: Any?, bindHost: String) throws -> Rewrite {
-        try requireBindHost(bindHost)
+    static func rewritePublishedPorts(_ value: Any?, bindHost: String?) throws -> Rewrite {
         if let value, !(value is NSNull), !(value is [Any]) {
             throw BarkVisorError.badRequest("unsupported compose feature: ports")
         }
         let parsed = parsePorts(value)
+        if parsed.isEmpty {
+            return Rewrite(mapping: [], published: [])
+        }
+        let host: String
+        if let bindHost {
+            try requireBindHost(bindHost)
+            host = bindHost
+        } else {
+            host = try HostInfoService.requireLanBindIPv4()
+        }
         var mapping: [[String: Any]] = []
         var published: [PublishedPort] = []
         for port in parsed {
@@ -45,14 +54,14 @@ enum ComposePorts {
                 "target": port.containerPort,
                 "published": port.hostPort,
                 "protocol": port.proto,
-                "host_ip": bindHost,
+                "host_ip": host,
             ])
             published.append(
                 PublishedPort(
                     hostPort: port.hostPort,
                     containerPort: port.containerPort,
                     proto: port.proto,
-                    hostAddress: bindHost,
+                    hostAddress: host,
                 ),
             )
         }
@@ -118,8 +127,8 @@ enum ComposePorts {
         expected: [PublishedPort],
         allowWildcard: Bool,
     ) throws {
-        try requireBindHost(bindHost)
         if expected.isEmpty { return }
+        try requireBindHost(bindHost)
         for port in expected {
             let proto = port.proto.lowercased()
             let found = bindings.contains {

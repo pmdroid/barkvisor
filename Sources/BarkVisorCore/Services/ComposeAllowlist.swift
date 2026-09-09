@@ -60,13 +60,6 @@ public enum ComposeAllowlist {
         guard var services = asObject(root["services"]), !services.isEmpty else {
             throw BarkVisorError.badRequest("spec.compose must declare services")
         }
-        let host: String
-        if let bindHost {
-            try ComposePorts.requireBindHost(bindHost)
-            host = bindHost
-        } else {
-            host = try HostInfoService.requireLanBindIPv4()
-        }
         var published: [PublishedPort] = []
         var named: [String] = []
         var containers: [String] = []
@@ -91,7 +84,7 @@ public enum ComposeAllowlist {
             )
             service["volumes"] = rewritten.mapping
             named.append(contentsOf: rewritten.named)
-            let ports = try ComposePorts.rewritePublishedPorts(service["ports"], bindHost: host)
+            let ports = try ComposePorts.rewritePublishedPorts(service["ports"], bindHost: bindHost)
             if ports.mapping.isEmpty {
                 service.removeValue(forKey: "ports")
             } else {
@@ -130,7 +123,7 @@ public enum ComposeAllowlist {
             publishedPorts: published,
             namedVolumes: Array(Set(named)).sorted(),
             containerNames: containers,
-            bindHost: host,
+            bindHost: published.first?.hostAddress ?? bindHost ?? "",
         )
     }
 
