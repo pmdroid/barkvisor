@@ -15,7 +15,8 @@ import {
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
-import { DEVICE_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
+import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
@@ -1304,6 +1305,8 @@ const guestMacCopy = computed(() =>
 )
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
+const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
+const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
 
 const toolbarSub = computed(() => {
   const v = vm.value
@@ -1333,7 +1336,7 @@ const healthBanner = computed(() => {
     <div v-if="isMemberDetail && memberLoadSettled" class="ops-toolbar">
       <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
         <AppIcon name="chevron-left" :size="16" />
-        <span>Virtual Machines</span>
+        <span>{{ WORKLOADS_NAV_LABEL }}</span>
       </button>
       <h1>{{ vmId }}</h1>
     </div>
@@ -1352,7 +1355,7 @@ const healthBanner = computed(() => {
     <div class="ops-toolbar vm-toolbar">
       <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
         <AppIcon name="chevron-left" :size="16" />
-        <span>Virtual Machines</span>
+        <span>{{ WORKLOADS_NAV_LABEL }}</span>
       </button>
       <h1>{{ vm.name }}</h1>
       <span
@@ -1377,13 +1380,18 @@ const healthBanner = computed(() => {
             @change="toggleStartOnBoot(($event.target as HTMLInputElement).checked)"
           >
         </label>
+        <AppButton
+          v-if="isApp && openUi && vm.state === 'running'"
+          variant="primary"
+          @click="window.open(openUi, '_blank', 'noopener')"
+        >Open UI</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
         <AppButton v-if="vm.state === 'running'"
           :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
         <AppButton
-          v-if="showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
+          v-if="!isApp && showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
@@ -1395,16 +1403,16 @@ const healthBanner = computed(() => {
 
     <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
-      <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
-      <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+      <div v-if="!isApp" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
+      <div v-if="!isApp" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
+      <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
-      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
-      <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+      <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
+      <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
+      <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
 
@@ -1687,7 +1695,7 @@ const healthBanner = computed(() => {
         </div>
       </div>
 
-      <div class="col-stack">
+      <div v-if="!isApp" class="col-stack">
         <div class="sheet">
           <div class="sheet-head">
             <h3>Disks</h3>
@@ -1827,8 +1835,11 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
     />
+    <div v-if="tab === 'logs' && isApp" class="sheet">
+      <p class="dim-text">Logs for this app are not available yet.</p>
+    </div>
     <LogsPanel
-      v-if="tab === 'logs'"
+      v-else-if="tab === 'logs'"
       :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"

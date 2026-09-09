@@ -279,7 +279,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var health: String?
     var cpuCount: Int
     var memoryMB: Int
-    var bootDiskId: String
+    var bootDiskId: String?
     var isoId: String?
     var isoIds: [String]?
     var networkId: String?
@@ -835,6 +835,7 @@ enum DeviceDoctor {
         case "whpx": "WHPX"
         case "vfio": "VFIO"
         case "gpuPassthrough": "GPU passthrough"
+        case "dockerEngine": "Docker Engine"
         default: code
         }
     }

@@ -49,6 +49,8 @@ Typical `.deb` dependencies:
 
 Optional for Windows guests with TPM: distro **`swtpm`**.
 
+Optional for Application Workloads: **Docker Engine** and **Compose v2** (`docker-ce` or `docker.io`, plus `docker-compose-v2`). BarkVisor does not install Docker. Missing Docker is a doctor warning, not a failure — VMs still run.
+
 Optional for off-LAN access: **Tailscale** from your distro or [tailscale.com/download](https://tailscale.com/download). BarkVisor can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
 
 The unit uses `SupplementaryGroups=kvm`. When group **disk** exists, the package writes `barkvisor.service.d/disk.conf` so dropped QEMU can open `/dev/sdX`.

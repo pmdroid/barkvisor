@@ -80,6 +80,7 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
     public var usbPassthrough: Bool
     public var gpuPassthrough: Bool
     public var vfio: Bool
+    public var dockerEngine: Bool
 
     public init(
         kvmDevice: Bool = false,
@@ -87,12 +88,14 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
         usbPassthrough: Bool = false,
         gpuPassthrough: Bool = false,
         vfio: Bool = false,
+        dockerEngine: Bool = false,
     ) {
         self.kvmDevice = kvmDevice
         self.bridgedNetworking = bridgedNetworking
         self.usbPassthrough = usbPassthrough
         self.gpuPassthrough = gpuPassthrough
         self.vfio = vfio
+        self.dockerEngine = dockerEngine
     }
 
     public init(from features: VirtualizationFeatures) {
@@ -101,10 +104,11 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
         self.usbPassthrough = features.usbPassthrough
         self.gpuPassthrough = features.gpuPassthrough
         self.vfio = features.vfio
+        self.dockerEngine = features.dockerEngine
     }
 
     enum CodingKeys: String, CodingKey {
-        case kvmDevice, bridgedNetworking, usbPassthrough, gpuPassthrough, vfio
+        case kvmDevice, bridgedNetworking, usbPassthrough, gpuPassthrough, vfio, dockerEngine
     }
 
     public init(from decoder: Decoder) throws {
@@ -114,6 +118,7 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
         usbPassthrough = try container.decodeIfPresent(Bool.self, forKey: .usbPassthrough) ?? false
         gpuPassthrough = try container.decodeIfPresent(Bool.self, forKey: .gpuPassthrough) ?? false
         vfio = try container.decodeIfPresent(Bool.self, forKey: .vfio) ?? false
+        dockerEngine = try container.decodeIfPresent(Bool.self, forKey: .dockerEngine) ?? false
     }
 
     public func supports(_ feature: String) -> Bool {
@@ -123,6 +128,7 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
         case CapabilityCode.usbPassthrough.rawValue: usbPassthrough
         case CapabilityCode.gpuPassthrough.rawValue: gpuPassthrough
         case CapabilityCode.vfio.rawValue: vfio
+        case CapabilityCode.dockerEngine.rawValue: dockerEngine
         default: false
         }
     }

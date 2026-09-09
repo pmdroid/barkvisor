@@ -38,6 +38,11 @@ struct DoctorServiceTests {
         os: String = "Linux",
         uid: UInt32 = 501,
         qemuPath: String? = "/usr/bin/qemu-system-aarch64",
+        dockerPath: String? = nil,
+        dockerVersion: String? = nil,
+        dockerDaemonRunning: Bool = false,
+        composeVersion: String? = nil,
+        composeOK: Bool = false,
         qemuProcesses: [DoctorProcess] = [],
         kvmPresent: Bool = true,
         kvmAccessible: Bool = true,
@@ -58,6 +63,11 @@ struct DoctorServiceTests {
             os: os,
             uid: uid,
             qemuPath: qemuPath,
+            dockerPath: dockerPath,
+            dockerVersion: dockerVersion,
+            dockerDaemonRunning: dockerDaemonRunning,
+            composeVersion: composeVersion,
+            composeOK: composeOK,
             qemuProcesses: qemuProcesses,
             kvmPresent: kvmPresent,
             kvmAccessible: kvmAccessible,
@@ -95,6 +105,41 @@ struct DoctorServiceTests {
         #expect(check(report, "daemon-uid").status == .ok)
         #expect(report.privileged)
         #expect(report.ok)
+    }
+
+    @Test func `docker and compose ok`() {
+        let report = DoctorService.assemble(from: inputs(
+            dockerPath: "/usr/bin/docker",
+            dockerVersion: "27.0.0",
+            dockerDaemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        ))
+        #expect(check(report, "docker").status == .ok)
+        #expect(check(report, "docker-compose").status == .ok)
+        #expect(report.ok)
+    }
+
+    @Test func `missing docker is warn not fail`() {
+        let report = DoctorService.assemble(from: inputs(dockerPath: nil, composeOK: false))
+        #expect(check(report, "docker").status == .warn)
+        #expect(report.ok)
+    }
+
+    @Test func `missing compose is warn not fail`() {
+        let report = DoctorService.assemble(from: inputs(
+            dockerPath: "/usr/bin/docker",
+            dockerDaemonRunning: true,
+            composeOK: false,
+        ))
+        #expect(check(report, "docker-compose").status == .warn)
+        #expect(report.ok)
+    }
+
+    @Test func `windows skips docker checks`() {
+        let report = DoctorService.assemble(from: inputs(os: "Windows"))
+        #expect(check(report, "docker").status == .skip)
+        #expect(check(report, "docker-compose").status == .skip)
     }
 
     @Test func `missing qemu fails`() {

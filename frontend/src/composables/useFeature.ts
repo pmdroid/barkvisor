@@ -26,6 +26,7 @@ export const FEATURE_CODES = [
   'usbPassthrough',
   'gpuPassthrough',
   'inAppUpdate',
+  'dockerEngine',
 ] as const
 
 export type FeatureCode = (typeof FEATURE_CODES)[number]

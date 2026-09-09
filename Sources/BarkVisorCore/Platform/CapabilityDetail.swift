@@ -17,6 +17,7 @@ public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case whpx
     case vfio
     case gpuPassthrough
+    case dockerEngine
 }
 
 /// Stable reason tokens for unsupported / degraded capabilities (PAS-37 / PAS-94).
@@ -163,6 +164,8 @@ public enum CapabilityDetailBuilder {
             return vfio(os: os, features: features, probe: inventory.virtualization.vfioProbe)
         case .gpuPassthrough:
             return gpuPassthrough(os: os, features: features, probe: inventory.virtualization.vfioProbe)
+        case .dockerEngine:
+            return dockerEngine(os: os, supported: features.dockerEngine)
         }
     }
 
@@ -492,6 +495,26 @@ public enum CapabilityDetailBuilder {
         default:
             return "GPU passthrough is not available on this Device."
         }
+    }
+
+    private static func dockerEngine(os: String, supported: Bool) -> CapabilityDetail {
+        if supported {
+            return CapabilityDetail(code: .dockerEngine, supported: true)
+        }
+        if isWindows(os) {
+            return CapabilityDetail(
+                code: .dockerEngine,
+                supported: false,
+                reason: .osUnsupported,
+                remediation: "Docker apps on Windows Devices are not available yet.",
+            )
+        }
+        return CapabilityDetail(
+            code: .dockerEngine,
+            supported: false,
+            reason: .helperMissing,
+            remediation: DockerEngine.helperRemediation(os: os),
+        )
     }
 
     private static func isLinux(_ os: String) -> Bool {

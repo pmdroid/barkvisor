@@ -10,6 +10,7 @@ export const DEVICE_CPU_LABEL = 'Device CPU'
 export const DEVICE_MEMORY_LABEL = 'Device Memory'
 export const THIS_DEVICE = 'this device'
 export const NETWORKS_NAV_LABEL = 'Networks'
+export const WORKLOADS_NAV_LABEL = 'Workloads'
 
 /** Product-copy words that must not appear in Vue templates. */
 export const FORBIDDEN_PRODUCT_TERMS = [

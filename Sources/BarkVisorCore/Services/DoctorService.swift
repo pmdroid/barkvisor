@@ -68,6 +68,11 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var os: String
     public var uid: UInt32
     public var qemuPath: String?
+    public var dockerPath: String?
+    public var dockerVersion: String?
+    public var dockerDaemonRunning: Bool
+    public var composeVersion: String?
+    public var composeOK: Bool
     public var qemuProcesses: [DoctorProcess]
     public var kvmPresent: Bool
     public var kvmAccessible: Bool
@@ -96,6 +101,11 @@ public struct DoctorFactInputs: Sendable, Equatable {
         os: String,
         uid: UInt32,
         qemuPath: String? = nil,
+        dockerPath: String? = nil,
+        dockerVersion: String? = nil,
+        dockerDaemonRunning: Bool = false,
+        composeVersion: String? = nil,
+        composeOK: Bool = false,
         qemuProcesses: [DoctorProcess] = [],
         kvmPresent: Bool = false,
         kvmAccessible: Bool = false,
@@ -123,6 +133,11 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.os = os
         self.uid = uid
         self.qemuPath = qemuPath
+        self.dockerPath = dockerPath
+        self.dockerVersion = dockerVersion
+        self.dockerDaemonRunning = dockerDaemonRunning
+        self.composeVersion = composeVersion
+        self.composeOK = composeOK
         self.qemuProcesses = qemuProcesses
         self.kvmPresent = kvmPresent
         self.kvmAccessible = kvmAccessible
@@ -175,6 +190,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
                 QEMUDeviceSupport.requiredLaunchDevices.subtracting(supported).sorted()
             }
         }
+        let docker = DockerEngine.liveSnapshot()
         #if os(Windows)
             let whpxPresent = PlatformCapabilities.whpxPresent()
             let firmwarePath = Self.locateFirmware()
@@ -196,6 +212,11 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             os: PlatformHost.platformName,
             uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(WorkloadPrivilegeDrop.currentEUID())),
             qemuPath: qemuPath,
+            dockerPath: docker.dockerPath,
+            dockerVersion: docker.dockerVersion,
+            dockerDaemonRunning: docker.daemonRunning,
+            composeVersion: docker.composeVersion,
+            composeOK: docker.composeOK,
             qemuProcesses: qemuProcesses,
             kvmPresent: HostInventoryService.kvmDevicePresent(),
             kvmAccessible: FileManager.default.isReadableFile(atPath: "/dev/kvm"),
@@ -389,6 +410,8 @@ public enum DoctorService {
         var checks = [
             daemonUIDCheck(inputs),
             qemuCheck(inputs),
+            dockerCheck(inputs),
+            dockerComposeCheck(inputs),
             qemuDevicesCheck(inputs),
             qemuImgCheck(inputs),
             isoToolCheck(inputs),
@@ -461,6 +484,51 @@ public enum DoctorService {
             id: "qemu",
             status: .fail,
             detail: "\(qemuBinaryName()) not found. \(PlatformQEMU.qemuInstallHint(os: inputs.os))",
+        )
+    }
+
+    private static func dockerCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "docker",
+                status: .skip,
+                detail: "Docker Engine is not used on Windows.",
+            )
+        }
+        if let path = inputs.dockerPath, !path.isEmpty {
+            if inputs.dockerDaemonRunning {
+                let version = inputs.dockerVersion.map { " \($0)" } ?? ""
+                return DoctorCheck(id: "docker", status: .ok, detail: "\(path)\(version)")
+            }
+            return DoctorCheck(
+                id: "docker",
+                status: .warn,
+                detail: "docker found, daemon not running",
+            )
+        }
+        return DoctorCheck(
+            id: "docker",
+            status: .warn,
+            detail: "docker not found. \(DockerEngine.helperRemediation(os: inputs.os))",
+        )
+    }
+
+    private static func dockerComposeCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "docker-compose",
+                status: .skip,
+                detail: "Compose v2 is not used on Windows.",
+            )
+        }
+        if inputs.composeOK {
+            let version = inputs.composeVersion ?? "v2"
+            return DoctorCheck(id: "docker-compose", status: .ok, detail: version)
+        }
+        return DoctorCheck(
+            id: "docker-compose",
+            status: .warn,
+            detail: "docker compose v2 not found. \(DockerEngine.helperRemediation(os: inputs.os))",
         )
     }
 

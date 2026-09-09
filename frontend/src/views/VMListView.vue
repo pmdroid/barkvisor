@@ -26,7 +26,9 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { scopeRows } from '../utils/deviceScope'
-import { DEVICE_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
+import { firstOpenUrl, isApplicationWorkload, workloadKindLabel } from '../utils/workloadKind'
+import CreateAppDrawer from '../components/CreateAppDrawer.vue'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import {
   guestInfoFetchPath,
@@ -44,6 +46,7 @@ const toast = useToastStore()
 const router = useRouter()
 const route = useRoute()
 const showCreate = ref(false)
+const showCreateApp = ref(false)
 const healthFilter = ref<WorkloadHealth | 'all'>('all')
 const guestInfoMap = reactive<Record<string, GuestInfo>>({})
 const actionLoading = reactive<Record<string, boolean>>({})
@@ -74,8 +77,8 @@ const listKind = computed(() =>
 
 const filteredEmptySubtitle = computed(() => {
   const filter = healthFilter.value
-  if (filter === 'all') return 'No matching VMs on Home.'
-  return `No ${healthLabel(filter)} VMs on Home.`
+  if (filter === 'all') return 'No matching workloads on Home.'
+  return `No ${healthLabel(filter)} workloads on Home.`
 })
 
 const healthStrip = computed(() => {
@@ -273,10 +276,11 @@ async function doStop() {
 <template>
   <div class="ops-page">
   <div class="ops-toolbar">
-    <h1>Virtual Machines</h1>
-    <span class="ops-sub">{{ devicesStore.devices.length ? `${homeRows.length} across ${homeDeviceCount} ${homeDeviceCount === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}` : `${homeRows.length} VMs` }}</span>
+    <h1>{{ WORKLOADS_NAV_LABEL }}</h1>
+    <span class="ops-sub">{{ devicesStore.devices.length ? `${homeRows.length} across ${homeDeviceCount} ${homeDeviceCount === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}` : `${homeRows.length} workloads` }}</span>
     <div class="ops-actions">
       <AppButton variant="primary" icon="plus" @click="showCreate = true">Create VM</AppButton>
+      <AppButton icon="plus" @click="showCreateApp = true">Create App</AppButton>
     </div>
   </div>
 
@@ -306,14 +310,15 @@ async function doStop() {
     </button>
   </div>
 
-  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
-    <AppButton variant="primary" @click="showCreate = true">Create your first VM</AppButton>
+  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" title="No workloads yet">
+    <AppButton variant="primary" @click="showCreate = true">Create VM</AppButton>
+    <AppButton @click="showCreateApp = true">Create App</AppButton>
   </EmptyState>
 
   <EmptyState
     v-else-if="listKind === 'filtered'"
     icon="monitor"
-    title="No matching VMs"
+    title="No matching workloads"
     :subtitle="filteredEmptySubtitle"
   />
 
@@ -339,14 +344,17 @@ async function doStop() {
           @click="openRow(row)"
         >
           <td>
-            <div class="vm">{{ row.vm.name }}</div>
+            <div class="vm">{{ row.vm.name }} <span class="kind-chip">{{ workloadKindLabel(row.vm) }}</span></div>
           </td>
           <td class="dev-cell">
             {{ row.label }}
             <span v-if="!row.reachable" class="tag-amber">Unreachable</span>
           </td>
-          <td>{{ osLabel(row) }}</td>
-          <td class="num">{{ formatCores(row.vm.cpuCount) }} · {{ formatMemoryMB(row.vm.memoryMB) }}</td>
+          <td>{{ isApplicationWorkload(row.vm) ? 'App' : osLabel(row) }}</td>
+          <td class="num">
+            <template v-if="isApplicationWorkload(row.vm)">{{ formatPortForwards(vmPortForwards(row.vm)) || '—' }}</template>
+            <template v-else>{{ formatCores(row.vm.cpuCount) }} · {{ formatMemoryMB(row.vm.memoryMB) }}</template>
+          </td>
           <td class="ports">{{ formatPortForwards(vmPortForwards(row.vm)) }}</td>
           <td>
             <span
@@ -372,6 +380,13 @@ async function doStop() {
               @click="doStart(row)"
             >{{ actionLoading[rowKey(row)] ? 'Starting...' : 'Start' }}</button>
             <template v-else-if="row.reachable && row.vm.state === 'running'">
+              <a
+                v-if="isApplicationWorkload(row.vm) && firstOpenUrl(row.vm)"
+                class="mini go"
+                :href="firstOpenUrl(row.vm)!"
+                target="_blank"
+                rel="noreferrer"
+              >Open UI</a>
               <button type="button" class="mini" :disabled="actionLoading[rowKey(row)]" @click="requestStop(row, 'acpi')">Stop</button>
               <button type="button" class="mini" :disabled="restartLoading[rowKey(row)]" @click="doRestart(row)">{{ restartLoading[rowKey(row)] ? 'Restarting...' : 'Restart' }}</button>
             </template>
@@ -406,6 +421,12 @@ async function doStop() {
     @close="showCreate = false"
     @created="showCreate = false; refreshHomeWorkloads()"
   />
+  <CreateAppDrawer
+    v-if="showCreateApp"
+    :initial-host-id="deviceScope.isAll ? undefined : deviceScope.selectedHostId"
+    @close="showCreateApp = false"
+    @created="showCreateApp = false; refreshHomeWorkloads()"
+  />
   </div>
 </template>
 
@@ -424,4 +445,14 @@ async function doStop() {
 }
 .warn-text { color: var(--amber); }
 .state.status-pill::before { display: none; }
+.kind-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--panel-2, rgba(255,255,255,0.08));
+}
 </style>

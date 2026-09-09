@@ -7,7 +7,7 @@ import { useDeviceScopeStore } from './stores/deviceScope'
 import { useThemeStore } from './stores/theme'
 import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
 import { isReachabilityOk } from './utils/homeDeviceHealth'
-import { DEVICE_LABEL, HOME_LABEL } from './utils/terminology'
+import { DEVICE_LABEL, HOME_LABEL, WORKLOADS_NAV_LABEL } from './utils/terminology'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
@@ -127,7 +127,7 @@ function isActive(path: string) {
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
           </svg>
-          <span class="nav-label">Virtual Machines</span>
+          <span class="nav-label">{{ WORKLOADS_NAV_LABEL }}</span>
         </router-link>
         <router-link v-if="auth.isAdmin || auth.isInference" to="/models" :class="{ active: isActive('/models') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

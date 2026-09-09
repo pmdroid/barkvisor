@@ -27,6 +27,20 @@ struct CapabilityDetailTests {
         #expect(tcg.remediation?.localizedCaseInsensitiveContains("TCG") == true)
     }
 
+    @Test func `dockerEngine is helper_missing without compose`() {
+        let inv = linuxKVMInventory()
+        let detail = CapabilityDetailBuilder.detail(for: .dockerEngine, inventory: inv)
+        #expect(!detail.supported)
+        #expect(detail.reasonCode == CapabilityReasonCode.helperMissing.rawValue)
+    }
+
+    @Test func `dockerEngine is os_unsupported on windows`() {
+        let inv = windowsInventory(accelerator: "whpx")
+        let detail = CapabilityDetailBuilder.detail(for: .dockerEngine, inventory: inv)
+        #expect(!detail.supported)
+        #expect(detail.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+    }
+
     @Test func `linux kvm host is not tcg-only`() {
         let inv = linuxKVMInventory()
         let kvm = CapabilityDetailBuilder.detail(for: .kvmDevice, inventory: inv)

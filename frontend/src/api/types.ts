@@ -169,8 +169,11 @@ export interface WorkloadSpecBody {
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
-  /** `house` | `agent`. Omitted = house (PAS-268). */
   workloadClass?: 'house' | 'agent' | string | null
+  runtime?: 'device' | 'workload' | string | null
+  compose?: string | null
+  env?: Record<string, string> | null
+  runtimeWorkloadId?: string | null
 }
 
 export interface WorkloadResourcesOverlay {
@@ -241,7 +244,13 @@ export interface VM {
   health?: WorkloadHealth
   cpuCount: number
   memoryMB: number
-  bootDiskId: string
+  bootDiskId: string | null
+  kind?: string | null
+  runtime?: string | null
+  openUrl?: string | null
+  publishedPorts?: PublishedPort[] | null
+  image?: string | null
+  digest?: string | null
   isoId: string | null
   isoIds: string[] | null
   networkId: string | null
@@ -320,6 +329,13 @@ export interface Network {
   bridge?: string
   dnsServer?: string | null
   isDefault: boolean
+}
+
+export interface PublishedPort {
+  hostPort: number
+  containerPort: number
+  proto: string
+  url?: string | null
 }
 
 export interface PortForwardRule {
@@ -1072,6 +1088,7 @@ export interface HomeDeviceFeatureSummary {
   usbPassthrough: boolean
   gpuPassthrough?: boolean
   vfio?: boolean
+  dockerEngine?: boolean
 }
 
 export interface HomeDeviceHealthSnapshot {
