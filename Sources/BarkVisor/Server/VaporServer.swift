@@ -629,7 +629,14 @@ public final class VaporServer: @unchecked Sendable {
         }
 
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let exeDir = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
         let candidates: [String] = [
+            exeDir.appendingPathComponent("share")
+                .appendingPathComponent("barkvisor")
+                .appendingPathComponent("frontend")
+                .appendingPathComponent("dist").path,
             projectRoot?.appendingPathComponent("Sources/BarkVisor/Resources/frontend/dist").path,
             projectRoot?.appendingPathComponent("frontend/dist").path,
             cwd.appendingPathComponent("Sources/BarkVisor/Resources/frontend/dist").path,

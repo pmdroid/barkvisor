@@ -55,6 +55,7 @@ struct WindowsPackagingTests {
         #expect(server.contains("FoundationStaticFileMiddleware"))
         #expect(server.contains("#if os(Windows)"))
         #expect(server.contains("FileMiddleware("))
+        #expect(server.contains("appendingPathComponent(\"share\")"))
         let files = try read("Sources/BarkVisor/Server/Middleware/FoundationStaticFileMiddleware.swift")
         #expect(files.contains("Data(contentsOf:"))
         #expect(files.contains("contains(\"..\")"))
@@ -76,6 +77,7 @@ struct WindowsPackagingTests {
         let workflow = try read(".github/workflows/windows-package.yml")
         #expect(workflow.contains("stage-windows-payload.ps1"))
         #expect(workflow.contains("swiftCore.dll"))
+        #expect(workflow.contains("share\\barkvisor\\frontend\\dist\\index.html"))
     }
 
     @Test func `install script fails without qemu and uses localsystem`() throws {

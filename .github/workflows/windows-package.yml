@@ -81,6 +81,11 @@ jobs:
             Write-Error "payload missing Swift concurrency DLL"
             exit 1
           }
+          $spaIndex = "build\windows-payload\share\barkvisor\frontend\dist\index.html"
+          if (-not (Test-Path -LiteralPath $spaIndex)) {
+            Write-Error "payload missing $spaIndex"
+            exit 1
+          }
         shell: pwsh
 
       - name: Zip payload
