@@ -52,6 +52,7 @@ public enum ComposeAllowlist {
         var published: [PublishedPort] = []
         var named: [String] = []
         let volumeRoot = stateDir.appendingPathComponent("volumes", isDirectory: true)
+        _ = try requirePath(under: stateDir, candidate: volumeRoot)
         for name in services.keys.sorted() {
             guard var service = asObject(services[name]) else {
                 throw BarkVisorError.badRequest("unsupported compose feature: services.\(name)")

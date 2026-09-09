@@ -218,11 +218,6 @@ public enum ComposeRuntime {
     }
 
     private static func envValue(_ raw: String) -> String {
-        if raw.contains(where: { $0 == "\n" || $0 == "#" || $0 == " " }) {
-            let escaped = raw.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            return "\"\(escaped)\""
-        }
-        return raw
+        "'" + raw.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

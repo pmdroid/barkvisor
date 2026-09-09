@@ -126,16 +126,7 @@ public enum WorkloadApplyService {
         }
         var vm = try await VMLifecycleService.updateVMSpec(id: existing.id, spec: merged, db: db)
         if vm.isApplication {
-            try DockerEngine.requireDeviceRuntime()
-            if vm.state == "running" {
-                try await ApplicationLifecycleService.start(vm: &vm, db: db)
-            } else if let yaml = vm.composeYaml {
-                _ = try ApplicationLifecycleService.prepare(
-                    id: vm.id,
-                    composeYaml: yaml,
-                    env: specEnv(merged),
-                )
-            }
+            try await ApplicationLifecycleService.syncProject(vm: &vm, db: db)
         }
         return WorkloadApplyResult(
             op: .updated,
@@ -267,10 +258,6 @@ public enum WorkloadApplyService {
             generation: persisted.specGeneration,
             diff: WorkloadApplyDiff(before: nil, after: WorkloadSpecProjector.fromVM(persisted)),
         )
-    }
-
-    private static func specEnv(_ spec: WorkloadSpec) -> [String: String]? {
-        spec.spec.env
     }
 
     static func createParams(from spec: WorkloadSpec) throws -> CreateVMParams {

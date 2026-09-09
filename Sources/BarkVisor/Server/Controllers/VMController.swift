@@ -370,6 +370,9 @@ struct VMController: RouteCollection {
                 spec.spec.workloadClass = body.workloadClass
             }
             vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+            if vm.isApplication {
+                try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
+            }
             if let startOnBoot = body.startOnBoot, startOnBoot != vm.startOnBoot {
                 vm = try await VMLifecycleService.updateVM(
                     id: id,
@@ -589,7 +592,10 @@ struct VMController: RouteCollection {
     func putSpec(req: Vapor.Request) async throws -> WorkloadSpec {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         let spec = try req.content.decode(WorkloadSpec.self)
-        let vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+        var vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+        if vm.isApplication {
+            try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
+        }
         AuditService.log(
             action: "vm.spec.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
             req: req,

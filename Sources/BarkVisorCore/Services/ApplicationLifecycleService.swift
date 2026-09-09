@@ -39,6 +39,21 @@ public enum ApplicationLifecycleService {
         return render
     }
 
+    public static func syncProject(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+    ) async throws {
+        try DockerEngine.requireDeviceRuntime()
+        if vm.state == "running" {
+            try await start(vm: &vm, db: db, dataDir: dataDir)
+            return
+        }
+        if let yaml = vm.composeYaml {
+            _ = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+        }
+    }
+
     public static func start(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
