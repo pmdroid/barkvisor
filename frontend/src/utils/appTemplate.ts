@@ -122,7 +122,7 @@ export function applicationDocument(
   return {
     apiVersion: 'barkvisor.dev/v1',
     kind: 'Application',
-    metadata: { name, labels: { catalog: app.id } },
+    metadata: { name, labels: { catalog: app.id, 'catalog-source': app.source } },
     template: {
       values,
       extraFolders: extraFolders.filter((row) => row.hostPath.trim() && row.containerPath.trim()),

@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import type { AppCatalogEntry } from '../api/types'
 import {
   appArchLabel,
+  appCatalogKey,
   appInstallBlockedReason,
+  appSourceLabel,
   appSupportsDeviceArch,
   applicationSpecYaml,
 } from './appCatalog'
@@ -55,5 +57,11 @@ describe('appCatalog', () => {
     const yaml = applicationSpecYaml(app(), 'foo: bar')
     expect(yaml).toContain('name: "foo: bar"')
     expect(yaml).not.toContain('name: foo: bar')
+  })
+
+  test('source chip names LinuxServer and Big Bear', () => {
+    expect(appSourceLabel('linuxserver')).toBe('LinuxServer')
+    expect(appSourceLabel('big-bear-universal')).toBe('Big Bear')
+    expect(appCatalogKey(app({ id: 'jellyfin', source: 'linuxserver' }))).toBe('linuxserver:jellyfin')
   })
 })
