@@ -416,16 +416,16 @@ final class ApplicationLifecycleServiceTests {
     @Test func `queued app update cancel is not published`() async throws {
         let manager = BackgroundTaskManager()
         await manager.submit("app-update:a", kind: .appUpdate) {
-            try await Task.sleep(nanoseconds: 5_000_000_000)
+            try await Task.sleep(nanoseconds: 2_000_000_000)
             return nil
         }
         await manager.submit("app-update:b", kind: .appUpdate) {
-            try await Task.sleep(nanoseconds: 5_000_000_000)
+            try await Task.sleep(nanoseconds: 2_000_000_000)
             return nil
         }
         try await Task.sleep(nanoseconds: 100_000_000)
         await manager.submit("app-update:c", kind: .appUpdate) {
-            try await Task.sleep(nanoseconds: 5_000_000_000)
+            try await Task.sleep(nanoseconds: 2_000_000_000)
             return nil
         }
 

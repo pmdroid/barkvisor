@@ -19,6 +19,17 @@ final class ApplicationUpdateKeepVolumesTests {
         dbPool = pool
         runner = RecordingComposeRunner()
         docker = RecordingDockerRunner()
+        bindStubs()
+    }
+
+    deinit {
+        ComposeRuntime.runner = LiveComposeCommandRunner()
+        DockerCLI.runner = LiveDockerCommandRunner()
+        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        try? FileManager.default.removeItem(at: dataDir)
+    }
+
+    private func bindStubs() {
         ComposeRuntime.runner = runner
         DockerCLI.runner = docker
         DockerEngine.snapshotProvider = {
@@ -33,14 +44,8 @@ final class ApplicationUpdateKeepVolumesTests {
         }
     }
 
-    deinit {
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerCLI.runner = LiveDockerCommandRunner()
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        try? FileManager.default.removeItem(at: dataDir)
-    }
-
     @Test func `prepare records volume roots under the workload dir`() async throws {
+        bindStubs()
         var vm = try await insertApp()
         let yaml = vm.composeYaml ?? ""
         let render = try ApplicationLifecycleService.prepare(
@@ -62,6 +67,7 @@ final class ApplicationUpdateKeepVolumesTests {
     }
 
     @Test func `update pulls then ups and does not down volumes`() async throws {
+        bindStubs()
         var vm = try await insertApp()
         docker.inspectDigest = "sha256:bbb222ccc333"
         docker.manifestDigest = "sha256:bbb222ccc333"
@@ -78,6 +84,7 @@ final class ApplicationUpdateKeepVolumesTests {
     }
 
     @Test func `older catalog digest is update available`() async throws {
+        bindStubs()
         var vm = try await insertApp()
         try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
         docker.manifestDigest = "sha256:fff999eee888"
@@ -87,6 +94,7 @@ final class ApplicationUpdateKeepVolumesTests {
     }
 
     @Test func `compose logs snapshot returns compose output`() async throws {
+        bindStubs()
         runner.calls = []
         runner.logText = """
         qbittorrent  | The WebUI administrator password was not set. A temporary password is provided for this session: helloQB
