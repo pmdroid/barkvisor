@@ -157,6 +157,7 @@ async function fetchLibrarySpace() {
   }
 }
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
+const libraryTab = ref<'images' | 'apps'>('images')
 
 const showDownload = ref(false)
 const dlName = ref('')
@@ -375,6 +376,7 @@ onMounted(async () => {
   await Promise.all([
     store.fetchAll(),
     homeLibrary.fetchImages(devicesStore.devices),
+    homeLibrary.fetchApps(devicesStore.devices),
     devicesStore.devices.length
       ? homeWorkloads.fetchHomeAll(devicesStore.devices)
       : vmStore.fetchAll(),
@@ -565,18 +567,58 @@ async function doDeleteImage() {
       {{ librarySpaceLine }}
     </div>
     <span v-else-if="librarySpaceLoaded" class="ops-sub">Capacity unavailable</span>
-    <div v-if="libraryFolderReady" class="ops-actions">
+    <div v-if="libraryFolderReady && libraryTab === 'images'" class="ops-actions">
       <AppButton icon="upload" @click="openUpload">Upload</AppButton>
       <AppButton variant="primary" icon="download" @click="openDownload">Download</AppButton>
     </div>
   </div>
   <div class="ops-body">
+  <div class="tab-bar">
+    <button type="button" class="tab-btn" :class="{ active: libraryTab === 'images' }" @click="libraryTab = 'images'">
+      Images
+    </button>
+    <button type="button" class="tab-btn" :class="{ active: libraryTab === 'apps' }" @click="libraryTab = 'apps'">
+      Apps <span class="n">{{ homeLibrary.apps.length }}</span>
+    </button>
+  </div>
 
   <LibraryFolderForm
     v-if="libraryNeedsFolder"
     source="system"
     @saved="onLibraryFolderSaved"
   />
+
+  <template v-else-if="libraryTab === 'apps'">
+    <EmptyState
+      v-if="homeLibrary.appsError && homeLibrary.apps.length === 0"
+      icon="image"
+      title="Apps catalog unavailable"
+      :subtitle="homeLibrary.appsError"
+    />
+    <EmptyState
+      v-else-if="homeLibrary.appsLoading && homeLibrary.apps.length === 0"
+      title="Loading apps..."
+    />
+    <EmptyState
+      v-else-if="homeLibrary.apps.length === 0"
+      icon="image"
+      title="No apps yet"
+      subtitle="Sync the Big Bear catalog from Settings → Repositories."
+    />
+    <div v-else class="app-grid">
+      <article v-for="app in homeLibrary.apps" :key="app.id" class="app-card">
+        <img v-if="app.iconUrl" class="app-icon" :src="app.iconUrl" :alt="app.name" />
+        <div v-else class="app-icon app-icon-fallback">{{ app.name.slice(0, 1) }}</div>
+        <b>{{ app.name }}</b>
+        <span class="app-tagline">{{ app.tagline || app.description || 'Application' }}</span>
+        <div class="app-meta">
+          <span class="arch">{{ app.arches.join(' · ') || 'any' }}</span>
+          <span class="src">{{ app.source }}</span>
+        </div>
+        <span v-if="app.unsupportedReasons.length" class="app-block">{{ app.unsupportedReasons.join(', ') }}</span>
+      </article>
+    </div>
+  </template>
 
   <template v-else-if="libraryFolderReady">
   <FormError v-if="listError" :message="listError" />
@@ -797,4 +839,36 @@ async function doDeleteImage() {
   color: var(--text-dim);
   line-height: 1.35;
 }
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.app-card {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.app-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.app-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-weight: 700;
+}
+.app-card b { font-size: 13.5px; }
+.app-tagline { font-size: 11.5px; color: var(--text-dim); line-height: 1.4; }
+.app-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.app-block { font-size: 11px; color: var(--amber); }
 </style>

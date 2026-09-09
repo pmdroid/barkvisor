@@ -364,6 +364,21 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.imagesError).toBeNull()
   })
 
+  test('offline Device catalog is an error, not an empty app list of zeros', async () => {
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/studio/v1/catalog/apps') {
+        return Promise.reject(new Error('Device is unreachable'))
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchApps([peer])
+    expect(store.apps).toEqual([])
+    expect(store.appsError).toBeTruthy()
+  })
+
   test('unreachable members are skipped so a Steam Deck copy never appears', async () => {
     const self = snapshot({ hostId: 'agentbox', role: 'self' })
     const deck = snapshot({ hostId: 'steamdeck', role: 'member', reachability: 'unreachable' })
@@ -464,5 +479,10 @@ describe('homeLibrary store (PAS-34)', () => {
     await store.removeCopy(self, 'mac-iso')
     expect(del.mock.calls.map((c) => c[0])).toEqual(['/images/mac-iso'])
     expect(store.images).toEqual([])
+=======
+    await store.fetchApps([peer])
+    expect(store.apps).toHaveLength(0)
+    expect(store.appsError).toBeTruthy()
+>>>>>>> 750b0b3d (feat: Library Apps tab and Create App gallery)
   })
 })

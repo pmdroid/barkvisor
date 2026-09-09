@@ -63,7 +63,7 @@ export const useRepositoryStore = defineStore('repositories', () => {
     }
   }
 
-  async function add(url: string, repoType: 'images' | 'templates'): Promise<HomeCatalogRepository> {
+  async function add(url: string, repoType: 'images' | 'templates' | 'apps'): Promise<HomeCatalogRepository> {
     const { data } = await api.post('/repositories', { url, repoType })
     await fetchAll()
     return repositories.value.find((row) => row.id === data.id) ?? { ...data, deviceSyncs: [] }

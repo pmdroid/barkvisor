@@ -2,10 +2,11 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
+import type { AppCatalogEntry, HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
 import {
   canCallDeviceAPI,
   deviceImagePath,
+  deviceCatalogAppsPath,
   devicePath,
   deviceTemplatesPath,
   isSelfDevice,
@@ -56,12 +57,25 @@ export type HomeTemplate = VMTemplate & {
   copies: HomeTemplateCopy[]
 }
 
+export type HomeAppCopy = {
+  hostId: string
+}
+
+export type HomeApp = AppCatalogEntry & {
+  sourceHostIds: string[]
+  copies: HomeAppCopy[]
+}
+
 function asTemplates(data: unknown): VMTemplate[] {
   return Array.isArray(data) ? (data as VMTemplate[]) : []
 }
 
 function asImages(data: unknown): Image[] {
   return Array.isArray(data) ? (data as Image[]) : []
+}
+
+function asApps(data: unknown): AppCatalogEntry[] {
+  return Array.isArray(data) ? (data as AppCatalogEntry[]) : []
 }
 
 function readySourceHostIds(copies: HomeImageCopy[]): string[] {
@@ -136,10 +150,13 @@ function restoreLastGoodImages(
 export const useHomeLibraryStore = defineStore('homeLibrary', () => {
   const templates = ref<HomeTemplate[]>([])
   const images = ref<HomeImage[]>([])
+  const apps = ref<HomeApp[]>([])
   const loading = ref(false)
   const imagesLoading = ref(false)
+  const appsLoading = ref(false)
   const error = ref<string | null>(null)
   const imagesError = ref<string | null>(null)
+  const appsError = ref<string | null>(null)
 
   const bySlug = computed(() => {
     const map: Record<string, HomeTemplate> = {}
@@ -386,6 +403,75 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     })
   }
 
+  async function fetchApps(devices?: HomeDeviceHealthSnapshot[]): Promise<void> {
+    const list = devices ?? useDevicesStore().devices
+    appsLoading.value = true
+    appsError.value = null
+    try {
+      const reachable = list.filter(canCallDeviceAPI)
+      const targets = reachable.length > 0 ? reachable : list.filter((d) => d.role === 'self')
+      const settled = await Promise.allSettled(
+        (targets.length > 0
+          ? targets.map(async (device) => {
+              const { data } = await api.get(deviceCatalogAppsPath(device))
+              return { device, apps: asApps(data) }
+            })
+          : [
+              (async () => {
+                const { data } = await api.get('/catalog/apps')
+                return {
+                  device: { hostId: 'self', role: 'self', reachability: 'ok', agentPort: 0 },
+                  apps: asApps(data),
+                }
+              })(),
+            ]),
+      )
+      const merged = new Map<string, HomeApp>()
+      const successfulHostIds = new Set<string>()
+      let sawReachable = false
+      for (const result of settled) {
+        if (result.status !== 'fulfilled') continue
+        sawReachable = true
+        const { device, apps: rows } = result.value
+        successfulHostIds.add(device.hostId)
+        for (const row of rows) {
+          const existing = merged.get(row.id)
+          const copy: HomeAppCopy = { hostId: device.hostId }
+          if (!existing) {
+            merged.set(row.id, {
+              ...row,
+              sourceHostIds: [device.hostId],
+              copies: [copy],
+            })
+            continue
+          }
+          if (!existing.copies.some((c) => c.hostId === device.hostId)) {
+            existing.sourceHostIds.push(device.hostId)
+            existing.copies.push(copy)
+          }
+        }
+      }
+      const rejected = settled.filter((r) => r.status === 'rejected')
+      if (merged.size === 0 && rejected.length > 0) {
+        const first = rejected[0]
+        appsError.value = first.status === 'rejected'
+          ? apiErrorMessage(first.reason, 'Failed to load apps')
+          : 'Failed to load apps'
+      }
+      if (!sawReachable && rejected.length > 0) {
+        apps.value = []
+        appsError.value = appsError.value ?? 'Failed to load apps'
+      } else {
+        apps.value = [...merged.values()].sort((a, b) => a.name.localeCompare(b.name))
+      }
+    } catch (e: unknown) {
+      apps.value = []
+      appsError.value = apiErrorMessage(e, 'Failed to load apps')
+    } finally {
+      appsLoading.value = false
+    }
+  }
+
   function sourceLine(row: HomeTemplate, labelFor: (hostId: string) => string = (id) => id): string {
     return row.sourceHostIds.map(labelFor).join(', ')
   }
@@ -399,10 +485,13 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
   return {
     templates,
     images,
+    apps,
     loading,
     imagesLoading,
+    appsLoading,
     error,
     imagesError,
+    appsError,
     bySlug,
     copiesOn,
     deviceHasTemplate,
@@ -417,6 +506,7 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     fetchAll,
     fetchImages,
     removeCopy,
+    fetchApps,
     sourceLine,
     defaultLabelFor,
   }

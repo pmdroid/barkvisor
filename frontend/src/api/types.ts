@@ -445,7 +445,7 @@ export interface ImageRepository {
   name: string
   url: string
   isBuiltIn: boolean
-  repoType: 'images' | 'templates'
+  repoType: 'images' | 'templates' | 'apps'
   lastSyncedAt: string | null
   lastError: string | null
   syncStatus: 'idle' | 'syncing' | 'error'
@@ -500,6 +500,59 @@ export interface UpdateSettings {
 export interface VMTaskAcceptedResponse {
   taskID: string
   vm: VM
+}
+
+export type AppCatalogEnvKind = 'secret' | 'bool' | 'select' | 'text'
+
+export interface AppCatalogEnvVar {
+  name: string
+  default?: string | null
+  required: boolean
+  description?: string | null
+  kind: AppCatalogEnvKind | string
+  options?: string[] | null
+}
+
+export interface AppCatalogVolume {
+  container: string
+  description?: string | null
+  name?: string | null
+  kind: 'volume' | 'folder' | string
+}
+
+export interface AppCatalogPort {
+  container?: number | null
+  host?: number | null
+  protocol: string
+  ui?: boolean
+  description?: string | null
+}
+
+export interface AppCatalogUI {
+  scheme: string
+  path: string
+  tips?: Record<string, string>
+  proxy: 'prefix' | 'direct' | string
+  basePathEnv: string[]
+}
+
+export interface AppCatalogEntry {
+  id: string
+  name: string
+  tagline?: string | null
+  description?: string | null
+  iconUrl?: string | null
+  category: string
+  arches: string[]
+  source: string
+  compose: string
+  envSchema: AppCatalogEnvVar[]
+  volumes: AppCatalogVolume[]
+  ports: AppCatalogPort[]
+  image?: string | null
+  digest?: string | null
+  unsupportedReasons: string[]
+  ui: AppCatalogUI
 }
 
 export interface RepositoryImage {
