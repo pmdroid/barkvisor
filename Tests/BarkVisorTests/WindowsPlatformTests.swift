@@ -128,10 +128,208 @@ struct WindowsPlatformTests {
         ))
         let kvm = report.checks.first { $0.id == "kvm" }
         #expect(kvm?.status == .skip)
+        #expect(kvm?.detail.localizedCaseInsensitiveContains("/dev/kvm") != true)
         let bridge = report.checks.first { $0.id == "linux-bridge" }
         #expect(bridge?.status == .skip)
         let socket = report.checks.first { $0.id == "macos-socket-vmnet" }
         #expect(socket?.status == .skip)
+    }
+
+    @Test func `doctor fails when WHPX QEMU and firmware are missing`() {
+        let report = DoctorService.assemble(from: DoctorFactInputs(
+            os: "Windows",
+            uid: 1_000,
+            qemuPath: nil,
+            kvmPresent: false,
+            swtpmRequired: false,
+            healthOK: true,
+            healthDetail: "HTTP 200",
+            hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            qemuImgPath: #"C:\Program Files\qemu\qemu-img.exe"#,
+            isoToolPath: #"C:\msys64\ucrt64\bin\xorriso.exe"#,
+            qemuMissingDevices: [],
+            whpxPresent: false,
+            firmwarePath: nil,
+            dataDirPath: #"C:\barkvisor"#,
+            dataDirWritable: true,
+            listenPort: 7_777,
+            listenPortFree: false,
+        ))
+        let qemu = report.checks.first { $0.id == "qemu" }
+        #expect(qemu?.status == .fail)
+        #expect(qemu?.detail.localizedCaseInsensitiveContains("winget") == true)
+        #expect(qemu?.detail.contains(#"Program Files\qemu"#) == true)
+        let whpx = report.checks.first { $0.id == "whpx" }
+        #expect(whpx?.status == .fail)
+        #expect(whpx?.detail.localizedCaseInsensitiveContains("Hypervisor Platform") == true)
+        #expect(whpx?.detail.contains("HypervisorPlatform") == true)
+        #expect(whpx?.detail.localizedCaseInsensitiveContains("reboot") == true)
+        let firmware = report.checks.first { $0.id == "firmware" }
+        #expect(firmware?.status == .fail)
+        #expect(firmware?.detail.contains("edk2-x86_64-code.fd") == true)
+        #expect(firmware?.detail.contains(#"Program Files\qemu\share"#) == true)
+        #expect(!report.ok)
+        let text = DoctorService.renderText(report)
+        #expect(!text.contains("/dev/kvm is missing"))
+    }
+
+    @Test func `doctor passes WHPX QEMU firmware data dir and listen port`() {
+        let report = DoctorService.assemble(from: DoctorFactInputs(
+            os: "Windows",
+            uid: 1_000,
+            qemuPath: #"C:\Program Files\qemu\qemu-system-x86_64.exe"#,
+            kvmPresent: false,
+            swtpmRequired: false,
+            healthOK: true,
+            healthDetail: "HTTP 200",
+            hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            qemuImgPath: #"C:\Program Files\qemu\qemu-img.exe"#,
+            isoToolPath: #"C:\msys64\ucrt64\bin\xorriso.exe"#,
+            qemuMissingDevices: [],
+            whpxPresent: true,
+            firmwarePath: #"C:\Program Files\qemu\share\edk2-x86_64-code.fd"#,
+            dataDirPath: #"C:\barkvisor"#,
+            dataDirWritable: true,
+            listenPort: 7_777,
+            listenPortFree: false,
+        ))
+        #expect(report.checks.first { $0.id == "whpx" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "qemu" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "firmware" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "data-dir" }?.status == .ok)
+        #expect(report.checks.first { $0.id == "listen-port" }?.status == .ok)
+        #expect(report.ok)
+    }
+
+    @Test func `doctor fails unwritable data dir and busy listen port`() {
+        let report = DoctorService.assemble(from: DoctorFactInputs(
+            os: "Windows",
+            uid: 1_000,
+            qemuPath: #"C:\Program Files\qemu\qemu-system-x86_64.exe"#,
+            kvmPresent: false,
+            swtpmRequired: false,
+            healthOK: false,
+            healthDetail: "connection refused",
+            hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            qemuImgPath: #"C:\Program Files\qemu\qemu-img.exe"#,
+            isoToolPath: #"C:\msys64\ucrt64\bin\xorriso.exe"#,
+            qemuMissingDevices: [],
+            whpxPresent: true,
+            firmwarePath: #"C:\Program Files\qemu\share\edk2-x86_64-code.fd"#,
+            dataDirPath: #"C:\barkvisor"#,
+            dataDirWritable: false,
+            listenPort: 7_777,
+            listenPortFree: false,
+        ))
+        #expect(report.checks.first { $0.id == "data-dir" }?.status == .fail)
+        #expect(report.checks.first { $0.id == "data-dir" }?.detail.contains("not writable") == true)
+        #expect(report.checks.first { $0.id == "listen-port" }?.status == .fail)
+        #expect(report.checks.first { $0.id == "listen-port" }?.detail.contains("7777") == true)
+        #expect(!report.ok)
+    }
+
+    @Test func `doctor fails when data dir is missing`() {
+        let report = DoctorService.assemble(from: DoctorFactInputs(
+            os: "Windows",
+            uid: 1_000,
+            qemuPath: #"C:\Program Files\qemu\qemu-system-x86_64.exe"#,
+            kvmPresent: false,
+            swtpmRequired: false,
+            healthOK: true,
+            healthDetail: "HTTP 200",
+            hostBridge: HostBridgeFactsService.assemble(from: HostBridgeFactInputs()).readiness,
+            qemuImgPath: #"C:\Program Files\qemu\qemu-img.exe"#,
+            isoToolPath: #"C:\msys64\ucrt64\bin\xorriso.exe"#,
+            qemuMissingDevices: [],
+            whpxPresent: true,
+            firmwarePath: #"C:\Program Files\qemu\share\edk2-x86_64-code.fd"#,
+            dataDirPath: #"C:\barkvisor"#,
+            dataDirExists: false,
+            dataDirWritable: false,
+            listenPort: 7_777,
+            listenPortFree: true,
+        ))
+        let dataDir = report.checks.first { $0.id == "data-dir" }
+        #expect(dataDir?.status == .fail)
+        #expect(dataDir?.detail.contains("missing") == true)
+        #expect(dataDir?.detail.localizedCaseInsensitiveContains("not writable") != true)
+        #expect(!report.ok)
+    }
+
+    @Test func `win32 memory used is total minus available`() {
+        #expect(PlatformHost.memoryUsedMB(totalBytes: 8 * 1_024 * 1_024 * 1_024, availableBytes: 3 * 1_024 * 1_024 * 1_024) == 5 * 1_024)
+        #expect(PlatformHost.memoryUsedMB(totalBytes: 1_024, availableBytes: 2_048) == 0)
+    }
+
+    @Test func `win32 cpu load uses GetSystemTimes idle in kernel`() {
+        let idle0: UInt64 = 1_000
+        let kernel0: UInt64 = 2_000
+        let user0: UInt64 = 500
+        let idle1: UInt64 = 1_400
+        let kernel1: UInt64 = 2_600
+        let user1: UInt64 = 700
+        let percent = PlatformHost.cpuLoadPercent(
+            idleTicks: idle1,
+            kernelTicks: kernel1,
+            userTicks: user1,
+            previousIdleTicks: idle0,
+            previousKernelTicks: kernel0,
+            previousUserTicks: user0,
+        )
+        #expect(percent == 50)
+        #expect(PlatformHost.fileTimeUInt64(low: 1, high: 1) == (UInt64(1) << 32) | 1)
+    }
+
+    @Test func `windows adapters map friendly names and skip empty ipv4`() {
+        let rows = [
+            WindowsAdapterRow(
+                friendlyName: "Ethernet",
+                ifType: 6,
+                address: "192.168.1.10",
+                prefixLength: 24,
+                operUp: true,
+            ),
+            WindowsAdapterRow(
+                friendlyName: "Ethernet",
+                ifType: 6,
+                address: "fe80::1%12",
+                prefixLength: 64,
+                operUp: true,
+            ),
+            WindowsAdapterRow(
+                friendlyName: "Wi-Fi",
+                ifType: 71,
+                address: "10.0.0.5",
+                prefixLength: 24,
+                operUp: true,
+            ),
+            WindowsAdapterRow(
+                friendlyName: "Loopback Pseudo-Interface 1",
+                ifType: HostInfoService.windowsLoopbackIfType,
+                address: "127.0.0.1",
+                prefixLength: 8,
+                operUp: true,
+            ),
+            WindowsAdapterRow(
+                friendlyName: "Bluetooth Network Connection",
+                ifType: 6,
+                address: nil,
+                operUp: false,
+            ),
+        ]
+        let ifaces = HostInfoService.listInterfaces(fromWindowsRows: rows)
+        #expect(ifaces.map(\.name) == ["Ethernet", "Wi-Fi", "Loopback"])
+        #expect(ifaces.first { $0.name == "Loopback" }?.ipAddress == "127.0.0.1")
+        #expect(HostInfoService.interfaceExists("Ethernet", windowsRows: rows))
+        #expect(HostInfoService.interfaceExists("Loopback", windowsRows: rows))
+        #expect(!HostInfoService.interfaceExists("eth0", windowsRows: rows))
+        let addrs = HostInfoService.listInterfaceAddresses(fromWindowsRows: rows)
+        #expect(addrs.contains { $0.name == "Ethernet" && $0.ipAddress == "192.168.1.10" })
+        #expect(addrs.contains { $0.name == "Ethernet" && $0.ipAddress == "fe80::1" })
+        #expect(!addrs.contains { $0.ipAddress.contains("%") })
+        let flags = HostInfoService.linkFlags(fromWindowsRows: rows)
+        #expect(flags["Ethernet"]?.operState == "up")
+        #expect(flags["Bluetooth Network Connection"]?.operState == "down")
     }
 
     @Test func `boot identity does not read proc on windows`() {
@@ -190,5 +388,19 @@ struct WindowsPlatformTests {
     @Test func `firmware candidates include qemu share next to exe`() {
         #expect(PlatformQEMU.edk2X86Candidates.contains { $0.contains("Program Files") && $0.contains("edk2-x86_64-code.fd") })
         #expect(PlatformQEMU.windowsQEMUShareDirs.contains("C:\\Program Files\\qemu\\share"))
+    }
+
+    @Test func `win32 host metrics are populated on windows`() {
+        #if os(Windows)
+            #expect(PlatformHost.cpuCount >= 1)
+            #expect(PlatformHost.physicalMemoryBytes > 0)
+            #expect(PlatformHost.memoryUsedMB >= 0)
+            #expect(PlatformHost.memoryUsedMB <= PlatformHost.physicalMemoryMB)
+            #expect(PlatformHost.temperatureCelsius == nil)
+            #expect(PlatformGPU.utilizationPercent() == nil)
+            let ifaces = HostInfoService.listInterfaces()
+            #expect(ifaces.contains { $0.ipAddress == "127.0.0.1" })
+            #expect(HostInfoService.interfaceExists("Loopback"))
+        #endif
     }
 }

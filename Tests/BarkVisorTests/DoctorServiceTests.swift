@@ -238,6 +238,17 @@ struct DoctorServiceTests {
         #expect(check(report, "macos-socket-vmnet").status == .skip)
     }
 
+    @Test func `linux and macos reports omit windows-only checks`() {
+        let linux = DoctorService.assemble(from: inputs(os: "Linux"))
+        let mac = DoctorService.assemble(from: inputs(os: "macOS", hostBridge: macReady()))
+        for report in [linux, mac] {
+            #expect(!report.checks.contains { $0.id == "whpx" })
+            #expect(!report.checks.contains { $0.id == "firmware" })
+            #expect(!report.checks.contains { $0.id == "data-dir" })
+            #expect(!report.checks.contains { $0.id == "listen-port" })
+        }
+    }
+
     @Test func `linux missing vfio skips vfio-drop`() {
         let report = DoctorService.assemble(from: inputs(vfioPresent: false))
         #expect(check(report, "vfio-drop").status == .skip)

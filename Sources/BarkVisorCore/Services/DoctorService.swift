@@ -84,6 +84,13 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var qemuImgPath: String?
     public var isoToolPath: String?
     public var qemuMissingDevices: [String]?
+    public var whpxPresent: Bool
+    public var firmwarePath: String?
+    public var dataDirPath: String
+    public var dataDirExists: Bool
+    public var dataDirWritable: Bool
+    public var listenPort: Int
+    public var listenPortFree: Bool
 
     public init(
         os: String,
@@ -105,6 +112,13 @@ public struct DoctorFactInputs: Sendable, Equatable {
         qemuImgPath: String? = nil,
         isoToolPath: String? = nil,
         qemuMissingDevices: [String]? = nil,
+        whpxPresent: Bool = false,
+        firmwarePath: String? = nil,
+        dataDirPath: String = "",
+        dataDirExists: Bool = true,
+        dataDirWritable: Bool = true,
+        listenPort: Int = 7_777,
+        listenPortFree: Bool = true,
     ) {
         self.os = os
         self.uid = uid
@@ -125,6 +139,13 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.qemuImgPath = qemuImgPath
         self.isoToolPath = isoToolPath
         self.qemuMissingDevices = qemuMissingDevices
+        self.whpxPresent = whpxPresent
+        self.firmwarePath = firmwarePath
+        self.dataDirPath = dataDirPath
+        self.dataDirExists = dataDirExists
+        self.dataDirWritable = dataDirWritable
+        self.listenPort = listenPort
+        self.listenPortFree = listenPortFree
     }
 }
 
@@ -154,6 +175,23 @@ public struct LiveDoctorFactSource: DoctorFactSource {
                 QEMUDeviceSupport.requiredLaunchDevices.subtracting(supported).sorted()
             }
         }
+        #if os(Windows)
+            let whpxPresent = PlatformCapabilities.whpxPresent()
+            let firmwarePath = Self.locateFirmware()
+            let dataDirPath = Config.dataDir.path
+            let dataDirExists = Self.dataDirExists(dataDirPath)
+            let dataDirWritable = PlatformPaths.isWritableDirectory(Config.dataDir)
+            let listenPort = Config.port
+            let listenPortFree = PortRegistry.probeListen(port: listenPort, proto: "tcp")
+        #else
+            let whpxPresent = false
+            let firmwarePath: String? = nil
+            let dataDirPath = ""
+            let dataDirExists = true
+            let dataDirWritable = true
+            let listenPort = 7_777
+            let listenPortFree = true
+        #endif
         return DoctorFactInputs(
             os: PlatformHost.platformName,
             uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(WorkloadPrivilegeDrop.currentEUID())),
@@ -174,7 +212,31 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             qemuImgPath: Self.locateQemuImg(),
             isoToolPath: CloudInitService.locateCloudInitISOTool()?.path,
             qemuMissingDevices: qemuMissingDevices,
+            whpxPresent: whpxPresent,
+            firmwarePath: firmwarePath,
+            dataDirPath: dataDirPath,
+            dataDirExists: dataDirExists,
+            dataDirWritable: dataDirWritable,
+            listenPort: listenPort,
+            listenPortFree: listenPortFree,
         )
+    }
+
+    static func locateFirmware() -> String? {
+        if let url = BundleResolver.qemuResource("edk2-x86_64-code.fd") {
+            return url.path
+        }
+        if let url = BundleResolver.qemuResource("OVMF_CODE.fd") {
+            return url.path
+        }
+        return PlatformQEMU.edk2X86Candidates.first {
+            FileManager.default.fileExists(atPath: $0)
+        }
+    }
+
+    static func dataDirExists(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
     }
 
     static func locateQemuImg() -> String? {
@@ -324,7 +386,7 @@ public enum DoctorService {
 
     public static func assemble(from inputs: DoctorFactInputs) -> DoctorReport {
         let privileged = inputs.uid == 0
-        let checks = [
+        var checks = [
             daemonUIDCheck(inputs),
             qemuCheck(inputs),
             qemuDevicesCheck(inputs),
@@ -332,12 +394,20 @@ public enum DoctorService {
             isoToolCheck(inputs),
             qemuProcessCheck(inputs),
             kvmCheck(inputs),
+        ]
+        if isWindows(inputs.os) {
+            checks.append(whpxCheck(inputs))
+            checks.append(firmwareCheck(inputs))
+            checks.append(dataDirCheck(inputs))
+            checks.append(listenPortCheck(inputs))
+        }
+        checks.append(contentsOf: [
             vfioDropCheck(inputs),
             swtpmCheck(inputs),
             healthCheck(inputs),
             linuxBridgeCheck(inputs, privileged: privileged),
             macSocketCheck(inputs, privileged: privileged),
-        ]
+        ])
         return DoctorReport(
             ok: !checks.contains { $0.status == .fail },
             privileged: privileged,
@@ -390,7 +460,7 @@ public enum DoctorService {
         return DoctorCheck(
             id: "qemu",
             status: .fail,
-            detail: "\(qemuBinaryName()) not found. \(PlatformQEMU.qemuInstallHint)",
+            detail: "\(qemuBinaryName()) not found. \(PlatformQEMU.qemuInstallHint(os: inputs.os))",
         )
     }
 
@@ -412,7 +482,7 @@ public enum DoctorService {
         return DoctorCheck(
             id: "qemu-devices",
             status: .fail,
-            detail: "missing device modules: \(missing.joined(separator: ", ")). \(PlatformQEMU.qemuDeviceInstallHint)",
+            detail: "missing device modules: \(missing.joined(separator: ", ")). \(PlatformQEMU.qemuDeviceInstallHint(os: inputs.os))",
         )
     }
 
@@ -423,7 +493,7 @@ public enum DoctorService {
         return DoctorCheck(
             id: "qemu-img",
             status: .fail,
-            detail: "qemu-img not found. \(PlatformQEMU.qemuImgInstallHint)",
+            detail: "qemu-img not found. \(PlatformQEMU.qemuImgInstallHint(os: inputs.os))",
         )
     }
 
@@ -434,7 +504,7 @@ public enum DoctorService {
         return DoctorCheck(
             id: "cloud-init-iso",
             status: .fail,
-            detail: "mkisofs/genisoimage/xorrisofs not found. \(PlatformQEMU.isoToolInstallHint)",
+            detail: "mkisofs/genisoimage/xorrisofs not found. \(PlatformQEMU.isoToolInstallHint(os: inputs.os))",
         )
     }
 
@@ -497,6 +567,77 @@ public enum DoctorService {
             )
         }
         return DoctorCheck(id: "kvm", status: .ok, detail: "/dev/kvm is present.")
+    }
+
+    private static func whpxCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if inputs.whpxPresent {
+            return DoctorCheck(
+                id: "whpx",
+                status: .ok,
+                detail: "WHPX (Windows Hypervisor Platform) is available.",
+            )
+        }
+        return DoctorCheck(
+            id: "whpx",
+            status: .fail,
+            detail: "WHPX is not available. Enable Windows Hypervisor Platform "
+                + "(optional feature HypervisorPlatform) in Windows Features, "
+                + "enable firmware virtualization in BIOS if needed, and reboot. "
+                + "TCG is inventory-only and cannot start guests.",
+        )
+    }
+
+    private static func firmwareCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if let path = inputs.firmwarePath, !path.isEmpty {
+            return DoctorCheck(id: "firmware", status: .ok, detail: path)
+        }
+        return DoctorCheck(
+            id: "firmware",
+            status: .fail,
+            detail: "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. "
+                + PlatformQEMU.firmwareInstallHintX86(os: inputs.os),
+        )
+    }
+
+    private static func dataDirCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        let path = inputs.dataDirPath.isEmpty ? "(unset)" : inputs.dataDirPath
+        if inputs.dataDirWritable {
+            return DoctorCheck(id: "data-dir", status: .ok, detail: path)
+        }
+        if !inputs.dataDirExists {
+            return DoctorCheck(
+                id: "data-dir",
+                status: .fail,
+                detail: "Data directory is missing: \(path)",
+            )
+        }
+        return DoctorCheck(
+            id: "data-dir",
+            status: .fail,
+            detail: "Data directory is not writable: \(path)",
+        )
+    }
+
+    private static func listenPortCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if inputs.healthOK {
+            return DoctorCheck(
+                id: "listen-port",
+                status: .ok,
+                detail: "TCP \(inputs.listenPort) is in use by this Device.",
+            )
+        }
+        if inputs.listenPortFree {
+            return DoctorCheck(
+                id: "listen-port",
+                status: .ok,
+                detail: "TCP \(inputs.listenPort) is free.",
+            )
+        }
+        return DoctorCheck(
+            id: "listen-port",
+            status: .fail,
+            detail: "TCP \(inputs.listenPort) is in use by another process.",
+        )
     }
 
     private static func vfioDropCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {

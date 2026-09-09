@@ -319,6 +319,14 @@ public enum CapabilityDetailBuilder {
                 remediation: kvmMissingRemediation,
             )
         }
+        if isWindows(os) {
+            return CapabilityDetail(
+                code: .kvmDevice,
+                supported: false,
+                reason: .osUnsupported,
+                remediation: "KVM is a Linux hypervisor interface. This host uses WHPX instead.",
+            )
+        }
         return CapabilityDetail(
             code: .kvmDevice,
             supported: false,
@@ -338,6 +346,14 @@ public enum CapabilityDetailBuilder {
                 reason: .helperMissing,
                 remediation: "qemu-bridge-helper was not found. Bridged networking needs the helper "
                     + "and /etc/qemu/bridge.conf. Use NAT if bridging is unavailable.",
+            )
+        }
+        if isWindows(os) {
+            return CapabilityDetail(
+                code: .qemuBridgeHelper,
+                supported: false,
+                reason: .osUnsupported,
+                remediation: "qemu-bridge-helper is a Linux QEMU tool. Bridged networking is not supported on Windows. Use NAT.",
             )
         }
         return CapabilityDetail(
@@ -402,7 +418,8 @@ public enum CapabilityDetailBuilder {
             + "Install qemu-kvm, add the user to the kvm group, or enable nested virtualization."
 
     private static let whpxMissingRemediation =
-        "WHPX is not available. Enable Windows Hypervisor Platform in Windows Features and reboot. "
+        "WHPX is not available. Enable Windows Hypervisor Platform (optional feature HypervisorPlatform) "
+            + "in Windows Features, enable firmware virtualization in BIOS if needed, and reboot. "
             + "TCG is inventory-only and cannot start guests."
 
     private static func vfio(

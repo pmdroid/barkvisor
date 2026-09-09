@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(WinSDK)
+    import WinSDK
+#endif
 
 public struct HostInterfaceInfo: Sendable {
     public let name: String
@@ -61,11 +64,96 @@ public struct HostInterfaceSnapshot: Sendable {
     }
 }
 
+public struct WindowsAdapterRow: Sendable, Equatable {
+    public var friendlyName: String
+    public var ifType: UInt32
+    public var address: String?
+    public var prefixLength: Int?
+    public var operUp: Bool
+
+    public init(
+        friendlyName: String,
+        ifType: UInt32,
+        address: String? = nil,
+        prefixLength: Int? = nil,
+        operUp: Bool = true,
+    ) {
+        self.friendlyName = friendlyName
+        self.ifType = ifType
+        self.address = address
+        self.prefixLength = prefixLength
+        self.operUp = operUp
+    }
+}
+
 public enum HostInfoService {
+    public static let windowsLoopbackIfType: UInt32 = 24
+
+    public static func windowsInterfaceName(friendlyName: String, ifType: UInt32) -> String {
+        if ifType == windowsLoopbackIfType {
+            return "Loopback"
+        }
+        return friendlyName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public static func strippedNumericHost(_ ip: String) -> String {
+        if let zone = ip.firstIndex(of: "%") {
+            return String(ip[..<zone])
+        }
+        return ip
+    }
+
+    public static func listInterfaces(fromWindowsRows rows: [WindowsAdapterRow]) -> [HostInterfaceInfo] {
+        var seen = Set<String>()
+        var interfaces: [HostInterfaceInfo] = []
+        for row in rows {
+            let name = windowsInterfaceName(friendlyName: row.friendlyName, ifType: row.ifType)
+            guard !name.isEmpty, let raw = row.address, !raw.isEmpty else { continue }
+            let ip = strippedNumericHost(raw)
+            guard !ip.contains(":") else { continue }
+            guard seen.insert(name).inserted else { continue }
+            interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip, prefixLength: row.prefixLength))
+        }
+        return interfaces
+    }
+
+    public static func listInterfaceAddresses(fromWindowsRows rows: [WindowsAdapterRow]) -> [HostInterfaceInfo] {
+        var seen = Set<String>()
+        var interfaces: [HostInterfaceInfo] = []
+        for row in rows {
+            let name = windowsInterfaceName(friendlyName: row.friendlyName, ifType: row.ifType)
+            guard !name.isEmpty, let raw = row.address, !raw.isEmpty else { continue }
+            let ip = strippedNumericHost(raw)
+            guard !ip.isEmpty else { continue }
+            let key = "\(name)\0\(ip)"
+            guard seen.insert(key).inserted else { continue }
+            let prefix = ip.contains(":") ? nil : row.prefixLength
+            interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip, prefixLength: prefix))
+        }
+        return interfaces
+    }
+
+    public static func interfaceExists(_ name: String, windowsRows: [WindowsAdapterRow]) -> Bool {
+        guard !name.isEmpty else { return false }
+        return windowsRows.contains {
+            windowsInterfaceName(friendlyName: $0.friendlyName, ifType: $0.ifType) == name
+        }
+    }
+
+    public static func linkFlags(fromWindowsRows rows: [WindowsAdapterRow]) -> [String: (operState: String, carrier: Bool?)] {
+        var out: [String: (operState: String, carrier: Bool?)] = [:]
+        for row in rows {
+            let name = windowsInterfaceName(friendlyName: row.friendlyName, ifType: row.ifType)
+            guard !name.isEmpty, out[name] == nil else { continue }
+            out[name] = (row.operUp ? "up" : "down", row.operUp)
+        }
+        return out
+    }
+
     /// List all IPv4 network interfaces on this host.
     public static func listInterfaces() -> [HostInterfaceInfo] {
         #if os(Windows)
-            return []
+            return listInterfaces(fromWindowsRows: listWindowsAdapterRows())
         #else
             return listInterfacesPOSIX()
         #endif
@@ -119,7 +207,7 @@ public enum HostInfoService {
     /// `listInterfaces()` stays IPv4-only for setup/system UI.
     public static func listInterfaceAddresses() -> [HostInterfaceInfo] {
         #if os(Windows)
-            return []
+            return listInterfaceAddresses(fromWindowsRows: listWindowsAdapterRows())
         #else
             return listInterfaceAddressesPOSIX()
         #endif
@@ -211,7 +299,7 @@ public enum HostInfoService {
         #if os(Linux)
             return LinuxHostNetwork.interfaceExists(name)
         #elseif os(Windows)
-            return false
+            return interfaceExists(name, windowsRows: listWindowsAdapterRows())
         #else
             return interfaceExistsViaGetifaddrs(name)
         #endif
@@ -395,7 +483,7 @@ public enum HostInfoService {
 
     private static func linkFlagsByInterface() -> [String: (operState: String, carrier: Bool?)] {
         #if os(Windows)
-            return [:]
+            return linkFlags(fromWindowsRows: listWindowsAdapterRows())
         #else
             var out: [String: (operState: String, carrier: Bool?)] = [:]
             var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
@@ -422,4 +510,96 @@ public enum HostInfoService {
         guard let cidr = primary?.cidr else { return nil }
         return HostInterfaceAddressDiscovery.ipFromCIDR(cidr)
     }
+
+    #if os(Windows)
+        private static func listWindowsAdapterRows() -> [WindowsAdapterRow] {
+            do {
+                try PlatformSocket.ensureStarted()
+            } catch {
+                return []
+            }
+            let flags = ULONG(GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER)
+            var size: ULONG = 15_360
+            var buffer = [UInt8](repeating: 0, count: Int(size))
+            var result: ULONG = ERROR_BUFFER_OVERFLOW
+            for _ in 0 ..< 3 {
+                result = buffer.withUnsafeMutableBytes { raw -> ULONG in
+                    guard let base = raw.baseAddress else { return ULONG(ERROR_INVALID_PARAMETER) }
+                    let ptr = base.bindMemory(to: IP_ADAPTER_ADDRESSES.self, capacity: 1)
+                    return GetAdaptersAddresses(ULONG(AF_UNSPEC), flags, nil, ptr, &size)
+                }
+                if result == NO_ERROR { break }
+                if result != ERROR_BUFFER_OVERFLOW { return [] }
+                buffer = [UInt8](repeating: 0, count: Int(size))
+            }
+            guard result == NO_ERROR else { return [] }
+            var rows: [WindowsAdapterRow] = []
+            buffer.withUnsafeMutableBytes { raw in
+                guard let base = raw.baseAddress else { return }
+                var current: UnsafeMutablePointer<IP_ADAPTER_ADDRESSES>? =
+                    base.bindMemory(to: IP_ADAPTER_ADDRESSES.self, capacity: 1)
+                while let adapter = current {
+                    let friendly = if let namePtr = adapter.pointee.FriendlyName {
+                        String(decodingCString: namePtr, as: UTF16.self)
+                    } else {
+                        ""
+                    }
+                    let ifType = UInt32(adapter.pointee.IfType)
+                    let operUp = adapter.pointee.OperStatus == IfOperStatusUp
+                    var emitted = false
+                    var unicast = adapter.pointee.FirstUnicastAddress
+                    while let addr = unicast {
+                        if let sa = addr.pointee.Address.lpSockaddr,
+                           let ip = numericAddress(sa), !ip.isEmpty {
+                            rows.append(WindowsAdapterRow(
+                                friendlyName: friendly,
+                                ifType: ifType,
+                                address: ip,
+                                prefixLength: Int(addr.pointee.OnLinkPrefixLength),
+                                operUp: operUp,
+                            ))
+                            emitted = true
+                        }
+                        unicast = addr.pointee.Next
+                    }
+                    if !emitted {
+                        rows.append(WindowsAdapterRow(
+                            friendlyName: friendly,
+                            ifType: ifType,
+                            address: nil,
+                            prefixLength: nil,
+                            operUp: operUp,
+                        ))
+                    }
+                    current = adapter.pointee.Next
+                }
+            }
+            return rows
+        }
+
+        private static func numericAddress(_ sa: UnsafeMutablePointer<sockaddr>) -> String? {
+            let family = Int32(sa.pointee.sa_family)
+            if family == AF_INET {
+                return sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+                    var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    var inAddr = sin.pointee.sin_addr
+                    guard inet_ntop(AF_INET, &inAddr, &buf, Int(INET_ADDRSTRLEN)) != nil else {
+                        return nil
+                    }
+                    return String(cString: buf)
+                }
+            }
+            if family == AF_INET6 {
+                return sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
+                    var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    var in6 = sin6.pointee.sin6_addr
+                    guard inet_ntop(AF_INET6, &in6, &buf, Int(INET6_ADDRSTRLEN)) != nil else {
+                        return nil
+                    }
+                    return strippedNumericHost(String(cString: buf))
+                }
+            }
+            return nil
+        }
+    #endif
 }
