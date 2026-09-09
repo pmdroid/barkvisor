@@ -253,7 +253,7 @@ struct BigBearAppCatalogTests {
         arches: [String] = ["amd64", "arm64"],
         env: [[String: Any]] = [],
     ) -> String {
-        let envData = try! JSONSerialization.data(withJSONObject: env)
+        let envData = (try? JSONSerialization.data(withJSONObject: env)) ?? Data("[]".utf8)
         let envText = String(data: envData, encoding: .utf8) ?? "[]"
         let archText = arches.map { "\"\($0)\"" }.joined(separator: ",")
         return """
