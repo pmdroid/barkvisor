@@ -45,6 +45,7 @@ public enum ComposeAllowlist {
             throw BarkVisorError.badRequest("spec.compose must be a mapping")
         }
         try rejectTopLevel(root)
+        try rejectInterpolation(root)
         guard var services = asObject(root["services"]), !services.isEmpty else {
             throw BarkVisorError.badRequest("spec.compose must declare services")
         }
@@ -116,6 +117,23 @@ public enum ComposeAllowlist {
             }
         }
         return nil
+    }
+
+    private static func rejectInterpolation(_ value: Any) throws {
+        if let text = value as? String, text.contains("$") {
+            throw BarkVisorError.badRequest("unsupported compose feature: interpolation")
+        }
+        if let array = value as? [Any] {
+            for item in array {
+                try rejectInterpolation(item)
+            }
+            return
+        }
+        if let object = asObject(value) {
+            for nested in object.values {
+                try rejectInterpolation(nested)
+            }
+        }
     }
 
     private static func rejectTopLevel(_ root: [String: Any]) throws {
