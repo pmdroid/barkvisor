@@ -5,6 +5,8 @@
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 import Foundation
 
@@ -61,33 +63,50 @@ enum HealthProbeLive {
 
     private static func tcpBlocking(host: String, port: Int, timeout: TimeInterval) -> Bool {
         #if os(Windows)
-            _ = host
-            _ = port
-            _ = timeout
-            return false
-        #else
-            var hints = addrinfo()
-            hints.ai_family = AF_UNSPEC
-            hints.ai_socktype = PlatformSocket.stream
-
-            var result: UnsafeMutablePointer<addrinfo>?
-            let status = getaddrinfo(host, String(port), &hints, &result)
-            guard status == 0, let list = result else { return false }
-            defer { freeaddrinfo(list) }
-
-            var current: UnsafeMutablePointer<addrinfo>? = list
-            while let info = current {
-                if connectNonblocking(info.pointee, timeout: timeout) {
-                    return true
-                }
-                current = info.pointee.ai_next
+            do {
+                try PlatformSocket.ensureStarted()
+            } catch {
+                return false
             }
-            return false
         #endif
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = PlatformSocket.stream
+
+        var result: UnsafeMutablePointer<addrinfo>?
+        let status = getaddrinfo(host, String(port), &hints, &result)
+        guard status == 0, let list = result else { return false }
+        defer { freeaddrinfo(list) }
+
+        var current: UnsafeMutablePointer<addrinfo>? = list
+        while let info = current {
+            if connectTimed(info.pointee, timeout: timeout) {
+                return true
+            }
+            current = info.pointee.ai_next
+        }
+        return false
     }
 
-    #if !os(Windows)
-        private static func connectNonblocking(_ info: addrinfo, timeout: TimeInterval) -> Bool {
+    private static func connectTimed(_ info: addrinfo, timeout: TimeInterval) -> Bool {
+        #if os(Windows)
+            let sock = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
+            guard sock != INVALID_SOCKET else { return false }
+            defer { closesocket(sock) }
+            var ms = DWORD(min(max(timeout * 1_000, 1), Double(UInt32.max)))
+            _ = withUnsafePointer(to: &ms) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: MemoryLayout<DWORD>.size) { bytes in
+                    setsockopt(
+                        sock,
+                        SOL_SOCKET,
+                        SO_SNDTIMEO,
+                        bytes,
+                        Int32(MemoryLayout<DWORD>.size),
+                    )
+                }
+            }
+            return WinSDK.connect(sock, info.ai_addr, Int32(info.ai_addrlen)) == 0
+        #else
             let fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
             guard fd >= 0 else { return false }
             defer { close(fd) }
@@ -109,8 +128,8 @@ enum HealthProbeLive {
             var len = socklen_t(MemoryLayout<Int32>.size)
             guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 else { return false }
             return err == 0
-        }
-    #endif
+        #endif
+    }
 }
 
 /// Default URLSession follows 3xx; a guest that answers 302 to an internal

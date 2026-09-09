@@ -2,6 +2,8 @@
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 import Foundation
 import GRDB
@@ -196,17 +198,13 @@ struct HealthProbeServiceTests {
     }
 
     @Test func `live tcp probe against localhost`() async throws {
-        #if os(Windows)
-            return
-        #else
-            let listener = try LocalTCPListener()
-            defer { listener.stop() }
-            let transport = HealthProbeTransport.live
-            let ok = await transport.tcp("127.0.0.1", listener.port, 1)
-            #expect(ok)
-            let closed = await transport.tcp("127.0.0.1", 1, 0.2)
-            #expect(!closed)
-        #endif
+        let listener = try LocalTCPListener()
+        defer { listener.stop() }
+        let transport = HealthProbeTransport.live
+        let ok = await transport.tcp("127.0.0.1", listener.port, 1)
+        #expect(ok)
+        let closed = await transport.tcp("127.0.0.1", 1, 0.2)
+        #expect(!closed)
     }
 
     @Test func `exec check is rejected on vms`() {
@@ -478,13 +476,46 @@ private actor ProbeOverlapGate {
     }
 }
 
-#if !os(Windows)
-    /// Minimal IPv4 TCP listener for live probe tests (macOS + Linux).
-    private final class LocalTCPListener: @unchecked Sendable {
-        let port: Int
+private final class LocalTCPListener: @unchecked Sendable {
+    let port: Int
+    #if os(Windows)
+        private let sock: SOCKET
+    #else
         private let fd: Int32
+    #endif
 
-        init() throws {
+    init() throws {
+        #if os(Windows)
+            try PlatformSocket.ensureStarted()
+            let created = socket(Int32(AF_INET), PlatformSocket.stream, 0)
+            guard created != INVALID_SOCKET else { throw BarkVisorError.badRequest("socket") }
+            var addr = sockaddr_in()
+            addr.sin_family = ADDRESS_FAMILY(AF_INET)
+            addr.sin_port = 0
+            addr.sin_addr.S_un.S_addr = ULONG(truncatingIfNeeded: INADDR_LOOPBACK).bigEndian
+            let bindRC = withUnsafePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(created, $0, Int32(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0, listen(created, 1) == 0 else {
+                closesocket(created)
+                throw BarkVisorError.badRequest("bind")
+            }
+            var got = sockaddr_in()
+            var len = Int32(MemoryLayout<sockaddr_in>.size)
+            let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getsockname(created, $0, &len)
+                }
+            }
+            guard nameRC == 0 else {
+                closesocket(created)
+                throw BarkVisorError.badRequest("getsockname")
+            }
+            self.sock = created
+            self.port = Int(UInt16(bigEndian: got.sin_port))
+        #else
             let sock = socket(AF_INET, PlatformSocket.stream, 0)
             guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
             var yes: Int32 = 1
@@ -515,12 +546,19 @@ private actor ProbeOverlapGate {
             }
             self.fd = sock
             self.port = Int(UInt16(bigEndian: got.sin_port))
-        }
-
-        func stop() {
-            close(fd)
-        }
+        #endif
     }
+
+    func stop() {
+        #if os(Windows)
+            closesocket(sock)
+        #else
+            close(fd)
+        #endif
+    }
+}
+
+#if !os(Windows)
 
     /// Tiny HTTP/1.1 responder for redirect / SSRF tests.
     private final class LocalHTTPServer: @unchecked Sendable {
