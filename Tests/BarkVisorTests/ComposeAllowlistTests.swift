@@ -21,8 +21,14 @@ struct ComposeAllowlistTests {
         volumes:
           data:
         """
-        let render = try ComposeAllowlist.render(yaml: yaml, workloadID: "abc-123", stateDir: dir)
+        let render = try ComposeAllowlist.render(
+            yaml: yaml, workloadID: "abc-123", stateDir: dir, bindHost: "192.168.8.10",
+        )
         #expect(render.publishedPorts.contains { $0.hostPort == 8_080 && $0.containerPort == 80 })
+        #expect(render.bindHost == "192.168.8.10")
+        #expect(render.yaml.contains("192.168.8.10"))
+        #expect(render.yaml.contains("host_ip"))
+        #expect(!render.yaml.contains("0.0.0.0"))
         #expect(render.namedVolumes == ["data"])
         #expect(render.yaml.contains("barkvisor.workload"))
         #expect(render.yaml.contains("abc-123"))
@@ -44,7 +50,9 @@ struct ComposeAllowlistTests {
         """
         for document in [yaml, keyed] {
             let error = #expect(throws: BarkVisorError.self) {
-                _ = try ComposeAllowlist.render(yaml: document, workloadID: "id", stateDir: stateDir)
+                _ = try ComposeAllowlist.render(
+                    yaml: document, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+                )
             }
             guard case let .badRequest(message) = error else {
                 Issue.record("expected badRequest")
@@ -63,7 +71,9 @@ struct ComposeAllowlistTests {
               - HOME
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -81,7 +91,9 @@ struct ComposeAllowlistTests {
               - path: /etc/passwd
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -98,7 +110,9 @@ struct ComposeAllowlistTests {
             privileged: true
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -115,7 +129,9 @@ struct ComposeAllowlistTests {
             privileged: "True"
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -132,7 +148,9 @@ struct ComposeAllowlistTests {
             network_mode: host
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -150,7 +168,9 @@ struct ComposeAllowlistTests {
               - /etc:/etc
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -168,7 +188,9 @@ struct ComposeAllowlistTests {
               - .:/mnt
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -188,7 +210,9 @@ struct ComposeAllowlistTests {
                 target: /data
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -214,7 +238,9 @@ struct ComposeAllowlistTests {
               - data:/config
         """
         let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: dir)
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: dir, bindHost: "192.168.8.10",
+            )
         }
         guard case let .badRequest(message) = error else {
             Issue.record("expected badRequest")
@@ -249,7 +275,9 @@ struct ComposeAllowlistTests {
         """
         for yaml in [short, parent, object] {
             let error = #expect(throws: BarkVisorError.self) {
-                _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+                _ = try ComposeAllowlist.render(
+                    yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+                )
             }
             guard case let .badRequest(message) = error else {
                 Issue.record("expected badRequest")
@@ -302,10 +330,111 @@ struct ComposeAllowlistTests {
         """
         for yaml in [cap, devices] {
             let error = #expect(throws: BarkVisorError.self) {
-                _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+                _ = try ComposeAllowlist.render(
+                    yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+                )
             }
             guard case let .badRequest(message) = error else { continue }
             #expect(message.hasPrefix("unsupported compose feature:"))
         }
+    }
+
+    @Test func `published ports bind the LAN address including UDP`() throws {
+        let yaml = """
+        services:
+          media:
+            image: alpine
+            ports:
+              - "8096:8096"
+              - "1900:1900/udp"
+              - "0.0.0.0:5353:5353/udp"
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml, workloadID: "app-1", stateDir: stateDir, bindHost: "192.168.8.10",
+        )
+        #expect(render.publishedPorts.count == 3)
+        #expect(render.publishedPorts.contains {
+            $0.hostPort == 8_096 && $0.containerPort == 8_096 && $0.proto == "tcp"
+                && $0.hostAddress == "192.168.8.10"
+        })
+        #expect(render.publishedPorts.contains {
+            $0.hostPort == 1_900 && $0.proto == "udp" && $0.hostAddress == "192.168.8.10"
+        })
+        #expect(render.publishedPorts.contains {
+            $0.hostPort == 5_353 && $0.proto == "udp" && $0.hostAddress == "192.168.8.10"
+        })
+        #expect(
+            render.yaml.contains("host_ip: 192.168.8.10")
+                || render.yaml.contains("host_ip: '192.168.8.10'")
+                || render.yaml.contains("host_ip: \"192.168.8.10\""),
+        )
+        #expect(!render.yaml.contains("0.0.0.0"))
+        #expect(!render.yaml.contains("::"))
+        let rules = ApplicationLifecycleService.portRules(render.publishedPorts)
+        try PortRegistry.assertUnique(rules)
+        #expect(rules.contains { $0.hostPort == 1_900 && $0.protocol == "udp" })
+        #expect(rules.contains { $0.hostPort == 8_096 && $0.protocol == "tcp" })
+    }
+
+    @Test func `plex host network is rewritten to LAN 32400`() throws {
+        let yaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex:latest
+            network_mode: host
+            volumes:
+              - config:/config
+        volumes:
+          config:
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml, workloadID: "plex-1", stateDir: stateDir, bindHost: "192.168.8.10",
+        )
+        #expect(!render.yaml.contains("network_mode"))
+        #expect(render.publishedPorts.contains {
+            $0.hostPort == 32_400 && $0.containerPort == 32_400 && $0.proto == "tcp"
+                && $0.hostAddress == "192.168.8.10"
+        })
+        #expect(render.yaml.contains("32400"))
+        #expect(render.yaml.contains("192.168.8.10"))
+    }
+
+    @Test func `non-plex host network stays rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            network_mode: host
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "192.168.8.10",
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: host network")
+    }
+
+    @Test func `wildcard bind host is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            ports:
+              - "8080:80"
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(
+                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "0.0.0.0",
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "No LAN address to bind published ports")
     }
 }

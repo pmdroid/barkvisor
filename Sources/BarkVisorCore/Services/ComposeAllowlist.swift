@@ -5,11 +5,21 @@ public struct ComposeRender: Equatable, Sendable {
     public var yaml: String
     public var publishedPorts: [PublishedPort]
     public var namedVolumes: [String]
+    public var containerNames: [String]
+    public var bindHost: String
 
-    public init(yaml: String, publishedPorts: [PublishedPort], namedVolumes: [String]) {
+    public init(
+        yaml: String,
+        publishedPorts: [PublishedPort],
+        namedVolumes: [String],
+        containerNames: [String] = [],
+        bindHost: String = "",
+    ) {
         self.yaml = yaml
         self.publishedPorts = publishedPorts
         self.namedVolumes = namedVolumes
+        self.containerNames = containerNames
+        self.bindHost = bindHost
     }
 }
 
@@ -30,6 +40,7 @@ public enum ComposeAllowlist {
         yaml: String,
         workloadID: String,
         stateDir: URL,
+        bindHost: String? = nil,
     ) throws -> ComposeRender {
         let trimmed = yaml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -49,14 +60,23 @@ public enum ComposeAllowlist {
         guard var services = asObject(root["services"]), !services.isEmpty else {
             throw BarkVisorError.badRequest("spec.compose must declare services")
         }
+        let host: String
+        if let bindHost {
+            try ComposePorts.requireBindHost(bindHost)
+            host = bindHost
+        } else {
+            host = try HostInfoService.requireLanBindIPv4()
+        }
         var published: [PublishedPort] = []
         var named: [String] = []
+        var containers: [String] = []
         let volumeRoot = stateDir.appendingPathComponent("volumes", isDirectory: true)
         _ = try requirePath(under: stateDir, candidate: volumeRoot)
         for name in services.keys.sorted() {
             guard var service = asObject(services[name]) else {
                 throw BarkVisorError.badRequest("unsupported compose feature: services.\(name)")
             }
+            try ComposePorts.rewriteHostNetwork(&service)
             try rejectService(service, serviceName: name)
             if service["env_file"] != nil {
                 service["env_file"] = ".env"
@@ -71,8 +91,16 @@ public enum ComposeAllowlist {
             )
             service["volumes"] = rewritten.mapping
             named.append(contentsOf: rewritten.named)
-            try published.append(contentsOf: parsePorts(service["ports"]))
-            service["container_name"] = containerName(workloadID: workloadID, service: name)
+            let ports = try ComposePorts.rewritePublishedPorts(service["ports"], bindHost: host)
+            if ports.mapping.isEmpty {
+                service.removeValue(forKey: "ports")
+            } else {
+                service["ports"] = ports.mapping
+            }
+            published.append(contentsOf: ports.published)
+            let cname = containerName(workloadID: workloadID, service: name)
+            service["container_name"] = cname
+            containers.append(cname)
             service["labels"] = mergeLabels(service["labels"], workloadID: workloadID)
             if let depends = service["depends_on"] {
                 try validateDependsOn(depends)
@@ -101,6 +129,8 @@ public enum ComposeAllowlist {
             yaml: dumped,
             publishedPorts: published,
             namedVolumes: Array(Set(named)).sorted(),
+            containerNames: containers,
+            bindHost: host,
         )
     }
 
@@ -412,82 +442,6 @@ public enum ComposeAllowlist {
         return path
     }
 
-    private static func parsePorts(_ value: Any?) throws -> [PublishedPort] {
-        guard let value, !(value is NSNull) else { return [] }
-        let items: [Any]
-        if let array = value as? [Any] {
-            items = array
-        } else {
-            throw BarkVisorError.badRequest("unsupported compose feature: ports")
-        }
-        var result: [PublishedPort] = []
-        for item in items {
-            if let text = stringValue(item) {
-                guard let port = parsePortString(text) else {
-                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
-                }
-                result.append(port)
-                continue
-            }
-            if let object = asObject(item) {
-                let published = intValue(object["published"]) ?? intValue(object["host_port"])
-                let target = intValue(object["target"]) ?? intValue(object["container_port"])
-                let proto = (stringValue(object["protocol"]) ?? "tcp").lowercased()
-                guard let published, let target, (1 ... 65_535).contains(published),
-                      (1 ... 65_535).contains(target)
-                else {
-                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
-                }
-                let port = PublishedPort(hostPort: published, containerPort: target, proto: proto)
-                result.append(
-                    PublishedPort(
-                        hostPort: port.hostPort,
-                        containerPort: port.containerPort,
-                        proto: port.proto,
-                        url: port.openURL,
-                    ),
-                )
-                continue
-            }
-            throw BarkVisorError.badRequest("unsupported compose feature: ports")
-        }
-        return result
-    }
-
-    private static func parsePortString(_ text: String) -> PublishedPort? {
-        var raw = text
-        var proto = "tcp"
-        if let slash = raw.lastIndex(of: "/") {
-            proto = String(raw[raw.index(after: slash)...]).lowercased()
-            raw = String(raw[..<slash])
-        }
-        let parts = raw.split(separator: ":").map(String.init)
-        let host: Int?
-        let container: Int?
-        switch parts.count {
-        case 1:
-            host = Int(parts[0])
-            container = host
-        case 2:
-            host = Int(parts[0])
-            container = Int(parts[1])
-        case 3:
-            host = Int(parts[1])
-            container = Int(parts[2])
-        default:
-            return nil
-        }
-        guard let host, let container, (1 ... 65_535).contains(host), (1 ... 65_535).contains(container)
-        else { return nil }
-        let port = PublishedPort(hostPort: host, containerPort: container, proto: proto)
-        return PublishedPort(
-            hostPort: port.hostPort,
-            containerPort: port.containerPort,
-            proto: port.proto,
-            url: port.openURL,
-        )
-    }
-
     private static func mergeLabels(_ existing: Any?, workloadID: String) -> [String: String] {
         var labels: [String: String] = [:]
         if let object = asObject(existing) {
@@ -518,12 +472,6 @@ public enum ComposeAllowlist {
     private static func stringValue(_ value: Any?) -> String? {
         if let string = value as? String { return string }
         if let int = value as? Int { return String(int) }
-        return nil
-    }
-
-    private static func intValue(_ value: Any?) -> Int? {
-        if let int = value as? Int { return int }
-        if let string = value as? String { return Int(string) }
         return nil
     }
 

@@ -93,6 +93,55 @@ final class PortRegistryTests {
         #expect(error?.errorDescription?.contains("8123") == true)
     }
 
+    @Test func `application UDP publish is a PortRegistry claim`() async throws {
+        try await dbPool.write { db in
+            let vm = VM(
+                id: "app-jellyfin",
+                name: "Jellyfin",
+                vmType: WorkloadSpec.applicationGuestType,
+                state: "running",
+                cpuCount: 1,
+                memoryMb: 256,
+                bootDiskId: nil,
+                kind: WorkloadSpec.kindApplication,
+                composeYaml: "services: {}\n",
+                networkId: nil,
+                cloudInitPath: nil,
+                description: nil,
+                bootOrder: nil,
+                displayResolution: nil,
+                additionalDiskIds: nil,
+                uefi: false,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: JSONColumnCoding.encode([
+                    PortForwardRule(protocol: "tcp", hostPort: 8_096, guestPort: 8_096),
+                    PortForwardRule(protocol: "udp", hostPort: 1_900, guestPort: 1_900),
+                ]),
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: "2026-01-01T00:00:00Z",
+                updatedAt: "2026-01-01T00:00:00Z",
+            )
+            try vm.insert(db)
+        }
+        let claims = try await dbPool.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.contains { $0.hostPort == 8_096 && $0.proto == "tcp" && $0.workloadId == "app-jellyfin" })
+        #expect(claims.contains { $0.hostPort == 1_900 && $0.proto == "udp" && $0.workloadId == "app-jellyfin" })
+        try await PortRegistry.assertAvailable(
+            [PortForwardRule(protocol: "tcp", hostPort: 1_900, guestPort: 1_900)],
+            db: dbPool,
+        )
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await PortRegistry.assertAvailable(
+                [PortForwardRule(protocol: "udp", hostPort: 1_900, guestPort: 1_900)],
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "port_in_use")
+    }
+
     @Test func `same host port different proto is allowed`() async throws {
         try await insertVM(
             id: "vm-dns", name: "DNS",
