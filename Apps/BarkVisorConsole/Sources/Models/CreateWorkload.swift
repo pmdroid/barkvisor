@@ -14,9 +14,6 @@ enum CreateWorkload {
 
     static let webEditCopy = "Edit hardware, disks, networks, USB in the web UI."
 
-    static let agentGrantCopy = "WAN yes, house no."
-    static let houseGrantCopy = "House: LAN and USB allowed."
-
     static func ready(_ images: [LibraryImage]) -> [LibraryImage] {
         images.filter(\.isReady).sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -113,9 +110,6 @@ enum CreateWorkload {
     enum DraftError: Error, Equatable, LocalizedError {
         case emptyName
         case imageNotReady
-        case invalidOpenAIBaseURL
-        case missingOpenAIAPIKey
-        case invalidOpenAIAPIKey
         case staticAddressingNotBridged
         case staticAddressingNotCloudInit
         case invalidGuestIPv4
@@ -127,9 +121,12 @@ enum CreateWorkload {
             switch self {
             case .emptyName: "Name is required"
             case .imageNotReady: "Pick a ready Library image"
-            case .invalidOpenAIBaseURL: "OPENAI_BASE_URL must be an http(s) URL"
-            case .missingOpenAIAPIKey: "OPENAI_API_KEY is required"
-            case .invalidOpenAIAPIKey: "OPENAI_API_KEY is invalid"
+            case .staticAddressingNotBridged: "Guest addressing needs a bridged network"
+            case .staticAddressingNotCloudInit: "Guest addressing needs cloud-init"
+            case .invalidGuestIPv4: "Guest IPv4 is invalid"
+            case .invalidGuestPrefixLength: "Guest prefix length is invalid"
+            case .invalidGuestGateway: "Guest gateway is invalid"
+            case .invalidGuestNameserver: "Guest nameserver is invalid"
             }
         }
     }
@@ -146,7 +143,6 @@ enum CreateWorkload {
         var isoId: String?
         var cloudImageId: String?
         var networkId: String?
-        var workloadClass: String?
         var cloudInit: CloudInitPayload?
         var uefi: Bool?
         var tpmEnabled: Bool?
@@ -167,7 +163,6 @@ enum CreateWorkload {
             try container.encodeIfPresent(isoId, forKey: .isoId)
             try container.encodeIfPresent(cloudImageId, forKey: .cloudImageId)
             try container.encodeIfPresent(networkId, forKey: .networkId)
-            try container.encodeIfPresent(workloadClass, forKey: .workloadClass)
             try container.encodeIfPresent(cloudInit, forKey: .cloudInit)
             try container.encodeIfPresent(uefi, forKey: .uefi)
             try container.encodeIfPresent(tpmEnabled, forKey: .tpmEnabled)
@@ -178,7 +173,7 @@ enum CreateWorkload {
 
         private enum CodingKeys: String, CodingKey {
             case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, existingDiskId, isoId, cloudImageId, networkId,
-                 workloadClass, cloudInit, uefi, tpmEnabled, sharedPaths
+                 cloudInit, uefi, tpmEnabled, sharedPaths
         }
     }
 
@@ -191,9 +186,6 @@ enum CreateWorkload {
         name: String,
         image: LibraryImage,
         hostCPUCount: Int?,
-        workloadClass: String? = nil,
-        openaiBaseURL: String? = nil,
-        openaiAPIKey: String? = nil,
         network: NetworkRecord? = nil,
     ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -201,46 +193,17 @@ enum CreateWorkload {
         guard image.isReady else { throw DraftError.imageNotReady }
         let family = osFamily(for: image)
         let iso = isISO(image)
-        let coding = CodingAgentImage.matches(name: image.name)
-        let memory = coding ? max(memoryMB(osFamily: family), CodingAgentImage.defaultMemoryMB) : memoryMB(
-            osFamily: family,
-        )
-        let disk = coding ? max(diskSizeGB(osFamily: family), CodingAgentImage.defaultDiskGB) : diskSizeGB(
-            osFamily: family,
-        )
-        let klass: String?
-        if coding {
-            klass = workloadClass == "house" ? "house" : "agent"
-        } else {
-            klass = workloadClass == "agent" ? "agent" : nil
-        }
-        let cloudInit: CloudInitPayload?
-        if coding, !iso {
-            let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
-            let trimmedURL = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let byo = !trimmedURL.isEmpty && url != CodingAgentImage.homeOllamaGrantURL
-            let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
-            cloudInit = CloudInitPayload(
-                userData: CodingAgentImage.userData(
-                    openaiBaseURL: url,
-                    openaiAPIKey: apiKey,
-                ),
-            )
-        } else {
-            cloudInit = nil
-        }
         return Body(
             name: trimmed,
             osFamily: family,
             vmType: guestType(osFamily: family, arch: image.arch),
             cpuCount: cpuCount(osFamily: family, hostCPUCount: hostCPUCount),
-            memoryMB: memory,
-            diskSizeGB: disk,
+            memoryMB: memoryMB(osFamily: family),
+            diskSizeGB: diskSizeGB(osFamily: family),
             isoId: iso ? image.id : nil,
             cloudImageId: iso ? nil : image.id,
             networkId: network?.id,
-            workloadClass: klass,
-            cloudInit: cloudInit,
+            cloudInit: nil,
         )
     }
 
@@ -252,9 +215,6 @@ enum CreateWorkload {
         diskSource: CreateVMWizard.DiskSource,
         diskSizeGB: Int,
         existingDiskID: String,
-        workloadClass: String? = nil,
-        openaiBaseURL: String? = nil,
-        openaiAPIKey: String? = nil,
         network: NetworkRecord? = nil,
         sshPublicKey: String? = nil,
         sharedPaths: [String] = [],
@@ -264,42 +224,26 @@ enum CreateWorkload {
         guard image.isReady else { throw DraftError.imageNotReady }
         let family = osFamily(for: image)
         let iso = isISO(image)
-        let coding = CodingAgentImage.matches(name: image.name)
-        let klass: String?
-        if coding {
-            klass = workloadClass == "house" ? "house" : "agent"
-        } else {
-            klass = workloadClass == "agent" ? "agent" : nil
-        }
         var cloudInit: CloudInitPayload?
-        if coding, !iso {
-            let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
-            let trimmedURL = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let byo = !trimmedURL.isEmpty && url != CodingAgentImage.homeOllamaGrantURL
-            let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
-            cloudInit = CloudInitPayload(
-                userData: CodingAgentImage.userData(openaiBaseURL: url, openaiAPIKey: apiKey),
-            )
-        } else if !iso, let sshPublicKey {
+        if !iso, let sshPublicKey {
             let key = sshPublicKey.trimmingCharacters(in: .whitespacesAndNewlines)
             if !key.isEmpty {
                 cloudInit = CloudInitPayload(sshAuthorizedKeys: [key], userData: nil)
             }
         }
         let useExisting = diskSource == .existing && !existingDiskID.isEmpty
-        let shared = workloadClass == "agent" ? [] : sharedPaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let shared = sharedPaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return Body(
             name: trimmed,
             osFamily: family,
             vmType: guestType(osFamily: family, arch: image.arch),
             cpuCount: min(preset.cpu, cpuCount(osFamily: family, hostCPUCount: hostCPUCount)),
             memoryMB: preset.memoryMB,
-            diskSizeGB: useExisting ? diskSizeGB : diskSizeGB,
+            diskSizeGB: diskSizeGB,
             existingDiskId: useExisting ? existingDiskID : nil,
             isoId: iso ? image.id : nil,
             cloudImageId: iso ? nil : image.id,
             networkId: network?.id,
-            workloadClass: klass,
             cloudInit: cloudInit,
             uefi: family == "windows" ? true : nil,
             tpmEnabled: family == "windows" ? true : nil,

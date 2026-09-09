@@ -24,7 +24,6 @@ export interface CreateVMPayloadInput {
   sharedPaths: string[]
   usbAvailable: boolean
   usbDevices: USBPassthroughDevice[]
-  workloadClass?: 'house' | 'agent'
 }
 
 /** Assemble CreateVMRequest. Guest-type (`vmType`) is a call-site value, not resolved here (PAS-241). */
@@ -61,18 +60,8 @@ export function buildCreateVMPayload(input: CreateVMPayloadInput): CreateVMReque
   if (input.selectedNetworkId) req.networkId = input.selectedNetworkId
   if (input.portForwards.length > 0) req.portForwards = input.portForwards
   if (input.sharedPaths.length > 0) req.sharedPaths = input.sharedPaths
-  if (input.usbAvailable && input.usbDevices.length > 0 && input.workloadClass !== 'agent') {
+  if (input.usbAvailable && input.usbDevices.length > 0) {
     req.usbDevices = input.usbDevices
-  }
-  if (input.workloadClass === 'agent') {
-    req.workloadClass = 'agent'
-    delete req.usbDevices
-    delete req.portForwards
-    delete req.sharedPaths
-    if (input.selectedNetworkId) {
-      // Bridged is rejected server-side; still send a chosen NAT/isolated id.
-      req.networkId = input.selectedNetworkId
-    }
   }
   return req
 }

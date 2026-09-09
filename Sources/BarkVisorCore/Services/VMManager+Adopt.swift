@@ -98,7 +98,6 @@ extension VMManager {
                 reconnected: true,
                 swtpmPid: swtpmPid,
             ),
-            codingAgentHostPort: previousPids?.codingAgentHostPort,
         )
 
         let fm = FileManager.default

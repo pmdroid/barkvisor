@@ -293,18 +293,6 @@ struct APIClient {
         )
     }
 
-    func resumeSession(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
-        try await post(scoped("/vms/\(id)/session/resume", on: device), body: EmptyJSON())
-    }
-
-    func resetSession(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
-        try await post(scoped("/vms/\(id)/session/reset", on: device), body: EmptyJSON())
-    }
-
-    func burnSession(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws {
-        try await post(scoped("/vms/\(id)/session/burn", on: device), body: EmptyJSON())
-    }
-
     func guestInfo(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> GuestInfo {
         try await get(scoped("/vms/\(id)/guest-info", on: device))
     }

@@ -7,8 +7,6 @@ struct WorkloadDetailView: View {
     var fallbackWorkload: Workload
     var fallbackDevice: HomeDeviceHealthSnapshot
     @State private var pendingForceStop = false
-    @State private var pendingReset = false
-    @State private var pendingBurn = false
     @State private var guest: GuestInfo?
     @State private var networkMode: String?
     @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
@@ -76,19 +74,8 @@ struct WorkloadDetailView: View {
             }
 
             Section {
-                if codingAgent, model.showsChat {
-                    NavigationLink {
-                        ChatView()
-                    } label: {
-                        streamLabel(
-                            title: "Chat",
-                            subtitle: "Home Ollama grant",
-                            systemImage: "bubble.left.and.bubble.right",
-                        )
-                    }
-                }
                 streamRow(
-                    title: CodingAgentSession.consoleTitle(isSession: codingAgent),
+                    title: "Console",
                     subtitle: "Serial",
                     systemImage: "apple.terminal",
                     destination: SerialConsoleView(
@@ -111,38 +98,9 @@ struct WorkloadDetailView: View {
                 )
             }
 
-            if codingAgent, let session = workload.session {
-                Section("Session") {
-                    LabeledContent("TTL", value: session.expiryAction == "stop" ? "Stop (keep disk)" : session.expiryAction)
-                    if let expires = session.expiresAt {
-                        LabeledContent("Expires", value: expires)
-                    }
-                    if session.warning {
-                        Text(CodingAgentSession.warningCopy(remainingSeconds: session.remainingSeconds))
-                            .foregroundStyle(.orange)
-                    }
-                    if let line = session.receiptLine(vmState: workload.state) {
-                        LabeledContent("Stopped at", value: line.stoppedAt)
-                        Text(line.git)
-                            .fontWeight(line.loud ? .bold : .regular)
-                            .foregroundStyle(line.loud ? .red : .primary)
-                    }
-                    if workload.canStart {
-                        Button("Resume") {
-                            Task { await model.resumeSession(workload, on: device) }
-                        }
-                        .disabled(busy)
-                    }
-                    Button("Reset to Library image") { pendingReset = true }
-                        .disabled(busy)
-                    Button("Burn", role: .destructive) { pendingBurn = true }
-                        .disabled(busy)
-                }
-            }
-
             isoSection
 
-            if !codingAgent {
+            if !workload.isAgentClass {
                 usbSection
             }
 
@@ -322,22 +280,6 @@ struct WorkloadDetailView: View {
             } message: {
                 Text("The guest will not shut down cleanly.")
             }
-            .alert("Reset to Library image?", isPresented: $pendingReset) {
-                Button("Reset", role: .destructive) {
-                    Task { await model.resetSession(workload, on: device) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("The boot disk is replaced. Files that were not pushed are lost.")
-            }
-            .alert("Burn \(workload.name)?", isPresented: $pendingBurn) {
-                Button("Burn", role: .destructive) {
-                    Task { await model.burnSession(workload, on: device) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Destroys the Workload and unloads the local-model grant.")
-            }
     }
 
     private var workload: Workload {
@@ -356,10 +298,6 @@ struct WorkloadDetailView: View {
 
     private var access: WorkloadStreamAccess {
         WorkloadStreamAccess.resolve(device: device, state: workload.state)
-    }
-
-    private var codingAgent: Bool {
-        CodingAgentSession.isSession(workloadClass: workload.workloadClass)
     }
 
     private var listeningAccess: GuestListeningPortAccess {

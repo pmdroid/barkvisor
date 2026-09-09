@@ -30,7 +30,7 @@ struct InferenceAPIHowToTests {
             #expect(source.contains("preferredListenHost"))
             #expect(!source.contains(":7778"))
         }
-        #expect(CodingAgentImage.deviceOllamaBaseURL == "http://10.0.2.2:11434/v1")
+        #expect("http://10.0.2.2:11434/v1" == "http://\(AgentNetworkCage.slirpGateway):\(AgentNetworkCage.ollamaPort)/v1")
         #expect(AgentNetworkCage.slirpGateway == "10.0.2.2")
         #expect(AgentNetworkCage.ollamaPort == 11_434)
         let extra = AgentNetworkCage.slirpExtras(mode: .nat, allowHostOllama: true)

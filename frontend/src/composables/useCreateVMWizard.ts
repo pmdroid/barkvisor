@@ -79,14 +79,8 @@ import { nudgeBuiltInCatalogSync } from '../utils/catalogSyncOnOpen'
 import { useRepositoryStore } from '../stores/repositories'
 import { useVirtioDownload } from './useVirtioDownload'
 import { useCreateVMImagePin } from './useCreateVMImagePin'
-import {
-  HOME_OLLAMA_GRANT_URL,
-  isCodingAgentImage,
-  mergeCodingAgentUserData,
-  type OpenAIPreset,
-} from '../utils/codingAgentImage'
 
-export type GalleryKind = 'template' | 'windows' | 'custom' | 'coding-agent' | null
+export type GalleryKind = 'template' | 'windows' | 'custom' | null
 
 export const WIZARD_STEP_LABELS = ['Gallery', 'Configure', 'Disk'] as const
 
@@ -176,14 +170,8 @@ export function useCreateVMWizard(
       pickedCaps.value.details?.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
       || undefined,
   }))
-  const workloadClass = ref<'house' | 'agent'>('house')
-  const isAgent = computed(() => workloadClass.value === 'agent')
   const allNetworks = computed(() => deviceNetworks.value)
-  const networks = computed(() => {
-    const usable = networksUsableOnHost(allNetworks.value, bridged.value.available)
-    if (!isAgent.value) return usable
-    return usable.filter((n) => n.mode !== 'bridged')
-  })
+  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.value.available))
   const availableDisks = computed(() => deviceDisks.value.filter((d) => !d.vmId))
 
   const templateStore = useTemplateStore()
@@ -243,23 +231,15 @@ export function useCreateVMWizard(
   })
 
   const galleryTemplates = computed(() => homeLibrary.templates)
-  const showCodingAgentCard = computed(() =>
-    homeLibrary.images.some((img) => img.status === 'ready' && isCodingAgentImage(img)),
-  )
 
   const isCloudInitGuest = computed(() => {
-    if (galleryKind.value === 'template' || galleryKind.value === 'coding-agent') return true
+    if (galleryKind.value === 'template') return true
     if (galleryKind.value === 'custom') return mode.value === 'cloud'
     return false
   })
 
   const showHostnameHint = computed(() => isCloudInitGuest.value)
 
-  /**
-   * Guest arch: the pinned/selected image's arch wins, so an arm64 ISO on an
-   * x86_64 Device reports the right mismatch. Falls back to the Device arch
-   * (templates, coding-agent, images without a known arch).
-   */
   const effectiveGuestArch = computed(() => {
     const imgArch = normalizeImageArch(selectedImage.value?.arch)
     if (imgArch) return imgArch
@@ -417,7 +397,6 @@ export function useCreateVMWizard(
     galleryKind.value = 'template'
     selectedTemplateSlug.value = template.slug
     osType.value = 'linux'
-    workloadClass.value = 'house'
     name.value = defaultVMNameFromLabel(template.name)
     const medium = sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0]
     if (medium) applyPreset(medium)
@@ -432,7 +411,6 @@ export function useCreateVMWizard(
   function selectGalleryWindows() {
     galleryKind.value = 'windows'
     osType.value = 'windows'
-    workloadClass.value = 'house'
     name.value = 'Windows 11'
     selectedImageId.value = ''
     mode.value = 'iso'
@@ -448,30 +426,10 @@ export function useCreateVMWizard(
   function selectGalleryCustom() {
     galleryKind.value = 'custom'
     osType.value = 'linux'
-    workloadClass.value = 'house'
     name.value = defaultVMNameFromLabel('Custom VM')
     selectedImageId.value = ''
     mode.value = 'iso'
     applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
-    uefi.value = true
-    tpmOverride.value = null
-    step.value = 2
-    void enterConfigure()
-  }
-
-  function selectGalleryCodingAgent() {
-    const img = homeLibrary.images.find((row) => row.status === 'ready' && isCodingAgentImage(row))
-    if (!img) return
-    galleryKind.value = 'coding-agent'
-    osType.value = 'linux'
-    workloadClass.value = 'agent'
-    name.value = defaultVMNameFromLabel(img.name)
-    selectedImageId.value = img.libraryKey || homeImageKey(img)
-    mode.value = 'cloud'
-    openaiPreset.value = 'home-ollama'
-    applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
-    if (memoryMB.value < 2048) memoryMB.value = 2048
-    if (diskSizeGB.value < 20) diskSizeGB.value = 20
     uefi.value = true
     tpmOverride.value = null
     step.value = 2
@@ -489,9 +447,6 @@ export function useCreateVMWizard(
   const mode = ref<'iso' | 'cloud'>('iso')
   const selectedSSHKeyId = ref('')
   const cloudUserData = ref('')
-  const openaiPreset = ref<OpenAIPreset>('home-ollama')
-  const byoOpenAIURL = ref(HOME_OLLAMA_GRANT_URL)
-  const byoOpenAIAPIKey = ref('')
 
   function stepContent(s: number): string {
     return stepLabels.value[s - 1] || ''
@@ -569,7 +524,6 @@ export function useCreateVMWizard(
       return templateDeclaresSshKeys(selectedTemplate.value.inputs)
     }
     return galleryKind.value === 'custom' && mode.value === 'cloud'
-      || galleryKind.value === 'coding-agent'
   })
 
   const sshKeyRequired = computed(() => showSshKeyRow.value)
@@ -1014,20 +968,13 @@ export function useCreateVMWizard(
         mode: mode.value,
         imageId: createImage?.id,
         sshAuthorizedKeys: selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : [],
-        userData: mergeCodingAgentUserData(
-          cloudUserData.value,
-          selectedImage.value,
-          openaiPreset.value,
-          byoOpenAIURL.value,
-          byoOpenAIAPIKey.value,
-        ),
+        userData: cloudUserData.value,
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
         portForwards: portForwards.value,
         sharedPaths: sharedPaths.value,
         usbAvailable: false,
         usbDevices: [],
-        workloadClass: workloadClass.value,
       })
 
       const result = await vmStore.create(req, target ?? undefined)
@@ -1101,7 +1048,6 @@ export function useCreateVMWizard(
     galleryKind,
     selectedTemplateSlug,
     galleryTemplates,
-    showCodingAgentCard,
     showHostnameHint,
     step,
     totalSteps,
@@ -1114,13 +1060,10 @@ export function useCreateVMWizard(
     goToDisk,
     name,
     osType,
-    workloadClass,
-    isAgent,
     supportsWindows,
     selectGalleryTemplate,
     selectGalleryWindows,
     selectGalleryCustom,
-    selectGalleryCodingAgent,
     pinLocalFile,
     pinRemoteUrl,
     imagePinBusy: imagePin.busy,
@@ -1148,10 +1091,6 @@ export function useCreateVMWizard(
     selectedImageId,
     selectedSSHKeyId,
     cloudUserData,
-    openaiPreset,
-    byoOpenAIURL,
-    byoOpenAIAPIKey,
-    isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
     filteredImages,
     selectedImage,
     formatBytes,

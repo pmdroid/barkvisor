@@ -4,7 +4,6 @@ import { templateIconPath, templateIconStyle } from '../../utils/templateIcons'
 
 defineProps<{
   templates: HomeTemplate[]
-  showCodingAgent: boolean
   selectedKind: string | null
   selectedTemplateSlug: string | null
 }>()
@@ -13,7 +12,6 @@ const emit = defineEmits<{
   selectTemplate: [template: HomeTemplate]
   selectWindows: []
   selectCustom: []
-  selectCodingAgent: []
 }>()
 </script>
 
@@ -33,21 +31,6 @@ const emit = defineEmits<{
       </span>
       <b>{{ template.name }}</b>
       <span>{{ template.description || 'Ready-made VM template' }}</span>
-    </div>
-    <div
-      v-if="showCodingAgent"
-      class="mag-card"
-      :class="{ on: selectedKind === 'coding-agent' }"
-      @click="emit('selectCodingAgent')"
-    >
-      <span class="mag-ic" :style="templateIconStyle('code')">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 5.5 8 9l-4 3.5" />
-          <path d="M9.5 12.5H14" />
-        </svg>
-      </span>
-      <b>Coding Agent</b>
-      <span>Sandboxed dev environment</span>
     </div>
     <div
       class="mag-card"

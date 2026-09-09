@@ -75,23 +75,6 @@ export const useVMStore = defineStore('vms', () => {
     await fetchOne(id)
   }
 
-  async function resumeSession(id: string) {
-    const { data } = await api.post(`/vms/${id}/session/resume`)
-    applyLocal(data)
-    return data
-  }
-
-  async function resetSession(id: string) {
-    const { data } = await api.post(`/vms/${id}/session/reset`)
-    applyLocal(data)
-    return data
-  }
-
-  async function burnSession(id: string) {
-    const res = await api.post(`/vms/${id}/session/burn`)
-    return res.data?.taskID as string | undefined
-  }
-
   async function detachISO(id: string, isoId?: string) {
     const { data } = await api.post(`/vms/${id}/detach-iso`, isoId ? { isoId } : {})
     applyLocal(data)
@@ -158,7 +141,6 @@ export const useVMStore = defineStore('vms', () => {
 
   return {
     vms, loading, error, fetchAll, fetchOne, create, start, stop, restart,
-    resumeSession, resetSession, burnSession,
     detachISO, attachISO, attachUSB, detachUSB, attachGPU, detachGPU, remove, update, fetchSpec, putSpec,
   }
 })

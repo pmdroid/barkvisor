@@ -35,7 +35,6 @@ struct VMResponse: Content {
     let pendingChanges: Bool
     let workloadClass: String
     let startOnBoot: Bool
-    let session: CodingAgentSessionView?
     let createdAt: String
     let updatedAt: String
     let pendingImageId: String?
@@ -90,11 +89,6 @@ struct VMResponse: Content {
         self.workloadClass = (try? WorkloadClass.parse(vm.workloadClass).rawValue)
             ?? WorkloadClass.house.rawValue
         self.startOnBoot = vm.startOnBoot
-        if let session = vm.decodedSession {
-            self.session = CodingAgentLifecycle.view(session, now: Date(), vmState: vm.state)
-        } else {
-            self.session = nil
-        }
         self.pendingImageId = pendingImageId
         self.downloadPercent = downloadPercent
         let overlay = pendingImageId.map {
@@ -273,9 +267,6 @@ struct VMController: RouteCollection {
         vms.post(":id", "start", use: start)
         vms.post(":id", "stop", use: stop)
         vms.post(":id", "restart", use: restart)
-        vms.post(":id", "session", "resume", use: resumeSession)
-        vms.post(":id", "session", "reset", use: resetSession)
-        vms.post(":id", "session", "burn", use: burnSession)
         vms.post(":id", "detach-iso", use: detachISO)
         vms.post(":id", "attach-iso", use: attachISO)
         vms.post(":id", "usb", use: attachUSB)
@@ -443,41 +434,6 @@ struct VMController: RouteCollection {
         return try await AuditService.vmEvents(vmID: id, db: req.db)
     }
 
-    @Sendable
-    func resumeSession(req: Vapor.Request) async throws -> VMResponse {
-        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        try await CodingAgentLifecycleService.resume(vmID: id, vmManager: vmManager, db: req.db)
-        AuditService.log(action: "vm.session.resume", resourceType: "vm", resourceId: id, req: req)
-        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
-            throw Abort(.notFound)
-        }
-        return try await respond(vm, db: req.db)
-    }
-
-    @Sendable
-    func resetSession(req: Vapor.Request) async throws -> VMResponse {
-        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        try await CodingAgentLifecycleService.reset(vmID: id, vmManager: vmManager, db: req.db)
-        AuditService.log(action: "vm.session.reset", resourceType: "vm", resourceId: id, req: req)
-        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
-            throw Abort(.notFound)
-        }
-        return try await respond(vm, db: req.db)
-    }
-
-    @Sendable
-    func burnSession(req: Vapor.Request) async throws -> Response {
-        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        let (taskID, vmName) = try await CodingAgentLifecycleService.burn(
-            vmID: id, vmManager: vmManager, backgroundTasks: backgroundTasks, db: req.db,
-        )
-        AuditService.log(
-            action: "vm.session.burn", resourceType: "vm", resourceId: id, resourceName: vmName,
-            req: req,
-        )
-        return try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
-    }
-
     struct DetachISORequest: Content {
         let isoId: String?
     }
@@ -618,8 +574,8 @@ struct VMController: RouteCollection {
             tpmEnabled: body.tpmEnabled,
         )
         if var spec = body.spec {
-            if spec.spec.workloadClass == nil {
-                spec.spec.workloadClass = body.workloadClass
+            if spec.spec.workloadClass == "agent" {
+                spec.spec.workloadClass = nil
             }
             return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
         }
@@ -648,7 +604,7 @@ struct VMController: RouteCollection {
             portForwards: body.portForwards,
             usbDevices: body.usbDevices,
             gpuDevices: body.gpuDevices,
-            workloadClass: body.workloadClass,
+            workloadClass: body.workloadClass == "agent" ? nil : body.workloadClass,
         )
         return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
     }

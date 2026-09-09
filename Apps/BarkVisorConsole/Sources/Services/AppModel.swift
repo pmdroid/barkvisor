@@ -695,27 +695,6 @@ final class AppModel {
         }
     }
 
-    func resumeSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
-        let target = device ?? selectedDevice
-        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
-            _ = try await client.resumeSession(workload.id, on: resolved)
-        }
-    }
-
-    func resetSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
-        let target = device ?? selectedDevice
-        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
-            _ = try await client.resetSession(workload.id, on: resolved)
-        }
-    }
-
-    func burnSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
-        let target = device ?? selectedDevice
-        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
-            try await client.burnSession(workload.id, on: resolved)
-        }
-    }
-
     func attachISO(_ isoID: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
         await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
             try await client.attachISO(workload.id, isoID: isoID, on: resolved)
@@ -807,9 +786,6 @@ final class AppModel {
         name: String,
         image: LibraryImage,
         on device: HomeDeviceHealthSnapshot,
-        workloadClass: String? = nil,
-        openaiBaseURL: String? = nil,
-        openaiAPIKey: String? = nil,
         network: NetworkRecord? = nil,
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
@@ -820,9 +796,6 @@ final class AppModel {
                 name: name,
                 image: image,
                 hostCPUCount: device.resources?.cpuCount,
-                workloadClass: workloadClass,
-                openaiBaseURL: openaiBaseURL,
-                openaiAPIKey: openaiAPIKey,
                 network: network,
             )
             let created = try await requireClient().createWorkload(body, on: device)
@@ -877,9 +850,6 @@ final class AppModel {
         diskSource: CreateVMWizard.DiskSource,
         diskSizeGB: Int,
         existingDiskID: String,
-        workloadClass: String,
-        openaiBaseURL: String?,
-        openaiAPIKey: String?,
         sharedPaths: [String] = [],
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
@@ -924,9 +894,6 @@ final class AppModel {
                 diskSource: diskSource,
                 diskSizeGB: diskSizeGB,
                 existingDiskID: existingDiskID,
-                workloadClass: workloadClass,
-                openaiBaseURL: openaiBaseURL,
-                openaiAPIKey: openaiAPIKey,
                 network: network,
                 sshPublicKey: sshKey?.publicKey,
                 sharedPaths: sharedPaths,

@@ -80,6 +80,36 @@ public struct CreateVMParams: Sendable {
         self.workloadClass = workloadClass
         self.allowCatalogIdentityKeys = allowCatalogIdentityKeys
     }
+
+    func droppingAgentClass() -> CreateVMParams {
+        guard (try? WorkloadClass.parse(workloadClass)) == .agent else { return self }
+        return CreateVMParams(
+            id: id,
+            name: name,
+            vmType: vmType,
+            cpuCount: cpuCount,
+            memoryMB: memoryMB,
+            diskSizeGB: diskSizeGB,
+            isoId: isoId,
+            cloudImageId: cloudImageId,
+            cloudInit: cloudInit,
+            networkId: networkId,
+            existingDiskId: existingDiskId,
+            sharedPaths: sharedPaths,
+            portForwards: portForwards,
+            usbDevices: usbDevices,
+            gpuDevices: gpuDevices,
+            description: description,
+            bootOrder: bootOrder,
+            displayResolution: displayResolution,
+            uefi: uefi,
+            tpmEnabled: tpmEnabled,
+            overrides: overrides,
+            health: health,
+            workloadClass: nil,
+            allowCatalogIdentityKeys: allowCatalogIdentityKeys,
+        )
+    }
 }
 
 public struct UpdateVMParams: Sendable {

@@ -164,23 +164,8 @@ public actor VMManager: VMStateQuerying {
     public func registerReconnectedVM(
         vmID: String,
         running: RunningVM,
-        codingAgentHostPort: Int? = nil,
     ) async {
         runningVMs[vmID] = running
-        let args = PlatformProcess.arguments(pid: running.pid)
-        if let port = CodingAgentSession.recoveredTerminalHostPort(
-            qemuArguments: args,
-            pidFilePort: codingAgentHostPort,
-        ) {
-            await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: port)
-        } else if CodingAgentSession.wantsWebTerminal(
-            userData: CloudInitService.storedUserData(vmID: vmID),
-        ) {
-            Log.vm.warning(
-                "VM \(vmID): reconnect did not recover ttyd loopback host port",
-                vm: vmID,
-            )
-        }
     }
 
     // MARK: - Start
@@ -236,33 +221,11 @@ public actor VMManager: VMStateQuerying {
             let sockets = VMSockets(vmID: vmID)
             sockets.removeStale()
 
-            let userData = CloudInitService.storedUserData(vmID: vmID)
-            var loopbackHostfwds: [QEMULoopbackForward] = []
-            if CodingAgentSession.wantsWebTerminal(userData: userData) {
-                let occupied = await CodingAgentSessionStore.shared.occupiedHostPorts()
-                let hostPort = try await PortRegistry.nextFree(
-                    preferred: CodingAgentImage.webTerminalPort,
-                    proto: "tcp",
-                    excludingVM: vmID,
-                    extraOccupied: occupied,
-                    db: dbPool,
-                )
-                loopbackHostfwds.append(
-                    QEMULoopbackForward(
-                        hostPort: hostPort,
-                        guestPort: CodingAgentImage.webTerminalPort,
-                    ),
-                )
-                // Dropped in cleanup() (handleTermination, stopAll, shutdownAll).
-                await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: hostPort)
-            }
-
             let launch = try QEMUBuilder.launchConfig(ctx: QEMUBuildContext(
                 vm: loaded.vm, disk: loaded.disk, isos: loaded.isos, network: loaded.network,
                 additionalDisks: loaded.additionalDisks,
                 sockets: sockets,
                 bridgeSocketPath: bridgeSocketPath,
-                loopbackHostfwds: loopbackHostfwds,
             ))
             swtpmProc = try await startSwtpmIfNeeded(launch: launch, vmID: vmID, vmName: loaded.vm.name)
 
@@ -303,7 +266,6 @@ public actor VMManager: VMStateQuerying {
             let pidFile = VMPidFile(
                 qemuPid: pid,
                 swtpmPid: swtpmProc?.processIdentifier,
-                codingAgentHostPort: loopbackHostfwds.first?.hostPort,
             )
             try pidFile.serialized().write(
                 to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8,
@@ -327,7 +289,6 @@ public actor VMManager: VMStateQuerying {
 
             clearHealthError(for: vmID)
             try await updateState(vmID: vmID, state: "running")
-            await CodingAgentLifecycleService.onStart(vm: loaded.vm, db: dbPool)
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
             await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
@@ -344,7 +305,6 @@ public actor VMManager: VMStateQuerying {
                 }
                 return false
             }()
-            await CodingAgentSessionStore.shared.remove(vmID: vmID)
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
 
             if writeLock {
@@ -405,11 +365,6 @@ public actor VMManager: VMStateQuerying {
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }
-        let intent = (force || method == "force")
-            ? CodingAgentLifecycle.forceReason
-            : CodingAgentLifecycle.stopReason
-        await CodingAgentLifecycleService.markStopIntent(vmID: vmID, reason: intent, db: dbPool)
-
         try await updateState(vmID: vmID, state: "stopping")
 
         // Mark as expected stop so process monitor treats exit as clean (reconnected VMs)

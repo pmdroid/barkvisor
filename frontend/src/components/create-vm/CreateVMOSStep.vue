@@ -2,12 +2,10 @@
 defineProps<{
   name: string
   osType: 'linux' | 'windows'
-  workloadClass: 'house' | 'agent'
 }>()
 
 const emit = defineEmits<{
   'update:name': [value: string]
-  'update:workloadClass': [value: 'house' | 'agent']
   selectOS: [os: 'linux' | 'windows']
   next: []
 }>()
@@ -25,27 +23,6 @@ const emit = defineEmits<{
         @input="emit('update:name', ($event.target as HTMLInputElement).value)"
         @keyup.enter="emit('next')"
       />
-    </div>
-    <div class="form-group">
-      <label>Class</label>
-      <div class="os-grid">
-        <div
-          class="os-card"
-          :class="{ selected: workloadClass === 'house' }"
-          @click="emit('update:workloadClass', 'house')"
-        >
-          <span>House</span>
-          <span class="os-soon" style="position:static;font-size:11px;color:var(--text-dim)">LAN and USB</span>
-        </div>
-        <div
-          class="os-card"
-          :class="{ selected: workloadClass === 'agent' }"
-          @click="emit('update:workloadClass', 'agent')"
-        >
-          <span>Agent</span>
-          <span class="os-soon" style="position:static;font-size:11px;color:var(--text-dim)">WAN yes, house no</span>
-        </div>
-      </div>
     </div>
     <div class="form-group">
       <label>OS Type</label>

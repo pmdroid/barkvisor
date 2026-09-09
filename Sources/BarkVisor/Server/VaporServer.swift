@@ -512,11 +512,6 @@ public final class VaporServer: @unchecked Sendable {
             let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
             _ = try? await home.refresh(db: pool)
         }
-        await backgroundTasks.schedulePeriodicTask(
-            id: "coding-agent-ttl", interval: 30 * 1_000_000_000,
-        ) {
-            await CodingAgentLifecycleService.tick(now: Date(), vmManager: vmManager, db: pool)
-        }
         let pendingProgress = PendingVMProgressTicker()
         await backgroundTasks.schedulePeriodicTask(
             id: "pending-vm-progress", interval: 1_000_000_000,

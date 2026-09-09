@@ -38,13 +38,11 @@ const blockedReason = computed(() => {
         <CreateVMGalleryStep
           v-if="wizard.currentStepLabel.value === 'Gallery'"
           :templates="wizard.galleryTemplates.value"
-          :show-coding-agent="wizard.showCodingAgentCard.value"
           :selected-kind="wizard.galleryKind.value"
           :selected-template-slug="wizard.selectedTemplateSlug.value"
           @select-template="wizard.selectGalleryTemplate"
           @select-windows="wizard.selectGalleryWindows"
           @select-custom="wizard.selectGalleryCustom"
-          @select-coding-agent="wizard.selectGalleryCodingAgent"
         />
 
         <CreateVMConfigureStep

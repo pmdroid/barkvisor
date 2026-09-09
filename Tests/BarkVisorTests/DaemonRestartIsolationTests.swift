@@ -160,7 +160,6 @@ struct DaemonRestartIsolationTests {
         let previous = VMPidFile(qemuPid: 1, swtpmPid: 2, codingAgentHostPort: 24_981)
 
         try await manager.adoptRunningProcess(vmID: vmID, pid: pid, argv: argv, previousPids: previous)
-        defer { Task { await CodingAgentSessionStore.shared.remove(vmID: vmID) } }
 
         #expect(await manager.isRunning(vmID))
         #expect(await manager.healthError(for: vmID) == nil)

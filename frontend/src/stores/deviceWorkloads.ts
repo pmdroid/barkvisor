@@ -7,7 +7,6 @@ import {
   canFetchDeviceWorkloads,
   deviceVmActionPath,
   deviceVmPath,
-  deviceVmSessionPath,
   deviceVmSpecPath,
   deviceVmGpuDevicePath,
   deviceVmGpuPath,
@@ -207,24 +206,6 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     await runAction(device, vmId, 'restart')
   }
 
-  async function resumeSession(device: HomeDeviceHealthSnapshot, vmId: string): Promise<VM> {
-    const { data } = await api.post<VM>(deviceVmSessionPath(device, vmId, 'resume'))
-    await replaceOne(device, data)
-    return data
-  }
-
-  async function resetSession(device: HomeDeviceHealthSnapshot, vmId: string): Promise<VM> {
-    const { data } = await api.post<VM>(deviceVmSessionPath(device, vmId, 'reset'))
-    await replaceOne(device, data)
-    return data
-  }
-
-  async function burnSession(device: HomeDeviceHealthSnapshot, vmId: string): Promise<string | undefined> {
-    const res = await api.post(deviceVmSessionPath(device, vmId, 'burn'))
-    removeOne(device.hostId, vmId)
-    return res.data?.taskID as string | undefined
-  }
-
   async function remove(
     device: DeviceApiTarget,
     vmId: string,
@@ -282,9 +263,6 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     start,
     stop,
     restart,
-    resumeSession,
-    resetSession,
-    burnSession,
     remove,
     noteSelf: inventory.noteSelf,
   }
