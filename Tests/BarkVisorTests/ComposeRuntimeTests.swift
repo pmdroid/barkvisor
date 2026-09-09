@@ -3,6 +3,13 @@ import Testing
 @testable import BarkVisorCore
 
 struct ComposeRuntimeTests {
+    @Test func `compose project names keep the full workload id`() {
+        let a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        let b = "aaaaaaaa-aaaa-aaaa-aaaa-bbbbbbbbbbbb"
+        #expect(ComposeRuntime.composeProjectName(id: a) != ComposeRuntime.composeProjectName(id: b))
+        #expect(ComposeRuntime.composeProjectName(id: a) == "barkvisor-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    }
+
     @Test func `writeProject quotes env values and keeps keys as lines`() throws {
         let dataDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bv-compose-env-\(UUID().uuidString)")
