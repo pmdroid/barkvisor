@@ -502,7 +502,21 @@ export interface VMTaskAcceptedResponse {
   vm: VM
 }
 
-export type AppCatalogEnvKind = 'secret' | 'bool' | 'select' | 'text'
+export type AppCatalogEnvKind = 'secret' | 'bool' | 'select' | 'text' | 'number'
+
+export type AppTemplateFieldKind = 'text' | 'number' | 'bool' | 'select' | 'port' | 'path' | 'secret'
+
+export interface AppTemplateField {
+  id: string
+  label: string
+  description?: string | null
+  kind: AppTemplateFieldKind | string
+  required: boolean
+  default?: string | null
+  target: string
+  placeholder?: string | null
+  options?: string[] | null
+}
 
 export interface AppCatalogEnvVar {
   name: string
@@ -553,6 +567,7 @@ export interface AppCatalogEntry {
   digest?: string | null
   unsupportedReasons: string[]
   ui: AppCatalogUI
+  fields?: AppTemplateField[] | null
 }
 
 export interface RepositoryImage {
@@ -1077,6 +1092,10 @@ export interface SystemCapabilities {
   runnableArches?: string[]
   /** Per-mode support (PAS-57 / PAS-67): nat, bridged, isolated. */
   networkModes?: NetworkModeCapability[]
+  puid?: string
+  pgid?: string
+  timezone?: string
+  lanIPv4?: string | null
 }
 
 export type HostBridgeSnapshot = {
