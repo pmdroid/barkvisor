@@ -90,24 +90,24 @@ final class ApplicationLifecycleServiceTests {
         #expect(message == "No LAN address to bind published ports")
     }
 
-    @Test func `inspect wildcard HostIp fails closed off macOS`() throws {
+    @Test func `inspect wildcard HostIp fails closed off macOS`() async throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
             """.utf8,
         )
-        DockerInspect.jsonForContainers = { _ in data }
-        defer { DockerInspect.jsonForContainers = DockerInspect.liveJSON }
-        do {
-            try ApplicationLifecycleService.verifyInspectedBinds(
-                containerNames: ["bv-whoami-1-whoami"],
-                bindHost: "192.168.8.10",
-                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
-            )
-            #expect(PlatformHost.platformName == "macOS")
-        } catch let BarkVisorError.internalError(message) {
-            #expect(PlatformHost.platformName != "macOS")
-            #expect(message.contains("0.0.0.0"))
+        try await DockerInspectTestGate.withStub({ _ in data }) {
+            do {
+                try ApplicationLifecycleService.verifyInspectedBinds(
+                    containerNames: ["bv-whoami-1-whoami"],
+                    bindHost: "192.168.8.10",
+                    expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+                )
+                #expect(PlatformHost.platformName == "macOS")
+            } catch let BarkVisorError.internalError(message) {
+                #expect(PlatformHost.platformName != "macOS")
+                #expect(message.contains("0.0.0.0"))
+            }
         }
     }
 
@@ -124,15 +124,10 @@ final class ApplicationLifecycleServiceTests {
             )
         }
         ComposeRuntime.runner = SucceedingComposeRunner()
-        let inspect = RestartInspect()
-        DockerInspect.jsonForContainers = { names in
-            try inspect.data(for: names)
-        }
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
             ComposeRuntime.runner = LiveComposeCommandRunner()
-            DockerInspect.jsonForContainers = DockerInspect.liveJSON
         }
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -153,27 +148,29 @@ final class ApplicationLifecycleServiceTests {
         let seed = vm
         try await db.write { db in try seed.insert(db) }
 
-        try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
-        let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
-        #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-        #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
-
-        inspect.fail = true
-        DockerInspect.jsonForContainers = { names in
+        let inspect = RestartInspect()
+        try await DockerInspectTestGate.withStub({ names in
             try inspect.data(for: names)
-        }
-        do {
-            try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
-            Issue.record("expected restart inspect failure")
-        } catch {
-            let claims = try await db.read { db in try PortRegistry.claims(db: db) }
-            #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-            #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
-            #expect(vm.decodedPortForwards.isEmpty)
-            try await PortRegistry.assertAvailable(
-                [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
-                db: db,
-            )
+        }) {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+            let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
+            #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+            #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
+
+            inspect.fail = true
+            do {
+                try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
+                Issue.record("expected restart inspect failure")
+            } catch {
+                let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+                #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+                #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
+                #expect(vm.decodedPortForwards.isEmpty)
+                try await PortRegistry.assertAvailable(
+                    [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
+                    db: db,
+                )
+            }
         }
     }
 
