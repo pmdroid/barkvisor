@@ -306,6 +306,9 @@ public actor RepositorySyncService {
     ) async throws {
         if repoType == "apps" {
             let document = try BigBearAppCatalog.decodeCatalog(data)
+            if document.apps.isEmpty {
+                throw BarkVisorError.repositorySyncFailed("App catalog contained no apps")
+            }
             try await applyApps(document, repositoryID: repositoryID, repoName: repoName)
             let stored = try BigBearAppCatalog.encodeCatalog(document)
             if persistLastGood {

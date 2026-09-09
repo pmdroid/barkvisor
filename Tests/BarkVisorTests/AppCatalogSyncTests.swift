@@ -95,6 +95,45 @@ struct AppCatalogSyncTests {
         #expect(vm?.composeYaml == originalCompose)
     }
 
+    @Test func `empty apps catalog does not wipe existing rows`() async throws {
+        let (pool, dir) = try pool()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = iso8601.string(from: Date())
+        let repoId = UUID().uuidString
+        try await pool.write { db in
+            try ImageRepository(
+                id: repoId, name: "Apps", url: HomeCatalogOrigin.githubAppsURL,
+                isBuiltIn: true, repoType: "apps", lastSyncedAt: nil, lastError: nil,
+                syncStatus: "idle", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let first = try BigBearAppCatalog.encodeCatalog(
+            AppCatalogDocument(
+                name: "Big Bear Universal Apps",
+                apps: [
+                    AppCatalogEntryDTO(
+                        id: "whoami",
+                        name: "Whoami",
+                        category: "Apps",
+                        arches: ["arm64"],
+                        compose: "services:\n  whoami:\n    image: traefik/whoami:v1\n",
+                    ),
+                ],
+            ),
+        )
+        let service = RepositorySyncService(dbPool: pool, lastGood: LastGoodCatalogStore(directory: dir))
+        try await service.syncCatalogData(first, repositoryID: repoId)
+        let empty = try BigBearAppCatalog.encodeCatalog(
+            AppCatalogDocument(name: "Big Bear Universal Apps", apps: []),
+        )
+        await #expect(throws: BarkVisorError.self) {
+            try await service.syncCatalogData(empty, repositoryID: repoId)
+        }
+        let rows = try await pool.read { db in try AppCatalogRecord.fetchAll(db) }
+        #expect(rows.count == 1)
+        #expect(rows.first?.slug == "whoami")
+    }
+
     @Test func `zipball URL is derived from the GitHub repo`() {
         let url = BigBearAppCatalog.zipballURL(from: "https://github.com/bigbeartechworld/big-bear-universal-apps")
         #expect(url?.absoluteString == BigBearAppCatalog.zipballURL)
