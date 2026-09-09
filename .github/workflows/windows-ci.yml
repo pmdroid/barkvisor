@@ -1,0 +1,30 @@
+name: Windows CI
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-build:
+    name: Windows Build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Swift 6.3.3
+        uses: compnerd/gha-setup-swift@397094e75494a93fa8d81db0268dbc8f5d6cf7c6
+        with:
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
+
+      - name: swift build
+        run: .\scripts\windows-swift.ps1 --% build --product BarkVisorApp
+        shell: pwsh
+
+      - name: swift test
+        run: .\scripts\windows-swift.ps1 --% test --skip-update --filter WindowsPlatform
+        shell: pwsh
