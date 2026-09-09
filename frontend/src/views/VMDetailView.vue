@@ -319,19 +319,21 @@ async function savePortForwards() {
 
 const availableDisks = computed(() => {
   if (!vm.value) return []
-  const attached = new Set([vm.value.bootDiskId, ...(vm.value.additionalDiskIds || [])])
+  const attached = new Set(
+    [vm.value.bootDiskId, ...(vm.value.additionalDiskIds || [])].filter((id): id is string => Boolean(id)),
+  )
   return detailDisks.value.filter(d => !attached.has(d.id))
 })
 
 const bootDisk = computed(() => {
   const v = vm.value
-  if (!v) return null
+  if (!v?.bootDiskId) return null
   return detailDisks.value.find((d) => d.id === v.bootDiskId) ?? null
 })
 
 const bootDiskName = computed(() => {
   const v = vm.value
-  if (!v) return '—'
+  if (!v?.bootDiskId) return '—'
   return bootDisk.value?.name || `${v.bootDiskId.slice(0, 8)}...`
 })
 
