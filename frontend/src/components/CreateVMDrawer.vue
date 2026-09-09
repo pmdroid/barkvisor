@@ -106,7 +106,7 @@ const blockedReason = computed(() => {
           :block-device-path="wizard.blockDevicePath.value"
           :format-bytes="wizard.formatBytes"
           :shared-paths="wizard.sharedPaths.value"
-          :show-shared-folders="!wizard.isAgent.value"
+          :show-shared-folders="true"
           :device="wizard.selectedDevice.value"
           @update:disk-source="wizard.diskSource.value = $event"
           @update:disk-size-g-b="wizard.diskSizeGB.value = $event"

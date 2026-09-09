@@ -341,7 +341,10 @@ struct VMController: RouteCollection {
 
         var vm: VM
         if var spec = body.spec {
-            if spec.spec.workloadClass == nil {
+            if spec.spec.workloadClass == "agent" {
+                spec.spec.workloadClass = nil
+            }
+            if spec.spec.workloadClass == nil, body.workloadClass != "agent" {
                 spec.spec.workloadClass = body.workloadClass
             }
             vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
@@ -361,7 +364,8 @@ struct VMController: RouteCollection {
                 description: body.description, bootOrder: body.bootOrder,
                 displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
                 sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
-                workloadClass: body.workloadClass, startOnBoot: body.startOnBoot,
+                workloadClass: body.workloadClass == "agent" ? nil : body.workloadClass,
+                startOnBoot: body.startOnBoot,
             )
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,
