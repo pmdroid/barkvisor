@@ -41,6 +41,7 @@ describe('appCatalog', () => {
     const reason = appInstallBlockedReason(app({ arches: ['amd64'] }), 'arm64', true)
     expect(reason).toContain('arm64')
     expect(reason).toContain('x86_64')
+    expect(reason).not.toContain('This Device')
   })
 
   test('renders an Application spec from the catalog compose', () => {

@@ -57,9 +57,9 @@ const dockerOnDevice = computed(() => {
 const dockerBlocked = computed(() => {
   if (dockerOnDevice.value) return ''
   if (isSelfDevice(selectedDevice.value || { hostId: '', role: 'self' })) {
-    return docker.explanation || 'This Device does not have dockerEngine.'
+    return docker.explanation || 'The selected Device does not have dockerEngine.'
   }
-  return 'This Device does not have dockerEngine.'
+  return 'The selected Device does not have dockerEngine.'
 })
 
 const archMismatch = computed(() => {
@@ -178,7 +178,7 @@ async function submit() {
             </select>
           </label>
           <p v-if="archMismatch && selected" class="warn">
-            This Device is {{ deviceArch || 'unknown' }}. This app needs {{ appArchLabel(selected.arches) }}.
+            The selected Device is {{ deviceArch || 'unknown' }}. The app needs {{ appArchLabel(selected.arches) }}.
           </p>
           <p v-if="dockerBlocked" class="warn">{{ dockerBlocked }}</p>
           <p v-if="digestLine" class="digest">{{ digestLine }}</p>

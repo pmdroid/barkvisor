@@ -23,10 +23,10 @@ export function appInstallBlockedReason(
   }
   if (!appSupportsDeviceArch(app, deviceArch)) {
     const arch = normalizeImageArch(deviceArch) ?? deviceArch ?? 'unknown'
-    return `This Device is ${arch}. This app needs ${appArchLabel(app.arches)}.`
+    return `The selected Device is ${arch}. The app needs ${appArchLabel(app.arches)}.`
   }
   if (!dockerAvailable) {
-    return 'This Device does not have dockerEngine.'
+    return 'The selected Device does not have dockerEngine.'
   }
   return ''
 }
