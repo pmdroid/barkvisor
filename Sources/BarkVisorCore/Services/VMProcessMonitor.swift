@@ -140,6 +140,7 @@ public actor VMProcessMonitor {
                 let staleVMs = try VM.filter(["running", "starting", "stopping"].contains(Column("state")))
                     .fetchAll(db)
                 for vm in staleVMs where !reconnectedIDs.contains(vm.id) {
+                    if vm.isApplication { continue }
                     try db.execute(
                         sql: "UPDATE vms SET state = 'stopped', updatedAt = ? WHERE id = ?",
                         arguments: [iso8601.string(from: Date()), vm.id],

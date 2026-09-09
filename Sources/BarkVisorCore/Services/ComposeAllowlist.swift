@@ -56,6 +56,9 @@ public enum ComposeAllowlist {
                 throw BarkVisorError.badRequest("unsupported compose feature: services.\(name)")
             }
             try rejectService(service, serviceName: name)
+            if service["env_file"] != nil {
+                service["env_file"] = ".env"
+            }
             let rewritten = try rewriteVolumes(
                 service["volumes"],
                 serviceName: name,
@@ -180,7 +183,12 @@ public enum ComposeAllowlist {
         if let text = stringValue(value) {
             names = [text]
         } else if let array = value as? [Any] {
-            names = array.compactMap(stringValue)
+            names = try array.map { item in
+                guard let text = stringValue(item) else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: env_file")
+                }
+                return text
+            }
         } else {
             throw BarkVisorError.badRequest("unsupported compose feature: env_file")
         }
@@ -467,12 +475,15 @@ public enum ComposeAllowlist {
     }
 
     private static func isTruthy(_ value: Any?) -> Bool {
+        if value == nil || value is NSNull { return false }
         if let bool = value as? Bool { return bool }
         if let string = value as? String {
-            return string == "true" || string == "yes" || string == "1"
+            let lower = string.lowercased()
+            if lower == "false" || lower == "no" || lower == "0" || lower.isEmpty { return false }
+            return true
         }
         if let int = value as? Int { return int != 0 }
-        return false
+        return true
     }
 
     private static func isEmptyValue(_ value: Any) -> Bool {
