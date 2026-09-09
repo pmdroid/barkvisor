@@ -162,6 +162,9 @@ public enum ComposeAllowlist {
         if service["image"] == nil {
             throw BarkVisorError.badRequest("compose service \(serviceName) must set image")
         }
+        if let envFile = service["env_file"] {
+            try validateEnvFile(envFile)
+        }
         for key in service.keys {
             if key.hasPrefix("x-") { continue }
             if !allowedServiceKeys.contains(key),
@@ -169,6 +172,23 @@ public enum ComposeAllowlist {
                    "privileged", "network_mode", "pid", "cap_add", "devices", "build", "secrets",
                ].contains(key) {
                 throw BarkVisorError.badRequest("unsupported compose feature: \(key)")
+            }
+        }
+    }
+
+    private static func validateEnvFile(_ value: Any) throws {
+        let names: [String]
+        if let text = stringValue(value) {
+            names = [text]
+        } else if let array = value as? [Any] {
+            names = array.compactMap(stringValue)
+        } else {
+            throw BarkVisorError.badRequest("unsupported compose feature: env_file")
+        }
+        for name in names {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed != ".env" {
+                throw BarkVisorError.badRequest("unsupported compose feature: env_file")
             }
         }
     }

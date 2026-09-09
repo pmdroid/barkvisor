@@ -96,8 +96,8 @@ public enum ComposeRuntime {
         return decodeComposeState(result.stdoutString)
     }
 
-    public static func listLabeledStates() -> [String: String] {
-        guard let docker = try? DockerEngine.dockerURL() else { return [:] }
+    public static func listLabeledStates() -> [String: String]? {
+        guard let docker = try? DockerEngine.dockerURL() else { return nil }
         guard let result = try? PlatformProcess.run(
             executable: docker,
             arguments: [
@@ -107,7 +107,7 @@ public enum ComposeRuntime {
                 "{{.Label \"\(ComposeAllowlist.workloadLabelKey)\"}}\t{{.State}}",
             ],
             timeout: 20,
-        ), result.succeeded else { return [:] }
+        ), result.succeeded else { return nil }
         var states: [String: String] = [:]
         for line in result.stdoutString.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)

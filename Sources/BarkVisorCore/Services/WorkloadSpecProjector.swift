@@ -320,6 +320,9 @@ public enum WorkloadSpecProjector {
         }
         vm.setHealth(spec.spec.health)
         vm.setOverrides(nil)
+        var stored = spec
+        stored.metadata.id = vm.id
+        vm.specJson = WorkloadSpecJSON.encode(stored)
     }
 
     private static func validateApplication(_ spec: WorkloadSpec, existingID: String?) throws {

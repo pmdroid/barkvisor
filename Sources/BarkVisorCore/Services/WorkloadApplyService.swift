@@ -91,6 +91,9 @@ public enum WorkloadApplyService {
         db: DatabasePool,
     ) async throws -> WorkloadApplyResult {
         let before = WorkloadSpecProjector.fromVM(existing)
+        if let kind = stringValue(document["kind"]), kind != existing.kind {
+            throw BarkVisorError.badRequest("kind cannot change after create")
+        }
         let effective = try EffectiveWorkloadPipeline.evaluate(
             document: document,
             existing: existing,

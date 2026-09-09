@@ -406,6 +406,9 @@ struct VMController: RouteCollection {
         let keepDisk = (try? req.query.get(Bool.self, at: "keepDisk")) ?? false
 
         if let app = try await application(id, db: req.db) {
+            if app.state != "stopped", app.state != "error" {
+                throw BarkVisorError.conflict("Workload state changed concurrently — cannot delete")
+            }
             try ApplicationLifecycleService.down(vm: app)
         }
         let (taskID, vmName) = try await VMLifecycleService.deleteVM(

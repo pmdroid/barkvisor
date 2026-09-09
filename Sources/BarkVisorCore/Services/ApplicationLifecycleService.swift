@@ -48,6 +48,7 @@ public enum ApplicationLifecycleService {
             try await setState(&vm, state: "running", error: nil, db: db)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            vm.setPortForwards(nil)
             try await setState(&vm, state: "error", error: message, db: db)
             throw error
         }
@@ -81,7 +82,7 @@ public enum ApplicationLifecycleService {
 
     public static func down(vm: VM, dataDir: URL = Config.dataDir) throws {
         let project = projectName(vm)
-        try? ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
@@ -99,7 +100,7 @@ public enum ApplicationLifecycleService {
     }
 
     public static func reconcile(db: DatabasePool, dataDir: URL = Config.dataDir) async {
-        let labeled = ComposeRuntime.listLabeledStates()
+        guard let labeled = ComposeRuntime.listLabeledStates() else { return }
         let apps: [VM]
         do {
             apps = try await db.read { db in

@@ -1308,6 +1308,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
 const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
 
+function openAppUi() {
+  const url = openUi.value
+  if (url) window.open(url, '_blank', 'noopener')
+}
+
 const toolbarSub = computed(() => {
   const v = vm.value
   if (!v) return ''
@@ -1383,7 +1388,7 @@ const healthBanner = computed(() => {
         <AppButton
           v-if="isApp && openUi && vm.state === 'running'"
           variant="primary"
-          @click="window.open(openUi, '_blank', 'noopener')"
+          @click="openAppUi"
         >Open UI</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
