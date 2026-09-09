@@ -83,6 +83,70 @@ struct ComposeAllowlistTests {
         #expect(message == "unsupported compose feature: bind")
     }
 
+    @Test func `relative project bind is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - .:/mnt
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: bind")
+    }
+
+    @Test func `bind type object is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - type: bind
+                source: ./data
+                target: /data
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: bind")
+    }
+
+    @Test func `named volume dest symlink outside volumes is rejected`() throws {
+        let dir = stateDir
+        let volumeRoot = dir.appendingPathComponent("volumes", isDirectory: true)
+        try FileManager.default.createDirectory(at: volumeRoot, withIntermediateDirectories: true)
+        let dest = volumeRoot.appendingPathComponent("data")
+        try FileManager.default.createSymbolicLink(
+            at: dest,
+            withDestinationURL: URL(fileURLWithPath: "/etc", isDirectory: true),
+        )
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - data:/config
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: dir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: bind")
+    }
+
     @Test func `named volume parent segments are rejected`() {
         let short = """
         services:
