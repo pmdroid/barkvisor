@@ -265,19 +265,19 @@ public final class VaporServer: @unchecked Sendable {
         if let distPath {
             app.middleware.use(SPAFallbackMiddleware(indexPath: distPath + "/index.html"))
             #if os(Windows)
-            app.middleware.use(
-                FoundationStaticFileMiddleware(
-                    publicDirectory: distPath + "/",
-                    defaultFile: "index.html",
-                ),
-            )
+                app.middleware.use(
+                    FoundationStaticFileMiddleware(
+                        publicDirectory: distPath + "/",
+                        defaultFile: "index.html",
+                    ),
+                )
             #else
-            app.middleware.use(
-                FileMiddleware(
-                    publicDirectory: distPath + "/",
-                    defaultFile: "index.html",
-                ),
-            )
+                app.middleware.use(
+                    FileMiddleware(
+                        publicDirectory: distPath + "/",
+                        defaultFile: "index.html",
+                    ),
+                )
             #endif
         }
     }
