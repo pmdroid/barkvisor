@@ -112,7 +112,7 @@ struct WorkloadPrivilegeDropTests {
 
     @Test func `live apply on this host does not invent a drop user`() {
         let launch = WorkloadPrivilegeDrop.apply(executable: qemu, arguments: args)
-        #expect(launch.executable.path.hasPrefix("/"))
+        #expect(PlatformPaths.isAbsoluteExecutablePath(launch.executable.path))
         if !WorkloadPrivilegeDrop.dropsOnThisPlatform {
             #expect(!launch.dropped)
         }
@@ -222,8 +222,13 @@ struct WorkloadPrivilegeDropTests {
 
         let fileMode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
         let dirMode = try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber
-        #expect((fileMode?.intValue ?? 0) & 0o777 == 0o660)
-        #expect((dirMode?.intValue ?? 0) & 0o777 == 0o770)
+        #if os(Windows)
+            #expect((fileMode?.intValue ?? 0o644) & 0o777 == 0o644)
+            #expect((dirMode?.intValue ?? 0o755) & 0o777 == 0o755)
+        #else
+            #expect((fileMode?.intValue ?? 0) & 0o777 == 0o660)
+            #expect((dirMode?.intValue ?? 0) & 0o777 == 0o770)
+        #endif
     }
 
     @Test func `mode 0600 vfio node is not openable`() {

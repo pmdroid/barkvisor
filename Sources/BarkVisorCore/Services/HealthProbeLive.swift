@@ -60,48 +60,57 @@ enum HealthProbeLive {
     }
 
     private static func tcpBlocking(host: String, port: Int, timeout: TimeInterval) -> Bool {
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC
-        hints.ai_socktype = PlatformSocket.stream
+        #if os(Windows)
+            _ = host
+            _ = port
+            _ = timeout
+            return false
+        #else
+            var hints = addrinfo()
+            hints.ai_family = AF_UNSPEC
+            hints.ai_socktype = PlatformSocket.stream
 
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, String(port), &hints, &result)
-        guard status == 0, let list = result else { return false }
-        defer { freeaddrinfo(list) }
+            var result: UnsafeMutablePointer<addrinfo>?
+            let status = getaddrinfo(host, String(port), &hints, &result)
+            guard status == 0, let list = result else { return false }
+            defer { freeaddrinfo(list) }
 
-        var current: UnsafeMutablePointer<addrinfo>? = list
-        while let info = current {
-            if connectNonblocking(info.pointee, timeout: timeout) {
-                return true
+            var current: UnsafeMutablePointer<addrinfo>? = list
+            while let info = current {
+                if connectNonblocking(info.pointee, timeout: timeout) {
+                    return true
+                }
+                current = info.pointee.ai_next
             }
-            current = info.pointee.ai_next
+            return false
+        #endif
+    }
+
+    #if !os(Windows)
+        private static func connectNonblocking(_ info: addrinfo, timeout: TimeInterval) -> Bool {
+            let fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
+            guard fd >= 0 else { return false }
+            defer { close(fd) }
+
+            let flags = fcntl(fd, F_GETFL, 0)
+            guard flags >= 0 else { return false }
+            _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+
+            let rc = connect(fd, info.ai_addr, info.ai_addrlen)
+            if rc == 0 { return true }
+            if errno != EINPROGRESS { return false }
+
+            var pollFD = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            let ms = Int32(min(max(timeout * 1_000, 1), Double(Int32.max)))
+            let prc = poll(&pollFD, 1, ms)
+            guard prc > 0, (pollFD.revents & Int16(POLLOUT)) != 0 else { return false }
+
+            var err: Int32 = 0
+            var len = socklen_t(MemoryLayout<Int32>.size)
+            guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 else { return false }
+            return err == 0
         }
-        return false
-    }
-
-    private static func connectNonblocking(_ info: addrinfo, timeout: TimeInterval) -> Bool {
-        let fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        let flags = fcntl(fd, F_GETFL, 0)
-        guard flags >= 0 else { return false }
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-
-        let rc = connect(fd, info.ai_addr, info.ai_addrlen)
-        if rc == 0 { return true }
-        if errno != EINPROGRESS { return false }
-
-        var pollFD = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
-        let ms = Int32(min(max(timeout * 1_000, 1), Double(Int32.max)))
-        let prc = poll(&pollFD, 1, ms)
-        guard prc > 0, (pollFD.revents & Int16(POLLOUT)) != 0 else { return false }
-
-        var err: Int32 = 0
-        var len = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 else { return false }
-        return err == 0
-    }
+    #endif
 }
 
 /// Default URLSession follows 3xx; a guest that answers 302 to an internal

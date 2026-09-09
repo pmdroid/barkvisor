@@ -3,6 +3,28 @@ import Foundation
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
+#endif
+
+#if os(Windows)
+    // swiftlint:disable type_name
+    public typealias pid_t = Int32
+    public typealias uid_t = UInt32
+    public typealias gid_t = UInt32
+    // swiftlint:enable type_name
+
+    let SIGTERM: Int32 = 15
+    let SIGKILL: Int32 = 9
+    let SIGINT: Int32 = 2
+    let SIGUSR1: Int32 = 10
+
+    @discardableResult
+    func kill(_ pid: Int32, _ signal: Int32) -> Int32 {
+        _ = pid
+        _ = signal
+        return -1
+    }
 #endif
 
 /// Result of a short-lived synchronous process run.
@@ -49,12 +71,14 @@ public enum PlatformProcess {
             let ret = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
             guard ret > 0 else { return nil }
             return String(cString: pathBuffer)
-        #else
+        #elseif os(Linux)
             let link = "/proc/\(pid)/exe"
             var buf = [CChar](repeating: 0, count: 4_096)
             let n = readlink(link, &buf, buf.count - 1)
             guard n > 0 else { return nil }
             return String(cString: buf)
+        #else
+            return nil
         #endif
     }
 

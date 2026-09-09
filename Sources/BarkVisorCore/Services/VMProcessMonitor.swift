@@ -174,6 +174,15 @@ public actor VMProcessMonitor {
             source.setCancelHandler {} // prevent crash on dealloc
             source.resume()
             processMonitorSources[vmID] = source
+        #elseif os(Windows)
+            guard processMonitorTasks[vmID] == nil else { return }
+            processMonitorTasks[vmID] = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                }
+                _ = pid
+                _ = self
+            }
         #else
             guard processMonitorTasks[vmID] == nil else { return }
             processMonitorTasks[vmID] = Task { [weak self] in

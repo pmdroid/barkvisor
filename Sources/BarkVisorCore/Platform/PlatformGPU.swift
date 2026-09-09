@@ -13,10 +13,12 @@ public enum PlatformGPU {
     public static func utilizationPercent(now: Date = Date()) -> Double? {
         #if os(macOS)
             return darwinUtilization()
-        #else
+        #elseif os(Linux)
             linuxState.lock.lock()
             defer { linuxState.lock.unlock() }
             return linuxBusyPercent(now: now, snapshot: linuxSnapshot(), state: &linuxState.last)
+        #else
+            return nil
         #endif
     }
 

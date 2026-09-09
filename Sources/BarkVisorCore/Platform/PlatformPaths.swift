@@ -29,6 +29,11 @@ public enum PlatformPaths {
                 return base.appendingPathComponent("BarkVisor")
             }
             return FileManager.default.temporaryDirectory.appendingPathComponent("BarkVisor")
+        #elseif os(Windows)
+            if let local = ProcessInfo.processInfo.environment["LOCALAPPDATA"], !local.isEmpty {
+                return URL(fileURLWithPath: local).appendingPathComponent("BarkVisor")
+            }
+            return FileManager.default.temporaryDirectory.appendingPathComponent("BarkVisor")
         #else
             if let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdg.isEmpty {
                 return URL(fileURLWithPath: xdg).appendingPathComponent("barkvisor")
@@ -50,6 +55,8 @@ public enum PlatformPaths {
         let tmp: String
         #if os(macOS)
             tmp = NSTemporaryDirectory()
+        #elseif os(Windows)
+            tmp = env["TMP"] ?? env["TEMP"] ?? NSTemporaryDirectory()
         #else
             tmp = env["TMPDIR"] ?? env["TMP"] ?? "/tmp"
         #endif
@@ -121,22 +128,50 @@ public enum PlatformPaths {
 
     /// Absolute executable path from argv0. Bare names (e.g. `barkvisor` from PATH)
     /// are resolved against `PATH`; slash-relative names against `currentDirectory`.
+    public static var pathListSeparator: Character {
+        #if os(Windows)
+            ";"
+        #else
+            ":"
+        #endif
+    }
+
+    public static func isAbsoluteExecutablePath(_ argument: String) -> Bool {
+        #if os(Windows)
+            if argument.hasPrefix("/") || argument.hasPrefix("\\") {
+                return true
+            }
+            let scalars = Array(argument)
+            return scalars.count >= 2 && scalars[0].isLetter && scalars[1] == ":"
+        #else
+            argument.hasPrefix("/")
+        #endif
+    }
+
     public static func resolvedExecutablePath(
         argument: String,
         pathEnvironment: String?,
         currentDirectory: String,
         isExecutable: (String) -> Bool,
     ) -> String {
-        if argument.hasPrefix("/") {
+        if isAbsoluteExecutablePath(argument) {
             return argument
         }
-        if argument.contains("/") {
+        #if os(Windows)
+            let hasSeparator = argument.contains("/") || argument.contains("\\")
+        #else
+            let hasSeparator = argument.contains("/")
+        #endif
+        if hasSeparator {
             return URL(fileURLWithPath: currentDirectory, isDirectory: true)
                 .appendingPathComponent(argument)
                 .standardizedFileURL.path
         }
-        // Empty PATH segments are cwd (POSIX). Do not drop them.
-        let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: false)
+        #if os(Windows)
+            let dirs = (pathEnvironment ?? "").split(separator: pathListSeparator)
+        #else
+            let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: false)
+        #endif
         for dir in dirs {
             let dirPath = dir.isEmpty ? currentDirectory : String(dir)
             let candidate = URL(fileURLWithPath: dirPath, isDirectory: true)
@@ -145,6 +180,16 @@ public enum PlatformPaths {
             if isExecutable(candidate) {
                 return candidate
             }
+            #if os(Windows)
+                if !argument.lowercased().hasSuffix(".exe") {
+                    let exeCandidate = URL(fileURLWithPath: dirPath, isDirectory: true)
+                        .appendingPathComponent("\(argument).exe")
+                        .path
+                    if isExecutable(exeCandidate) {
+                        return exeCandidate
+                    }
+                }
+            #endif
         }
         return argument
     }

@@ -90,6 +90,15 @@ public enum PlatformCapabilities {
                 return "kvm"
             }
             return "tcg"
+        #elseif os(Windows)
+            let whpx = [
+                "C:\\Windows\\System32\\WinHvPlatform.dll",
+                "C:\\Windows\\Sysnative\\WinHvPlatform.dll",
+            ]
+            if whpx.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+                return "whpx"
+            }
+            return "tcg"
         #else
             return "tcg"
         #endif
@@ -109,15 +118,28 @@ public enum PlatformCapabilities {
     /// Host CPU architecture for API/UI (`arm64` / `x86_64`).
     /// Single implementation: runtime `uname` (matches process machine).
     public static var hostArch: String {
-        var info = utsname()
-        uname(&info)
-        let machine = withUnsafePointer(to: &info.machine) {
-            $0.withMemoryRebound(to: CChar.self, capacity: 256) {
-                String(cString: $0)
+        #if os(Windows)
+            #if arch(arm64)
+                let machine = "arm64"
+            #elseif arch(x86_64)
+                let machine = "x86_64"
+            #else
+                let env = ProcessInfo.processInfo.environment["PROCESSOR_ARCHITECTURE"] ?? "x86_64"
+                let machine = env
+            #endif
+            let normalized = normalizedArch(machine)
+            return normalized.isEmpty ? "x86_64" : normalized
+        #else
+            var info = utsname()
+            uname(&info)
+            let machine = withUnsafePointer(to: &info.machine) {
+                $0.withMemoryRebound(to: CChar.self, capacity: 256) {
+                    String(cString: $0)
+                }
             }
-        }
-        let normalized = normalizedArch(machine)
-        return normalized.isEmpty ? "x86_64" : normalized
+            let normalized = normalizedArch(machine)
+            return normalized.isEmpty ? "x86_64" : normalized
+        #endif
     }
 
     /// Default QEMU guest architecture for this host (`aarch64` / `x86_64`).

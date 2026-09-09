@@ -156,7 +156,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         }
         return DoctorFactInputs(
             os: PlatformHost.platformName,
-            uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(geteuid())),
+            uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(WorkloadPrivilegeDrop.currentEUID())),
             qemuPath: qemuPath,
             qemuProcesses: qemuProcesses,
             kvmPresent: HostInventoryService.kvmDevicePresent(),
@@ -181,11 +181,20 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         if let helper = try? BundleResolver.helper("qemu-img") {
             return helper.path
         }
-        let names = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")
-            .split(separator: ":")
+        #if os(Windows)
+            let extra = ["C:\\Program Files\\qemu", "C:\\Program Files\\qemu\\bin", "C:\\msys64\\ucrt64\\bin"]
+            let defaultPath = extra.joined(separator: ";")
+            let exe = "qemu-img.exe"
+        #else
+            let extra = ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"]
+            let defaultPath = "/usr/bin:/bin"
+            let exe = "qemu-img"
+        #endif
+        let names = (ProcessInfo.processInfo.environment["PATH"] ?? defaultPath)
+            .split(separator: PlatformPaths.pathListSeparator)
             .map(String.init)
-        for dir in ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"] + names {
-            let candidate = URL(fileURLWithPath: dir).appendingPathComponent("qemu-img")
+        for dir in extra + names {
+            let candidate = URL(fileURLWithPath: dir).appendingPathComponent(exe)
             if FileManager.default.isExecutableFile(atPath: candidate.path) {
                 return candidate.path
             }
@@ -194,26 +203,30 @@ public struct LiveDoctorFactSource: DoctorFactSource {
     }
 
     static func vfioFacts() -> (present: Bool, openable: Bool?) {
-        let present = FileManager.default.fileExists(atPath: "/dev/vfio/vfio")
-        guard present else { return (false, nil) }
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/vfio")) ?? []
-        var nodes: [VFIOGroupNode] = []
-        for name in entries {
-            if name == "vfio" { continue }
-            let path = "/dev/vfio/\(name)"
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-                  let modeNum = attrs[.posixPermissions] as? NSNumber
-            else { continue }
-            let gid = gid_t((attrs[.groupOwnerAccountID] as? NSNumber)?.uint32Value ?? 0)
-            let groupName = Self.groupName(gid: gid)
-                ?? (attrs[.groupOwnerAccountName] as? String)
-                ?? String(gid)
-            nodes.append(VFIOGroupNode(name: name, mode: modeNum.uint16Value, groupName: groupName))
-        }
-        return (true, WorkloadPrivilegeDrop.vfioGroupNodesOpenable(
-            nodes: nodes,
-            userGroups: Self.dropUserGroupNames(),
-        ))
+        #if os(Windows)
+            return (false, nil)
+        #else
+            let present = FileManager.default.fileExists(atPath: "/dev/vfio/vfio")
+            guard present else { return (false, nil) }
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/vfio")) ?? []
+            var nodes: [VFIOGroupNode] = []
+            for name in entries {
+                if name == "vfio" { continue }
+                let path = "/dev/vfio/\(name)"
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+                      let modeNum = attrs[.posixPermissions] as? NSNumber
+                else { continue }
+                let gid = gid_t((attrs[.groupOwnerAccountID] as? NSNumber)?.uint32Value ?? 0)
+                let groupName = Self.groupName(gid: gid)
+                    ?? (attrs[.groupOwnerAccountName] as? String)
+                    ?? String(gid)
+                nodes.append(VFIOGroupNode(name: name, mode: modeNum.uint16Value, groupName: groupName))
+            }
+            return (true, WorkloadPrivilegeDrop.vfioGroupNodesOpenable(
+                nodes: nodes,
+                userGroups: Self.dropUserGroupNames(),
+            ))
+        #endif
     }
 
     static func dropUserGroupNames() -> [String] {
@@ -221,47 +234,61 @@ public struct LiveDoctorFactSource: DoctorFactSource {
     }
 
     static func dropUserName() -> String {
-        for name in WorkloadPrivilegeDrop.preferredUsers {
-            if name.withCString({ getpwnam($0) != nil }) {
-                return name
+        #if os(Windows)
+            return NSUserName()
+        #else
+            for name in WorkloadPrivilegeDrop.preferredUsers {
+                if name.withCString({ getpwnam($0) != nil }) {
+                    return name
+                }
             }
-        }
-        return NSUserName()
+            return NSUserName()
+        #endif
     }
 
     static func groupName(gid: gid_t) -> String? {
-        guard let gr = getgrgid(gid) else { return nil }
-        return String(cString: gr.pointee.gr_name)
+        #if os(Windows)
+            _ = gid
+            return nil
+        #else
+            guard let gr = getgrgid(gid) else { return nil }
+            return String(cString: gr.pointee.gr_name)
+        #endif
     }
 
     static func unixGroupNames(forUser name: String) -> [String] {
-        name.withCString { ptr in
-            guard let pw = getpwnam(ptr) else { return [] }
-            let base = pw.pointee.pw_gid
-            #if canImport(Darwin)
-                var count: Int32 = 32
-                var gids = [Int32](repeating: 0, count: Int(count))
-                var rc = getgrouplist(ptr, Int32(base), &gids, &count)
-                if rc < 0 {
-                    gids = [Int32](repeating: 0, count: max(Int(count), 1))
-                    rc = getgrouplist(ptr, Int32(base), &gids, &count)
-                }
-                guard rc >= 0 else { return [] }
-                return gids.prefix(Int(count)).compactMap { gid in
-                    groupName(gid: gid_t(UInt32(bitPattern: gid)))
-                }
-            #else
-                var count: Int32 = 32
-                var gids = [gid_t](repeating: 0, count: Int(count))
-                var rc = getgrouplist(ptr, base, &gids, &count)
-                if rc < 0 {
-                    gids = [gid_t](repeating: 0, count: max(Int(count), 1))
-                    rc = getgrouplist(ptr, base, &gids, &count)
-                }
-                guard rc >= 0 else { return [] }
-                return gids.prefix(Int(count)).compactMap { groupName(gid: $0) }
-            #endif
-        }
+        #if os(Windows)
+            _ = name
+            return []
+        #else
+            name.withCString { ptr in
+                guard let pw = getpwnam(ptr) else { return [] }
+                let base = pw.pointee.pw_gid
+                #if canImport(Darwin)
+                    var count: Int32 = 32
+                    var gids = [Int32](repeating: 0, count: Int(count))
+                    var rc = getgrouplist(ptr, Int32(base), &gids, &count)
+                    if rc < 0 {
+                        gids = [Int32](repeating: 0, count: max(Int(count), 1))
+                        rc = getgrouplist(ptr, Int32(base), &gids, &count)
+                    }
+                    guard rc >= 0 else { return [] }
+                    return gids.prefix(Int(count)).compactMap { gid in
+                        groupName(gid: gid_t(UInt32(bitPattern: gid)))
+                    }
+                #else
+                    var count: Int32 = 32
+                    var gids = [gid_t](repeating: 0, count: Int(count))
+                    var rc = getgrouplist(ptr, base, &gids, &count)
+                    if rc < 0 {
+                        gids = [gid_t](repeating: 0, count: max(Int(count), 1))
+                        rc = getgrouplist(ptr, base, &gids, &count)
+                    }
+                    guard rc >= 0 else { return [] }
+                    return gids.prefix(Int(count)).compactMap { groupName(gid: $0) }
+                #endif
+            }
+        #endif
     }
 }
 
@@ -441,6 +468,13 @@ public enum DoctorService {
     }
 
     private static func kvmCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "kvm",
+                status: .skip,
+                detail: "KVM is not used on Windows (WHPX).",
+            )
+        }
         if !isLinux(inputs.os) {
             return DoctorCheck(
                 id: "kvm",
@@ -538,6 +572,13 @@ public enum DoctorService {
         _ inputs: DoctorFactInputs,
         privileged: Bool,
     ) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "linux-bridge",
+                status: .skip,
+                detail: "Bridged networking is not supported on Windows.",
+            )
+        }
         if !isLinux(inputs.os) {
             return DoctorCheck(
                 id: "linux-bridge",
@@ -576,6 +617,13 @@ public enum DoctorService {
         _ inputs: DoctorFactInputs,
         privileged: Bool,
     ) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "macos-socket-vmnet",
+                status: .skip,
+                detail: "socket_vmnet is not used on Windows.",
+            )
+        }
         if !isMacOS(inputs.os) {
             return DoctorCheck(
                 id: "macos-socket-vmnet",
@@ -604,6 +652,10 @@ public enum DoctorService {
 
     private static func isMacOS(_ os: String) -> Bool {
         os.caseInsensitiveCompare("macOS") == .orderedSame
+    }
+
+    private static func isWindows(_ os: String) -> Bool {
+        os.caseInsensitiveCompare("Windows") == .orderedSame
     }
 }
 
@@ -654,14 +706,18 @@ enum DoctorHealthClient {
 
 enum DoctorProcessList {
     static func live() -> [DoctorProcess] {
-        let result = try? PlatformProcess.run(
-            path: "/bin/ps",
-            // Darwin and procps reject split `pid=` `uid=` tokens; keep one format list.
-            arguments: ["-axo", "pid=,uid=,command="],
-            timeout: 5,
-        )
-        guard let result, result.succeeded else { return [] }
-        return parse(result.stdoutString)
+        #if os(Windows)
+            return []
+        #else
+            let result = try? PlatformProcess.run(
+                path: "/bin/ps",
+                // Darwin and procps reject split `pid=` `uid=` tokens; keep one format list.
+                arguments: ["-axo", "pid=,uid=,command="],
+                timeout: 5,
+            )
+            guard let result, result.succeeded else { return [] }
+            return parse(result.stdoutString)
+        #endif
     }
 
     static func parse(_ text: String) -> [DoctorProcess] {

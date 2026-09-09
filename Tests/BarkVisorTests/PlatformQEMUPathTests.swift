@@ -13,6 +13,10 @@ struct PlatformQEMUPathTests {
             let accel = PlatformCapabilities.accelerator
             #expect(accel == "kvm" || accel == "tcg")
             #expect(PlatformCapabilities.qemuCPUModel == (accel == "kvm" ? "host" : "max"))
+        #elseif os(Windows)
+            let accel = PlatformCapabilities.accelerator
+            #expect(accel == "whpx" || accel == "tcg")
+            #expect(accel != "unknown")
         #endif
     }
 
@@ -69,6 +73,10 @@ struct PlatformQEMUPathTests {
             #expect(PlatformQEMU.firmwareInstallHintARM64.contains("brew"))
             #expect(PlatformQEMU.firmwareInstallHintX86.contains("brew"))
             #expect(PlatformQEMU.swtpmInstallHint.contains("brew"))
+        #elseif os(Windows)
+            #expect(PlatformQEMU.qemuInstallHint.contains("winget"))
+            #expect(PlatformQEMU.firmwareInstallHintX86.contains("edk2-x86_64-code.fd"))
+            #expect(PlatformQEMU.swtpmInstallHint.contains("swtpm"))
         #else
             #expect(PlatformQEMU.qemuInstallHint.contains("qemu-system"))
             #expect(PlatformQEMU.firmwareInstallHintARM64.contains("qemu-efi-aarch64"))

@@ -30,6 +30,8 @@ public enum PrivilegeService {
     private static func makeShared() -> any PrivilegeServicing {
         #if os(macOS)
             MacOSPrivilegeService()
+        #elseif os(Windows)
+            WindowsPrivilegeService()
         #else
             LinuxPrivilegeService()
         #endif
@@ -119,6 +121,43 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
             return "active"
         }
         return "inactive"
+    }
+
+    public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
+        []
+    }
+}
+
+public struct WindowsPrivilegeService: PrivilegeServicing {
+    public var isAvailable: Bool {
+        false
+    }
+
+    public init() {}
+
+    public func installBridge(interface: String) async throws {
+        _ = interface
+        throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
+    }
+
+    public func removeBridge(interface: String) async throws {
+        _ = interface
+        throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
+    }
+
+    public func startBridge(interface: String) async throws {
+        _ = interface
+        throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
+    }
+
+    public func stopBridge(interface: String) async throws {
+        _ = interface
+        throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
+    }
+
+    public func bridgeStatus(interface: String) async throws -> String {
+        _ = interface
+        throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
     }
 
     public func getAllBridgeStates() async throws -> [BridgeStateDTO] {

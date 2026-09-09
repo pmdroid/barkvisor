@@ -10,6 +10,14 @@ public enum PlatformQEMU {
 
     /// System paths for aarch64/ARM64 UEFI firmware (AAVMF / EDK2).
     /// Checked after `BundleResolver.qemuResource("edk2-aarch64-code.fd")`.
+    public static var windowsQEMUShareDirs: [String] {
+        [
+            "C:\\Program Files\\qemu\\share",
+            "C:\\Program Files\\qemu\\share\\qemu",
+            "C:\\msys64\\ucrt64\\share\\qemu",
+        ]
+    }
+
     public static var edk2ARM64Candidates: [String] {
         [
             "/usr/share/AAVMF/AAVMF_CODE.fd",
@@ -22,7 +30,7 @@ public enum PlatformQEMU {
             "/usr/share/edk2-armvirt/aarch64/QEMU_EFI.fd",
             // Alpine
             "/usr/share/OVMF/QEMU_EFI.fd",
-        ]
+        ] + windowsQEMUShareDirs.map { "\($0)\\edk2-aarch64-code.fd" }
     }
 
     /// System paths for x86_64 UEFI firmware (OVMF / EDK2).
@@ -44,7 +52,7 @@ public enum PlatformQEMU {
             "/usr/share/ovmf/x64/OVMF_CODE.fd",
             "/usr/share/qemu/OVMF.fd",
             "/usr/share/qemu/edk2-x86_64-code.fd",
-        ]
+        ] + windowsQEMUShareDirs.map { "\($0)\\edk2-x86_64-code.fd" }
     }
 
     /// NVRAM var store templates matching common CODE images (must copy, not zero-fill).
@@ -141,6 +149,8 @@ public enum PlatformQEMU {
     public static var qemuInstallHint: String {
         #if os(macOS)
             "brew install qemu"
+        #elseif os(Windows)
+            "winget install qemu  |  MSYS2: pacman -S mingw-w64-ucrt-x86_64-qemu  |  installer: C:\\Program Files\\qemu"
         #else
             "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
         #endif
@@ -150,6 +160,8 @@ public enum PlatformQEMU {
     public static var qemuDeviceInstallHint: String {
         #if os(macOS)
             "reinstall qemu: brew install qemu"
+        #elseif os(Windows)
+            "reinstall QEMU (winget install qemu or C:\\Program Files\\qemu) so device modules are present"
         #else
             "QEMU is missing device modules. "
                 + "Arch/SteamOS: pacman -S qemu-hw-display-virtio-gpu qemu-hw-display-virtio-gpu-pci (split out of qemu-base)  "
@@ -161,6 +173,8 @@ public enum PlatformQEMU {
     public static var firmwareInstallHintARM64: String {
         #if os(macOS)
             "brew install qemu"
+        #elseif os(Windows)
+            "install QEMU so share\\edk2-aarch64-code.fd is next to qemu-system-aarch64.exe (C:\\Program Files\\qemu\\share)"
         #else
             "apt: qemu-efi-aarch64  |  pacman: edk2-armvirt  |  apk: ovmf"
         #endif
@@ -170,6 +184,8 @@ public enum PlatformQEMU {
     public static var firmwareInstallHintX86: String {
         #if os(macOS)
             "brew install qemu"
+        #elseif os(Windows)
+            "install QEMU so share\\edk2-x86_64-code.fd is next to qemu-system-x86_64.exe (C:\\Program Files\\qemu\\share)"
         #else
             "apt: ovmf  |  pacman: edk2-ovmf  |  dnf: edk2-ovmf  |  apk: ovmf"
         #endif
@@ -179,6 +195,8 @@ public enum PlatformQEMU {
     public static var aavmfSecureBootInstallHint: String {
         #if os(macOS)
             "brew install qemu  (AAVMF/edk2 firmware ships in the qemu bottle)"
+        #elseif os(Windows)
+            "install QEMU (winget or C:\\Program Files\\qemu) for AAVMF/edk2 firmware in the share directory"
         #else
             "apt: qemu-efi-aarch64  |  pacman: edk2-armvirt"
         #endif
@@ -188,6 +206,8 @@ public enum PlatformQEMU {
     public static var swtpmInstallHint: String {
         #if os(macOS)
             "brew install swtpm"
+        #elseif os(Windows)
+            "install swtpm.exe (MSYS2: pacman -S mingw-w64-ucrt-x86_64-swtpm) and keep it on PATH"
         #else
             "apt/pacman/apk/dnf: swtpm"
         #endif
@@ -197,6 +217,8 @@ public enum PlatformQEMU {
     public static var qemuImgInstallHint: String {
         #if os(macOS)
             "brew install qemu"
+        #elseif os(Windows)
+            "qemu-img.exe is required to clone and resize image disks. winget install qemu  |  C:\\Program Files\\qemu\\qemu-img.exe"
         #else
             "qemu-img is required to clone and resize image disks. apt: qemu-utils  |  pacman: qemu-base  |  dnf: qemu-img  |  apk: qemu-img"
         #endif
@@ -206,6 +228,8 @@ public enum PlatformQEMU {
     public static var isoToolInstallHint: String {
         #if os(macOS)
             "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
+        #elseif os(Windows)
+            "install xorriso or mkisofs (MSYS2: pacman -S mingw-w64-ucrt-x86_64-libisoburn) and keep it on PATH"
         #else
             "apt: genisoimage  |  pacman: cdrtools  |  dnf: genisoimage|xorriso  |  apk: xorriso"
         #endif

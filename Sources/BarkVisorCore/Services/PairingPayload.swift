@@ -1,8 +1,10 @@
 import Foundation
 #if canImport(Darwin)
     import Darwin
-#else
+#elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 
 /// QR / typed-code payload for PAS-45.
@@ -320,15 +322,22 @@ public struct PairingPayload: Sendable, Equatable {
 
     private static func parseIPv4Octets(_ host: String) -> (UInt8, UInt8, UInt8, UInt8)? {
         var addr = in_addr()
-        guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
-        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-        guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
-            return nil
-        }
-        let canonical = String(cString: buf)
-        let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
-        guard parts.count == 4 else { return nil }
-        return (parts[0], parts[1], parts[2], parts[3])
+        #if os(Windows)
+            guard host.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else { return nil }
+            let parts = host.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4 else { return nil }
+            return (parts[0], parts[1], parts[2], parts[3])
+        #else
+            guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
+                return nil
+            }
+            let canonical = String(cString: buf)
+            let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
+            guard parts.count == 4 else { return nil }
+            return (parts[0], parts[1], parts[2], parts[3])
+        #endif
     }
 
     private static func parseIPv6(_ host: String) -> in6_addr? {

@@ -17,6 +17,8 @@ public enum PlatformHost {
             var size = MemoryLayout<Int32>.size
             sysctlbyname("hw.ncpu", &ncpu, &size, nil, 0)
             return max(Int(ncpu), 1)
+        #elseif os(Windows)
+            max(ProcessInfo.processInfo.processorCount, 1)
         #else
             let n = sysconf(Int32(_SC_NPROCESSORS_ONLN))
             return n > 0 ? Int(n) : max(ProcessInfo.processInfo.processorCount, 1)
@@ -30,6 +32,8 @@ public enum PlatformHost {
             var size = MemoryLayout<UInt64>.size
             sysctlbyname("hw.memsize", &memSize, &size, nil, 0)
             return memSize
+        #elseif os(Windows)
+            return ProcessInfo.processInfo.physicalMemory
         #else
             if let meminfo = try? String(contentsOfFile: "/proc/meminfo", encoding: .utf8) {
                 for line in meminfo.split(separator: "\n") {
@@ -67,6 +71,8 @@ public enum PlatformHost {
             let pageSize = UInt64(sysconf(_SC_PAGESIZE))
             let used = (UInt64(stats.active_count) + UInt64(stats.wire_count)) * pageSize
             return Int(used / (1_024 * 1_024))
+        #elseif os(Windows)
+            return 0
         #else
             // MemTotal - MemAvailable (fallback: MemFree + Buffers + Cached)
             guard let meminfo = try? String(contentsOfFile: "/proc/meminfo", encoding: .utf8) else {
@@ -98,10 +104,14 @@ public enum PlatformHost {
 
     /// Host CPU utilization proxy from 1-minute load average (0…100).
     public static var cpuLoadPercent: Double {
-        var loadAvg = [Double](repeating: 0, count: 3)
-        let loadCount = getloadavg(&loadAvg, 3)
-        let load1m = loadCount >= 1 ? loadAvg[0] : 0.0
-        return min(load1m / Double(max(cpuCount, 1)) * 100.0, 100.0)
+        #if os(Windows)
+            return 0
+        #else
+            var loadAvg = [Double](repeating: 0, count: 3)
+            let loadCount = getloadavg(&loadAvg, 3)
+            let load1m = loadCount >= 1 ? loadAvg[0] : 0.0
+            return min(load1m / Double(max(cpuCount, 1)) * 100.0, 100.0)
+        #endif
     }
 
     /// Human-readable platform name (e.g. "macOS", "Linux").
@@ -110,6 +120,8 @@ public enum PlatformHost {
             return "macOS"
         #elseif os(Linux)
             return "Linux"
+        #elseif os(Windows)
+            return "Windows"
         #else
             return "unknown"
         #endif

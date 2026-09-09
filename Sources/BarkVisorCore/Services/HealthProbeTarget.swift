@@ -2,6 +2,8 @@
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import WinSDK
 #endif
 import Foundation
 
@@ -134,31 +136,35 @@ public enum HealthProbeTarget: Equatable, Sendable {
     /// IPv4 prefixes currently configured on `interface` (empty if unknown).
     public static func hostIPv4Prefixes(interface: String) -> [IPv4Prefix] {
         guard !interface.isEmpty else { return [] }
-        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return [] }
-        defer { freeifaddrs(first) }
+        #if os(Windows)
+            return []
+        #else
+            var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+            guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return [] }
+            defer { freeifaddrs(first) }
 
-        var prefixes: [IPv4Prefix] = []
-        var current: UnsafeMutablePointer<ifaddrs>? = first
-        while let addr = current {
-            defer { current = addr.pointee.ifa_next }
-            let name = String(cString: addr.pointee.ifa_name)
-            guard name == interface else { continue }
-            guard let ifaAddr = addr.pointee.ifa_addr,
-                  ifaAddr.pointee.sa_family == UInt8(AF_INET)
-            else { continue }
-            guard let maskPtr = addr.pointee.ifa_netmask,
-                  maskPtr.pointee.sa_family == UInt8(AF_INET)
-            else { continue }
+            var prefixes: [IPv4Prefix] = []
+            var current: UnsafeMutablePointer<ifaddrs>? = first
+            while let addr = current {
+                defer { current = addr.pointee.ifa_next }
+                let name = String(cString: addr.pointee.ifa_name)
+                guard name == interface else { continue }
+                guard let ifaAddr = addr.pointee.ifa_addr,
+                      ifaAddr.pointee.sa_family == UInt8(AF_INET)
+                else { continue }
+                guard let maskPtr = addr.pointee.ifa_netmask,
+                      maskPtr.pointee.sa_family == UInt8(AF_INET)
+                else { continue }
 
-            var sin = sockaddr_in()
-            var mask = sockaddr_in()
-            memcpy(&sin, ifaAddr, MemoryLayout<sockaddr_in>.size)
-            memcpy(&mask, maskPtr, MemoryLayout<sockaddr_in>.size)
-            let network = UInt32(bigEndian: sin.sin_addr.s_addr)
-            let netmask = UInt32(bigEndian: mask.sin_addr.s_addr)
-            prefixes.append(IPv4Prefix(network: network & netmask, mask: netmask))
-        }
-        return prefixes
+                var sin = sockaddr_in()
+                var mask = sockaddr_in()
+                memcpy(&sin, ifaAddr, MemoryLayout<sockaddr_in>.size)
+                memcpy(&mask, maskPtr, MemoryLayout<sockaddr_in>.size)
+                let network = UInt32(bigEndian: sin.sin_addr.s_addr)
+                let netmask = UInt32(bigEndian: mask.sin_addr.s_addr)
+                prefixes.append(IPv4Prefix(network: network & netmask, mask: netmask))
+            }
+            return prefixes
+        #endif
     }
 }

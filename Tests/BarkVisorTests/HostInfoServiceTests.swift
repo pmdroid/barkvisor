@@ -13,15 +13,23 @@ struct HostInfoServiceTests {
     }
 
     @Test func `list interfaces returns at least loopback`() {
-        let interfaces = HostInfoService.listInterfaces()
-        #expect(!interfaces.isEmpty, "Should find at least one network interface")
+        #if os(Windows)
+            #expect(HostInfoService.listInterfaces().isEmpty)
+        #else
+            let interfaces = HostInfoService.listInterfaces()
+            #expect(!interfaces.isEmpty, "Should find at least one network interface")
 
-        let lo = interfaces.first(where: { $0.name == Self.loopbackName })
-        #expect(lo != nil, "Should find loopback interface \(Self.loopbackName)")
-        #expect(lo?.ipAddress == "127.0.0.1")
+            let lo = interfaces.first(where: { $0.name == Self.loopbackName })
+            #expect(lo != nil, "Should find loopback interface \(Self.loopbackName)")
+            #expect(lo?.ipAddress == "127.0.0.1")
+        #endif
     }
 
     @Test func `list interface addresses keeps IPv4 and does not leak zone ids`() {
+        #if os(Windows)
+            #expect(HostInfoService.listInterfaceAddresses().isEmpty)
+            return
+        #endif
         let addrs = HostInfoService.listInterfaceAddresses()
         #expect(!addrs.isEmpty, "Should find at least one address")
         let ipv4 = addrs.filter { !$0.ipAddress.contains(":") }
@@ -50,10 +58,14 @@ struct HostInfoServiceTests {
     }
 
     @Test func `interface exists for loopback`() {
-        #expect(
-            HostInfoService.interfaceExists(Self.loopbackName),
-            "\(Self.loopbackName) should exist on this host",
-        )
+        #if os(Windows)
+            #expect(!HostInfoService.interfaceExists(Self.loopbackName))
+        #else
+            #expect(
+                HostInfoService.interfaceExists(Self.loopbackName),
+                "\(Self.loopbackName) should exist on this host",
+            )
+        #endif
     }
 
     @Test func `interface exists for non existent`() {
@@ -65,9 +77,14 @@ struct HostInfoServiceTests {
     @Test func `interface exists includes interfaces without requiring listInterfaces membership`() {
         // listInterfaces is IPv4-only; existence must still be true for loopback
         // even when we only care about the name probe (down/no-IP policy).
-        #expect(HostInfoService.interfaceExists(Self.loopbackName))
-        let listed = Set(HostInfoService.listInterfaces().map(\.name))
-        #expect(listed.contains(Self.loopbackName))
+        #if os(Windows)
+            #expect(!HostInfoService.interfaceExists(Self.loopbackName))
+            #expect(HostInfoService.listInterfaces().isEmpty)
+        #else
+            #expect(HostInfoService.interfaceExists(Self.loopbackName))
+            let listed = Set(HostInfoService.listInterfaces().map(\.name))
+            #expect(listed.contains(Self.loopbackName))
+        #endif
     }
 
     @Test func `displayName labels loopback and common interfaces`() {

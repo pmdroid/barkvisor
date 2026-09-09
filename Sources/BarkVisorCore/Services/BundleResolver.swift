@@ -17,6 +17,15 @@ public enum BundleResolver {
                 "/usr/local/bin/\(name)",
                 libexec,
             ]
+        #elseif os(Windows)
+            let exe = name.lowercased().hasSuffix(".exe") ? name : "\(name).exe"
+            return [
+                "C:\\Program Files\\qemu\\\(exe)",
+                "C:\\Program Files\\qemu\\bin\\\(exe)",
+                "C:\\msys64\\ucrt64\\bin\\\(exe)",
+                libexec,
+                "\(Config.libexecDir)/\(exe)",
+            ]
         #else
             var candidates = [
                 libexec,
@@ -45,6 +54,8 @@ public enum BundleResolver {
         }
         #if os(macOS)
             let hint = "brew install qemu  (also: brew install swtpm socket_vmnet)"
+        #elseif os(Windows)
+            let hint = PlatformQEMU.qemuInstallHint
         #else
             let hint = "install via the distro package manager or ensure it is in PATH"
         #endif
@@ -105,6 +116,10 @@ public enum BundleResolver {
                 "/usr/local/share/qemu/\(name)",
                 "\(Config.qemuShareDir)/\(name)",
             ]
+        #elseif os(Windows)
+            let candidates = PlatformQEMU.windowsQEMUShareDirs.map { "\($0)\\\(name)" } + [
+                "\(Config.qemuShareDir)/\(name)",
+            ]
         #else
             let candidates = [
                 "\(Config.qemuShareDir)/\(name)",
@@ -132,6 +147,8 @@ public enum BundleResolver {
                 "/usr/local/share/qemu",
                 Config.qemuShareDir,
             ]
+        #elseif os(Windows)
+            let candidates = PlatformQEMU.windowsQEMUShareDirs + [Config.qemuShareDir]
         #else
             let candidates = [
                 Config.qemuShareDir,
@@ -158,15 +175,43 @@ public enum BundleResolver {
     }
 
     private static func whichLookup(_ name: String) -> URL? {
-        guard let result = try? PlatformProcess.run(
-            path: "/usr/bin/which",
-            arguments: [name],
-            timeout: 5,
-        ), result.succeeded else {
+        #if os(Windows)
+            return windowsWhich(name)
+        #else
+            guard let result = try? PlatformProcess.run(
+                path: "/usr/bin/which",
+                arguments: [name],
+                timeout: 5,
+            ), result.succeeded else {
+                return nil
+            }
+            let output = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !output.isEmpty else { return nil }
+            return URL(fileURLWithPath: output)
+        #endif
+    }
+
+    #if os(Windows)
+        private static func windowsWhich(_ name: String) -> URL? {
+            let exe = name.lowercased().hasSuffix(".exe") ? name : "\(name).exe"
+            let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+            for dir in path.split(separator: PlatformPaths.pathListSeparator) {
+                let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent(exe)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+            if let result = try? PlatformProcess.run(
+                path: "C:\\Windows\\System32\\where.exe",
+                arguments: [exe],
+                timeout: 5,
+            ), result.succeeded {
+                let output = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let first = output.split(whereSeparator: \.isNewline).first, !first.isEmpty {
+                    return URL(fileURLWithPath: String(first))
+                }
+            }
             return nil
         }
-        let output = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !output.isEmpty else { return nil }
-        return URL(fileURLWithPath: output)
-    }
+    #endif
 }

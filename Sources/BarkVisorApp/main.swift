@@ -6,8 +6,15 @@ import Foundation
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
+#elseif canImport(WinSDK)
+    import ucrt
+    import WinSDK
 #endif
 import Logging
+
+#if os(Windows)
+    nonisolated(unsafe) var windowsShutdownEvent: HANDLE?
+#endif
 
 /// Pipe for signal→async communication.
 /// A raw POSIX signal handler writes here; the async main reads from it.
@@ -139,15 +146,25 @@ func runDaemon() async {
         exit(1)
     }
 
-    pipe(&signalPipeFDs)
-    signal(SIGTERM) { _ in
-        var b: UInt8 = 1
-        write(signalPipeFDs[1], &b, 1)
-    }
-    signal(SIGINT) { _ in
-        var b: UInt8 = 1
-        write(signalPipeFDs[1], &b, 1)
-    }
+    #if os(Windows)
+        windowsShutdownEvent = CreateEventW(nil, true, false, nil)
+        _ = SetConsoleCtrlHandler({ _ in
+            if let event = windowsShutdownEvent {
+                _ = SetEvent(event)
+            }
+            return true
+        }, true)
+    #else
+        pipe(&signalPipeFDs)
+        signal(SIGTERM) { _ in
+            var b: UInt8 = 1
+            write(signalPipeFDs[1], &b, 1)
+        }
+        signal(SIGINT) { _ in
+            var b: UInt8 = 1
+            write(signalPipeFDs[1], &b, 1)
+        }
+    #endif
 
     var serverLogger = Logger(label: "barkvisor.server")
     serverLogger[metadataKey: "version"] = Logger.MetadataValue(stringLiteral: Config.version)
@@ -162,19 +179,30 @@ func runDaemon() async {
         exit(1)
     }
 
-    // Block (async-safe) until a signal writes to the pipe (POSIX read; portable).
     await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
         DispatchQueue.global().async {
-            var b: UInt8 = 0
-            _ = read(signalPipeFDs[0], &b, 1)
+            #if os(Windows)
+                if let event = windowsShutdownEvent {
+                    _ = WaitForSingleObject(event, INFINITE)
+                }
+            #else
+                var b: UInt8 = 0
+                _ = read(signalPipeFDs[0], &b, 1)
+            #endif
             cont.resume()
         }
     }
     Log.server.info("Received signal, shutting down gracefully...")
 
-    // Second signal → force exit
-    signal(SIGTERM) { _ in _exit(1) }
-    signal(SIGINT) { _ in _exit(1) }
+    #if os(Windows)
+        _ = SetConsoleCtrlHandler({ _ in
+            _exit(1)
+            return true
+        }, true)
+    #else
+        signal(SIGTERM) { _ in _exit(1) }
+        signal(SIGINT) { _ in _exit(1) }
+    #endif
 
     // Graceful shutdown with hard timeout
     await withTaskGroup(of: Void.self) { group in
@@ -188,6 +216,13 @@ func runDaemon() async {
         group.cancelAll()
     }
 
-    close(signalPipeFDs[0])
-    close(signalPipeFDs[1])
+    #if os(Windows)
+        if let event = windowsShutdownEvent {
+            CloseHandle(event)
+            windowsShutdownEvent = nil
+        }
+    #else
+        close(signalPipeFDs[0])
+        close(signalPipeFDs[1])
+    #endif
 }
