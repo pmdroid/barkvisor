@@ -35,9 +35,8 @@ public enum ComposeRuntime {
     }
 
     public static func composeProjectName(id: String) -> String {
-        let compact = id.replacingOccurrences(of: "-", with: "")
-        let short = compact.prefix(8)
-        return "barkvisor-\(short)"
+        let compact = id.replacingOccurrences(of: "-", with: "").lowercased()
+        return "barkvisor-\(compact)"
     }
 
     public static func writeProject(
