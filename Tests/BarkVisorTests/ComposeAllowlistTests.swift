@@ -31,12 +31,47 @@ struct ComposeAllowlistTests {
         #expect(!render.yaml.contains("privileged"))
     }
 
+    @Test func `env_file long form is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            env_file:
+              - path: /etc/passwd
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: env_file")
+    }
+
     @Test func `privileged is rejected by name`() {
         let yaml = """
         services:
           x:
             image: alpine
             privileged: true
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: privileged")
+    }
+
+    @Test func `privileged string True is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            privileged: "True"
         """
         let error = #expect(throws: BarkVisorError.self) {
             _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
