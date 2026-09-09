@@ -54,6 +54,7 @@ final class ApplicationUpdateKeepVolumesTests {
             env: nil,
             dataDir: dataDir,
         )
+        bindStubs()
         try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
         let id = vm.id
         let live = try await dbPool.read { db in try VM.fetchOne(db, key: id) }
@@ -71,6 +72,7 @@ final class ApplicationUpdateKeepVolumesTests {
         var vm = try await insertApp()
         docker.inspectDigest = "sha256:bbb222ccc333"
         docker.manifestDigest = "sha256:bbb222ccc333"
+        bindStubs()
         try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
         let joined = runner.calls.map { $0.joined(separator: " ") }
         #expect(joined.contains { $0.contains("pull") })
@@ -86,11 +88,13 @@ final class ApplicationUpdateKeepVolumesTests {
     @Test func `older catalog digest is update available`() async throws {
         bindStubs()
         var vm = try await insertApp()
-        try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
+        docker.inspectDigest = "sha256:aaa111bbb222"
         docker.manifestDigest = "sha256:fff999eee888"
+        bindStubs()
         try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
         #expect(vm.updateAvailable)
         #expect(vm.catalogDigest == "sha256:fff999eee888")
+        #expect(vm.digest == "sha256:aaa111bbb222")
     }
 
     @Test func `compose logs snapshot returns compose output`() async throws {
@@ -101,6 +105,7 @@ final class ApplicationUpdateKeepVolumesTests {
         jellyfin  | listening
         """
         let vm = try await insertApp()
+        bindStubs()
         let text = try ApplicationLifecycleService.logs(vm: vm, dataDir: dataDir)
         #expect(text.contains("helloQB"))
         #expect(ComposeLogHints.firstPassword(in: text) == "helloQB")
