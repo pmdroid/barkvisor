@@ -31,6 +31,22 @@ struct ComposeAllowlistTests {
         #expect(!render.yaml.contains("privileged"))
     }
 
+    @Test func `compose interpolation is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: ${FOO}
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: interpolation")
+    }
+
     @Test func `environment list without values is rejected`() {
         let yaml = """
         services:
