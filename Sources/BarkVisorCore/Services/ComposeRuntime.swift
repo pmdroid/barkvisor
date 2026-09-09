@@ -46,6 +46,11 @@ public enum ComposeRuntime {
         env: [String: String]?,
         dataDir: URL = Config.dataDir,
     ) throws -> URL {
+        if let env {
+            for key in env.keys {
+                try requireEnvKey(key)
+            }
+        }
         let dir = projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let volumes = dir.appendingPathComponent("volumes", isDirectory: true)
@@ -192,6 +197,20 @@ public enum ComposeRuntime {
         if running { return "running" }
         if any { return "stopped" }
         return "stopped"
+    }
+
+    private static func requireEnvKey(_ key: String) throws {
+        guard let first = key.unicodeScalars.first else {
+            throw BarkVisorError.badRequest("invalid compose env key")
+        }
+        let firstAllowed = CharacterSet.letters.union(CharacterSet(charactersIn: "_"))
+        guard firstAllowed.contains(first) else {
+            throw BarkVisorError.badRequest("invalid compose env key")
+        }
+        let rest = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_"))
+        if !key.unicodeScalars.allSatisfy({ rest.contains($0) }) {
+            throw BarkVisorError.badRequest("invalid compose env key")
+        }
     }
 
     private static func envValue(_ raw: String) -> String {

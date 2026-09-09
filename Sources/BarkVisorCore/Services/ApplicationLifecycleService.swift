@@ -30,7 +30,9 @@ public enum ApplicationLifecycleService {
             stateDir: dir,
         )
         for name in render.namedVolumes {
-            let volume = dir.appendingPathComponent("volumes/\(name)", isDirectory: true)
+            let volume = dir
+                .appendingPathComponent("volumes", isDirectory: true)
+                .appendingPathComponent(name, isDirectory: true)
             try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
         }
         _ = try ComposeRuntime.writeProject(id: id, yaml: render.yaml, env: env, dataDir: dataDir)
@@ -82,11 +84,11 @@ public enum ApplicationLifecycleService {
 
     public static func down(vm: VM, dataDir: URL = Config.dataDir) throws {
         let project = projectName(vm)
-        let dir = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir)
-        if FileManager.default.fileExists(atPath: dir.path) {
+        do {
             try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
-        } else {
-            try? ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+        } catch {
+            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
         }
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }

@@ -271,14 +271,12 @@ public enum ComposeAllowlist {
         if source.hasPrefix("/") || source.hasPrefix(".") || source.hasPrefix("~") {
             return try bindVolume(source: source, target: target, mode: mode, stateDir: stateDir)
         }
-        let dest = volumeRoot.appendingPathComponent(source, isDirectory: true)
-        var entry: [String: Any] = [
-            "type": "bind",
-            "source": dest.path,
-            "target": target,
-        ]
-        if let mode, mode.contains("ro") { entry["read_only"] = true }
-        return ParsedVolume(entry: entry, named: source)
+        return try namedVolume(
+            source: source,
+            target: target,
+            volumeRoot: volumeRoot,
+            readOnly: mode?.contains("ro") == true,
+        )
     }
 
     private static func parseVolumeObject(
@@ -312,14 +310,12 @@ public enum ComposeAllowlist {
             if source.hasPrefix("/") || source.hasPrefix(".") {
                 throw BarkVisorError.badRequest("unsupported compose feature: bind")
             }
-            let dest = volumeRoot.appendingPathComponent(source, isDirectory: true)
-            var entry: [String: Any] = [
-                "type": "bind",
-                "source": dest.path,
-                "target": target,
-            ]
-            if boolValue(object["read_only"]) { entry["read_only"] = true }
-            return ParsedVolume(entry: entry, named: source)
+            return try namedVolume(
+                source: source,
+                target: target,
+                volumeRoot: volumeRoot,
+                readOnly: boolValue(object["read_only"]),
+            )
         }
         throw BarkVisorError.badRequest("unsupported compose feature: volumes")
     }
@@ -337,12 +333,7 @@ public enum ComposeAllowlist {
         } else {
             stateDir.appendingPathComponent(expanded).standardizedFileURL
         }
-        let root = stateDir.standardizedFileURL.path
-        let path = resolved.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        if path != root && !path.hasPrefix(prefix) {
-            throw BarkVisorError.badRequest("unsupported compose feature: bind")
-        }
+        let path = try requirePath(under: stateDir, candidate: resolved)
         var entry: [String: Any] = [
             "type": "bind",
             "source": path,
@@ -350,6 +341,53 @@ public enum ComposeAllowlist {
         ]
         if readOnly || (mode?.contains("ro") == true) { entry["read_only"] = true }
         return ParsedVolume(entry: entry, named: nil)
+    }
+
+    private static func namedVolume(
+        source: String,
+        target: String,
+        volumeRoot: URL,
+        readOnly: Bool,
+    ) throws -> ParsedVolume {
+        try rejectNamedVolumeName(source)
+        let dest = volumeRoot.appendingPathComponent(source, isDirectory: true)
+        let path = try requirePath(under: volumeRoot, candidate: dest)
+        var entry: [String: Any] = [
+            "type": "bind",
+            "source": path,
+            "target": target,
+        ]
+        if readOnly { entry["read_only"] = true }
+        return ParsedVolume(entry: entry, named: source)
+    }
+
+    private static func rejectNamedVolumeName(_ source: String) throws {
+        if source == "." || source == ".." {
+            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+        }
+        let separators = CharacterSet(charactersIn: "/\\")
+        if source.rangeOfCharacter(from: separators) != nil {
+            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+        }
+        guard let first = source.unicodeScalars.first,
+              CharacterSet.alphanumerics.contains(first)
+        else {
+            throw BarkVisorError.badRequest("unsupported compose feature: volumes")
+        }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        if !source.unicodeScalars.allSatisfy({ allowed.contains($0) }) {
+            throw BarkVisorError.badRequest("unsupported compose feature: volumes")
+        }
+    }
+
+    private static func requirePath(under root: URL, candidate: URL) throws -> String {
+        let rootPath = root.standardizedFileURL.path
+        let path = candidate.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        if path != rootPath, !path.hasPrefix(prefix) {
+            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+        }
+        return path
     }
 
     private static func parsePorts(_ value: Any?) throws -> [PublishedPort] {
