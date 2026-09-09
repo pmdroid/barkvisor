@@ -49,23 +49,33 @@ public enum ApplicationImageFacts {
         return facts
     }
 
-    public static func parseRegistryDigest(_ json: String) -> String? {
+    public static func parseRegistryDigest(
+        _ json: String,
+        os: String = "linux",
+        arch: String? = nil,
+    ) -> String? {
+        let resolvedArch = arch ?? dockerArch(PlatformCapabilities.hostArch)
         let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
         guard let data = trimmed.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data)
         else { return nil }
-        if let dict = object as? [String: Any] {
-            if let digest = digest(in: dict) { return digest }
-        }
         if let array = object as? [Any] {
+            let platform = platformDigest(in: array, os: os, arch: resolvedArch)
+            if platform != nil { return platform }
             for item in array {
-                if let dict = item as? [String: Any], let digest = digest(in: dict) {
+                if let dict = item as? [String: Any],
+                   let digest = descriptorDigest(dict, os: os, arch: resolvedArch, requirePlatform: false) {
                     return digest
                 }
             }
+            return nil
         }
-        return nil
+        guard let dict = object as? [String: Any] else { return nil }
+        if let fromList = manifestListDigest(dict, os: os, arch: resolvedArch) {
+            return fromList
+        }
+        return descriptorDigest(dict, os: os, arch: resolvedArch, requirePlatform: false)
     }
 
     public static func running(
@@ -96,6 +106,12 @@ public enum ApplicationImageFacts {
         return parseRegistryDigest(result.stdoutString)
     }
 
+    static func dockerArch(_ hostArch: String) -> String {
+        let normalized = PlatformCapabilities.normalizedArch(hostArch)
+        if normalized == "x86_64" { return "amd64" }
+        return normalized
+    }
+
     private static func inspectImage(_ object: [String: Any]) -> String {
         if let config = object["Config"] as? [String: Any],
            let image = config["Image"] as? String,
@@ -123,19 +139,58 @@ public enum ApplicationImageFacts {
         return nil
     }
 
-    private static func digest(in object: [String: Any]) -> String? {
-        if let descriptor = object["Descriptor"] as? [String: Any],
-           let digest = descriptor["digest"] as? String {
-            return normalizeDigest(digest)
+    private static func manifestListDigest(_ object: [String: Any], os: String, arch: String) -> String? {
+        guard let manifests = object["manifests"] as? [[String: Any]] else { return nil }
+        for entry in manifests {
+            if platformMatches(entry["platform"] as? [String: Any], os: os, arch: arch),
+               let digest = entry["digest"] as? String {
+                return normalizeDigest(digest)
+            }
+        }
+        return nil
+    }
+
+    private static func platformDigest(in blobs: [Any], os: String, arch: String) -> String? {
+        for blob in blobs {
+            guard let dict = blob as? [String: Any] else { continue }
+            if let digest = descriptorDigest(dict, os: os, arch: arch, requirePlatform: true) {
+                return digest
+            }
+        }
+        return nil
+    }
+
+    private static func descriptorDigest(
+        _ object: [String: Any],
+        os: String,
+        arch: String,
+        requirePlatform: Bool,
+    ) -> String? {
+        if let descriptor = object["Descriptor"] as? [String: Any] {
+            let platform = descriptor["platform"] as? [String: Any]
+            if requirePlatform {
+                guard platformMatches(platform, os: os, arch: arch) else { return nil }
+            } else if let platform, !platformMatches(platform, os: os, arch: arch) {
+                return nil
+            }
+            if let digest = descriptor["digest"] as? String {
+                return normalizeDigest(digest)
+            }
         }
         if let digest = object["digest"] as? String, digest.lowercased().hasPrefix("sha256:") {
             return normalizeDigest(digest)
         }
-        if let manifest = object["SchemaV2Manifest"] as? [String: Any],
-           let config = manifest["config"] as? [String: Any],
-           let digest = config["digest"] as? String {
-            return normalizeDigest(digest)
-        }
         return nil
+    }
+
+    private static func platformMatches(_ platform: [String: Any]?, os: String, arch: String) -> Bool {
+        guard let platform else { return false }
+        let platformOS = (platform["os"] as? String ?? "").lowercased()
+        let platformArch = (platform["architecture"] as? String ?? "").lowercased()
+        let wantOS = os.lowercased()
+        let wantArch = dockerArch(arch).lowercased()
+        if !platformOS.isEmpty, platformOS != wantOS { return false }
+        if platformArch.isEmpty { return false }
+        return platformArch == wantArch || dockerArch(platformArch) == wantArch
     }
 }

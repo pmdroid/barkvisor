@@ -12,12 +12,9 @@ public enum ComposeLogHints {
 
     public static func firstPassword(inLine line: String) -> String? {
         let lower = line.lowercased()
-        guard lower.contains("temporary password is provided for this session")
-            || lower.contains("webui administrator password was not set")
-        else { return nil }
-        guard let colon = line.lastIndex(of: ":") else { return nil }
-        let raw = line[line.index(after: colon)...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let marker = lower.range(of: "this session:") else { return nil }
+        let start = line.index(line.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: marker.upperBound))
+        let raw = line[start...].trimmingCharacters(in: .whitespacesAndNewlines)
         let token = raw.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
         if token.isEmpty { return nil }
         return token

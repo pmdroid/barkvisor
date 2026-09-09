@@ -22,6 +22,29 @@ struct ApplicationImageFactsTests {
         #expect(ApplicationImageFacts.parseRegistryDigest(json) == "sha256:bbb222ccc333")
     }
 
+    @Test func `registry list uses the platform manifest not the index or config`() {
+        let json = """
+        [{"Descriptor":{"digest":"sha256:indexaaaa","platform":{"architecture":"unknown","os":"linux"}},\
+        "SchemaV2Manifest":{"config":{"digest":"sha256:configcccc"}}},\
+        {"Descriptor":{"digest":"sha256:platformbbbb","platform":{"architecture":"arm64","os":"linux"}},\
+        "SchemaV2Manifest":{"config":{"digest":"sha256:configcccc"}}}]
+        """
+        let digest = ApplicationImageFacts.parseRegistryDigest(json, os: "linux", arch: "arm64")
+        #expect(digest == "sha256:platformbbbb")
+        #expect(
+            !ApplicationImageFacts.updateAvailable(
+                running: "sha256:platformbbbb",
+                catalog: digest,
+            ),
+        )
+        #expect(
+            ApplicationImageFacts.updateAvailable(
+                running: "sha256:platformbbbb",
+                catalog: "sha256:indexaaaa",
+            ),
+        )
+    }
+
     @Test func `older image is update available`() {
         #expect(
             ApplicationImageFacts.updateAvailable(
@@ -52,6 +75,14 @@ struct ComposeLogHintsTests {
         qbittorrent | This password will remain valid until the container is stopped.
         """
         #expect(ComposeLogHints.firstPassword(in: text) == "s3cretPass")
+        let stamped =
+            "2026-09-08T20:41:02.123456789Z qbittorrent  | A temporary password is provided for this session: helloQB"
+        #expect(ComposeLogHints.firstPassword(inLine: stamped) == "helloQB")
+        #expect(
+            ComposeLogHints.firstPassword(
+                inLine: "2026-09-08T20:41:02Z qbittorrent  | The WebUI administrator password was not set.",
+            ) == nil,
+        )
     }
 
     @Test func `unrelated logs have no first password`() {

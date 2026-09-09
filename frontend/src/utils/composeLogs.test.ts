@@ -13,6 +13,14 @@ describe('compose logs', () => {
     expect(firstPasswordFromLine(line)).toBe('s3cretPass')
     expect(isFirstPasswordLine(line)).toBe(true)
     expect(firstPasswordFromLogs(['ready', line, 'done'])).toBe('s3cretPass')
+    expect(
+      firstPasswordFromLine(
+        '2026-09-08T20:41:02.123Z qbittorrent  | A temporary password is provided for this session: helloQB',
+      ),
+    ).toBe('helloQB')
+    expect(
+      firstPasswordFromLine('2026-09-08T20:41:02Z qbittorrent  | The WebUI administrator password was not set.'),
+    ).toBeNull()
   })
 
   test('does not invent a password from unrelated lines', () => {

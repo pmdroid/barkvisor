@@ -45,7 +45,6 @@ function connect() {
     }, 3000)
     return
   }
-  void loadSnapshot(myEpoch)
   stream.start({
     vmID: props.vmId,
     url: (ticket) => `/api/vms/${encodeURIComponent(props.vmId)}/logs/stream?ticket=${ticket}`,

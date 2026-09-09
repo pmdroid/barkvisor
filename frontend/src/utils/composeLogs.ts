@@ -1,14 +1,9 @@
 export function firstPasswordFromLine(line: string): string | null {
   const lower = line.toLowerCase()
-  if (
-    !lower.includes('temporary password is provided for this session')
-    && !lower.includes('webui administrator password was not set')
-  ) {
-    return null
-  }
-  const colon = line.lastIndexOf(':')
-  if (colon < 0) return null
-  const token = line.slice(colon + 1).trim().split(/\s+/)[0] ?? ''
+  const marker = 'this session:'
+  const at = lower.indexOf(marker)
+  if (at < 0) return null
+  const token = line.slice(at + marker.length).trim().split(/\s+/)[0] ?? ''
   return token || null
 }
 

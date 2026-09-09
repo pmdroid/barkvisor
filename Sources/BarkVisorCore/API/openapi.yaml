@@ -529,6 +529,13 @@ paths:
       summary: docker compose logs for an Application Workload
       parameters:
         - $ref: "#/components/parameters/id"
+        - name: tail
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2000
+            default: 200
       responses:
         "200":
           content:
