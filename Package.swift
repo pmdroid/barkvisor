@@ -76,6 +76,7 @@ packageTargets.append(contentsOf: [
         resources: [
             .copy("API/openapi.yaml"),
             .copy("API/workloadspec.schema.json"),
+            .copy("Resources/app-catalog"),
         ],
     ),
     // Vapor HTTP layer: controllers, middleware, server

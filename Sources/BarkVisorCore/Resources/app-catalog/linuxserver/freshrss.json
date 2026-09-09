@@ -1,0 +1,64 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Apps",
+  "compose": "services:\n  freshrss:\n    image: lscr.io/linuxserver/freshrss:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 80:80\nvolumes:\n  config:\n",
+  "description": "Self-hosted feed reader.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/freshrss-banner.png",
+  "id": "freshrss",
+  "image": "lscr.io/linuxserver/freshrss:latest",
+  "name": "FreshRSS",
+  "ports": [
+    {
+      "container": 80,
+      "host": 80,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "RSS reader",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    }
+  ]
+}

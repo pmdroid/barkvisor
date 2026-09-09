@@ -201,6 +201,14 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
+            if LinuxServerAppCatalog.isOrigin(repo.url) {
+                let data = try LinuxServerAppCatalog.encodedDocument()
+                try await ingestCatalog(
+                    data, repositoryID: repositoryID, repoName: repo.name, repoType: repo.repoType,
+                    persistLastGood: false, distribute: false,
+                )
+                return
+            }
             if HomeCatalogOrigin.shouldFetchRemote(
                 url: repo.url, memberCatalogFetchDisabled: memberCatalogFetchDisabled,
             ) {

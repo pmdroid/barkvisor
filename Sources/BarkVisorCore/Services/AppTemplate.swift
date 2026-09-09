@@ -47,6 +47,10 @@ public enum AppTemplate {
         "WEBUI_PORT",
         "TORRENTING_PORT",
         "GITEA__server__SSH_PORT",
+        "JELLYFIN_PublishedServerUrl",
+        "PROXY_DOMAIN",
+        "HASHED_PASSWORD",
+        "SUDO_PASSWORD_HASH",
     ]
     private static let advancedEnvNames: Set<String> = ["UMASK"]
     private static let deviceEnvNames: Set<String> = ["PUID", "PGID", "TZ"]
@@ -177,6 +181,7 @@ public enum AppTemplate {
         entry: AppCatalogEntryDTO,
         values: [String: String],
         extraFolders: [AppTemplateExtraFolder] = [],
+        lanBind: String? = nil,
     ) throws -> AppTemplateRender {
         let fields = entry.fields ?? Self.fields(from: entry)
         try validate(fields, values: values)
@@ -214,6 +219,7 @@ public enum AppTemplate {
             if !shared.contains(host) { shared.append(host) }
         }
         applyPortLockstep(entry: entry, ports: ports, env: &env)
+        applyPublishedServerURL(entry: entry, ports: ports, lanBind: lanBind, env: &env)
         let compose = try rewriteCompose(
             entry.compose,
             binds: binds,
@@ -251,7 +257,10 @@ public enum AppTemplate {
             "kind": WorkloadSpec.kindApplication,
             "metadata": [
                 "name": name,
-                "labels": ["catalog": entry.id],
+                "labels": [
+                    "catalog": entry.id,
+                    "catalog-source": entry.source,
+                ],
             ],
             "spec": spec,
         ]
@@ -422,8 +431,9 @@ public enum AppTemplate {
             return path.contains("movie") || path == "/tv" || path.contains("/tv")
         }
         if path.contains("download") { return false }
+        if id == "jellyfin" { return false }
         if id.contains("sonarr") || id.contains("radarr") || id.contains("lidarr"),
-           path == "/tv" || path.contains("/tv") {
+           path == "/tv" || path.contains("/tv") || path.contains("movie") {
             return false
         }
         return true
@@ -431,7 +441,7 @@ public enum AppTemplate {
 
     private static func pathLabel(_ leaf: String) -> String {
         let lower = leaf.lowercased()
-        if lower == "tv" { return "TV" }
+        if lower == "tv" || lower == "tvshows" { return "TV" }
         if lower == "movies" { return "Movies" }
         if lower == "upload" { return "Library upload" }
         return leaf.replacingOccurrences(of: "_", with: " ").capitalized
@@ -517,6 +527,21 @@ public enum AppTemplate {
                 env["GITEA__server__SSH_PORT"] = String(ssh.host)
             }
         }
+    }
+
+    private static func applyPublishedServerURL(
+        entry: AppCatalogEntryDTO,
+        ports: [String: (host: Int, proto: String)],
+        lanBind: String?,
+        env: inout [String: String],
+    ) {
+        let names = Set(entry.envSchema.map(\.name))
+        guard names.contains("JELLYFIN_PublishedServerUrl") else { return }
+        let lan = (lanBind ?? HostInfoService.lanBindIPv4())?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !lan.isEmpty, let ui = uiPort(entry, ports: ports) else { return }
+        let scheme = entry.ui.scheme.isEmpty ? "http" : entry.ui.scheme
+        env["JELLYFIN_PublishedServerUrl"] = "\(scheme)://\(lan):\(ui)"
     }
 
     private static func uiPort(

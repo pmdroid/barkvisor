@@ -134,6 +134,7 @@ public struct AppCatalogDocument: Codable, Equatable, Sendable {
 
 public struct AppCatalogEntryDTO: Codable, Equatable, Sendable {
     public static let bigBearSource = "big-bear-universal"
+    public static let linuxServerSource = "linuxserver"
 
     public var id: String
     public var name: String

@@ -1,0 +1,98 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Download",
+  "compose": "services:\n  qbittorrent:\n    image: lscr.io/linuxserver/qbittorrent:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n      - WEBUI_PORT=8080\n      - TORRENTING_PORT=6881\n    volumes:\n      - config:/config\n      - downloads:/downloads\n    ports:\n      - 8080:8080\n      - 6881:6881\n      - 6881:6881/udp\nvolumes:\n  config:\n  downloads:\n",
+  "description": "Download torrents with a web UI.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    },
+    {
+      "default": "8080",
+      "kind": "text",
+      "name": "WEBUI_PORT",
+      "required": true
+    },
+    {
+      "default": "6881",
+      "kind": "text",
+      "name": "TORRENTING_PORT",
+      "required": true
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/qbittorrent-icon.png",
+  "id": "qbittorrent",
+  "image": "lscr.io/linuxserver/qbittorrent:latest",
+  "name": "qBittorrent",
+  "ports": [
+    {
+      "container": 8080,
+      "host": 8080,
+      "protocol": "tcp",
+      "ui": true
+    },
+    {
+      "container": 6881,
+      "description": "Torrent TCP",
+      "host": 6881,
+      "protocol": "tcp",
+      "ui": false
+    },
+    {
+      "container": 6881,
+      "description": "Torrent UDP",
+      "host": 6881,
+      "protocol": "udp",
+      "ui": false
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Torrent client",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {
+      "before_install": "Media folders on this Device must be owned by PUID."
+    }
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/downloads",
+      "description": "Downloads",
+      "kind": "folder",
+      "name": "downloads"
+    }
+  ]
+}

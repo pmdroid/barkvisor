@@ -1,0 +1,96 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Media",
+  "compose": "services:\n  plex:\n    image: lscr.io/linuxserver/plex:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n      - VERSION=docker\n      - PLEX_CLAIM=\n    volumes:\n      - config:/config\n      - movies:/movies\n      - tv:/tv\n    ports:\n      - 32400:32400\nvolumes:\n  config:\n  movies:\n  tv:\n",
+  "description": "Organize and stream a media library.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    },
+    {
+      "default": "docker",
+      "kind": "select",
+      "name": "VERSION",
+      "options": [
+        "docker",
+        "latest",
+        "public"
+      ],
+      "required": false
+    },
+    {
+      "default": "",
+      "description": "Claim token from plex.tv/claim",
+      "kind": "secret",
+      "name": "PLEX_CLAIM",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/plex-icon.png",
+  "id": "plex",
+  "image": "lscr.io/linuxserver/plex:latest",
+  "name": "Plex",
+  "ports": [
+    {
+      "container": 32400,
+      "host": 32400,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Media server",
+  "ui": {
+    "basePathEnv": [],
+    "path": "/web",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {
+      "before_install": "Media folders on this Device must be owned by PUID."
+    }
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/movies",
+      "description": "Movies",
+      "kind": "folder",
+      "name": "movies"
+    },
+    {
+      "container": "/tv",
+      "description": "TV",
+      "kind": "folder",
+      "name": "tv"
+    }
+  ]
+}

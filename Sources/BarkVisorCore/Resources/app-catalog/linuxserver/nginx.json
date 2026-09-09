@@ -1,0 +1,71 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Apps",
+  "compose": "services:\n  nginx:\n    image: lscr.io/linuxserver/nginx:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 80:80\n      - 443:443\nvolumes:\n  config:\n",
+  "description": "Serve sites from /config.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/nginx-logo.png",
+  "id": "nginx",
+  "image": "lscr.io/linuxserver/nginx:latest",
+  "name": "Nginx",
+  "ports": [
+    {
+      "container": 80,
+      "host": 80,
+      "protocol": "tcp",
+      "ui": true
+    },
+    {
+      "container": 443,
+      "description": "HTTPS",
+      "host": 443,
+      "protocol": "tcp",
+      "ui": false
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Web server",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    }
+  ]
+}

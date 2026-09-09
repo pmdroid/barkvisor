@@ -1,0 +1,64 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Media",
+  "compose": "services:\n  prowlarr:\n    image: lscr.io/linuxserver/prowlarr:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 9696:9696\nvolumes:\n  config:\n",
+  "description": "Manage indexers for Sonarr and Radarr.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/prowlarr.png",
+  "id": "prowlarr",
+  "image": "lscr.io/linuxserver/prowlarr:latest",
+  "name": "Prowlarr",
+  "ports": [
+    {
+      "container": 9696,
+      "host": 9696,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Indexer manager",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    }
+  ]
+}
