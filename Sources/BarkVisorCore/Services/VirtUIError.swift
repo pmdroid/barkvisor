@@ -35,6 +35,8 @@ public enum BarkVisorError: Error, LocalizedError {
 
     // HTTP-semantic errors (used by services to signal status without importing Vapor)
     case badRequest(String)
+    case helperMissing(String)
+    case osUnsupported(String)
     case notFound(String? = nil)
     case unauthorized(String? = nil)
     case forbidden(String)
@@ -89,6 +91,8 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .unsupportedFeature(feature):
             return PlatformCapabilities.unsupportedMessage(feature)
         case let .badRequest(msg): return msg
+        case let .helperMissing(msg): return msg
+        case let .osUnsupported(msg): return msg
         case let .notFound(msg): return msg ?? "Not found"
         case let .unauthorized(msg): return msg ?? "Unauthorized"
         case let .forbidden(msg): return msg
@@ -129,6 +133,8 @@ public enum BarkVisorError: Error, LocalizedError {
         case .timeout: return "timeout"
         case let .unsupportedFeature(feature): return feature.errorCode
         case .badRequest: return "bad_request"
+        case .helperMissing: return "helper_missing"
+        case .osUnsupported: return "os_unsupported"
         case .notFound: return "not_found"
         case .unauthorized: return "unauthorized"
         case .forbidden: return "forbidden"
@@ -144,8 +150,8 @@ public enum BarkVisorError: Error, LocalizedError {
     /// HTTP status code for the error middleware to use.
     public var httpStatus: UInt {
         switch self {
-        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType, .invalidBridgeName,
-             .updateFailed:
+        case .badRequest, .helperMissing, .osUnsupported, .invalidArgument, .invalidPortForward,
+             .unknownVMType, .invalidBridgeName, .updateFailed:
             return 400
         case .unauthorized:
             return 401

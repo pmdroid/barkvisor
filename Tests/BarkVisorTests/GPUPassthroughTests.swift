@@ -252,7 +252,7 @@ struct GPUPassthroughTests {
         let vm = makeVM(gpu: [stored], state: "running")
         try await pool.write { db in
             try Disk(
-                id: vm.bootDiskId,
+                id: vm.bootDiskId ?? "boot",
                 name: "boot",
                 path: tmp.appendingPathComponent("boot.qcow2").path,
                 sizeBytes: 1_024,

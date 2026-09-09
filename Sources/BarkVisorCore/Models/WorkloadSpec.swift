@@ -7,6 +7,10 @@ import Foundation
 public struct WorkloadSpec: Codable, Equatable, Sendable {
     public static let currentAPIVersion = "barkvisor.dev/v1"
     public static let kindVirtualMachine = "VirtualMachine"
+    public static let kindApplication = "Application"
+    public static let runtimeDevice = "device"
+    public static let runtimeWorkload = "workload"
+    public static let applicationGuestType = "application"
 
     public var apiVersion: String
     public var kind: String
@@ -68,11 +72,14 @@ public struct WorkloadSpecBody: Equatable, Sendable {
     public var sharedPaths: [String]?
     /// Optional HTTP/TCP guest probes (PAS-65). Omitted = process-state health only.
     public var health: WorkloadHealthSpec?
-    /// `house` | `agent`. Omitted = house (PAS-268).
     public var workloadClass: String?
+    public var runtime: String?
+    public var compose: String?
+    public var env: [String: String]?
+    public var runtimeWorkloadId: String?
 
     public init(
-        resources: WorkloadResources,
+        resources: WorkloadResources = WorkloadResources(cpu: 0, memoryMb: 0),
         arch: String? = nil,
         guestType: String? = nil,
         osFamily: String? = nil,
@@ -88,6 +95,10 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         sharedPaths: [String]? = nil,
         health: WorkloadHealthSpec? = nil,
         workloadClass: String? = nil,
+        runtime: String? = nil,
+        compose: String? = nil,
+        env: [String: String]? = nil,
+        runtimeWorkloadId: String? = nil,
     ) {
         self.resources = resources
         self.arch = arch
@@ -105,6 +116,10 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         self.sharedPaths = sharedPaths
         self.health = health
         self.workloadClass = workloadClass
+        self.runtime = runtime
+        self.compose = compose
+        self.env = env
+        self.runtimeWorkloadId = runtimeWorkloadId
     }
 }
 
@@ -112,11 +127,13 @@ extension WorkloadSpecBody: Codable {
     enum CodingKeys: String, CodingKey {
         case resources, arch, guestType, osFamily, machine, firmware, bootOrder
         case disks, networks, cloudInit, usb, gpu, display, sharedPaths, health, workloadClass
+        case runtime, compose, env, runtimeWorkloadId
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        resources = try c.decode(WorkloadResources.self, forKey: .resources)
+        resources = try c.decodeIfPresent(WorkloadResources.self, forKey: .resources)
+            ?? WorkloadResources(cpu: 0, memoryMb: 0)
         arch = try c.decodeIfPresent(String.self, forKey: .arch)
         guestType = try c.decodeIfPresent(String.self, forKey: .guestType)
         osFamily = try c.decodeIfPresent(String.self, forKey: .osFamily)
@@ -132,6 +149,10 @@ extension WorkloadSpecBody: Codable {
         sharedPaths = try c.decodeIfPresent([String].self, forKey: .sharedPaths)
         health = try c.decodeIfPresent(WorkloadHealthSpec.self, forKey: .health)
         workloadClass = try c.decodeIfPresent(String.self, forKey: .workloadClass)
+        runtime = try c.decodeIfPresent(String.self, forKey: .runtime)
+        compose = try c.decodeIfPresent(String.self, forKey: .compose)
+        env = try c.decodeIfPresent([String: String].self, forKey: .env)
+        runtimeWorkloadId = try c.decodeIfPresent(String.self, forKey: .runtimeWorkloadId)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -152,6 +173,10 @@ extension WorkloadSpecBody: Codable {
         try c.encodeIfPresent(sharedPaths, forKey: .sharedPaths)
         try c.encodeIfPresent(health, forKey: .health)
         try c.encodeIfPresent(workloadClass, forKey: .workloadClass)
+        try c.encodeIfPresent(runtime, forKey: .runtime)
+        try c.encodeIfPresent(compose, forKey: .compose)
+        try c.encodeIfPresent(env, forKey: .env)
+        try c.encodeIfPresent(runtimeWorkloadId, forKey: .runtimeWorkloadId)
     }
 }
 

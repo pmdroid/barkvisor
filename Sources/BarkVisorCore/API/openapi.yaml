@@ -2813,6 +2813,26 @@ components:
           type: integer
         bootDiskId:
           type: string
+          nullable: true
+        kind:
+          type: string
+        runtime:
+          type: string
+          nullable: true
+        openUrl:
+          type: string
+          nullable: true
+        publishedPorts:
+          type: array
+          nullable: true
+          items:
+            type: object
+        image:
+          type: string
+          nullable: true
+        digest:
+          type: string
+          nullable: true
         isoId:
           type: string
           nullable: true
@@ -3099,6 +3119,7 @@ components:
           example: barkvisor.dev/v1
         kind:
           type: string
+          enum: [VirtualMachine, Application]
           example: VirtualMachine
         metadata:
           $ref: "#/components/schemas/WorkloadMetadata"
@@ -3192,8 +3213,25 @@ components:
 
     WorkloadSpecBody:
       type: object
-      required: [resources]
       properties:
+        runtime:
+          type: string
+          enum: [device, workload]
+          nullable: true
+        compose:
+          type: string
+          nullable: true
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        runtimeWorkloadId:
+          type: string
+          nullable: true
+        workloadClass:
+          type: string
+          nullable: true
         resources:
           type: object
           required: [cpu, memoryMb]
@@ -3497,6 +3535,7 @@ components:
             - whpx
             - vfio
             - gpuPassthrough
+            - dockerEngine
         supported:
           type: boolean
         reasonCode:
@@ -4350,6 +4389,9 @@ components:
         vfio:
           type: boolean
           description: IOMMU groups exist and vfio-pci (or /dev/vfio/vfio) is present.
+        dockerEngine:
+          type: boolean
+          description: docker compose v2 is available on this Device.
 
     HomePlacementScoreRequest:
       type: object

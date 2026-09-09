@@ -67,7 +67,12 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var state: String
     public var cpuCount: Int
     public var memoryMb: Int
-    public var bootDiskId: String
+    public var bootDiskId: String?
+    public var kind: String
+    public var runtime: String?
+    public var runtimeWorkloadId: String?
+    public var composeYaml: String?
+    public var composeProject: String?
     public var isoIds: String? // JSON-encoded [String]
     public var networkId: String?
     public var cloudInitPath: String?
@@ -110,7 +115,12 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         state: String,
         cpuCount: Int,
         memoryMb: Int,
-        bootDiskId: String,
+        bootDiskId: String? = nil,
+        kind: String = WorkloadSpec.kindVirtualMachine,
+        runtime: String? = nil,
+        runtimeWorkloadId: String? = nil,
+        composeYaml: String? = nil,
+        composeProject: String? = nil,
         isoIds: String? = nil,
         networkId: String?,
         cloudInitPath: String?,
@@ -145,6 +155,11 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.cpuCount = cpuCount
         self.memoryMb = memoryMb
         self.bootDiskId = bootDiskId
+        self.kind = kind
+        self.runtime = runtime
+        self.runtimeWorkloadId = runtimeWorkloadId
+        self.composeYaml = composeYaml
+        self.composeProject = composeProject
         self.isoIds = isoIds
         self.networkId = networkId
         self.cloudInitPath = cloudInitPath
@@ -173,11 +188,20 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.updatedAt = updatedAt
     }
 
+    public var isApplication: Bool {
+        kind == WorkloadSpec.kindApplication
+    }
+
     /// Refresh stored `specJson` from columns. Bump generation on user-facing writes.
     public mutating func syncSpecProjection(bumpGeneration: Bool = true) {
+        let previousEnv = WorkloadSpecJSON.decode(specJson)?.spec.env
         if bumpGeneration {
             specGeneration += 1
         }
-        specJson = WorkloadSpecJSON.encode(WorkloadSpecProjector.fromVM(self))
+        var spec = WorkloadSpecProjector.fromVM(self)
+        if spec.kind == WorkloadSpec.kindApplication, spec.spec.env == nil {
+            spec.spec.env = previousEnv
+        }
+        specJson = WorkloadSpecJSON.encode(spec)
     }
 }
