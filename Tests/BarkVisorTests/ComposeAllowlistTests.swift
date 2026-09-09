@@ -37,14 +37,21 @@ struct ComposeAllowlistTests {
           x:
             image: ${FOO}
         """
-        let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        let keyed = """
+        services:
+          ${S}:
+            image: alpine
+        """
+        for document in [yaml, keyed] {
+            let error = #expect(throws: BarkVisorError.self) {
+                _ = try ComposeAllowlist.render(yaml: document, workloadID: "id", stateDir: stateDir)
+            }
+            guard case let .badRequest(message) = error else {
+                Issue.record("expected badRequest")
+                continue
+            }
+            #expect(message == "unsupported compose feature: interpolation")
         }
-        guard case let .badRequest(message) = error else {
-            Issue.record("expected badRequest")
-            return
-        }
-        #expect(message == "unsupported compose feature: interpolation")
     }
 
     @Test func `environment list without values is rejected`() {
