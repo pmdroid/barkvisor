@@ -86,6 +86,9 @@ public enum ApplicationLifecycleService {
     public static func restart(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
+        let yaml = vm.composeYaml ?? ""
+        let render = try prepare(id: vm.id, composeYaml: yaml, env: decodeEnv(vm), dataDir: dataDir)
+        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)

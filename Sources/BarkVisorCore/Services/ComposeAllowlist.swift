@@ -131,7 +131,10 @@ public enum ComposeAllowlist {
             return
         }
         if let object = asObject(value) {
-            for nested in object.values {
+            for (key, nested) in object {
+                if key.contains("$") {
+                    throw BarkVisorError.badRequest("unsupported compose feature: interpolation")
+                }
                 try rejectInterpolation(nested)
             }
         }
