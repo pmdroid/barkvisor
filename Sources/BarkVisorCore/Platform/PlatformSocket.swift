@@ -20,6 +20,16 @@ public enum PlatformSocket {
         #endif
     }
 
+    public static var datagram: Int32 {
+        #if os(Linux)
+            return Int32(SOCK_DGRAM.rawValue)
+        #elseif os(Windows)
+            return 2
+        #else
+            return SOCK_DGRAM
+        #endif
+    }
+
     public static var unixFamily: Int32 {
         #if os(Windows)
             return 1
