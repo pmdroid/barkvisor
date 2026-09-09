@@ -67,10 +67,20 @@ jobs:
             Write-Error "BarkVisorApp.exe not found under .build"
             exit 1
           }
-          powershell -ExecutionPolicy Bypass -File scripts\stage-windows-payload.ps1 `
+          & scripts\stage-windows-payload.ps1 `
             -SourceDir $source `
             -FrontendDir "frontend\dist" `
             -OutDir "build\windows-payload"
+          foreach ($name in @("BarkVisor.exe", "swiftCore.dll", "msvcp140.dll", "vcruntime140.dll")) {
+            if (-not (Test-Path -LiteralPath (Join-Path "build\windows-payload" $name))) {
+              Write-Error "payload missing $name"
+              exit 1
+            }
+          }
+          if (-not (Get-ChildItem -LiteralPath "build\windows-payload" -Filter "*Concurrency*.dll" -File)) {
+            Write-Error "payload missing Swift concurrency DLL"
+            exit 1
+          }
         shell: pwsh
 
       - name: Zip payload

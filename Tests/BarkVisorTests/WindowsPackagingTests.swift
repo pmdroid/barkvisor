@@ -50,6 +50,20 @@ struct WindowsPackagingTests {
         #expect(build.contains("-arch x64"))
     }
 
+    @Test func `windows payload stages swift runtime and vcruntime dlls`() throws {
+        let stage = try read("scripts/stage-windows-payload.ps1")
+        #expect(stage.contains("swiftCore.dll"))
+        #expect(stage.contains("msvcp140.dll"))
+        #expect(stage.contains("vcruntime140.dll"))
+        #expect(stage.contains("*Concurrency*.dll"))
+        #expect(stage.contains("Runtimes"))
+        #expect(stage.contains("missing runtime DLL"))
+        #expect(stage.contains("VC\\Redist\\MSVC"))
+        let workflow = try read(".github/workflows/windows-package.yml")
+        #expect(workflow.contains("stage-windows-payload.ps1"))
+        #expect(workflow.contains("swiftCore.dll"))
+    }
+
     @Test func `install script fails without qemu and uses localsystem`() throws {
         let install = try read("packaging/windows/install.ps1")
         #expect(install.contains("ProgramFiles"))
