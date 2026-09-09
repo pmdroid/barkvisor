@@ -251,6 +251,11 @@ export interface VM {
   publishedPorts?: PublishedPort[] | null
   image?: string | null
   digest?: string | null
+  catalogDigest?: string | null
+  updateAvailable?: boolean | null
+  volumeRoots?: string[] | null
+  updateTaskID?: string | null
+  updateProgress?: number | null
   isoId: string | null
   isoIds: string[] | null
   networkId: string | null
@@ -453,7 +458,7 @@ export interface ImageRepository {
   updatedAt: string
 }
 
-export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate' | 'ollamaPull' // systemUpdate kept for old events
+export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate' | 'ollamaPull' | 'appUpdate'
 
 export interface TaskEvent {
   taskID: string

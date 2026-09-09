@@ -17,6 +17,8 @@ import {
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
+import { shortDigest } from '../utils/composeLogs'
+import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
@@ -40,6 +42,7 @@ import ConsolePanel from '../components/ConsolePanel.vue'
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
 import LogsPanel from '../components/LogsPanel.vue'
+import ComposeLogsPanel from '../components/ComposeLogsPanel.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -1309,6 +1312,53 @@ const guestMacCopy = computed(() =>
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
 const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
+const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
+const updatingApp = ref(false)
+
+watch(isApp, (app) => {
+  if (app && (tab.value === 'console' || tab.value === 'vnc' || tab.value === 'metrics')) {
+    tab.value = 'overview'
+  }
+})
+
+watch([isApp, () => vm.value?.id, hostId], () => {
+  if (!isApp.value || !vm.value) return
+  void refreshAppDigest()
+})
+
+async function refreshAppDigest() {
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.checkAppUpdate(device, vmId.value)
+      return
+    }
+    await store.checkAppUpdate(vmId.value)
+  } catch {
+    /* keep last known digest */
+  }
+}
+
+async function updateAppImage() {
+  updatingApp.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      const taskID = await homeWorkloads.updateApp(device, vmId.value)
+      await pollAppUpdate(taskID, { path: deviceTaskPath(device, taskID) })
+      await homeWorkloads.refreshOne(device, vmId.value)
+      return
+    }
+    const taskID = await store.updateApp(vmId.value)
+    await pollAppUpdate(taskID)
+    await store.fetchOne(vmId.value)
+  } finally {
+    updatingApp.value = false
+    stopAppUpdatePoll()
+  }
+}
 
 function openAppUi() {
   const url = openUi.value
@@ -1318,7 +1368,7 @@ function openAppUi() {
 const toolbarSub = computed(() => {
   const v = vm.value
   if (!v) return ''
-  const type = v.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+  const type = isApplicationWorkload(v) ? 'App' : (v.vmType.startsWith('windows') ? 'Windows' : 'Linux')
   const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
   return device ? `${type} · ${devicesStore.deviceLabel(device)}` : type
 })
@@ -1365,11 +1415,13 @@ const healthBanner = computed(() => {
         <span>{{ WORKLOADS_NAV_LABEL }}</span>
       </button>
       <h1>{{ vm.name }}</h1>
+      <span v-if="isApp" class="badge badge-green">App</span>
       <span
         class="status-pill"
         :class="healthPillClass(vmHealth(vm))"
         :title="vm.status?.healthError || undefined"
       >{{ healthLabel(vmHealth(vm)) }}</span>
+      <span v-if="isApp && vm.updateAvailable" class="status-pill degraded">Update available</span>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
         <label
@@ -1392,6 +1444,11 @@ const healthBanner = computed(() => {
           variant="primary"
           @click="openAppUi"
         >Open UI</AppButton>
+        <AppButton
+          v-if="isApp && vm.updateAvailable"
+          :disabled="controlDisabled || updatingApp"
+          @click="action('update', () => updateAppImage())"
+        >Update</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
@@ -1441,6 +1498,15 @@ const healthBanner = computed(() => {
           </div>
         </div>
         <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
+
+        <div v-if="isApp && vm.updateAvailable" class="ops-banner amber">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+          <div>
+            <div class="ops-banner-title">Catalog image is newer than the running image</div>
+            <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
+          </div>
+          <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
+        </div>
 
         <div v-if="vm.pendingChanges" class="ops-banner amber">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
@@ -1842,9 +1908,20 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
     />
-    <div v-if="tab === 'logs' && isApp" class="sheet">
-      <p class="dim-text">Logs for this app are not available yet.</p>
+    <div v-if="tab === 'logs' && isApp && vm.updateAvailable" class="ops-banner amber">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+      <div>
+        <div class="ops-banner-title">Catalog image is newer than the running image</div>
+        <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
+      </div>
+      <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
     </div>
+    <ComposeLogsPanel
+      v-if="tab === 'logs' && isApp"
+      :key="`compose-logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
+      :vm-id="vmId"
+      :device="isMemberDetail ? memberDevice : undefined"
+    />
     <LogsPanel
       v-else-if="tab === 'logs'"
       :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"

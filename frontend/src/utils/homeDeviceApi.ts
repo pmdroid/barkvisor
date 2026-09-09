@@ -77,9 +77,13 @@ export function deviceVmPath(device: DeviceApiTarget, vmId: string): string {
 export function deviceVmActionPath(
   device: DeviceApiTarget,
   vmId: string,
-  action: 'start' | 'stop' | 'restart',
+  action: 'start' | 'stop' | 'restart' | 'update' | 'check-update',
 ): string {
   return `${deviceVmPath(device, vmId)}/${action}`
+}
+
+export function deviceVmLogsPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/logs`
 }
 
 export function deviceVmSpecPath(device: DeviceApiTarget, vmId: string): string {
