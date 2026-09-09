@@ -41,4 +41,23 @@ struct ComposeRuntimeTests {
             .appendingPathComponent(".env")
         #expect(!FileManager.default.fileExists(atPath: envURL.path))
     }
+
+    @Test func `writeProject rejects compose control env keys`() {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-compose-env-ctl-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeRuntime.writeProject(
+                id: "app-1",
+                yaml: "services: {}\n",
+                env: ["COMPOSE_ENV_FILES": "/etc/passwd"],
+                dataDir: dataDir,
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "invalid compose env key")
+    }
 }

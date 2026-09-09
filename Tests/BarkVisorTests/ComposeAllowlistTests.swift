@@ -31,6 +31,24 @@ struct ComposeAllowlistTests {
         #expect(!render.yaml.contains("privileged"))
     }
 
+    @Test func `environment list without values is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            environment:
+              - HOME
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: environment")
+    }
+
     @Test func `env_file long form is rejected`() {
         let yaml = """
         services:
