@@ -124,14 +124,9 @@ final class ApplicationLifecycleServiceTests {
             )
         }
         ComposeRuntime.runner = SucceedingComposeRunner()
+        let inspect = RestartInspect()
         DockerInspect.jsonForContainers = { names in
-            let ports: [String: Any] = [
-                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "8080"]],
-            ]
-            let objects: [[String: Any]] = names.map { _ in
-                ["NetworkSettings": ["Ports": ports]]
-            }
-            return try JSONSerialization.data(withJSONObject: objects)
+            try inspect.data(for: names)
         }
         defer {
             HostInfoService.lanBindIPv4Provider = nil
@@ -152,25 +147,31 @@ final class ApplicationLifecycleServiceTests {
           whoami:
             image: traefik/whoami
             ports:
-              - "8080:80"
+              - "58080:80"
+              - "51900:1900/udp"
         """
         let seed = vm
         try await db.write { db in try seed.insert(db) }
 
         try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
         let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
-        #expect(afterStart.contains { $0.hostPort == 8_080 && $0.workloadId == "whoami-restart" })
+        #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+        #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
 
-        DockerInspect.jsonForContainers = { _ in Data("[]".utf8) }
+        inspect.fail = true
+        DockerInspect.jsonForContainers = { names in
+            try inspect.data(for: names)
+        }
         do {
             try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
             Issue.record("expected restart inspect failure")
         } catch {
             let claims = try await db.read { db in try PortRegistry.claims(db: db) }
-            #expect(claims.isEmpty)
+            #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+            #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
             #expect(vm.decodedPortForwards.isEmpty)
             try await PortRegistry.assertAvailable(
-                [PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80)],
+                [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
                 db: db,
             )
         }
@@ -270,6 +271,22 @@ private func applicationVM(id: String) -> VM {
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
     )
+}
+
+private final class RestartInspect: @unchecked Sendable {
+    var fail = false
+
+    func data(for names: [String]) throws -> Data {
+        if fail { return Data("[]".utf8) }
+        let ports: [String: Any] = [
+            "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58080"]],
+            "1900/udp": [["HostIp": "192.168.8.10", "HostPort": "51900"]],
+        ]
+        let objects: [[String: Any]] = names.map { _ in
+            ["NetworkSettings": ["Ports": ports]]
+        }
+        return try JSONSerialization.data(withJSONObject: objects)
+    }
 }
 
 private struct SucceedingComposeRunner: ComposeCommandRunning {
