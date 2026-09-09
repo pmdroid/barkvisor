@@ -150,6 +150,25 @@ BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
 
 If VMs fail to boot with firmware errors, verify the firmware files exist at one of these paths.
 
+### Windows setup: This PC must support Secure Boot
+
+Windows 11 setup can stop with **This PC must support Secure Boot**. Continue from the console (VNC) on the Workload:
+
+1. On that screen, press **Shift+F10**. A Command Prompt opens.
+2. Run:
+
+```bat
+reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f
+reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f
+```
+
+3. Close the Command Prompt.
+4. In setup, go **Back**, then continue.
+
+`BypassTPMCheck` is only needed if setup also complains about TPM. The TPM device on the Workload can stay enabled.
+
+If Shift+F10 does not reach the guest, click the console first so it has keyboard focus.
+
 ### VM log files
 
 Per-VM stdout/stderr output is captured in:

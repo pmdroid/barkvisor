@@ -49,8 +49,7 @@ function applyPerfSettings(client: any) {
   // compressionLevel: 0–9 (higher = more zlib CPU, less bandwidth). Keep modest on weak hosts.
   client.compressionLevel = props.performanceMode ? 2 : 2
   client.scaleViewport = true
-  // Ask the guest (via ExtendedDesktopSize) to match the container — fewer pixels = less lag.
-  client.resizeSession = true
+  client.resizeSession = false
   client.clipViewport = false
   client.focusOnClick = true
   client.showDotCursor = false

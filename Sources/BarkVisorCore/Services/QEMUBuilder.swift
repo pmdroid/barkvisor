@@ -263,7 +263,12 @@ public enum QEMUBuilder {
         args += try isoArgs(isos: ctx.isos, windows: windows, diskFirst: diskFirst)
         args += try cloudInitArgs(spec: spec)
         args += try sharedFolderArgs(spec: spec)
-        let tpm = try tpmArgs(spec: spec, vmID: vmID, guestType: guestType)
+        let tpm = try tpmArgs(
+            spec: spec,
+            vmID: vmID,
+            guestType: guestType,
+            accelerator: backend.accelerator,
+        )
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
         let klass = try WorkloadClass.parse(spec.spec.workloadClass)
@@ -282,7 +287,11 @@ public enum QEMUBuilder {
             ctx.sockets,
             vdagentClipboard: QEMUChardev.supportsVdagent(binary: qemuBinary),
         )
-        args += displayAndInputArgs(spec: spec)
+        args += displayAndInputArgs(
+            spec: spec,
+            accelerator: backend.accelerator,
+            windows: windows,
+        )
         args += try usbPassthroughArgs(spec: spec)
         args += try gpuPassthroughArgs(spec: spec)
         args += try miscArgs(spec: spec, vmID: vmID)
@@ -392,8 +401,12 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func tpmArgs(spec: WorkloadSpec, vmID: String, guestType: String) throws
-        -> (args: [String], exe: URL?, swtpmArgs: [String]?, dir: URL?) {
+    private static func tpmArgs(
+        spec: WorkloadSpec,
+        vmID: String,
+        guestType: String,
+        accelerator: String,
+    ) throws -> (args: [String], exe: URL?, swtpmArgs: [String]?, dir: URL?) {
         guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
         let exe = try requireTPMEmulator()
         let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
@@ -407,15 +420,31 @@ public enum QEMUBuilder {
             "--tpm2",
             "--log", "level=20",
         ]
-        // aarch64 uses tpm-tis-device; x86_64 uses tpm-tis.
-        let isX86 = (try? GuestProfiles.require(guestType).isX86) == true
-        let tpmDevice = isX86 ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
-        return (tpmDeviceArgs(tpmSockPath: tpmSock.path, tpmDevice: tpmDevice), exe, swtpmArgs, tpmStateDir)
+        let profile = try GuestProfiles.require(guestType)
+        return (
+            tpmDeviceArgs(
+                tpmSockPath: tpmSock.path,
+                tpmDevice: tpmFrontendDevice(isX86: profile.isX86, accelerator: accelerator),
+            ),
+            exe,
+            swtpmArgs,
+            tpmStateDir,
+        )
+    }
+
+    static func tpmFrontendDevice(isX86: Bool, accelerator: String) -> String {
+        if isX86 {
+            return "tpm-tis,tpmdev=tpm0"
+        }
+        if accelerator == "hvf" {
+            return "tpm-tis-device,tpmdev=tpm0,ppi=off"
+        }
+        return "tpm-tis-device,tpmdev=tpm0"
     }
 
     static func tpmDeviceArgs(tpmSockPath: String, tpmDevice: String) -> [String] {
         [
-            "-chardev", "socket,id=chrtpm,path=\(tpmSockPath),reconnect=5",
+            "-chardev", "socket,id=chrtpm,path=\(tpmSockPath)",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", tpmDevice,
         ]
@@ -562,9 +591,16 @@ public enum QEMUBuilder {
         )
     }
 
-    private static func displayAndInputArgs(spec: WorkloadSpec) -> [String] {
+    static func displayAndInputArgs(
+        spec: WorkloadSpec,
+        accelerator: String,
+        windows: Bool,
+    ) -> [String] {
         let resolution = spec.spec.display?.resolution ?? "1280x800"
-        var args = ["-device", "ramfb"]
+        var args: [String] = []
+        if accelerator != "hvf" || windows {
+            args += ["-device", "ramfb"]
+        }
         if let (w, h) = try? validateResolution(resolution) {
             args += ["-device", "virtio-gpu-pci,xres=\(w),yres=\(h)"]
         } else {
@@ -689,7 +725,7 @@ public enum QEMUBuilder {
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
-                templateCandidates: PlatformQEMU.aavmfVarsCandidates,
+                templateCandidates: armVarsCandidates(),
                 zeroFillBytes: 67_108_864,
             )
         case .edk2ARM64:
@@ -697,7 +733,7 @@ public enum QEMUBuilder {
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
-                templateCandidates: PlatformQEMU.aavmfVarsCandidates,
+                templateCandidates: armVarsCandidates(),
                 zeroFillBytes: 67_108_864,
             )
         case .edk2X86:
@@ -876,9 +912,24 @@ public enum QEMUBuilder {
         return try resolveEDK2X86_64()
     }
 
+    private static func armVarsCandidates() -> [String] {
+        let resolved = ["AAVMF_VARS.fd", "AAVMF_VARS.ms.fd", "edk2-arm-vars.fd"].compactMap {
+            BundleResolver.qemuResource($0)?.path
+        }
+        return resolved + PlatformQEMU.aavmfVarsCandidates
+    }
+
     private static func resolveAAVMFSecureBoot() throws -> URL {
         // Bundled / Homebrew share via BundleResolver, then distro AAVMF paths
+        #if os(macOS)
+            if let url = BundleResolver.qemuResource("edk2-aarch64-code.fd") {
+                return url
+            }
+        #endif
         if let url = BundleResolver.qemuResource("AAVMF_CODE.secboot.fd") {
+            return url
+        }
+        if let url = BundleResolver.qemuResource("edk2-aarch64-secure-code.fd") {
             return url
         }
         if let found = PlatformQEMU.aavmfSecureBootCandidates.first(where: {
@@ -886,9 +937,7 @@ public enum QEMUBuilder {
         }) {
             return URL(fileURLWithPath: found)
         }
-        throw BarkVisorError.firmwareNotFound(
-            "AAVMF secure-boot firmware not found. \(PlatformQEMU.aavmfSecureBootInstallHint)",
-        )
+        return try resolveEDK2ARM64()
     }
 
     package static func swtpmUnixIOSupported(os: String = PlatformHost.platformName) -> Bool {
