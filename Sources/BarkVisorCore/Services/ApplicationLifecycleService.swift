@@ -256,6 +256,7 @@ public enum ApplicationLifecycleService {
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            vm.setPortForwards(nil)
             try await setState(&vm, state: "error", error: message, db: db)
             throw error
         }
