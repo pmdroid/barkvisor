@@ -21,6 +21,7 @@ struct VMResponse: Content {
     let runtime: String?
     let openUrl: String?
     let publishedPorts: [PublishedPort]?
+    let ingress: WorkloadIngress?
     let image: String?
     let digest: String?
     let catalogDigest: String?
@@ -88,7 +89,12 @@ struct VMResponse: Content {
             }
             : []
         self.publishedPorts = published.isEmpty ? nil : published
-        self.openUrl = ApplicationLifecycleService.openURL(from: published)
+        self.ingress = spec.spec.ingress
+        self.openUrl = ApplicationLifecycleService.openURL(
+            id: vm.id,
+            ports: published,
+            spec: spec,
+        )
         self.image = vm.isApplication
             ? (vm.imageRef ?? ComposeAllowlist.firstImage(yaml: vm.composeYaml))
             : nil

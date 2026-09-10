@@ -88,6 +88,10 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         let token: String
         if let authHeader = request.headers.bearerAuthorization {
             token = authHeader.token
+        } else if AppIngress.isProxyPath(request.url.path),
+                  let cookie = request.cookies[AppIngress.cookieName]?.string,
+                  !cookie.isEmpty {
+            token = cookie
         } else {
             throw Abort(.unauthorized, reason: "Missing authorization header")
         }

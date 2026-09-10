@@ -104,6 +104,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             vmManager: deps.vmManager, healthProbes: deps.healthProbes,
         ),
     )
+    try protected.register(collection: AppIngressController())
     let ollama = OllamaController(backgroundTasks: deps.backgroundTasks)
     try protected.register(collection: ollama)
     try protected.register(

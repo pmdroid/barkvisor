@@ -30,6 +30,9 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('token', nextToken)
     if (nextRefresh) localStorage.setItem(REFRESH_TOKEN_KEY, nextRefresh)
     else localStorage.removeItem(REFRESH_TOKEN_KEY)
+    if (typeof document !== 'undefined') {
+      document.cookie = `barkvisor=${nextToken}; Path=/; SameSite=Lax`
+    }
   }
 
   function persistRole(next: UserRole) {
@@ -46,6 +49,9 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token')
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_ROLE_KEY)
+    if (typeof document !== 'undefined') {
+      document.cookie = 'barkvisor=; Path=/; Max-Age=0; SameSite=Lax'
+    }
   }
 
   async function fetchMe(): Promise<void> {

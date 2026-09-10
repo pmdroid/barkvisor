@@ -2935,6 +2935,9 @@ components:
         openUrl:
           type: string
           nullable: true
+        ingress:
+          type: object
+          nullable: true
         publishedPorts:
           type: array
           nullable: true
@@ -3358,6 +3361,29 @@ components:
           additionalProperties:
             type: string
           nullable: true
+        ingress:
+          type: object
+          nullable: true
+          properties:
+            enabled:
+              type: boolean
+            mode:
+              type: string
+              enum: [prefix, direct]
+              nullable: true
+            extraEnv:
+              type: object
+              additionalProperties:
+                type: string
+              nullable: true
+            hostPort:
+              type: integer
+              nullable: true
+            extraBinds:
+              type: array
+              items:
+                type: string
+              nullable: true
         runtimeWorkloadId:
           type: string
           nullable: true

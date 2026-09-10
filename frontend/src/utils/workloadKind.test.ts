@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { firstOpenUrl, isApplicationWorkload, workloadKindLabel } from './workloadKind'
+import { appOpenUrl, firstOpenUrl, isApplicationWorkload, workloadKindLabel } from './workloadKind'
 
 describe('workloadKind', () => {
   test('Application kind is App', () => {
@@ -20,5 +20,18 @@ describe('workloadKind', () => {
       openUrl: null,
       publishedPorts: [{ hostPort: 80, containerPort: 80, proto: 'tcp', url: 'http://127.0.0.1:80' }],
     })).toBe('http://127.0.0.1:80')
+  })
+
+  test('prefix Open UI is Device go path and Home hop for members', () => {
+    const vm = {
+      id: 'app-1',
+      openUrl: 'http://192.168.1.20:7777/go/app-1/',
+      publishedPorts: [{ hostPort: 80, containerPort: 80, proto: 'tcp', url: 'http://192.168.1.20:80' }],
+      ingress: { enabled: true, mode: 'prefix' },
+    }
+    expect(appOpenUrl(vm, { hostId: 'self', role: 'self' })).toBe('/go/app-1/')
+    expect(appOpenUrl(vm, { hostId: 'member-1', role: 'member' })).toBe('/home/devices/member-1/go/app-1/')
+    expect(appOpenUrl({ ...vm, ingress: { enabled: false, mode: 'prefix' } }, { hostId: 'self', role: 'self' }))
+      .toBe('http://192.168.1.20:7777/go/app-1/')
   })
 })

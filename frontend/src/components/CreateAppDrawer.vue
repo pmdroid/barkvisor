@@ -21,10 +21,12 @@ import {
   applicationDocument,
   applyDevicePrefill,
   catalogFields,
+  catalogProxy,
   envName,
   fieldError,
   generateSecret,
   isAdvancedField,
+  managedEnvPreview,
   missingRequiredField,
   openUIURL,
   seedTemplateValues,
@@ -66,6 +68,10 @@ const submitting = ref(false)
 const error = ref('')
 const values = ref<AppTemplateValues>({})
 const extraFolders = ref<AppTemplateExtraFolder[]>([])
+const extraEnv = ref<{ name: string; value: string }[]>([])
+const openThrough = ref(true)
+const modeOverride = ref('')
+const portOverride = ref('')
 const advancedOpen = ref(false)
 const pickerFieldId = ref<string | null>(null)
 const pickerExtraIndex = ref<number | null>(null)
@@ -118,9 +124,24 @@ const advancedFields = computed(() => fields.value.filter((field) => isAdvancedF
 const installTip = computed(() => selected.value?.ui?.tips?.before_install || '')
 const applyBlockedField = computed(() => missingRequiredField(fields.value, values.value))
 const uiField = computed(() => uiPortField(fields.value))
+const resolvedMode = computed(() => {
+  if (modeOverride.value === 'prefix' || modeOverride.value === 'direct') return modeOverride.value
+  return selected.value ? catalogProxy(selected.value) : 'direct'
+})
+const managedKeys = computed(() =>
+  selected.value ? managedEnvPreview(selected.value, openThrough.value, resolvedMode.value) : [],
+)
 const openUIPreview = computed(() => {
-  if (!selected.value || !uiField.value || !lanIPv4.value) return ''
-  const port = Number(values.value[uiField.value.id] || uiField.value.default || 0)
+  if (!selected.value) return ''
+  if (openThrough.value && resolvedMode.value === 'prefix') {
+    const device = selectedDevice.value
+    if (device && !isSelfDevice(device)) {
+      return `/home/devices/${encodeURIComponent(device.hostId)}/go/<id>/`
+    }
+    return '/go/<id>/'
+  }
+  if (!uiField.value || !lanIPv4.value) return ''
+  const port = Number(portOverride.value || values.value[uiField.value.id] || uiField.value.default || 0)
   if (!port) return ''
   return openUIURL({
     scheme: selected.value.ui.scheme,
@@ -179,6 +200,10 @@ function pickApp(app: HomeApp) {
   name.value = app.id
   showErrors.value = false
   extraFolders.value = []
+  extraEnv.value = []
+  openThrough.value = true
+  modeOverride.value = ''
+  portOverride.value = ''
   values.value = seedTemplateValues(catalogFields(app))
   step.value = 'configure'
   void loadDevicePrefill()
@@ -218,6 +243,32 @@ function onExtraPicked(path: string) {
   pickerExtraIndex.value = null
 }
 
+function addEnv() {
+  extraEnv.value = [...extraEnv.value, { name: '', value: '' }]
+}
+
+function setExtraEnvName(index: number, name: string) {
+  extraEnv.value = extraEnv.value.map((row, i) => (i === index ? { ...row, name } : row))
+}
+
+function setExtraEnvValue(index: number, value: string) {
+  extraEnv.value = extraEnv.value.map((row, i) => (i === index ? { ...row, value } : row))
+}
+
+function removeEnv(index: number) {
+  extraEnv.value = extraEnv.value.filter((_, i) => i !== index)
+}
+
+function extraEnvRecord(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const row of extraEnv.value) {
+    const name = row.name.trim()
+    if (!name) continue
+    out[name] = row.value
+  }
+  return out
+}
+
 function pickYaml() {
   selected.value = null
   customYaml.value = true
@@ -250,12 +301,19 @@ async function submit() {
         headers: { 'Content-Type': 'application/yaml' },
       })
     } else if (selected.value) {
+      const hostPort = Number(portOverride.value)
       const body = applicationDocument(
         selected.value,
         name.value.trim() || selected.value.id,
         values.value,
         extraFolders.value,
         gpuShareVisible(gpuShare.value) ? selectedGPUIds.value : [],
+        {
+          enabled: openThrough.value,
+          mode: resolvedMode.value,
+          extraEnv: extraEnvRecord(),
+          hostPort: Number.isFinite(hostPort) && hostPort > 0 ? hostPort : null,
+        },
       )
       await api.post(devicePath(device, '/workloads/apply'), body)
     } else {
@@ -310,6 +368,10 @@ async function submit() {
             <span>Name</span>
             <input v-model="name" type="text" />
           </label>
+          <label v-if="!customYaml" class="toggle">
+            <input v-model="openThrough" type="checkbox" />
+            <span>Open through BarkVisor</span>
+          </label>
           <label class="field">
             <span>{{ DEVICE_LABEL }}</span>
             <select v-model="hostId">
@@ -331,7 +393,7 @@ async function submit() {
             <textarea v-model="yaml" spellcheck="false" />
           </label>
           <template v-else>
-            <div v-if="folderFields.length || extraFolders.length" class="section-label">Folders</div>
+            <div v-if="folderFields.length" class="section-label">Folders</div>
             <label
               v-for="field in folderFields"
               :key="field.id"
@@ -350,23 +412,6 @@ async function submit() {
               </div>
               <span class="help">{{ showErrors && fieldError(field, values) ? fieldError(field, values) : field.description }}</span>
             </label>
-            <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
-              <input
-                class="mono"
-                :value="row.hostPath"
-                placeholder="Host folder"
-                @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
-              />
-              <input
-                class="mono"
-                :value="row.containerPath"
-                placeholder="/media"
-                @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
-              />
-              <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
-              <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
-            </div>
-            <button v-if="selected && !customYaml" class="add-row" type="button" @click="addFolder">Add folder</button>
             <div v-if="envFields.length" class="section-label">Environment</div>
             <label
               v-for="field in envFields"
@@ -442,7 +487,7 @@ async function submit() {
               />
               <span v-if="field.description" class="help">{{ field.description }}</span>
             </label>
-            <div v-if="advancedFields.length" class="section-label">
+            <div class="section-label">
               <button class="add-row" type="button" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? 'Hide advanced' : 'Advanced' }}</button>
             </div>
             <template v-if="advancedOpen">
@@ -453,6 +498,45 @@ async function submit() {
                   @input="setField(field.id, ($event.target as HTMLInputElement).value)"
                 />
               </label>
+              <label class="field">
+                <span>Mode</span>
+                <select v-model="modeOverride">
+                  <option value="">Catalog ({{ selected ? catalogProxy(selected) : 'direct' }})</option>
+                  <option value="prefix">prefix</option>
+                  <option value="direct">direct</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Published port override</span>
+                <input v-model="portOverride" type="number" placeholder="Catalog default" />
+              </label>
+              <div class="section-label">Extra env</div>
+              <div v-for="(row, index) in extraEnv" :key="'env-' + index" class="extra-folder">
+                <input class="mono" :value="row.name" placeholder="NAME" @input="setExtraEnvName(index, ($event.target as HTMLInputElement).value)" />
+                <input class="mono" :value="row.value" placeholder="value" @input="setExtraEnvValue(index, ($event.target as HTMLInputElement).value)" />
+                <AppButton size="sm" @click="removeEnv(index)">Remove</AppButton>
+              </div>
+              <button class="add-row" type="button" @click="addEnv">Add env</button>
+              <div class="section-label">Extra binds</div>
+              <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
+                <input
+                  class="mono"
+                  :value="row.hostPath"
+                  placeholder="Host folder"
+                  @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  class="mono"
+                  :value="row.containerPath"
+                  placeholder="/media"
+                  @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
+                />
+                <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
+                <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
+              </div>
+              <button class="add-row" type="button" @click="addFolder">Add bind</button>
+              <div v-if="managedKeys.length" class="section-label">Managed env</div>
+              <p v-for="key in managedKeys" :key="key" class="managed">{{ key }}</p>
             </template>
           </template>
           <p v-if="error" class="err">{{ error }}</p>
@@ -678,5 +762,18 @@ async function submit() {
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.managed {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 4px;
 }
 </style>

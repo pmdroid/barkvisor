@@ -27,7 +27,7 @@ import AppButton from '../components/ui/AppButton.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { scopeRows } from '../utils/deviceScope'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
-import { firstOpenUrl, isApplicationWorkload, workloadKindLabel } from '../utils/workloadKind'
+import { appOpenUrl, isApplicationWorkload, workloadKindLabel } from '../utils/workloadKind'
 import CreateAppDrawer from '../components/CreateAppDrawer.vue'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import {
@@ -381,9 +381,9 @@ async function doStop() {
             >{{ actionLoading[rowKey(row)] ? 'Starting...' : 'Start' }}</button>
             <template v-else-if="row.reachable && row.vm.state === 'running'">
               <a
-                v-if="isApplicationWorkload(row.vm) && firstOpenUrl(row.vm)"
+                v-if="isApplicationWorkload(row.vm) && appOpenUrl(row.vm, { hostId: row.hostId, role: row.role })"
                 class="mini go"
-                :href="firstOpenUrl(row.vm)!"
+                :href="appOpenUrl(row.vm, { hostId: row.hostId, role: row.role })!"
                 target="_blank"
                 rel="noreferrer"
               >Open UI</a>

@@ -15,6 +15,7 @@ struct SPAFallbackMiddleware: Middleware {
         if request.method == .GET,
            !request.url.path.hasPrefix("/api/"),
            !request.url.path.hasPrefix("/v1/"),
+           !AppIngress.isProxyPath(request.url.path),
            !request.url.path.contains("."),
            request.url.path != "/" {
             do {

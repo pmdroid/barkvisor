@@ -51,6 +51,21 @@ public enum AppTemplate {
         "PROXY_DOMAIN",
         "HASHED_PASSWORD",
         "SUDO_PASSWORD_HASH",
+        "SUBFOLDER",
+        "APP_URL",
+        "GITEA__server__ROOT_URL",
+        "GITEA__server__DOMAIN",
+        "PAPERLESS_URL",
+        "PAPERLESS_CSRF_TRUSTED_ORIGINS",
+        "PHOTOPRISM_SITE_URL",
+        "GF_SERVER_ROOT_URL",
+        "GF_SERVER_SERVE_FROM_SUB_PATH",
+        "BARKVISOR_BASE_PATH",
+        "BARKVISOR_PUBLIC_URL",
+        "TRUSTED_PROXIES",
+        "OVERWRITEPROTOCOL",
+        "OVERWRITEHOST",
+        "OVERWRITEWEBROOT",
     ]
     private static let advancedEnvNames: Set<String> = ["UMASK"]
     private static let deviceEnvNames: Set<String> = ["PUID", "PGID", "TZ"]
@@ -65,7 +80,7 @@ public enum AppTemplate {
         timezone: String? = nil,
     ) -> [AppTemplateField] {
         var out: [AppTemplateField] = []
-        let skipEnv = hiddenEnvNames.union(portLockstepNames(entry))
+        let skipEnv = hiddenEnvNames.union(portLockstepNames(entry)).union(Set(entry.ui.basePathEnv))
         let linked = linkedSecretGroups(entry.envSchema.map(\.name))
         var seenEnv: Set<String> = []
         for env in entry.envSchema {
@@ -182,16 +197,23 @@ public enum AppTemplate {
         values: [String: String],
         extraFolders: [AppTemplateExtraFolder] = [],
         lanBind: String? = nil,
+        ingress: WorkloadIngress? = nil,
+        workloadID: String? = nil,
+        listenPort: Int = Config.port,
     ) throws -> AppTemplateRender {
         let fields = entry.fields ?? Self.fields(from: entry)
-        try validate(fields, values: values)
+        var working = values
+        if let hostPort = ingress?.hostPort, let ui = uiPortField(fields) {
+            working[ui.id] = String(hostPort)
+        }
+        try validate(fields, values: working)
         var env: [String: String] = [:]
         var secretKeys: [String] = []
         var binds: [String: String] = [:]
         var shared: [String] = []
         var ports: [String: (host: Int, proto: String)] = [:]
         for field in fields {
-            let raw = values[field.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let raw = working[field.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if let names = envNames(for: field, entry: entry) {
                 if field.kind == "secret" {
                     secretKeys.append(contentsOf: names)
@@ -220,6 +242,36 @@ public enum AppTemplate {
         }
         applyPortLockstep(entry: entry, ports: ports, env: &env)
         applyPublishedServerURL(entry: entry, ports: ports, lanBind: lanBind, env: &env)
+        if let extra = ingress?.extraBinds {
+            for path in extra {
+                let host = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                if host.isEmpty { continue }
+                if !shared.contains(host) { shared.append(host) }
+            }
+        }
+        let lan = (lanBind ?? HostInfoService.lanBindIPv4())?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = lan.isEmpty ? "127.0.0.1" : lan
+        let id = (workloadID?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? entry.id
+        let managed = AppIngress.managedEnv(
+            id: id,
+            names: AppIngress.envNames(catalog: entry.ui, schema: entry.envSchema),
+            catalogProxy: entry.ui.proxy,
+            ingress: ingress,
+            scheme: "http",
+            host: host,
+            listenPort: listenPort,
+        )
+        if let merged = AppIngress.mergeEnv(
+            existing: env,
+            extra: ingress?.extraEnv,
+            managed: managed,
+            enabled: AppIngress.isEnabled(ingress),
+        ) {
+            env = merged
+        }
         let compose = try rewriteCompose(
             entry.compose,
             binds: binds,
@@ -241,8 +293,11 @@ public enum AppTemplate {
         values: [String: String],
         extraFolders: [AppTemplateExtraFolder] = [],
         gpuShare: [WorkloadGPUShare] = [],
+        ingress: WorkloadIngress? = nil,
     ) throws -> [String: Any] {
-        let rendered = try render(entry: entry, values: values, extraFolders: extraFolders)
+        let rendered = try render(
+            entry: entry, values: values, extraFolders: extraFolders, ingress: ingress,
+        )
         var spec: [String: Any] = [
             "runtime": WorkloadSpec.runtimeDevice,
             "compose": rendered.compose,
@@ -255,6 +310,9 @@ public enum AppTemplate {
         }
         if !gpuShare.isEmpty {
             spec["gpuShare"] = gpuShare.map { ["id": $0.id] }
+        }
+        if let ingress {
+            spec["ingress"] = ingressPayload(ingress)
         }
         return [
             "apiVersion": WorkloadSpec.currentAPIVersion,
@@ -546,6 +604,23 @@ public enum AppTemplate {
         guard !lan.isEmpty, let ui = uiPort(entry, ports: ports) else { return }
         let scheme = entry.ui.scheme.isEmpty ? "http" : entry.ui.scheme
         env["JELLYFIN_PublishedServerUrl"] = "\(scheme)://\(lan):\(ui)"
+    }
+
+    private static func uiPortField(_ fields: [AppTemplateField]) -> AppTemplateField? {
+        fields.first { field in
+            field.kind == "port" && field.label == "Open UI"
+        } ?? fields.first { field in
+            field.kind == "port" && (field.portSpec?.proto == "tcp")
+        }
+    }
+
+    private static func ingressPayload(_ ingress: WorkloadIngress) -> [String: Any] {
+        var payload: [String: Any] = ["enabled": ingress.enabled]
+        if let mode = ingress.mode { payload["mode"] = mode }
+        if let extraEnv = ingress.extraEnv { payload["extraEnv"] = extraEnv }
+        if let hostPort = ingress.hostPort { payload["hostPort"] = hostPort }
+        if let extraBinds = ingress.extraBinds { payload["extraBinds"] = extraBinds }
+        return payload
     }
 
     private static func uiPort(

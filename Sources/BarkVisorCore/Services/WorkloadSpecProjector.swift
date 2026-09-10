@@ -282,12 +282,14 @@ public enum WorkloadSpecProjector {
     }
 
     private static func applicationSpec(from vm: VM) -> WorkloadSpec {
+        let stored = WorkloadSpecJSON.decode(vm.specJson)
         return WorkloadSpec(
             kind: WorkloadSpec.kindApplication,
             metadata: WorkloadMetadata(
                 id: vm.id,
                 name: vm.name,
                 description: vm.description,
+                labels: stored?.metadata.labels,
             ),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
@@ -296,8 +298,9 @@ public enum WorkloadSpecProjector {
                 health: vm.decodedHealth,
                 runtime: vm.runtime ?? WorkloadSpec.runtimeDevice,
                 compose: vm.composeYaml,
-                env: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
+                env: stored?.spec.env,
                 runtimeWorkloadId: vm.runtimeWorkloadId,
+                ingress: stored?.spec.ingress,
             ),
         )
     }
@@ -310,8 +313,19 @@ public enum WorkloadSpecProjector {
         vm.runtime = spec.spec.runtime ?? WorkloadSpec.runtimeDevice
         vm.runtimeWorkloadId = spec.spec.runtimeWorkloadId
         vm.composeYaml = spec.spec.compose
+        var paths = vm.decodedSharedPaths
         if let shared = spec.spec.sharedPaths {
-            vm.setSharedPaths(shared.isEmpty ? nil : shared)
+            paths = shared
+        }
+        if let extra = spec.spec.ingress?.extraBinds {
+            for path in extra {
+                let host = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                if host.isEmpty { continue }
+                if !paths.contains(host) { paths.append(host) }
+            }
+        }
+        if spec.spec.sharedPaths != nil || spec.spec.ingress?.extraBinds != nil {
+            vm.setSharedPaths(paths.isEmpty ? nil : paths)
         }
         if vm.composeProject == nil || vm.composeProject?.isEmpty == true {
             vm.composeProject = ComposeRuntime.composeProjectName(id: vm.id)
@@ -362,6 +376,15 @@ public enum WorkloadSpecProjector {
         }
         if let health = spec.spec.health {
             try WorkloadHealthSpec.validate(health)
+        }
+        if let mode = spec.spec.ingress?.mode?.trimmingCharacters(in: .whitespacesAndNewlines), !mode.isEmpty {
+            let lower = mode.lowercased()
+            if lower != AppIngress.modePrefix, lower != AppIngress.modeDirect {
+                throw BarkVisorError.badRequest("spec.ingress.mode must be prefix or direct")
+            }
+        }
+        if let port = spec.spec.ingress?.hostPort, !(1 ... 65_535).contains(port) {
+            throw BarkVisorError.badRequest("spec.ingress.hostPort must be 1...65535")
         }
         let dummy = URL(fileURLWithPath: "/tmp/barkvisor-compose-validate/\(existingID ?? "new")")
         let bindHost = "0.0.0.0"

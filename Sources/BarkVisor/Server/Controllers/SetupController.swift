@@ -430,7 +430,7 @@ struct SetupController: RouteCollection {
     }
 
     @Sendable
-    func complete(req: Request) async throws -> CompleteResponse {
+    func complete(req: Request) async throws -> Response {
         if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
@@ -460,7 +460,10 @@ struct SetupController: RouteCollection {
 
         setupMiddleware.markComplete()
 
-        return CompleteResponse(success: true, token: token)
+        return try AppIngressSession.encodeComplete(
+            CompleteResponse(success: true, token: token),
+            on: req,
+        )
     }
 
     @Sendable

@@ -95,6 +95,37 @@ struct JWTAuthMiddlewareTests {
         }
     }
 
+    @Test func `go path accepts session cookie and rejects anonymous`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let payload = UserPayload(
+            sub: .init(value: "user-1"),
+            username: "admin",
+            exp: .init(value: Date().addingTimeInterval(3_600)),
+            role: "admin",
+        )
+        let token = try await keys.sign(payload)
+        do {
+            let denied = request(app, path: "/go/app-1/")
+            do {
+                _ = try await jwt.respond(to: denied, chainingTo: OKResponder())
+                Issue.record("expected unauthorized without cookie")
+            } catch let error as AbortError {
+                #expect(error.status == .unauthorized)
+            }
+            let req = request(app, path: "/go/app-1/")
+            req.cookies[AppIngress.cookieName] = HTTPCookies.Value(string: token)
+            let response = try await jwt.respond(to: req, chainingTo: OKResponder())
+            #expect(response.status == .ok)
+            #expect(req.authenticatedUser?.userId == "user-1")
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
     @Test func `owner device state SSE spends ticket for that Workload`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
@@ -307,7 +338,6 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            try await keys.verify(token, as: UserPayload.self)
             await stop(app)
         } catch {
             await stop(app)

@@ -16,7 +16,7 @@ import {
 } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
-import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
+import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appCatalogSource, appEnvSummary, isSecretEnvKey } from '../utils/appDetail'
 import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
@@ -1314,7 +1314,11 @@ const guestMacCopy = computed(() =>
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
-const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
+const openUi = computed(() => {
+  if (!vm.value) return null
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  return appOpenUrl(vm.value, device)
+})
 const appCatalog = computed(() => (vm.value ? appCatalogSource(vm.value) : null))
 const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
 const appMounts = computed(() => {

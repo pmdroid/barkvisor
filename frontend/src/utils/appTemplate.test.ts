@@ -92,6 +92,8 @@ describe('appTemplate', () => {
     expect(template.values['path-movies']).toBe('/mnt/movies')
     expect(template.extraFolders[0].hostPath).toBe('/mnt/photos')
     expect((doc.spec as { compose: string }).compose).toContain('linuxserver/plex')
+    expect((doc.spec as { ingress: { enabled: boolean; mode: string } }).ingress.enabled).toBe(true)
+    expect((doc.spec as { ingress: { enabled: boolean; mode: string } }).ingress.mode).toBe('direct')
   })
 
   test('apply document includes selected gpu share ids', () => {
