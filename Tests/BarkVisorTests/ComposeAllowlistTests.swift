@@ -470,6 +470,41 @@ struct ComposeAllowlistTests {
         #expect(render.publishedPorts.contains { $0.hostPort == 8_080 && $0.hostAddress == "0.0.0.0" })
     }
 
+    @Test func `docker sock bind is rejected even through an allowlisted symlink`() throws {
+        let dir = stateDir
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-sock-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let sock = tmp.appendingPathComponent("docker.sock")
+        FileManager.default.createFile(atPath: sock.path, contents: Data())
+        let alias = tmp.appendingPathComponent("evil")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: sock)
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            volumes:
+              - type: bind
+                source: \(alias.path)
+                target: /var/run/docker.sock
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(
+                yaml: yaml,
+                workloadID: "id",
+                stateDir: dir,
+                bindHost: "192.168.8.10",
+                allowedBinds: [alias.path],
+            )
+        }
+        guard case let .badRequest(message) = error else {
+            Issue.record("expected badRequest")
+            return
+        }
+        #expect(message == "unsupported compose feature: docker.sock")
+    }
+
     @Test func `allowlisted host folder binds are rewritten`() throws {
         let dir = stateDir
         let media = FileManager.default.temporaryDirectory

@@ -407,11 +407,11 @@ public enum ComposeAllowlist {
         allowedBinds: [String],
         readOnly: Bool,
     ) throws -> ParsedVolume {
-        if source.contains("docker.sock") {
-            throw BarkVisorError.badRequest("unsupported compose feature: docker.sock")
-        }
         let candidate = URL(fileURLWithPath: source)
         let path = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        if source.contains("docker.sock") || path.contains("docker.sock") {
+            throw BarkVisorError.badRequest("unsupported compose feature: docker.sock")
+        }
         let statePath = stateDir.resolvingSymlinksInPath().standardizedFileURL.path
         let statePrefix = statePath.hasSuffix("/") ? statePath : statePath + "/"
         let underState = path == statePath || path.hasPrefix(statePrefix)
