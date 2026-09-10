@@ -25,11 +25,50 @@ struct BigBearAppCatalogTests {
         #expect(app.unsupportedReasons.isEmpty)
         #expect(app.digest == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         #expect(app.image == "traefik/whoami:v1.10")
-        #expect(app.ports.contains { $0.host == 8_080 && $0.container == 80 && $0.proto == "tcp" })
+        #expect(app.ports.contains { $0.host == 8_080 && $0.container == 80 && $0.proto == "tcp" && $0.ui })
         #expect(app.ui.proxy == "direct")
         #expect(app.ui.scheme == "http")
         #expect(AppCatalogArch.supports(arches: app.arches, deviceArch: "arm64"))
         #expect(AppCatalogArch.supports(arches: app.arches, deviceArch: "amd64"))
+    }
+
+    @Test func `webui port is the ui port when compose lists torrent first`() throws {
+        let files = sample(
+            slug: "qbittorrent",
+            appJSON: appJSON(
+                id: "qbittorrent",
+                name: "qBittorrent",
+                env: [["name": "WEBUI_PORT", "default": "8080"]],
+            ),
+            compose: """
+            services:
+              app:
+                image: lscr.io/linuxserver/qbittorrent
+                ports:
+                  - "6881:6881"
+                  - "8080:8080"
+            """,
+        )
+        let app = try BigBearAppCatalog.parse(files: files).apps[0]
+        #expect(app.ports.contains { $0.host == 6_881 && !$0.ui })
+        #expect(app.ports.contains { $0.host == 8_080 && $0.ui })
+    }
+
+    @Test func `multiple tcp ports without webui stay unmarked`() throws {
+        let files = sample(
+            slug: "gitea",
+            appJSON: appJSON(id: "gitea", name: "Gitea"),
+            compose: """
+            services:
+              app:
+                image: gitea/gitea
+                ports:
+                  - "22:22"
+                  - "3000:3000"
+            """,
+        )
+        let app = try BigBearAppCatalog.parse(files: files).apps[0]
+        #expect(app.ports.allSatisfy { !$0.ui })
     }
 
     @Test func `converted and example apps are ignored`() throws {

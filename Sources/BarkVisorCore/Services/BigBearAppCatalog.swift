@@ -116,6 +116,8 @@ public enum BigBearAppCatalog {
             PlatformCapabilities.normalizedArch($0)
         }
         let envSchema = envVars(from: deployment["environment_variables"])
+        var ports = inspected.ports
+        markUIPort(&ports, envSchema: envSchema)
         let volumes = volumesFromCompose(inspected.volumeMounts, appJSON: deployment["volumes"])
         let ui = AppCatalogUI(
             scheme: stringValue(uiObject["scheme"]) ?? "http",
@@ -136,7 +138,7 @@ public enum BigBearAppCatalog {
             compose: inspected.yaml,
             envSchema: envSchema,
             volumes: volumes,
-            ports: inspected.ports,
+            ports: ports,
             image: inspected.image,
             digest: inspected.digest,
             unsupportedReasons: inspected.reasons,
@@ -239,7 +241,6 @@ public enum BigBearAppCatalog {
             }
             services[name] = cleaned
         }
-        markFirstTCPPortAsUI(&ports)
         root["services"] = services
         if root["volumes"] != nil {
             var declared: [String: Any] = [:]
@@ -530,10 +531,20 @@ public enum BigBearAppCatalog {
         return "text"
     }
 
-    private static func markFirstTCPPortAsUI(_ ports: inout [AppCatalogPort]) {
+    private static func markUIPort(_ ports: inout [AppCatalogPort], envSchema: [AppCatalogEnvVar]) {
         if ports.contains(where: \.ui) { return }
-        if let index = ports.firstIndex(where: { $0.proto.lowercased() == "tcp" }) {
+        let tcp = ports.enumerated().filter { $0.element.proto.lowercased() == "tcp" }
+        if tcp.isEmpty { return }
+        if let webui = envSchema.first(where: { $0.name == "WEBUI_PORT" }),
+           let value = webui.defaultValue, let wanted = Int(value),
+           let index = tcp.first(where: {
+               $0.element.host == wanted || $0.element.container == wanted
+           })?.offset {
             ports[index].ui = true
+            return
+        }
+        if tcp.count == 1 {
+            ports[tcp[0].offset].ui = true
         }
     }
 
