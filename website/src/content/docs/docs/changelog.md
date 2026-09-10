@@ -6,7 +6,7 @@ Product notes for operators. Words: **Home**, **Device**, **Workload**, **Librar
 
 Unreleased items live on stacked draft PRs and may change before they land on `main`.
 
-## 1.0.0-alpha.4 — 2026-09-10
+## 1.0.0-alpha.5 — 2026-09-10
 
 - Application Workload Overview is two columns (Application / Volumes / Access | Runtime / Usage / Environment). Title row has an APP badge, Open UI, and ingress On/Off plus Prefix/Direct (`/go/<id>/`).
 - Environment tab edits non-secret variables. Secrets stay redacted and are not rewritten from the form. Restart the app to apply.
