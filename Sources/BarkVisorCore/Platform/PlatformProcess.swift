@@ -119,12 +119,20 @@ public enum PlatformProcess {
         arguments: [String] = [],
         timeout: TimeInterval? = 60,
         currentDirectory: URL? = nil,
+        extraEnvironment: [String: String]? = nil,
     ) throws -> CommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         if let currentDirectory {
             process.currentDirectoryURL = currentDirectory
+        }
+        if let extraEnvironment {
+            var env = ProcessInfo.processInfo.environment
+            for (key, value) in extraEnvironment {
+                env[key] = value
+            }
+            process.environment = env
         }
 
         let outPipe = Pipe()
@@ -203,6 +211,23 @@ public enum PlatformProcess {
             arguments: arguments,
             timeout: timeout,
             currentDirectory: currentDirectory,
+            extraEnvironment: nil,
+        )
+    }
+
+    public static func run(
+        path: String,
+        arguments: [String] = [],
+        timeout: TimeInterval? = 60,
+        currentDirectory: URL? = nil,
+        extraEnvironment: [String: String]?,
+    ) throws -> CommandResult {
+        try run(
+            executable: URL(fileURLWithPath: path),
+            arguments: arguments,
+            timeout: timeout,
+            currentDirectory: currentDirectory,
+            extraEnvironment: extraEnvironment,
         )
     }
 

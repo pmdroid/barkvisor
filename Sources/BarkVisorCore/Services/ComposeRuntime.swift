@@ -16,12 +16,13 @@ public struct LiveComposeCommandRunner: ComposeCommandRunning {
         projectDirectory: URL,
         timeout: TimeInterval,
     ) throws -> CommandResult {
-        let docker = try DockerEngine.dockerURL()
+        let invoke = try DockerEngine.composeInvocation()
         return try PlatformProcess.run(
-            executable: docker,
-            arguments: ["compose"] + arguments,
+            executable: invoke.executable,
+            arguments: invoke.prefix + arguments,
             timeout: timeout,
             currentDirectory: projectDirectory,
+            extraEnvironment: DockerEngine.cliEnvironment(dockerPath: DockerEngine.snapshot().dockerPath),
         )
     }
 }
@@ -167,11 +168,10 @@ public enum ComposeRuntime {
         tail: Int = 200,
         dataDir: URL = Config.dataDir,
     ) throws -> AsyncThrowingStream<String, Error> {
-        let docker = try DockerEngine.dockerURL()
+        let invoke = try DockerEngine.composeInvocation()
         let dir = projectDirectory(id: id, dataDir: dataDir)
         let file = dir.appendingPathComponent("compose.yml").path
-        let arguments = [
-            "compose",
+        let arguments = invoke.prefix + [
             "-p", project,
             "-f", file,
             "--project-directory", dir.path,
@@ -180,9 +180,14 @@ public enum ComposeRuntime {
         ]
         return AsyncThrowingStream { continuation in
             let process = Process()
-            process.executableURL = docker
+            process.executableURL = invoke.executable
             process.arguments = arguments
             process.currentDirectoryURL = dir
+            var env = ProcessInfo.processInfo.environment
+            for (key, value) in DockerEngine.cliEnvironment(dockerPath: DockerEngine.snapshot().dockerPath) {
+                env[key] = value
+            }
+            process.environment = env
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe

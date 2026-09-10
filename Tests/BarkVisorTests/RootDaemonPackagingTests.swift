@@ -118,6 +118,9 @@ struct RootDaemonPackagingTests {
         #expect(!plist.contains("<key>GroupName</key>"))
         #expect(!plist.contains("_barkvisor"))
         #expect(plist.contains("<key>AbandonProcessGroup</key>"))
+        #expect(plist.contains("<key>PATH</key>"))
+        #expect(plist.contains("/usr/local/bin"))
+        #expect(plist.contains("/Applications/OrbStack.app/Contents/MacOS/xbin"))
         #expect(!plist.contains("barkvisor.helper"))
     }
 

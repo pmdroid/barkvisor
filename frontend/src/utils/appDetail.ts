@@ -76,6 +76,20 @@ export function appEnvSummary(vm: VM): { count: number; secrets: number } {
   }
 }
 
+export function buildEnvSavePayload(
+  current: Record<string, string>,
+  editable: Record<string, string>,
+): Record<string, string> {
+  const next: Record<string, string> = {}
+  for (const [k, v] of Object.entries(current)) {
+    if (isSecretEnvKey(k)) next[k] = v
+  }
+  for (const [k, v] of Object.entries(editable)) {
+    if (!isSecretEnvKey(k)) next[k] = v
+  }
+  return next
+}
+
 export function ingressPrefixPath(id: string): string {
   return `/go/${id}/`
 }

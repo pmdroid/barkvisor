@@ -13,7 +13,6 @@ import { useVMStore } from '../stores/vms'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
-import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -56,9 +55,6 @@ const librarySpaceLine = computed(() => {
   }
   return librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes)
 })
-const libraryNeedsFolder = computed(() =>
-  librarySpaceLoaded.value && librarySettings.value?.isDefault === true,
-)
 const libraryFolderReady = computed(() =>
   librarySpaceLoaded.value && librarySettings.value?.isDefault === false,
 )
@@ -526,10 +522,6 @@ const deleteError = ref('')
 
 async function deleteImage(id: string, name: string, hostId?: string) {
   confirmTarget.value = { id, name, hostId }
-}
-
-function onLibraryFolderSaved(data: LibrarySettings) {
-  librarySettings.value = data
 }
 
 async function doDeleteImage() {

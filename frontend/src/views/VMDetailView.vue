@@ -18,7 +18,7 @@ import {
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
-import { appEnvSummary, appToolbarSub, isSecretEnvKey } from '../utils/appDetail'
+import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
 import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
@@ -1328,6 +1328,79 @@ const appMounts = computed(() => {
   return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
 })
 const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
+const envEditing = ref(false)
+const envDraft = ref<{ key: string; value: string }[]>([])
+const envNewKey = ref('')
+const envNewValue = ref('')
+const envSaving = ref(false)
+const envSecretKeys = computed(() => appEnvKeys.value.filter((k) => isSecretEnvKey(k)))
+
+function startEnvEdit() {
+  const env = vm.value?.spec?.spec?.env ?? {}
+  envDraft.value = Object.entries(env)
+    .filter(([k]) => !isSecretEnvKey(k))
+    .map(([key, value]) => ({ key, value: value ?? '' }))
+  envNewKey.value = ''
+  envNewValue.value = ''
+  envEditing.value = true
+}
+
+function addEnvRow() {
+  const key = envNewKey.value.trim()
+  if (!key) return
+  if (isSecretEnvKey(key)) {
+    toast.error('That key looks like a secret and cannot be added here')
+    return
+  }
+  if (envDraft.value.some((r) => r.key === key)) {
+    toast.error('That key already exists')
+    return
+  }
+  envDraft.value.push({ key, value: envNewValue.value })
+  envNewKey.value = ''
+  envNewValue.value = ''
+}
+
+function removeEnvRow(key: string) {
+  envDraft.value = envDraft.value.filter((r) => r.key !== key)
+}
+
+async function saveEnv() {
+  if (!vm.value) return
+  if (isMemberDetail.value && !memberReachable.value) return
+  envSaving.value = true
+  try {
+    const editable: Record<string, string> = {}
+    for (const row of envDraft.value) {
+      if (!row.key || isSecretEnvKey(row.key)) continue
+      editable[row.key] = row.value
+    }
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) {
+        throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+      }
+      const spec = await homeWorkloads.fetchSpec(device, vmId.value)
+      spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, editable)
+      await homeWorkloads.putSpec(device, vmId.value, spec)
+    } else {
+      const spec = await store.fetchSpec(vmId.value)
+      spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, editable)
+      await store.putSpec(vmId.value, spec)
+    }
+    envEditing.value = false
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply environment changes.')
+    } else {
+      toast.success('Environment saved')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    envSaving.value = false
+  }
+}
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
 const updatingApp = ref(false)
 
@@ -2085,13 +2158,40 @@ const healthBanner = computed(() => {
       :device="isMemberDetail ? memberDevice : undefined"
     />
     <div v-if="tab === 'environment' && isApp" class="app-panel">
-      <h2>Environment</h2>
-      <p class="app-panel-sub">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
-      <div v-if="appEnvKeys.length === 0" class="dim-text">No environment variables recorded.</div>
-      <div v-for="key in appEnvKeys" :key="key" class="app-kv">
-        <span class="k">{{ key }}</span>
-        <span class="v mono">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h2 style="margin:0">Environment</h2>
+        <AppButton v-if="!envEditing" size="sm" :disabled="isMemberDetail && !memberReachable" @click="startEnvEdit">Edit</AppButton>
       </div>
+      <p class="app-panel-sub">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
+      <template v-if="!envEditing">
+        <div v-if="appEnvKeys.length === 0" class="dim-text">No environment variables recorded.</div>
+        <div v-for="key in appEnvKeys" :key="key" class="app-kv">
+          <span class="k">{{ key }}</span>
+          <span class="v mono">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div v-for="row in envDraft" :key="row.key" class="app-kv">
+          <span class="k">{{ row.key }}</span>
+          <span style="display:flex;gap:8px;align-items:center;flex:1;justify-content:flex-end">
+            <input v-model="row.value" :aria-label="row.key" style="max-width:280px" />
+            <AppButton size="sm" variant="danger" :disabled="envSaving" @click="removeEnvRow(row.key)">Remove</AppButton>
+          </span>
+        </div>
+        <div v-for="key in envSecretKeys" :key="key" class="app-kv">
+          <span class="k">{{ key }}</span>
+          <span class="v mono">••••••••</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input v-model="envNewKey" placeholder="NEW_KEY" aria-label="New variable name" style="max-width:200px" />
+          <input v-model="envNewValue" placeholder="value" aria-label="New variable value" style="flex:1" />
+          <AppButton size="sm" :disabled="envSaving || !envNewKey.trim()" @click="addEnvRow">Add</AppButton>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <AppButton size="sm" :disabled="envSaving" @click="envEditing = false">Cancel</AppButton>
+          <AppButton size="sm" variant="primary" :loading="envSaving" loading-text="Saving..." @click="saveEnv">Save</AppButton>
+        </div>
+      </template>
     </div>
     <div v-if="tab === 'volumes' && isApp" class="app-panel">
       <h2>Volumes</h2>
@@ -2599,11 +2699,6 @@ const healthBanner = computed(() => {
 }
 .ops-banner-sub strong {
   color: var(--red);
-}
-.detail-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
 }
 .facts .detail-row {
   padding: 8px 0;
