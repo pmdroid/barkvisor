@@ -109,6 +109,11 @@ const map = {
     title: 'Virtual Machines',
     description: 'All Workloads in the Home with health filters and quick actions.',
   },
+  'using-apps.md': {
+    out: 'using/apps.md',
+    title: 'Apps',
+    description: 'Create Docker apps from the catalog, then Overview, Logs, Environment, and Volumes.',
+  },
   'using-vm-details.md': {
     out: 'using/vm-details.md',
     title: 'Workload details',
@@ -226,6 +231,7 @@ function fixLinks(body) {
     .replace(/\]\(using-dashboard\.md(#[^)]*)?\)/g, '](/docs/using/dashboard/$1)')
     .replace(/\]\(using-devices\.md(#[^)]*)?\)/g, '](/docs/using/devices/$1)')
     .replace(/\]\(using-vms\.md(#[^)]*)?\)/g, '](/docs/using/vms/$1)')
+    .replace(/\]\(using-apps\.md(#[^)]*)?\)/g, '](/docs/using/apps/$1)')
     .replace(/\]\(using-vm-details\.md(#[^)]*)?\)/g, '](/docs/using/vm-details/$1)')
     .replace(/\]\(using-ollama\.md(#[^)]*)?\)/g, '](/docs/using/ollama/$1)')
     .replace(/\]\(using-images\.md(#[^)]*)?\)/g, '](/docs/using/images/$1)')
