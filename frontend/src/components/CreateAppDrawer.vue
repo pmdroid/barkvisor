@@ -2,12 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { AppTemplateField, SystemCapabilities } from '../api/types'
+import type { AppTemplateField, HostGPUShareDevice, SystemCapabilities } from '../api/types'
 import { useDevicesStore } from '../stores/devices'
 import { useHomeLibraryStore, type HomeApp } from '../stores/homeLibrary'
 import { useToastStore } from '../stores/toast'
 import { useFeature } from '../composables/useFeature'
-import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
+import { deviceGpuSharePath, devicePath, isSelfDevice } from '../utils/homeDeviceApi'
+import { defaultGPUShareIds, gpuShareOccupancy, gpuShareVisible } from '../utils/gpuShare'
 import { DEVICE_LABEL } from '../utils/terminology'
 import {
   appArchLabel,
@@ -70,6 +71,8 @@ const pickerFieldId = ref<string | null>(null)
 const pickerExtraIndex = ref<number | null>(null)
 const lanIPv4 = ref('')
 const showErrors = ref(false)
+const gpuShare = ref<HostGPUShareDevice[]>([])
+const selectedGPUIds = ref<string[]>([])
 
 const selectedDevice = computed(() => devices.deviceByHostId(hostId.value) || devices.selfDevice)
 const deviceArch = computed(() => selectedDevice.value?.platform?.arch ?? null)
@@ -152,6 +155,22 @@ async function loadDevicePrefill() {
   } catch {
     lanIPv4.value = ''
   }
+  try {
+    const { data } = await api.get<HostGPUShareDevice[]>(deviceGpuSharePath(device))
+    gpuShare.value = data || []
+    selectedGPUIds.value = defaultGPUShareIds(gpuShare.value)
+  } catch {
+    gpuShare.value = []
+    selectedGPUIds.value = []
+  }
+}
+
+function toggleGPU(id: string, on: boolean) {
+  if (on) {
+    if (!selectedGPUIds.value.includes(id)) selectedGPUIds.value = [...selectedGPUIds.value, id]
+    return
+  }
+  selectedGPUIds.value = selectedGPUIds.value.filter((row) => row !== id)
 }
 
 function pickApp(app: HomeApp) {
@@ -236,6 +255,7 @@ async function submit() {
         name.value.trim() || selected.value.id,
         values.value,
         extraFolders.value,
+        gpuShareVisible(gpuShare.value) ? selectedGPUIds.value : [],
       )
       await api.post(devicePath(device, '/workloads/apply'), body)
     } else {
@@ -397,6 +417,21 @@ async function submit() {
               <span class="help">{{ showErrors && fieldError(field, values) ? fieldError(field, values) : field.description }}</span>
               <a v-if="isClaim(field)" class="claim" href="https://plex.tv/claim" target="_blank" rel="noreferrer">Get a claim token · expires in 4 minutes</a>
             </label>
+            <template v-if="gpuShareVisible(gpuShare)">
+              <div class="section-label">GPUs</div>
+              <label v-for="card in gpuShare" :key="card.id" class="gpu-row">
+                <input
+                  type="checkbox"
+                  :checked="selectedGPUIds.includes(card.id)"
+                  :disabled="!card.attachable"
+                  @change="toggleGPU(card.id, ($event.target as HTMLInputElement).checked)"
+                />
+                <span>
+                  <b>{{ card.label }}</b>
+                  <span v-if="gpuShareOccupancy(card)" class="help">{{ gpuShareOccupancy(card) }}</span>
+                </span>
+              </label>
+            </template>
             <div v-if="portFields.length" class="section-label">Ports</div>
             <label v-for="field in portFields" :key="field.id" class="field">
               <span>{{ field.label }}<em v-if="field.required"> *</em></span>
@@ -629,6 +664,15 @@ async function submit() {
   font-size: 12px;
   color: var(--accent);
 }
+.gpu-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.gpu-row b { font-weight: 600; }
+.gpu-row span { display: flex; flex-direction: column; gap: 2px; }
 .mag-foot {
   display: flex;
   justify-content: flex-end;

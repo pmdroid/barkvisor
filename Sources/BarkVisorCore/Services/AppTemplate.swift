@@ -240,6 +240,7 @@ public enum AppTemplate {
         name: String,
         values: [String: String],
         extraFolders: [AppTemplateExtraFolder] = [],
+        gpuShare: [WorkloadGPUShare] = [],
     ) throws -> [String: Any] {
         let rendered = try render(entry: entry, values: values, extraFolders: extraFolders)
         var spec: [String: Any] = [
@@ -251,6 +252,9 @@ public enum AppTemplate {
         }
         if !rendered.sharedPaths.isEmpty {
             spec["sharedPaths"] = rendered.sharedPaths
+        }
+        if !gpuShare.isEmpty {
+            spec["gpuShare"] = gpuShare.map { ["id": $0.id] }
         }
         return [
             "apiVersion": WorkloadSpec.currentAPIVersion,

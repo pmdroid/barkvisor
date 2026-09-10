@@ -188,6 +188,10 @@ export function deviceGpuDevicesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/gpu-devices')
 }
 
+export function deviceGpuSharePath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/gpu-share')
+}
+
 export function devicePciDevicesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/pci-devices')
 }

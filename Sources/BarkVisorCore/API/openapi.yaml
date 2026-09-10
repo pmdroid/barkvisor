@@ -1147,6 +1147,23 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/gpu-share:
+    get:
+      tags: [evolving]
+      operationId: listGPUShare
+      x-barkvisor-stability: evolving
+      summary: Host GPUs that Docker apps can share (DRM and NVIDIA toolkit)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostGPUShareDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/gpu:
     get:
       tags: [evolving]
@@ -3900,6 +3917,49 @@ components:
         deviceId:
           type: string
           description: PCI address (`0000:01:00.0`)
+
+    HostGPUShareDevice:
+      type: object
+      required: [id, kind, name, label, attachable]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        driver:
+          type: string
+          nullable: true
+        pciAddress:
+          type: string
+          nullable: true
+        renderNodes:
+          type: array
+          items:
+            type: string
+        cardNodes:
+          type: array
+          items:
+            type: string
+        nvidiaUUID:
+          type: string
+          nullable: true
+        vfioBound:
+          type: boolean
+        attachable:
+          type: boolean
+        excludedReason:
+          type: string
+          nullable: true
+        claimedByVMId:
+          type: string
+          nullable: true
+        claimedByVMName:
+          type: string
+          nullable: true
 
     HostGPUDevice:
       type: object

@@ -38,6 +38,9 @@ enum ComposePorts {
         }
         let parsed = try parsePorts(value)
         if parsed.isEmpty {
+            if let array = value as? [Any], !array.isEmpty {
+                throw BarkVisorError.badRequest("unsupported compose feature: ports")
+            }
             return Rewrite(mapping: [], published: [])
         }
         _ = bindHost

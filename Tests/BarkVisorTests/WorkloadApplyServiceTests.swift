@@ -48,6 +48,7 @@ final class WorkloadApplyServiceTests {
 
     deinit {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        GPUShareService.listProvider = nil
         HostInfoService.lanBindIPv4Provider = nil
         ComposeTestIsolation.installFailFast()
         ComposeTestIsolation.lock.unlock()
@@ -300,6 +301,33 @@ final class WorkloadApplyServiceTests {
         }
         #expect(error?.httpStatus == 400)
         #expect(error?.errorDescription?.contains("workloadClass") == true)
+    }
+
+    @Test func `unknown gpu share is 400`() async throws {
+        GPUShareService.listProvider = { _ in
+            [
+                HostGPUShareDevice(
+                    id: "0000:00:02.0",
+                    kind: HostGPUShareDevice.kindDRM,
+                    name: "Intel",
+                    label: "Intel (renderD128)",
+                    renderNodes: ["/dev/dri/renderD128"],
+                    attachable: true,
+                ),
+            ]
+        }
+        defer { GPUShareService.listProvider = nil }
+        var doc = whoamiDocument(name: "gpu-app")
+        var spec = doc["spec"] as? [String: Any] ?? [:]
+        spec["gpuShare"] = [["id": "GPU-missing"]]
+        doc["spec"] = spec
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.errorDescription?.contains("unknown GPU share") == true)
     }
 
     @Test func `runtime workload is 400`() async throws {

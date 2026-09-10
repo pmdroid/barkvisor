@@ -94,6 +94,14 @@ describe('appTemplate', () => {
     expect((doc.spec as { compose: string }).compose).toContain('linuxserver/plex')
   })
 
+  test('apply document includes selected gpu share ids', () => {
+    const doc = applicationDocument(app([]), 'plex', {}, [], ['0000:00:02.0', 'GPU-aaaa'])
+    expect((doc.spec as { gpuShare: Array<{ id: string }> }).gpuShare).toEqual([
+      { id: '0000:00:02.0' },
+      { id: 'GPU-aaaa' },
+    ])
+  })
+
   test('open UI field is the labeled port', () => {
     const fields = [
       field({ id: 'port-32400-tcp', label: 'Open UI', kind: 'port', target: 'port:32400/tcp' }),

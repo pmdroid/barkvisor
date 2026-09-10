@@ -118,7 +118,15 @@ export function applicationDocument(
   name: string,
   values: AppTemplateValues,
   extraFolders: AppTemplateExtraFolder[] = [],
+  gpuShareIds: string[] = [],
 ): Record<string, unknown> {
+  const spec: Record<string, unknown> = {
+    runtime: 'device',
+    compose: app.compose,
+  }
+  if (gpuShareIds.length) {
+    spec.gpuShare = gpuShareIds.map((id) => ({ id }))
+  }
   return {
     apiVersion: 'barkvisor.dev/v1',
     kind: 'Application',
@@ -127,9 +135,6 @@ export function applicationDocument(
       values,
       extraFolders: extraFolders.filter((row) => row.hostPath.trim() && row.containerPath.trim()),
     },
-    spec: {
-      runtime: 'device',
-      compose: app.compose,
-    },
+    spec,
   }
 }

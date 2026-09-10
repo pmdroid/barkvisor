@@ -39,13 +39,18 @@ public enum ApplicationLifecycleService {
         }
     }
 
-    static func renderProject(vm: VM, dataDir: URL) throws -> ComposeRender {
+    static func renderProject(
+        vm: VM,
+        dataDir: URL,
+        gpuShare: GPUShareAttach = .empty,
+    ) throws -> ComposeRender {
         try prepare(
             id: vm.id,
             composeYaml: vm.composeYaml ?? "",
             env: decodeEnv(vm, dataDir: dataDir),
             dataDir: dataDir,
             allowedBinds: vm.decodedSharedPaths,
+            gpuShare: gpuShare,
         )
     }
 
@@ -55,6 +60,7 @@ public enum ApplicationLifecycleService {
         env: [String: String]?,
         dataDir: URL = Config.dataDir,
         allowedBinds: [String] = [],
+        gpuShare: GPUShareAttach = .empty,
     ) throws -> ComposeRender {
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -64,6 +70,7 @@ public enum ApplicationLifecycleService {
             stateDir: dir,
             bindHost: nil,
             allowedBinds: allowedBinds,
+            gpuShare: gpuShare,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -263,7 +270,8 @@ public enum ApplicationLifecycleService {
             return
         }
         if vm.composeYaml != nil {
-            let render = try renderProject(vm: vm, dataDir: dataDir)
+            let gpuShare = try await shareAttach(for: vm, db: db)
+            let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
             try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
             try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
@@ -278,7 +286,8 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let render = try renderProject(vm: vm, dataDir: dataDir)
+        let gpuShare = try await shareAttach(for: vm, db: db)
+        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
@@ -323,7 +332,8 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let render = try renderProject(vm: vm, dataDir: dataDir)
+        let gpuShare = try await shareAttach(for: vm, db: db)
+        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
@@ -495,11 +505,21 @@ public enum ApplicationLifecycleService {
         vm.setPortForwards(rules.isEmpty ? nil : rules)
     }
 
-    private static func decodeEnv(_ vm: VM, dataDir: URL) -> [String: String]? {
+    private static func decodeEnv(_ vm: VM, dataDir: URL = Config.dataDir) -> [String: String]? {
         AppTemplate.mergeEnv(
             existing: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
             incoming: nil,
             disk: ComposeRuntime.readEnv(id: vm.id, dataDir: dataDir),
+        )
+    }
+
+    private static func shareAttach(for vm: VM, db: DatabasePool) async throws -> GPUShareAttach {
+        let selected = WorkloadSpecJSON.decode(vm.specJson)?.spec.gpuShare ?? []
+        if selected.isEmpty { return .empty }
+        let vms = try await db.read { db in try VM.fetchAll(db) }
+        return try GPUShareService.attach(
+            selected: selected,
+            inventory: GPUShareService.list(vms: vms),
         )
     }
 

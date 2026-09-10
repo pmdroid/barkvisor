@@ -291,6 +291,7 @@ public enum WorkloadSpecProjector {
             ),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
+                gpuShare: WorkloadSpecJSON.decode(vm.specJson)?.spec.gpuShare ?? [],
                 sharedPaths: vm.decodedSharedPaths.isEmpty ? nil : vm.decodedSharedPaths,
                 health: vm.decodedHealth,
                 runtime: vm.runtime ?? WorkloadSpec.runtimeDevice,
@@ -371,6 +372,7 @@ public enum WorkloadSpecProjector {
             bindHost: bindHost,
             allowedBinds: spec.spec.sharedPaths ?? [],
         )
+        try GPUShareService.validate(spec.spec.gpuShare)
     }
 
     public static func normalizeQEMUArch(_ raw: String) -> String? {

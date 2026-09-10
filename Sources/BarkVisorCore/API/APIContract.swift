@@ -111,6 +111,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/system/usb", stability: .evolving),
         Route(method: "GET", path: "/api/system/gpu-devices", stability: .evolving),
         Route(method: "GET", path: "/api/system/gpu", stability: .evolving),
+        Route(method: "GET", path: "/api/system/gpu-share", stability: .evolving),
         Route(method: "GET", path: "/api/system/pci-devices", stability: .evolving),
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
         Route(method: "GET", path: "/api/system/updates/check", stability: .evolving),

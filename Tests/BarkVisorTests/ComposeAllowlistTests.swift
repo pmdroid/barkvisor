@@ -534,4 +534,81 @@ struct ComposeAllowlistTests {
         #expect(render.yaml.contains("/movies"))
         #expect(render.namedVolumes == ["config"])
     }
+
+    @Test func `gpu share injects dri devices and nvidia runtime`() throws {
+        let yaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+            environment:
+              PUID: "1000"
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml,
+            workloadID: "plex",
+            stateDir: stateDir,
+            gpuShare: GPUShareAttach(
+                driDevices: ["/dev/dri/renderD128", "/dev/dri/card0"],
+                nvidiaUUIDs: ["GPU-aaaa"],
+                nvidiaRuntime: true,
+            ),
+        )
+        #expect(render.yaml.contains("/dev/dri/renderD128"))
+        #expect(render.yaml.contains("/dev/dri/card0"))
+        #expect(render.yaml.contains("runtime"))
+        #expect(render.yaml.contains("nvidia"))
+        #expect(render.yaml.contains("GPU-aaaa"))
+        #expect(render.yaml.contains("NVIDIA_VISIBLE_DEVICES"))
+        #expect(!render.yaml.contains("/dev/nvidia"))
+    }
+
+    @Test func `unchecking nvidia omits runtime`() throws {
+        let yaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+        """
+        let render = try ComposeAllowlist.render(
+            yaml: yaml,
+            workloadID: "plex",
+            stateDir: stateDir,
+            gpuShare: GPUShareAttach(
+                driDevices: ["/dev/dri/renderD128"],
+                nvidiaUUIDs: [],
+                nvidiaRuntime: false,
+            ),
+        )
+        #expect(render.yaml.contains("/dev/dri/renderD128"))
+        #expect(!render.yaml.contains("runtime"))
+        #expect(!render.yaml.contains("NVIDIA_VISIBLE_DEVICES"))
+    }
+
+    @Test func `raw nvidia device nodes stay rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            devices:
+              - /dev/nvidia0
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else { return }
+        #expect(message == "unsupported compose feature: devices")
+    }
+
+    @Test func `incoming nvidia runtime is rejected`() {
+        let yaml = """
+        services:
+          x:
+            image: alpine
+            runtime: nvidia
+        """
+        let error = #expect(throws: BarkVisorError.self) {
+            _ = try ComposeAllowlist.render(yaml: yaml, workloadID: "id", stateDir: stateDir)
+        }
+        guard case let .badRequest(message) = error else { return }
+        #expect(message == "unsupported compose feature: runtime")
+    }
 }

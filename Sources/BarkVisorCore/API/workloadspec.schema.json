@@ -148,6 +148,17 @@
             }
           }
         },
+        "gpuShare": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "display": {
           "type": ["object", "null"],
           "additionalProperties": false,
