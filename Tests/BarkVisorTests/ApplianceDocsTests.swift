@@ -31,6 +31,33 @@ struct ApplianceDocsTests {
         #expect(!text.contains("quorum"))
     }
 
+    @Test func `windows install is zip qemu and hypervisor platform`() throws {
+        let text = try read("docs/getting-started-windows.md")
+        #expect(text.contains("barkvisor-windows-amd64.zip"))
+        #expect(text.contains("barkvisor-windows-arm64.zip"))
+        #expect(text.contains("install.ps1"))
+        #expect(text.contains("winget install"))
+        #expect(text.contains("HypervisorPlatform"))
+        #expect(text.contains("Windows Hypervisor Platform"))
+        #expect(text.contains("VirtualMachinePlatform"))
+        #expect(text.contains("WinHvPlatform.dll"))
+        #expect(text.contains("qemu-system-x86_64.exe"))
+        #expect(text.contains("Program Files\\qemu") || text.contains(#"C:\Program Files\qemu"#))
+        #expect(text.contains("LocalSystem"))
+        #expect(text.contains("ProgramData"))
+        #expect(text.contains("Expand-Archive"))
+        #expect(text.contains("uninstall.ps1"))
+        #expect(!text.contains("cluster"))
+        #expect(!text.contains("quorum"))
+
+        let sync = try read("website/scripts/sync-content.mjs")
+        #expect(sync.contains("getting-started-windows.md"))
+        #expect(sync.contains("getting-started/windows.md"))
+
+        let sidebar = try read("website/astro.config.mjs")
+        #expect(sidebar.contains("/docs/getting-started/windows/"))
+    }
+
     @Test func `linux install is ubuntu debian deb not fedora`() throws {
         let text = try read("docs/getting-started-linux.md")
         #expect(text.contains("Ubuntu"))

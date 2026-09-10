@@ -25,6 +25,12 @@ const map = {
     description:
       'Install BarkVisor on Ubuntu or Debian with the .deb. Root systemd unit.',
   },
+  'getting-started-windows.md': {
+    out: 'getting-started/windows.md',
+    title: 'Installation (Windows)',
+    description:
+      'Install BarkVisor from the zip. QEMU, Windows Hypervisor Platform, LocalSystem service.',
+  },
   'getting-started-first-launch.md': {
     out: 'getting-started/first-launch.md',
     title: 'First launch and setup',
@@ -33,7 +39,7 @@ const map = {
   'getting-started-quickstart.md': {
     out: 'getting-started/quickstart.md',
     title: 'Quickstart',
-    description: 'Download an image and create your first VM on macOS or Linux.',
+    description: 'Download an image and create your first VM on macOS, Linux, or Windows.',
   },
   'getting-started-development.md': {
     out: 'getting-started/development.md',
@@ -49,12 +55,12 @@ const map = {
   'getting-started-building-releases.md': {
     out: 'getting-started/building-releases.md',
     title: 'Building releases',
-    description: 'macOS .pkg and Linux package builds. Appliance channel is .deb + .pkg.',
+    description: 'macOS .pkg, Linux packages, and the Windows zip payload.',
   },
   'getting-started-troubleshooting.md': {
     out: 'getting-started/troubleshooting.md',
     title: 'Troubleshooting',
-    description: 'Common issues on macOS and Linux.',
+    description: 'Common issues on macOS, Linux, and Windows.',
   },
   'product-terminology.md': {
     out: 'concepts/terminology.md',
@@ -202,6 +208,7 @@ function stripFirstH1(body) {
 function fixLinks(body) {
   return body
     .replace(/\]\(getting-started-linux\.md(#[^)]*)?\)/g, '](/docs/linux/$1)')
+    .replace(/\]\(getting-started-windows\.md(#[^)]*)?\)/g, '](/docs/getting-started/windows/$1)')
     .replace(/\]\(getting-started-installation\.md(#[^)]*)?\)/g, '](/docs/getting-started/installation/$1)')
     .replace(/\]\(getting-started-first-launch\.md(#[^)]*)?\)/g, '](/docs/getting-started/first-launch/$1)')
     .replace(/\]\(getting-started-quickstart\.md(#[^)]*)?\)/g, '](/docs/getting-started/quickstart/$1)')

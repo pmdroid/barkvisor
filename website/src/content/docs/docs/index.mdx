@@ -1,13 +1,13 @@
 ---
 title: Documentation
-description: Open-source QEMU virtualization for macOS and Linux — install, create VMs, and operate the headless daemon.
+description: Open-source QEMU virtualization for macOS, Linux, and Windows — install, create VMs, and operate the headless daemon.
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a web UI.
 
-**New here?** Start with the shared **[Quickstart](/docs/getting-started/quickstart/)** — download an image and create your first VM (same flow on macOS and Linux).
+**New here?** Start with the shared **[Quickstart](/docs/getting-started/quickstart/)** — download an image and create your first VM (same flow on macOS, Linux, and Windows).
 
 ## Using the web UI
 
@@ -21,8 +21,8 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 ## Get started
 
 <CardGrid>
-  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS and Linux (arm64 / x86_64)." />
-  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS and Linux." />
+  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS, Linux, and Windows (arm64 / x86_64)." />
+  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS, Linux, and Windows." />
   <LinkCard title="Home and pairing" href="/docs/guides/home-and-pairing/" description="Add a Device from Settings → Pairing; join from setup or barkvisor join." />
   <LinkCard title="Ollama" href="/docs/guides/ollama/" description="Install Ollama, pull, Start on the Device that has the weights, search the library." />
   <LinkCard title="Create a Workload" href="/docs/guides/create-workload/" description="Place a VM on this Device or another reachable Device." />
@@ -31,6 +31,7 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
   <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: Home failover, live migration, apps." />
   <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="Apple Silicon .pkg, inspect-then-run bootstrap, Settings → Updates." />
   <LinkCard title="Installation (Linux)" href="/docs/linux/" description="Ubuntu / Debian .deb, root systemd, Networks Apply." />
+  <LinkCard title="Installation (Windows)" href="/docs/getting-started/windows/" description="Zip payload, QEMU, Windows Hypervisor Platform, LocalSystem service." />
   <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS or Linux." />
   <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
 </CardGrid>
@@ -41,10 +42,11 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 |----------|-----------|--------------|--------------------|
 | **macOS** (Apple Silicon) | `.pkg` | HVF | Homebrew `socket_vmnet` (root daemon starts it) |
 | **Linux** (Ubuntu / Debian) | `.deb` | KVM (or TCG) | host `br0` Apply + `qemu-bridge-helper` |
+| **Windows** | zip | WHPX | NAT only |
 
-Same product on both: daemon + SPA, NAT, bridge, USB, images, cloud-init, console/VNC. Host differences (accel, packaging) are by design.
+Same product: daemon + SPA, NAT, images, console/VNC. Host differences (accel, packaging, bridge) are by design.
 
-Install guides: **[macOS](/docs/getting-started/installation/)** · **[Linux](/docs/linux/)**.
+Install guides: **[macOS](/docs/getting-started/installation/)** · **[Linux](/docs/linux/)** · **[Windows](/docs/getting-started/windows/)**.
 
 ## Concepts
 

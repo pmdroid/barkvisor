@@ -14,24 +14,27 @@ Kill the conflicting process. The server always binds to `0.0.0.0`.
 
 ### Permission errors on data directory
 
-For installed daemon builds, BarkVisor stores all data under:
+Installed daemon data:
 
-```
-/var/lib/barkvisor/
-```
+| Platform | Directory |
+|----------|-----------|
+| macOS / Linux | `/var/lib/barkvisor/` |
+| Windows | `C:\ProgramData\BarkVisor\` |
 
-For development builds (`swift run`):
+Development (`swift run`):
 
 | Platform | Default data directory |
 |----------|------------------------|
 | macOS | `~/Library/Application Support/BarkVisor/` |
 | Linux | `~/.local/share/barkvisor/` |
+| Windows | `%LOCALAPPDATA%\BarkVisor\` |
 
 Override with `BARKVISOR_DATA_DIR`. If the directory or its contents have incorrect permissions, the server will fail during initialization:
 
 ```sh
 ls -la /var/lib/barkvisor/
 # or: ls -la ~/.local/share/barkvisor/
+# Windows: Get-ChildItem $env:ProgramData\BarkVisor
 ```
 
 ### Database corruption recovery
@@ -39,9 +42,11 @@ ls -la /var/lib/barkvisor/
 On startup, BarkVisor attempts to open and migrate the SQLite database at:
 
 ```
-/var/lib/barkvisor/db.sqlite                              # installed daemon
+/var/lib/barkvisor/db.sqlite                              # installed macOS / Linux
+C:\ProgramData\BarkVisor\db.sqlite                        # installed Windows
 ~/Library/Application Support/BarkVisor/db.sqlite         # macOS dev
 ~/.local/share/barkvisor/db.sqlite                        # Linux dev
+%LOCALAPPDATA%\BarkVisor\db.sqlite                        # Windows unpackaged
 ```
 
 If the database fails to open, the server automatically attempts to restore from the most recent backup in the backups directory. If no backup is available, a fresh database is created (all data is lost). Check server logs for messages like `Database failed to open` or `Database restored from backup`.
@@ -49,7 +54,8 @@ If the database fails to open, the server automatically attempts to restore from
 Database backups are enabled by default and run daily. The backup directory defaults to:
 
 ```
-/var/lib/barkvisor/backups/                           # installed daemon
+/var/lib/barkvisor/backups/                           # installed macOS / Linux
+C:\ProgramData\BarkVisor\backups\                     # installed Windows
 ~/Library/Application Support/BarkVisor/backups/      # macOS dev
 ~/.local/share/barkvisor/backups/                     # Linux dev
 ```
@@ -61,7 +67,8 @@ Backup retention is 30 days by default, configurable via the `backupRetentionDay
 BarkVisor writes structured JSON logs to:
 
 ```
-/var/lib/barkvisor/logs/                              # installed daemon
+/var/lib/barkvisor/logs/                              # installed macOS / Linux
+C:\ProgramData\BarkVisor\logs\                        # installed Windows
 ~/Library/Application Support/BarkVisor/logs/         # macOS dev
 ~/.local/share/barkvisor/logs/                        # Linux dev
 ```
@@ -74,6 +81,10 @@ log stream --predicate 'subsystem == "dev.barkvisor"' --level debug
 
 # Linux (systemd install)
 journalctl -u barkvisor.service -f
+
+# Windows (newest file; -Wait cannot take a wildcard)
+$log = Get-ChildItem "$env:ProgramData\BarkVisor\logs" -File | Sort-Object LastWriteTime | Select-Object -Last 1
+Get-Content $log.FullName -Wait
 ```
 
 ### Linux-specific
@@ -87,6 +98,16 @@ Linux install guide: [Installation (Linux)](getting-started-linux.md).
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. The daemon is root; dropped QEMU needs group `kvm` when KVM is present.
 - **GPU attach not ready:** enable Intel or AMD IOMMU, load vfio-pci, then confirm IOMMU groups. See [GPU passthrough](getting-started-gpu-passthrough.md). Host GPU blanking and **In use by host** do not block Attach.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
+
+### Windows-specific
+
+Windows install guide: [Installation (Windows)](getting-started-windows.md).
+
+- **QEMU not found:** `winget install qemu` so `C:\Program Files\qemu\qemu-system-x86_64.exe` exists. `install.ps1` stops without it.
+- **WHPX fail:** enable **Windows Hypervisor Platform**, firmware virtualization in BIOS, reboot. See [Enable Windows features](getting-started-windows.md#enable-windows-features).
+- **Guests will not start:** doctor `whpx` must be ok. TCG is inventory-only.
+- **Blank SPA after zip install:** confirm `C:\Program Files\BarkVisor\share\barkvisor\frontend\dist\index.html`.
+- **Bridge unavailable:** NAT only on Windows.
 
 ## Onboarding issues
 
@@ -140,6 +161,8 @@ brew install qemu
 
 **Linux** uses distro QEMU on `$PATH`. Install QEMU from the distro using [System Requirements](getting-started-linux.md#system-requirements) in the Linux install guide.
 
+**Windows** looks for `qemu-system-x86_64.exe` and `qemu-img.exe` under `C:\Program Files\qemu`, then `C:\msys64\ucrt64\bin`, then `PATH`. Install QEMU and enable WHPX using [Installation (Windows)](getting-started-windows.md).
+
 ### Firmware not found
 
 BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
@@ -147,6 +170,7 @@ BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
 1. `/opt/homebrew/share/qemu/` / `/usr/local/share/qemu/` (macOS Homebrew)
 2. leftover `/usr/local/share/barkvisor/qemu/` if present
 3. Distro OVMF / AAVMF paths on Linux (edk2 packages)
+4. `C:\Program Files\qemu\share` on Windows
 
 If VMs fail to boot with firmware errors, verify the firmware files exist at one of these paths.
 
@@ -233,6 +257,10 @@ NAT Workloads do not need `socket_vmnet`.
 ### Linux: host bridge
 
 On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. Prefer **Networks → Bridge setup → Apply**. See [Bridged networking](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
+
+### Windows: WHPX
+
+On **Windows**, guests start with WHPX. If doctor fails `whpx`, enable **Windows Hypervisor Platform** (`HypervisorPlatform`) in Windows Features, turn on firmware virtualization in BIOS, and reboot. TCG is inventory-only. See [Enable Windows features](getting-started-windows.md#enable-windows-features). Bridged networking is not supported. Use NAT.
 
 ## Frontend
 

@@ -14,7 +14,7 @@ export default defineConfig({
     starlight({
       title: 'BarkVisor',
       description:
-        'Open-source QEMU virtualization for macOS and Linux — docs and guides.',
+        'Open-source QEMU virtualization for macOS, Linux, and Windows — docs and guides.',
       favicon: '/favicon.png',
       logo: {
         src: './public/hero.png',
@@ -48,6 +48,7 @@ export default defineConfig({
             { label: 'Roadmap', link: '/docs/roadmap/' },
             { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
             { label: 'Installation (Linux)', link: '/docs/linux/' },
+            { label: 'Installation (Windows)', link: '/docs/getting-started/windows/' },
           ],
         },
         {

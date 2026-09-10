@@ -56,4 +56,5 @@ The server binds `127.0.0.1`. On a remote Device, copy the assets onto that unit
 
 - [Installation (macOS)](/docs/getting-started/installation/)
 - [Installation (Linux)](/docs/linux/)
+- [Installation (Windows)](/docs/getting-started/windows/)
 - [Settings](/docs/using/settings/)

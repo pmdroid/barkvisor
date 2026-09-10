@@ -3,7 +3,9 @@
 This guide covers building and running BarkVisor from source for local
 development on **macOS**. For **Linux**, see
 **[Installation (Linux)](getting-started-linux.md#building-from-source-optional)**
-and run `./scripts/linux-dev.sh` for packages + Swift and smoke setup.
+and run `./scripts/linux-dev.sh` for packages + Swift and smoke setup. For
+**Windows**, see **[Installation (Windows)](getting-started-windows.md#building-from-source-optional)**
+and `.\scripts\windows-swift.ps1`.
 
 **Website (landing + docs):** unified Astro app in `website/` syncs these Markdown
 files into `/docs/*` (`cd website && bun install && bun run dev`).

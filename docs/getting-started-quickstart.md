@@ -8,12 +8,14 @@ connecting to it, and managing its lifecycle in BarkVisor.
 - BarkVisor is installed and the daemon is running:
   - **macOS:** `sudo launchctl list | grep barkvisor`
   - **Linux:** `systemctl status barkvisor.service` (or `swift run BarkVisorApp` in dev)
+  - **Windows:** `Get-Service BarkVisor` (see [Installation (Windows)](getting-started-windows.md))
 - The server is listening on port 7777 (default).
 - Optional: pick **All** or one **Device** in the sidebar. List pages (Workloads, Library, Networks, Logs) follow that scope. Create VM still asks which Device should run the guest.
 - At least one OS image is available, or you are ready to download/upload one.
 - QEMU is available:
   - **macOS:** `brew install qemu swtpm socket_vmnet`
   - **Linux:** distro QEMU/firmware packages (see [Installation (Linux)](getting-started-linux.md#system-requirements))
+  - **Windows:** `winget install qemu` plus Windows Hypervisor Platform (see [Installation (Windows)](getting-started-windows.md#install-qemu-and-other-software))
 
 ## Getting an OS Image
 
