@@ -184,7 +184,8 @@ The output is `build/stage/` (install layout), `build/BarkVisor-<version>-standa
 
 **macOS:** installed daemon data is under `/var/lib/barkvisor/`; development builds use `~/Library/Application Support/BarkVisor/`.  
 **Linux:** development default is `~/.local/share/barkvisor`; installed layout uses `/var/lib/barkvisor` (see Linux guide).  
-**Windows:** installed layout uses `C:\ProgramData\BarkVisor`; unpackaged uses `%LOCALAPPDATA%\BarkVisor` (see Windows guide). Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR`.
+**Windows:** installed layout uses `C:\ProgramData\BarkVisor`; unpackaged uses `%LOCALAPPDATA%\BarkVisor` (see Windows guide).  
+Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR` on every platform.
 
 | Path | Contents |
 |------|----------|

@@ -14,25 +14,27 @@ Kill the conflicting process. The server always binds to `0.0.0.0`.
 
 ### Permission errors on data directory
 
-For installed daemon builds, BarkVisor stores all data under:
+Installed daemon data:
 
-```
-/var/lib/barkvisor/
-```
+| Platform | Directory |
+|----------|-----------|
+| macOS / Linux | `/var/lib/barkvisor/` |
+| Windows | `C:\ProgramData\BarkVisor\` |
 
-For development builds (`swift run`):
+Development (`swift run`):
 
 | Platform | Default data directory |
 |----------|------------------------|
 | macOS | `~/Library/Application Support/BarkVisor/` |
 | Linux | `~/.local/share/barkvisor/` |
-| Windows | `%LOCALAPPDATA%\BarkVisor\` (installed: `C:\ProgramData\BarkVisor\`) |
+| Windows | `%LOCALAPPDATA%\BarkVisor\` |
 
 Override with `BARKVISOR_DATA_DIR`. If the directory or its contents have incorrect permissions, the server will fail during initialization:
 
 ```sh
 ls -la /var/lib/barkvisor/
 # or: ls -la ~/.local/share/barkvisor/
+# Windows: Get-ChildItem $env:ProgramData\BarkVisor
 ```
 
 ### Database corruption recovery
@@ -40,9 +42,11 @@ ls -la /var/lib/barkvisor/
 On startup, BarkVisor attempts to open and migrate the SQLite database at:
 
 ```
-/var/lib/barkvisor/db.sqlite                              # installed daemon
+/var/lib/barkvisor/db.sqlite                              # installed macOS / Linux
+C:\ProgramData\BarkVisor\db.sqlite                        # installed Windows
 ~/Library/Application Support/BarkVisor/db.sqlite         # macOS dev
 ~/.local/share/barkvisor/db.sqlite                        # Linux dev
+%LOCALAPPDATA%\BarkVisor\db.sqlite                        # Windows unpackaged
 ```
 
 If the database fails to open, the server automatically attempts to restore from the most recent backup in the backups directory. If no backup is available, a fresh database is created (all data is lost). Check server logs for messages like `Database failed to open` or `Database restored from backup`.
@@ -50,7 +54,8 @@ If the database fails to open, the server automatically attempts to restore from
 Database backups are enabled by default and run daily. The backup directory defaults to:
 
 ```
-/var/lib/barkvisor/backups/                           # installed daemon
+/var/lib/barkvisor/backups/                           # installed macOS / Linux
+C:\ProgramData\BarkVisor\backups\                     # installed Windows
 ~/Library/Application Support/BarkVisor/backups/      # macOS dev
 ~/.local/share/barkvisor/backups/                     # Linux dev
 ```
@@ -62,7 +67,8 @@ Backup retention is 30 days by default, configurable via the `backupRetentionDay
 BarkVisor writes structured JSON logs to:
 
 ```
-/var/lib/barkvisor/logs/                              # installed daemon
+/var/lib/barkvisor/logs/                              # installed macOS / Linux
+C:\ProgramData\BarkVisor\logs\                        # installed Windows
 ~/Library/Application Support/BarkVisor/logs/         # macOS dev
 ~/.local/share/barkvisor/logs/                        # Linux dev
 ```
@@ -76,8 +82,9 @@ log stream --predicate 'subsystem == "dev.barkvisor"' --level debug
 # Linux (systemd install)
 journalctl -u barkvisor.service -f
 
-# Windows
-Get-Content "$env:ProgramData\BarkVisor\logs\*" -Wait
+# Windows (newest file; -Wait cannot take a wildcard)
+$log = Get-ChildItem "$env:ProgramData\BarkVisor\logs" -File | Sort-Object LastWriteTime | Select-Object -Last 1
+Get-Content $log.FullName -Wait
 ```
 
 ### Linux-specific

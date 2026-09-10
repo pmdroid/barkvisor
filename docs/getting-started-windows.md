@@ -22,7 +22,7 @@ After install, open `http://localhost:7777` and finish the web setup. First Work
 
 NAT networking works. Bridged networking does not. TPM 2.0 emulation is not available on Windows Devices (`swtpm` unixio). Windows 11 guests that require TPM belong on a Linux or macOS Device, or start without TPM (`firmware.tpm=false`).
 
-Optional for cloud-init seed ISOs: **xorriso** or **mkisofs** on `PATH` (MSYS2). Optional for off-LAN access: **Tailscale**. BarkVisor can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
+Optional for cloud-init seed ISOs: **xorriso** or **mkisofs** on `PATH` (MSYS2). Optional for off-LAN access: **Tailscale**. BarkVisor can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#device-url).
 
 ## Enable Windows features
 
