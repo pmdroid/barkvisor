@@ -7,6 +7,7 @@ export const DASHBOARD_MODULES = [
   'stopped',
   'failed',
   'devices',
+  'usage',
 ] as const
 
 export type DashboardModuleId = (typeof DASHBOARD_MODULES)[number]
@@ -23,6 +24,7 @@ export const DASHBOARD_MODULE_META: Record<DashboardModuleId, { title: string; h
   stopped: { title: 'Stopped', hint: 'Stopped workloads' },
   failed: { title: 'Failed', hint: 'Failed workloads as a list' },
   devices: { title: 'Home', hint: 'Every Device in this Home' },
+  usage: { title: 'Usage', hint: 'CPU, memory, and network across workloads' },
 }
 
 export const DASHBOARD_FEED_MODULES: readonly DashboardModuleId[] = [
@@ -32,7 +34,7 @@ export const DASHBOARD_FEED_MODULES: readonly DashboardModuleId[] = [
   'stopped',
 ]
 
-export const DASHBOARD_SIDE_MODULES: readonly DashboardModuleId[] = ['devices']
+export const DASHBOARD_SIDE_MODULES: readonly DashboardModuleId[] = ['devices', 'usage']
 
 export const DEFAULT_LAYOUT: DashboardModule[] = [
   { id: 'attention', on: true },
@@ -41,6 +43,7 @@ export const DEFAULT_LAYOUT: DashboardModule[] = [
   { id: 'stopped', on: true },
   { id: 'failed', on: false },
   { id: 'devices', on: true },
+  { id: 'usage', on: true },
 ]
 
 const MODULE_IDS = new Set<string>(DASHBOARD_MODULES)

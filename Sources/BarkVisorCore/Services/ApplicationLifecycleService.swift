@@ -10,6 +10,11 @@ public enum ApplicationLifecycleService {
 
     private static let serial = Serial()
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
+    private nonisolated(unsafe) static var metricsCollector: MetricsCollector?
+
+    public static func setMetricsCollector(_ collector: MetricsCollector?) {
+        metricsCollector = collector
+    }
 
     public static func lastError(for id: String) -> String? {
         lastErrors[id]
@@ -182,6 +187,7 @@ public enum ApplicationLifecycleService {
         try? await serial.run {
             downLocked(vm: vm, dataDir: dataDir)
         }
+        await metricsCollector?.stop(vmID: vm.id)
     }
 
     public static func refreshState(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
@@ -318,6 +324,7 @@ public enum ApplicationLifecycleService {
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
             try await setState(&vm, state: "running", error: nil, db: db)
+            await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
@@ -337,6 +344,7 @@ public enum ApplicationLifecycleService {
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             try await setState(&vm, state: "stopped", error: nil, db: db)
+            await metricsCollector?.stop(vmID: vm.id)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             try await setState(&vm, state: "error", error: message, db: db)
@@ -366,6 +374,7 @@ public enum ApplicationLifecycleService {
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
             try await setState(&vm, state: "running", error: nil, db: db)
+            await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
@@ -402,6 +411,7 @@ public enum ApplicationLifecycleService {
         try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
         try await refreshCatalogDigest(vm: &vm, db: db)
         try await setState(&vm, state: "running", error: nil, db: db)
+        await metricsCollector?.startApp(id: vm.id, project: project)
         progress?(1.0)
     }
 

@@ -391,6 +391,7 @@ public final class VaporServer: @unchecked Sendable {
         let consoleBuffers = ConsoleBufferManager()
         await manager.setConsoleBuffers(consoleBuffers)
         await manager.setMetricsCollector(collector)
+        ApplicationLifecycleService.setMetricsCollector(collector)
         await manager.setGuestAgentInventory(guestAgentInventory)
         await manager.setStateStreamService(stateStreamService)
 

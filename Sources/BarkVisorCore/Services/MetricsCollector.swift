@@ -13,6 +13,20 @@ public struct MetricSample: Codable, Sendable {
     public let memoryUsedMB: Int
     public let diskReadBytes: Int64
     public let diskWriteBytes: Int64
+    public let networkRxBytes: Int64
+    public let networkTxBytes: Int64
+    public let memoryLimitMB: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case timestamp
+        case cpuPercent
+        case memoryUsedMB
+        case diskReadBytes
+        case diskWriteBytes
+        case networkRxBytes
+        case networkTxBytes
+        case memoryLimitMB
+    }
 
     public init(
         timestamp: String,
@@ -20,12 +34,30 @@ public struct MetricSample: Codable, Sendable {
         memoryUsedMB: Int,
         diskReadBytes: Int64,
         diskWriteBytes: Int64,
+        networkRxBytes: Int64 = 0,
+        networkTxBytes: Int64 = 0,
+        memoryLimitMB: Int = 0,
     ) {
         self.timestamp = timestamp
         self.cpuPercent = cpuPercent
         self.memoryUsedMB = memoryUsedMB
         self.diskReadBytes = diskReadBytes
         self.diskWriteBytes = diskWriteBytes
+        self.networkRxBytes = networkRxBytes
+        self.networkTxBytes = networkTxBytes
+        self.memoryLimitMB = memoryLimitMB
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        timestamp = try container.decode(String.self, forKey: .timestamp)
+        cpuPercent = try container.decode(Double.self, forKey: .cpuPercent)
+        memoryUsedMB = try container.decode(Int.self, forKey: .memoryUsedMB)
+        diskReadBytes = try container.decode(Int64.self, forKey: .diskReadBytes)
+        diskWriteBytes = try container.decode(Int64.self, forKey: .diskWriteBytes)
+        networkRxBytes = try container.decodeIfPresent(Int64.self, forKey: .networkRxBytes) ?? 0
+        networkTxBytes = try container.decodeIfPresent(Int64.self, forKey: .networkTxBytes) ?? 0
+        memoryLimitMB = try container.decodeIfPresent(Int.self, forKey: .memoryLimitMB) ?? 0
     }
 }
 
@@ -60,6 +92,52 @@ struct QMPPollResult {
     let newTotalWrite: Int64?
 }
 
+public struct MetricsSplit: Sendable, Equatable {
+    public var vmCpuPercent: Double
+    public var vmMemoryMB: Int
+    public var appCpuPercent: Double
+    public var appMemoryMB: Int
+    public var appNetworkRxBytes: Int64
+    public var appNetworkTxBytes: Int64
+
+    public init(
+        vmCpuPercent: Double = 0,
+        vmMemoryMB: Int = 0,
+        appCpuPercent: Double = 0,
+        appMemoryMB: Int = 0,
+        appNetworkRxBytes: Int64 = 0,
+        appNetworkTxBytes: Int64 = 0,
+    ) {
+        self.vmCpuPercent = vmCpuPercent
+        self.vmMemoryMB = vmMemoryMB
+        self.appCpuPercent = appCpuPercent
+        self.appMemoryMB = appMemoryMB
+        self.appNetworkRxBytes = appNetworkRxBytes
+        self.appNetworkTxBytes = appNetworkTxBytes
+    }
+}
+
+public enum MetricsAggregation {
+    public static func split(
+        samples: [String: MetricSample],
+        appIDs: Set<String>,
+    ) -> MetricsSplit {
+        var result = MetricsSplit()
+        for (id, sample) in samples {
+            if appIDs.contains(id) {
+                result.appCpuPercent += sample.cpuPercent
+                result.appMemoryMB += sample.memoryUsedMB
+                result.appNetworkRxBytes += sample.networkRxBytes
+                result.appNetworkTxBytes += sample.networkTxBytes
+            } else {
+                result.vmCpuPercent += sample.cpuPercent
+                result.vmMemoryMB += sample.memoryUsedMB
+            }
+        }
+        return result
+    }
+}
+
 /// Per-VM metrics polling via QMP, stores samples in a ring buffer (30 min history at 5s interval = 360 samples)
 /// Also collects host-level CPU/memory stats on a separate timer for the dashboard history.
 /// QMP here is balloon + blockstats only; qemu-guest-agent inventory is `GuestAgentInventory`.
@@ -86,12 +164,15 @@ public actor MetricsCollector {
 
     private var buffers: [String: [MetricSample]] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var appTasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [String: AsyncStream<MetricSample>.Continuation]] = [:]
 
     // Previous values for delta computation
     private var prevDiskRead: [String: Int64] = [:]
     private var prevDiskWrite: [String: Int64] = [:]
     private var prevCPUTime: [String: Int64] = [:]
+    private var prevNetRx: [String: Int64] = [:]
+    private var prevNetTx: [String: Int64] = [:]
 
     // System-level stats ring buffer
     private var systemStatsBuffer: [SystemStatsSample] = []
@@ -153,10 +234,14 @@ public actor MetricsCollector {
     public func stop(vmID: String) {
         tasks[vmID]?.cancel()
         tasks.removeValue(forKey: vmID)
+        appTasks[vmID]?.cancel()
+        appTasks.removeValue(forKey: vmID)
         buffers.removeValue(forKey: vmID)
         prevDiskRead.removeValue(forKey: vmID)
         prevDiskWrite.removeValue(forKey: vmID)
         prevCPUTime.removeValue(forKey: vmID)
+        prevNetRx.removeValue(forKey: vmID)
+        prevNetTx.removeValue(forKey: vmID)
 
         // Close all SSE streams
         if let conts = continuations[vmID] {
@@ -165,6 +250,65 @@ public actor MetricsCollector {
             }
         }
         continuations.removeValue(forKey: vmID)
+    }
+
+    public func startApp(id: String, project: String) {
+        guard tasks[id] == nil, appTasks[id] == nil else { return }
+
+        buffers[id] = []
+        let task = Task { [weak self] in
+            if let self {
+                await self.pollApp(id: id, project: project)
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.pollInterval)
+                if let self {
+                    await self.pollApp(id: id, project: project)
+                }
+            }
+        }
+        appTasks[id] = task
+    }
+
+    private func pollApp(id: String, project: String) async {
+        guard appTasks[id] != nil else { return }
+
+        let snapshot: DockerStatsTotals? = await Task.detached {
+            DockerStats.snapshot(id: id, project: project)
+        }.value
+        guard let snapshot, snapshot.containerCount > 0 else { return }
+
+        let prevRx = prevNetRx[id] ?? snapshot.networkRxBytes
+        let prevTx = prevNetTx[id] ?? snapshot.networkTxBytes
+        prevNetRx[id] = snapshot.networkRxBytes
+        prevNetTx[id] = snapshot.networkTxBytes
+
+        appendSample(
+            id: id,
+            sample: MetricSample(
+                timestamp: iso8601.string(from: Date()),
+                cpuPercent: max(snapshot.cpuPercent, 0),
+                memoryUsedMB: Int(snapshot.memoryUsedBytes / (1_024 * 1_024)),
+                diskReadBytes: 0,
+                diskWriteBytes: 0,
+                networkRxBytes: max(snapshot.networkRxBytes - prevRx, 0),
+                networkTxBytes: max(snapshot.networkTxBytes - prevTx, 0),
+                memoryLimitMB: Int(snapshot.memoryLimitBytes / (1_024 * 1_024)),
+            ),
+        )
+    }
+
+    private func appendSample(id: String, sample: MetricSample) {
+        buffers[id, default: []].append(sample)
+        if let count = buffers[id]?.count, count > Self.maxSamples {
+            buffers[id]?.removeFirst(count - Self.maxSamples)
+        }
+
+        if let conts = continuations[id] {
+            for (_, cont) in conts {
+                cont.yield(sample)
+            }
+        }
     }
 
     public func recentSamples(vmID: String, minutes: Int) -> [MetricSample] {
@@ -240,16 +384,7 @@ public actor MetricsCollector {
             diskWriteBytes: qmpResult.diskWrite,
         )
 
-        buffers[vmID, default: []].append(sample)
-        if let count = buffers[vmID]?.count, count > Self.maxSamples {
-            buffers[vmID]?.removeFirst(count - Self.maxSamples)
-        }
-
-        if let conts = continuations[vmID] {
-            for (_, cont) in conts {
-                cont.yield(sample)
-            }
-        }
+        appendSample(id: vmID, sample: sample)
     }
 
     // MARK: - Per-process CPU

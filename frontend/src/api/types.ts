@@ -741,6 +741,9 @@ export interface MetricSample {
   memoryUsedMB: number
   diskReadBytes: number
   diskWriteBytes: number
+  networkRxBytes?: number | null
+  networkTxBytes?: number | null
+  memoryLimitMB?: number | null
 }
 
 export interface HostStorageMetric {
@@ -771,6 +774,12 @@ export interface SystemStats {
   totalVMs: number
   vmCpuPercent: number
   vmMemoryMB: number
+  appCpuPercent?: number | null
+  appMemoryMB?: number | null
+  appNetworkRxBytes?: number | null
+  appNetworkTxBytes?: number | null
+  runningApps?: number | null
+  totalApps?: number | null
   metrics?: HostMetrics
   historyRetentionMinutes?: number
   historySampleIntervalSeconds?: number

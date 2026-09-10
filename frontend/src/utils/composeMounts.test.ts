@@ -12,8 +12,15 @@ services:
 `
     const mounts = parseComposeMounts(yaml)
     expect(mounts).toEqual([
-      { kind: 'bind', source: '/media/movies', target: '/data/movies' },
-      { kind: 'volume', source: 'plex-config', target: '/config' },
+      { kind: 'bind', source: '/media/movies', target: '/data/movies', readOnly: false },
+      { kind: 'volume', source: 'plex-config', target: '/config', readOnly: false },
+    ])
+  })
+
+  it('marks :ro binds read-only', () => {
+    const mounts = parseComposeMounts('      - /media:/media:ro\n')
+    expect(mounts).toEqual([
+      { kind: 'bind', source: '/media', target: '/media', readOnly: true },
     ])
   })
 })
@@ -21,8 +28,11 @@ services:
 describe('mountsFromSharedPaths', () => {
   it('splits host:guest binds', () => {
     expect(mountsFromSharedPaths(['/media/movies:/movies', 'plex-config:/config'])).toEqual([
-      { kind: 'bind', source: '/media/movies', target: '/movies' },
-      { kind: 'volume', source: 'plex-config', target: '/config' },
+      { kind: 'bind', source: '/media/movies', target: '/movies', readOnly: false },
+      { kind: 'volume', source: 'plex-config', target: '/config', readOnly: false },
+    ])
+    expect(mountsFromSharedPaths(['/media:/media:ro'])).toEqual([
+      { kind: 'bind', source: '/media', target: '/media', readOnly: true },
     ])
   })
 })
