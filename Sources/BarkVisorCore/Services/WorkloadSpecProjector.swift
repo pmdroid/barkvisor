@@ -309,7 +309,9 @@ public enum WorkloadSpecProjector {
         vm.runtime = spec.spec.runtime ?? WorkloadSpec.runtimeDevice
         vm.runtimeWorkloadId = spec.spec.runtimeWorkloadId
         vm.composeYaml = spec.spec.compose
-        vm.setSharedPaths(spec.spec.sharedPaths)
+        if let shared = spec.spec.sharedPaths {
+            vm.setSharedPaths(shared.isEmpty ? nil : shared)
+        }
         if vm.composeProject == nil || vm.composeProject?.isEmpty == true {
             vm.composeProject = ComposeRuntime.composeProjectName(id: vm.id)
         }
