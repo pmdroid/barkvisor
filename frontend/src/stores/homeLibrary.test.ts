@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
-import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
+import type { AppCatalogEntry, HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from './homeLibrary'
 
 const originalGet = api.get
@@ -33,6 +33,21 @@ function tpl(partial: Partial<VMTemplate> & Pick<VMTemplate, 'id' | 'slug'>): VM
     userDataTemplate: '',
     isBuiltIn: true,
     repositoryId: 'r1',
+    ...partial,
+  }
+}
+
+function catalogApp(partial: Partial<AppCatalogEntry> & Pick<AppCatalogEntry, 'id' | 'source'>): AppCatalogEntry {
+  return {
+    name: partial.id,
+    category: 'Apps',
+    arches: ['arm64'],
+    compose: 'services: {}\n',
+    envSchema: [],
+    volumes: [],
+    ports: [],
+    unsupportedReasons: [],
+    ui: { scheme: 'http', path: '', proxy: 'direct', basePathEnv: [] },
     ...partial,
   }
 }
@@ -362,6 +377,27 @@ describe('homeLibrary store (PAS-34)', () => {
     await store.fetchImages([])
     expect(store.images).toEqual([])
     expect(store.imagesError).toBeNull()
+  })
+
+  test('keeps LinuxServer and Big Bear apps that share a slug', async () => {
+    const get = mock((url: string) => {
+      if (url === '/catalog/apps') {
+        return Promise.resolve({
+          data: [
+            catalogApp({ id: 'plex', source: 'big-bear-universal' }),
+            catalogApp({ id: 'plex', source: 'linuxserver' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchApps()
+    expect(store.apps.map((a) => `${a.source}:${a.id}`).sort()).toEqual([
+      'big-bear-universal:plex',
+      'linuxserver:plex',
+    ])
   })
 
   test('offline Device catalog is an error, not an empty app list of zeros', async () => {
