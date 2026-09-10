@@ -12,6 +12,7 @@ import {
   isSelfDevice,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
+import { appCatalogKey } from '../utils/appCatalog'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useDevicesStore } from './devices'
 
@@ -435,10 +436,11 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
         const { device, apps: rows } = result.value
         successfulHostIds.add(device.hostId)
         for (const row of rows) {
-          const existing = merged.get(row.id)
+          const key = appCatalogKey(row)
+          const existing = merged.get(key)
           const copy: HomeAppCopy = { hostId: device.hostId }
           if (!existing) {
-            merged.set(row.id, {
+            merged.set(key, {
               ...row,
               sourceHostIds: [device.hostId],
               copies: [copy],
