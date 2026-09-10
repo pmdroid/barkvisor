@@ -155,6 +155,16 @@ public enum VMLifecycleService {
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
+            var spec = spec
+            if vm.isApplication {
+                var body = spec.spec
+                body.env = AppTemplate.mergeEnv(
+                    existing: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
+                    incoming: body.env,
+                    disk: ComposeRuntime.readEnv(id: vm.id),
+                )
+                spec.spec = body
+            }
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)

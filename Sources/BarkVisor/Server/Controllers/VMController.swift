@@ -56,8 +56,7 @@ struct VMResponse: Content {
         provisionTaskStatus: BackgroundTaskManager.TaskStatus? = nil,
         imageStatus: String? = nil,
     ) {
-        let spec = WorkloadSpecProjector.fromVM(vm)
-        self.spec = spec
+        self.spec = AppTemplate.redact(WorkloadSpecProjector.fromVM(vm))
         let status = WorkloadSpecProjector.status(from: vm, signals: signals)
         self.status = status
         self.id = vm.id
@@ -397,6 +396,9 @@ struct VMController: RouteCollection {
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,
             )
+            if vm.isApplication {
+                try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
+            }
         }
 
         AuditService.log(
@@ -581,7 +583,7 @@ struct VMController: RouteCollection {
         guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
             throw Abort(.notFound)
         }
-        return WorkloadSpecProjector.fromVM(vm)
+        return AppTemplate.redact(WorkloadSpecProjector.fromVM(vm))
     }
 
     @Sendable
@@ -596,7 +598,7 @@ struct VMController: RouteCollection {
             action: "vm.spec.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
             req: req,
         )
-        return WorkloadSpecProjector.fromVM(vm)
+        return AppTemplate.redact(WorkloadSpecProjector.fromVM(vm))
     }
 
     /// Flat create: same keys as wizard and WorkloadSpec (`GuestProfiles.resolve`).

@@ -219,6 +219,110 @@ final class ApplicationLifecycleServiceTests {
         #expect(state == "stopped")
     }
 
+    @Test func `start allows catalog host folder binds from sharedPaths`() async throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        DockerEngine.snapshotProvider = {
+            DockerEngineSnapshot(
+                os: "Linux",
+                dockerPath: "/usr/bin/docker",
+                dockerVersion: "27.0.0",
+                daemonRunning: true,
+                composeVersion: "Docker Compose version v2.29.7",
+                composeOK: true,
+            )
+        }
+        ComposeRuntime.runner = SucceedingComposeRunner()
+        defer {
+            HostInfoService.lanBindIPv4Provider = nil
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            ComposeRuntime.runner = LiveComposeCommandRunner()
+        }
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let media = tmp.appendingPathComponent("movies", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "plex-start")
+        vm.composeYaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+            volumes:
+              - type: bind
+                source: \(media.path)
+                target: /movies
+        """
+        vm.setSharedPaths([media.path])
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        try await DockerInspectTestGate.withStub({ names in
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": [:] as [String: Any]]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }) {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+        }
+        #expect(vm.state == "running")
+        let written = try String(
+            contentsOf: ComposeRuntime.projectDirectory(id: "plex-start", dataDir: tmp)
+                .appendingPathComponent("compose.yml"),
+            encoding: .utf8,
+        )
+        #expect(written.contains(media.path))
+        #expect(written.contains("/movies"))
+    }
+
+    @Test func `updateVMSpec keeps redacted application secrets`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-secret")
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+        """
+        var stored = WorkloadSpecProjector.fromVM(vm)
+        stored.spec.env = ["DB_PASSWORD": "keep-me", "PUID": "1000"]
+        vm.specJson = WorkloadSpecJSON.encode(stored)
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        var incoming = WorkloadSpecProjector.fromVM(vm)
+        incoming.spec.env = ["DB_PASSWORD": "***", "PUID": "501"]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "whoami-secret", spec: incoming, db: db,
+        )
+        #expect(WorkloadSpecJSON.decode(updated.specJson)?.spec.env?["DB_PASSWORD"] == "keep-me")
+        #expect(WorkloadSpecJSON.decode(updated.specJson)?.spec.env?["PUID"] == "501")
+    }
+
+    @Test func `application spec apply keeps omitted sharedPaths`() throws {
+        var vm = applicationVM(id: "plex-paths")
+        vm.composeYaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+        """
+        vm.setSharedPaths(["/mnt/media/movies"])
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.sharedPaths = nil
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedSharedPaths == ["/mnt/media/movies"])
+        spec.spec.sharedPaths = []
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedSharedPaths.isEmpty)
+    }
+
     @Test func `start refuses a deleting application`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

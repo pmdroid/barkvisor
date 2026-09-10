@@ -151,6 +151,7 @@ public struct AppCatalogEntryDTO: Codable, Equatable, Sendable {
     public var digest: String?
     public var unsupportedReasons: [String]
     public var ui: AppCatalogUI
+    public var fields: [AppTemplateField]?
 
     public init(
         id: String,
@@ -169,6 +170,7 @@ public struct AppCatalogEntryDTO: Codable, Equatable, Sendable {
         digest: String? = nil,
         unsupportedReasons: [String] = [],
         ui: AppCatalogUI = AppCatalogUI(),
+        fields: [AppTemplateField]? = nil,
     ) {
         self.id = id
         self.name = name
@@ -186,6 +188,7 @@ public struct AppCatalogEntryDTO: Codable, Equatable, Sendable {
         self.digest = digest
         self.unsupportedReasons = unsupportedReasons
         self.ui = ui
+        self.fields = fields
     }
 
     public var isInstallable: Bool {
@@ -286,7 +289,7 @@ public struct AppCatalogRecord: Codable, Sendable, FetchableRecord, PersistableR
     }
 
     public func dto() -> AppCatalogEntryDTO {
-        AppCatalogEntryDTO(
+        var dto = AppCatalogEntryDTO(
             id: slug,
             name: name,
             tagline: tagline,
@@ -306,6 +309,14 @@ public struct AppCatalogRecord: Codable, Sendable, FetchableRecord, PersistableR
             ),
             ui: JSONColumnCoding.decode(AppCatalogUI.self, from: uiJson) ?? AppCatalogUI(),
         )
+        let prefill = AppTemplate.devicePrefill()
+        dto.fields = AppTemplate.fields(
+            from: dto,
+            puid: prefill.puid,
+            pgid: prefill.pgid,
+            timezone: prefill.timezone,
+        )
+        return dto
     }
 
     public static func from(dto: AppCatalogEntryDTO, repositoryId: String, now: String) -> AppCatalogRecord {

@@ -98,7 +98,17 @@ public enum WorkloadApplyService {
             document: document,
             existing: existing,
         )
-        let merged = effective.portable
+        var merged = effective.portable
+        if existing.isApplication {
+            merged = try await applyCatalogTemplate(document: document, spec: merged, db: db)
+            var body = merged.spec
+            body.env = AppTemplate.mergeEnv(
+                existing: WorkloadSpecJSON.decode(existing.specJson)?.spec.env,
+                incoming: body.env,
+                disk: ComposeRuntime.readEnv(id: existing.id),
+            )
+            merged.spec = body
+        }
         var preview = existing
         try WorkloadSpecProjector.apply(merged, to: &preview)
         let after = WorkloadSpecProjector.fromVM(preview)
@@ -112,9 +122,10 @@ public enum WorkloadApplyService {
         }
         if dryRun {
             let projected = preview
+            let specToValidate = merged
             if !projected.isApplication {
                 try await db.read { db in
-                    try VMLifecycleService.validateAppliedVMSpec(spec: merged, vm: projected, db: db)
+                    try VMLifecycleService.validateAppliedVMSpec(spec: specToValidate, vm: projected, db: db)
                 }
             }
             return WorkloadApplyResult(
@@ -144,8 +155,9 @@ public enum WorkloadApplyService {
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> WorkloadApplyResult {
-        let spec = try WorkloadSpecDocument.decode(document)
+        var spec = try WorkloadSpecDocument.decode(document)
         if spec.kind == WorkloadSpec.kindApplication {
+            spec = try await applyCatalogTemplate(document: document, spec: spec, db: db)
             return try await applyCreateApplication(spec: spec, dryRun: dryRun, db: db)
         }
         let params = try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
@@ -226,7 +238,7 @@ public enum WorkloadApplyService {
             uefi: false,
             tpmEnabled: false,
             macAddress: nil,
-            sharedPaths: nil,
+            sharedPaths: JSONColumnCoding.encodeArrayOrNil(spec.spec.sharedPaths),
             portForwards: nil,
             autoCreated: false,
             pendingChanges: false,
@@ -262,6 +274,55 @@ public enum WorkloadApplyService {
 
     static func createParams(from spec: WorkloadSpec) throws -> CreateVMParams {
         try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
+    }
+
+    private static func applyCatalogTemplate(
+        document: [String: Any],
+        spec: WorkloadSpec,
+        db: DatabasePool,
+    ) async throws -> WorkloadSpec {
+        let labels = spec.metadata.labels ?? [:]
+        guard let catalogId = labels["catalog"], !catalogId.isEmpty else { return spec }
+        guard let template = document["template"] as? [String: Any] else { return spec }
+        let values = stringKeyed(template["values"])
+        let extra = extraFolders(template["extraFolders"])
+        let row = try await db.read { db in
+            try AppCatalogRecord.filter(Column("slug") == catalogId).fetchOne(db)
+        }
+        guard let entry = row?.dto() else {
+            throw BarkVisorError.badRequest("Unknown catalog app \(catalogId)")
+        }
+        let rendered = try AppTemplate.render(entry: entry, values: values, extraFolders: extra)
+        var next = spec
+        next.spec.compose = rendered.compose
+        next.spec.env = rendered.env
+        next.spec.sharedPaths = rendered.sharedPaths
+        return next
+    }
+
+    private static func stringKeyed(_ value: Any?) -> [String: String] {
+        guard let object = value as? [String: Any] else { return [:] }
+        var out: [String: String] = [:]
+        for (key, raw) in object {
+            if let text = raw as? String {
+                out[key] = text
+            } else if let int = raw as? Int {
+                out[key] = String(int)
+            }
+        }
+        return out
+    }
+
+    private static func extraFolders(_ value: Any?) -> [AppTemplateExtraFolder] {
+        guard let array = value as? [Any] else { return [] }
+        return array.compactMap { item in
+            guard let object = item as? [String: Any] else { return nil }
+            let host = (object["hostPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let container = (object["containerPath"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if host.isEmpty || container.isEmpty { return nil }
+            return AppTemplateExtraFolder(hostPath: host, containerPath: container)
+        }
     }
 
     // MARK: - Envelope

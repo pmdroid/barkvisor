@@ -41,6 +41,7 @@ public enum ComposeAllowlist {
         workloadID: String,
         stateDir: URL,
         bindHost: String? = nil,
+        allowedBinds: [String] = [],
     ) throws -> ComposeRender {
         let trimmed = yaml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -81,6 +82,8 @@ public enum ComposeAllowlist {
                 service["volumes"],
                 serviceName: name,
                 volumeRoot: volumeRoot,
+                stateDir: stateDir,
+                allowedBinds: allowedBinds,
             )
             service["volumes"] = rewritten.mapping
             named.append(contentsOf: rewritten.named)
@@ -271,6 +274,8 @@ public enum ComposeAllowlist {
         _ value: Any?,
         serviceName: String,
         volumeRoot: URL,
+        stateDir: URL,
+        allowedBinds: [String],
     ) throws -> VolumeRewrite {
         guard let value, !(value is NSNull) else {
             return VolumeRewrite(mapping: [], named: [])
@@ -285,7 +290,12 @@ public enum ComposeAllowlist {
         var named: [String] = []
         for item in items {
             if let text = stringValue(item) {
-                let parsed = try parseVolumeString(text, volumeRoot: volumeRoot)
+                let parsed = try parseVolumeString(
+                    text,
+                    volumeRoot: volumeRoot,
+                    stateDir: stateDir,
+                    allowedBinds: allowedBinds,
+                )
                 mapping.append(parsed.entry)
                 if let name = parsed.named { named.append(name) }
                 continue
@@ -296,6 +306,8 @@ public enum ComposeAllowlist {
             let parsed = try parseVolumeObject(
                 object,
                 volumeRoot: volumeRoot,
+                stateDir: stateDir,
+                allowedBinds: allowedBinds,
                 serviceName: serviceName,
             )
             mapping.append(parsed.entry)
@@ -312,6 +324,8 @@ public enum ComposeAllowlist {
     private static func parseVolumeString(
         _ text: String,
         volumeRoot: URL,
+        stateDir: URL,
+        allowedBinds: [String],
     ) throws -> ParsedVolume {
         let parts = text.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         if parts.count == 1 {
@@ -321,7 +335,13 @@ public enum ComposeAllowlist {
         let target = parts[1]
         let mode = parts.count > 2 ? parts[2] : nil
         if source.hasPrefix("/") || source.hasPrefix(".") || source.hasPrefix("~") {
-            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+            return try hostBind(
+                source: source,
+                target: target,
+                stateDir: stateDir,
+                allowedBinds: allowedBinds,
+                readOnly: mode?.contains("ro") == true,
+            )
         }
         return try namedVolume(
             source: source,
@@ -334,6 +354,8 @@ public enum ComposeAllowlist {
     private static func parseVolumeObject(
         _ object: [String: Any],
         volumeRoot: URL,
+        stateDir: URL,
+        allowedBinds: [String],
         serviceName _: String,
     ) throws -> ParsedVolume {
         let type = stringValue(object["type"]) ?? "volume"
@@ -342,15 +364,31 @@ public enum ComposeAllowlist {
         guard let target else {
             throw BarkVisorError.badRequest("unsupported compose feature: volumes")
         }
-        if type == "bind" {
-            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+        if type == "bind" || source?.hasPrefix("/") == true || source?.hasPrefix(".") == true
+            || source?.hasPrefix("~") == true {
+            guard let source else {
+                throw BarkVisorError.badRequest("unsupported compose feature: bind")
+            }
+            return try hostBind(
+                source: source,
+                target: target,
+                stateDir: stateDir,
+                allowedBinds: allowedBinds,
+                readOnly: boolValue(object["read_only"]),
+            )
         }
         if type == "volume" || type == "named" || source != nil {
             guard let source, !source.isEmpty else {
                 throw BarkVisorError.badRequest("unsupported compose feature: volumes")
             }
             if source.hasPrefix("/") || source.hasPrefix(".") || source.hasPrefix("~") {
-                throw BarkVisorError.badRequest("unsupported compose feature: bind")
+                return try hostBind(
+                    source: source,
+                    target: target,
+                    stateDir: stateDir,
+                    allowedBinds: allowedBinds,
+                    readOnly: boolValue(object["read_only"]),
+                )
             }
             return try namedVolume(
                 source: source,
@@ -360,6 +398,37 @@ public enum ComposeAllowlist {
             )
         }
         throw BarkVisorError.badRequest("unsupported compose feature: volumes")
+    }
+
+    private static func hostBind(
+        source: String,
+        target: String,
+        stateDir: URL,
+        allowedBinds: [String],
+        readOnly: Bool,
+    ) throws -> ParsedVolume {
+        let candidate = URL(fileURLWithPath: source)
+        let path = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        if source.contains("docker.sock") || path.contains("docker.sock") {
+            throw BarkVisorError.badRequest("unsupported compose feature: docker.sock")
+        }
+        let statePath = stateDir.resolvingSymlinksInPath().standardizedFileURL.path
+        let statePrefix = statePath.hasSuffix("/") ? statePath : statePath + "/"
+        let underState = path == statePath || path.hasPrefix(statePrefix)
+        let allowed = allowedBinds.contains { bind in
+            let allowedPath = URL(fileURLWithPath: bind).resolvingSymlinksInPath().standardizedFileURL.path
+            return path == allowedPath
+        }
+        if !underState, !allowed {
+            throw BarkVisorError.badRequest("unsupported compose feature: bind")
+        }
+        var entry: [String: Any] = [
+            "type": "bind",
+            "source": path,
+            "target": target,
+        ]
+        if readOnly { entry["read_only"] = true }
+        return ParsedVolume(entry: entry, named: nil)
     }
 
     private static func rewriteEnvironment(_ value: Any) throws -> [String: String] {

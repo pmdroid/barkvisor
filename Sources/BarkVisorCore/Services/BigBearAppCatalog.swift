@@ -116,6 +116,8 @@ public enum BigBearAppCatalog {
             PlatformCapabilities.normalizedArch($0)
         }
         let envSchema = envVars(from: deployment["environment_variables"])
+        var ports = inspected.ports
+        markUIPort(&ports, envSchema: envSchema)
         let volumes = volumesFromCompose(inspected.volumeMounts, appJSON: deployment["volumes"])
         let ui = AppCatalogUI(
             scheme: stringValue(uiObject["scheme"]) ?? "http",
@@ -124,7 +126,7 @@ public enum BigBearAppCatalog {
             proxy: "direct",
             basePathEnv: [],
         )
-        return AppCatalogEntryDTO(
+        var entry = AppCatalogEntryDTO(
             id: id,
             name: name,
             tagline: stringValue(metadata["tagline"]),
@@ -136,12 +138,20 @@ public enum BigBearAppCatalog {
             compose: inspected.yaml,
             envSchema: envSchema,
             volumes: volumes,
-            ports: inspected.ports,
+            ports: ports,
             image: inspected.image,
             digest: inspected.digest,
             unsupportedReasons: inspected.reasons,
             ui: ui,
         )
+        let prefill = AppTemplate.devicePrefill()
+        entry.fields = AppTemplate.fields(
+            from: entry,
+            puid: prefill.puid,
+            pgid: prefill.pgid,
+            timezone: prefill.timezone,
+        )
+        return entry
     }
 
     private struct InspectedCompose {
@@ -473,13 +483,18 @@ public enum BigBearAppCatalog {
             guard let object = asObject(item), let name = stringValue(object["name"]) else { continue }
             if shouldHideEnv(name) { continue }
             let defaultValue = stringValue(object["default"])
+            let options = stringArray(object["options"])
             out.append(
                 AppCatalogEnvVar(
                     name: name,
                     defaultValue: defaultValue,
                     required: boolValue(object["required"]),
                     description: stringValue(object["description"]),
-                    kind: inferKind(name: name, defaultValue: defaultValue),
+                    kind: inferKind(
+                        name: name, defaultValue: defaultValue,
+                        options: options.isEmpty ? nil : options,
+                    ),
+                    options: options.isEmpty ? nil : options,
                 ),
             )
         }
@@ -488,23 +503,49 @@ public enum BigBearAppCatalog {
 
     static func shouldHideEnv(_ name: String) -> Bool {
         if hiddenEnvNames.contains(name) { return true }
+        if name.hasPrefix("FILE__") { return true }
+        if name == "DOCKER_MODS" { return true }
         if name.hasSuffix("_HOSTNAME") { return true }
         if name.hasSuffix("_HOST") { return true }
         return false
     }
 
-    static func inferKind(name: String, defaultValue: String?) -> String {
+    static func inferKind(name: String, defaultValue: String?, options: [String]? = nil) -> String {
         let upper = name.uppercased()
         if upper.contains("PASSWORD") || upper.contains("SECRET") || upper.contains("TOKEN")
-            || upper.contains("CLAIM") || (upper.contains("_KEY") && !upper.contains("PUBKEY")) {
+            || upper.contains("CLAIM")
+            || (upper.contains("KEY") && !upper.contains("PUBKEY") && !upper.contains("KEYBOARD")) {
             return "secret"
         }
+        if let options, !options.isEmpty { return "select" }
+        if name == "VERSION" || upper.contains("LOG_LEVEL") { return "select" }
         let lowered = (defaultValue ?? "").lowercased()
         if lowered == "true" || lowered == "false" || upper.hasPrefix("ENABLE_")
             || upper.hasPrefix("DISABLE_") {
             return "bool"
         }
+        if let defaultValue, Int(defaultValue) != nil, !upper.contains("PORT"), name != "PUID",
+           name != "PGID", name != "UMASK" {
+            return "number"
+        }
         return "text"
+    }
+
+    private static func markUIPort(_ ports: inout [AppCatalogPort], envSchema: [AppCatalogEnvVar]) {
+        if ports.contains(where: \.ui) { return }
+        let tcp = ports.enumerated().filter { $0.element.proto.lowercased() == "tcp" }
+        if tcp.isEmpty { return }
+        if let webui = envSchema.first(where: { $0.name == "WEBUI_PORT" }),
+           let value = webui.defaultValue, let wanted = Int(value),
+           let index = tcp.first(where: {
+               $0.element.host == wanted || $0.element.container == wanted
+           })?.offset {
+            ports[index].ui = true
+            return
+        }
+        if tcp.count == 1 {
+            ports[tcp[0].offset].ui = true
+        }
     }
 
     private static func splitImage(_ image: String) -> (reference: String, digest: String?) {

@@ -165,6 +165,10 @@ struct SystemCapabilitiesResponse: Content {
     let runnableArches: [String]
     /// Per-mode support (PAS-57 / PAS-67): `nat`, `bridged`, `isolated`.
     let networkModes: [NetworkModeCapability]
+    let puid: String
+    let pgid: String
+    let timezone: String
+    let lanIPv4: String?
 }
 
 extension CapabilityDetail: Content {}

@@ -56,6 +56,41 @@ struct DTOTests {
         #expect(response.status.backend.accelerator == QEMUBuilder.accelerator)
     }
 
+    @Test func `vm response redacts application secrets`() {
+        var vm = VM(
+            id: "app-1",
+            name: "plex",
+            vmType: WorkloadSpec.applicationGuestType,
+            state: "stopped",
+            cpuCount: 1,
+            memoryMb: 256,
+            bootDiskId: nil,
+            kind: WorkloadSpec.kindApplication,
+            composeYaml: "services: {}\n",
+            networkId: nil,
+            cloudInitPath: nil,
+            description: nil,
+            bootOrder: nil,
+            displayResolution: nil,
+            additionalDiskIds: nil,
+            uefi: false,
+            tpmEnabled: false,
+            macAddress: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            autoCreated: false,
+            pendingChanges: false,
+            createdAt: "2025-01-01T00:00:00Z",
+            updatedAt: "2025-01-01T00:00:00Z",
+        )
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.env = ["DB_PASSWORD": "hunter2", "PUID": "501"]
+        vm.specJson = WorkloadSpecJSON.encode(spec)
+        let response = VMResponse(from: vm)
+        #expect(response.spec.spec.env?["DB_PASSWORD"] == "***")
+        #expect(response.spec.spec.env?["PUID"] == "501")
+    }
+
     @Test func `vm response nil optionals`() {
         let vm = VM(
             id: "vm-1", name: "minimal", vmType: "linux-arm64", state: "stopped",
