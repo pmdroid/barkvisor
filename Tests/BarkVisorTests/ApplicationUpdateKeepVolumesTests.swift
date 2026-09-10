@@ -19,15 +19,9 @@ final class ApplicationUpdateKeepVolumesTests {
         dbPool = pool
         runner = RecordingComposeRunner()
         docker = RecordingDockerRunner()
-        ComposeTestIsolation.lock.lock()
     }
 
     deinit {
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerCLI.runner = LiveDockerCommandRunner()
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        DockerInspect.jsonForContainers = DockerInspect.liveJSON
-        ComposeTestIsolation.lock.unlock()
         try? FileManager.default.removeItem(at: dataDir)
     }
 
@@ -42,12 +36,13 @@ final class ApplicationUpdateKeepVolumesTests {
                 composeOK: true,
             )
         }
-        ComposeRuntime.runner = runner
-        DockerCLI.runner = docker
-        DockerInspect.jsonForContainers = { _ in Data("[]".utf8) }
+        defer { DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() } }
+        let inspectJSON: @Sendable ([String]) throws -> Data = { _ in Data("[]".utf8) }
         return try await ComposeRuntime.$runnerOverride.withValue(runner) {
             try await DockerCLI.$runnerOverride.withValue(docker) {
-                try await body()
+                try await DockerInspect.$jsonOverride.withValue(inspectJSON) {
+                    try await body()
+                }
             }
         }
     }

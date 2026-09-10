@@ -232,7 +232,7 @@ public enum ApplicationLifecycleService {
         bindHost: String,
         expected: [PublishedPort],
     ) throws {
-        let data = try DockerInspect.jsonForContainers(containerNames)
+        let data = try DockerInspect.json(containerNames)
         let bindings = try ComposePorts.parseInspectBindings(data)
         try ComposePorts.requireLANHostIP(
             bindings,
