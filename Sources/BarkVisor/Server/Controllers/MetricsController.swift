@@ -54,7 +54,7 @@ struct MetricsController: RouteCollection {
         let totalVMs = try await req.db.read { db in try VM.fetchCount(db) }
         let runningVMs = await vmState.allRunningVMs().count
         let totalApps = appIDs.count
-        let runningApps = workloads.filter { $0.isApplication && $0.state == "running" }.count
+        let runningApps = workloads.count(where: { $0.isApplication && $0.state == "running" })
 
         let metrics = HostMetrics.live()
 

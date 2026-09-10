@@ -145,12 +145,12 @@ public enum DockerEngine {
     ) throws -> (executable: URL, prefix: [String]) {
         try requireDeviceRuntime(snapshot: snapshot)
         if snapshot.composePlugin {
-            return (try dockerURL(snapshot: snapshot), ["compose"])
+            return try (dockerURL(snapshot: snapshot), ["compose"])
         }
         if let path = snapshot.composePath, !path.isEmpty {
             return (URL(fileURLWithPath: path), [])
         }
-        return (try dockerURL(snapshot: snapshot), ["compose"])
+        return try (dockerURL(snapshot: snapshot), ["compose"])
     }
 
     public static func helperRemediation(os: String) -> String {
