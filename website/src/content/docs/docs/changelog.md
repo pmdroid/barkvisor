@@ -6,6 +6,13 @@ Product notes for operators. Words: **Home**, **Device**, **Workload**, **Librar
 
 Unreleased items live on stacked draft PRs and may change before they land on `main`.
 
+## 1.0.0-alpha.4 — 2026-09-10
+
+- Application Workload Overview is two columns (Application / Volumes / Access | Runtime / Usage / Environment). Title row has an APP badge, Open UI, and ingress On/Off plus Prefix/Direct (`/go/<id>/`).
+- Environment tab edits non-secret variables. Secrets stay redacted and are not rewritten from the form. Restart the app to apply.
+- Usage panel and Dashboard Usage show Docker CPU, memory, and network I/O for running Application Workloads.
+- macOS LaunchDaemon finds OrbStack `docker` and `docker compose` without the user PATH.
+
 ## Unreleased
 
 - Settings Home Device URL save persists a custom host (picker or Other / DNS) across reload. With Tailscale up, the default shown URL is `https://<magicdns>` with no port. LAN stays `http://<host>:7777`.
