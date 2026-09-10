@@ -6,6 +6,7 @@
 - Time range: Last 24 Hours / Last Hour / Last 7 Days
 - **Live Tail** toggle (SSE stream), **Diagnostics** bundle download
 - Terminal-style stream with level coloring and Pause / Resume / Clear
+- Application workloads also have compose logs on `/vms/:id` (`ComposeLogsPanel`), separate from this Home-wide stream
 
 ## How to get to it (user POV)
 
