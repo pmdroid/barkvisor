@@ -1500,13 +1500,6 @@ const healthBanner = computed(() => {
           <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
         </div>
       </div>
-      <div v-if="vm.updateAvailable" class="ops-banner amber">
-        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
-        <div>
-          <div class="ops-banner-title">Catalog image is newer than the running image</div>
-          <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
-        </div>
-      </div>
       <AppDetailOverview :vm="vm" />
     </div>
 
@@ -1528,15 +1521,6 @@ const healthBanner = computed(() => {
           </div>
         </div>
         <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
-
-        <div v-if="isApp && vm.updateAvailable" class="ops-banner amber">
-          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
-          <div>
-            <div class="ops-banner-title">Catalog image is newer than the running image</div>
-            <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
-          </div>
-          <AppButton v-if="vm.state === 'running'" size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
-        </div>
 
         <div v-if="vm.pendingChanges" class="ops-banner amber">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
@@ -1938,14 +1922,6 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
     />
-    <div v-if="tab === 'logs' && isApp && vm.updateAvailable" class="ops-banner amber">
-      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
-      <div>
-        <div class="ops-banner-title">Catalog image is newer than the running image</div>
-        <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
-      </div>
-      <AppButton v-if="vm.state === 'running'" size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
-    </div>
     <div v-if="tab === 'environment' && isApp" class="sheet">
       <div class="sheet-head"><h3>Environment</h3></div>
       <p class="dim-text" style="padding:12px 14px 0">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
