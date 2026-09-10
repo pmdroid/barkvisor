@@ -7,6 +7,16 @@ struct AppIngressTests {
         #expect(AppIngress.resolvedMode(catalogProxy: nil, override: nil) == "direct")
         #expect(AppIngress.resolvedMode(catalogProxy: "weird", override: nil) == "direct")
         #expect(AppIngress.usesPrefix(catalogProxy: nil, ingress: WorkloadIngress()) == false)
+        let env = AppIngress.managedEnv(
+            id: "old",
+            names: ["SUBFOLDER"],
+            catalogProxy: nil,
+            ingress: nil,
+            scheme: "http",
+            host: "192.168.1.20",
+            listenPort: 7_777,
+        )
+        #expect(env.isEmpty)
     }
 
     @Test func `prefix is opt-out and override wins`() {

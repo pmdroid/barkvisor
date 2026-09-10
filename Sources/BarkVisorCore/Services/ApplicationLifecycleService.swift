@@ -555,7 +555,7 @@ public enum ApplicationLifecycleService {
         let managed = AppIngress.managedEnv(
             id: vm.id,
             names: names,
-            catalogProxy: catalog?.ui.proxy ?? spec?.spec.ingress?.mode,
+            catalogProxy: spec?.spec.ingress?.mode,
             ingress: spec?.spec.ingress,
             scheme: "http",
             host: host,
