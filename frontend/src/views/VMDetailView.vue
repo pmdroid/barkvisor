@@ -17,7 +17,7 @@ import {
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
-import { appCatalogSource, appEnvSummary, isSecretEnvKey } from '../utils/appDetail'
+import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
 import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
@@ -1319,7 +1319,6 @@ const openUi = computed(() => {
   const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
   return appOpenUrl(vm.value, device)
 })
-const appCatalog = computed(() => (vm.value ? appCatalogSource(vm.value) : null))
 const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
 const appMounts = computed(() => {
   const fromShared = mountsFromSharedPaths(vm.value?.sharedPaths)
@@ -1327,6 +1326,79 @@ const appMounts = computed(() => {
   return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
 })
 const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
+const envEditing = ref(false)
+const envDraft = ref<{ key: string; value: string }[]>([])
+const envNewKey = ref('')
+const envNewValue = ref('')
+const envSaving = ref(false)
+const envSecretKeys = computed(() => appEnvKeys.value.filter((k) => isSecretEnvKey(k)))
+
+function startEnvEdit() {
+  const env = vm.value?.spec?.spec?.env ?? {}
+  envDraft.value = Object.entries(env)
+    .filter(([k]) => !isSecretEnvKey(k))
+    .map(([key, value]) => ({ key, value: value ?? '' }))
+  envNewKey.value = ''
+  envNewValue.value = ''
+  envEditing.value = true
+}
+
+function addEnvRow() {
+  const key = envNewKey.value.trim()
+  if (!key) return
+  if (isSecretEnvKey(key)) {
+    toast.error('That key looks like a secret and cannot be added here')
+    return
+  }
+  if (envDraft.value.some((r) => r.key === key)) {
+    toast.error('That key already exists')
+    return
+  }
+  envDraft.value.push({ key, value: envNewValue.value })
+  envNewKey.value = ''
+  envNewValue.value = ''
+}
+
+function removeEnvRow(key: string) {
+  envDraft.value = envDraft.value.filter((r) => r.key !== key)
+}
+
+async function saveEnv() {
+  if (!vm.value) return
+  if (isMemberDetail.value && !memberReachable.value) return
+  envSaving.value = true
+  try {
+    const editable: Record<string, string> = {}
+    for (const row of envDraft.value) {
+      if (!row.key || isSecretEnvKey(row.key)) continue
+      editable[row.key] = row.value
+    }
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) {
+        throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+      }
+      const spec = await homeWorkloads.fetchSpec(device, vmId.value)
+      spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, editable)
+      await homeWorkloads.putSpec(device, vmId.value, spec)
+    } else {
+      const spec = await store.fetchSpec(vmId.value)
+      spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, editable)
+      await store.putSpec(vmId.value, spec)
+    }
+    envEditing.value = false
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply environment changes.')
+    } else {
+      toast.success('Environment saved')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    envSaving.value = false
+  }
+}
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
 const updatingApp = ref(false)
 
@@ -1388,6 +1460,49 @@ const toolbarSub = computed(() => {
   return device ? `${type} · ${devicesStore.deviceLabel(device)}` : type
 })
 
+const appSub = computed(() => (vm.value ? appToolbarSub(vm.value) : ''))
+const appDeviceLabel = computed(() => {
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  return device ? devicesStore.deviceLabel(device) : ''
+})
+const savingIngress = ref(false)
+
+async function saveIngress(next: { enabled: boolean; mode: 'prefix' | 'direct' }) {
+  if (!vm.value) return
+  savingIngress.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) {
+        throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+      }
+      const spec = await homeWorkloads.fetchSpec(device, vmId.value)
+      spec.spec.ingress = {
+        ...(spec.spec.ingress || {}),
+        enabled: next.enabled,
+        mode: next.mode,
+      }
+      await homeWorkloads.putSpec(device, vmId.value, spec)
+    } else {
+      const spec = await store.fetchSpec(vmId.value)
+      spec.spec.ingress = {
+        ...(spec.spec.ingress || {}),
+        enabled: next.enabled,
+        mode: next.mode,
+      }
+      await store.putSpec(vmId.value, spec)
+    }
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply ingress.')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    savingIngress.value = false
+  }
+}
+
 const healthBanner = computed(() => {
   const v = vm.value
   if (!v) return null
@@ -1424,20 +1539,81 @@ const healthBanner = computed(() => {
     </div>
   </template>
   <template v-else>
-    <div class="ops-toolbar vm-toolbar">
+    <div v-if="isApp" class="app-detail-head">
+      <div class="crumb">
+        <router-link to="/vms">{{ WORKLOADS_NAV_LABEL }}</router-link>
+        / {{ vm.name }}
+      </div>
+      <div class="ops-toolbar app-toolbar">
+        <div>
+          <div class="title-row">
+            <h1>{{ vm.name }}</h1>
+            <span class="app-kind">App</span>
+            <span
+              class="app-pill"
+              :class="healthPillClass(vmHealth(vm))"
+              :title="vm.status?.healthError || undefined"
+            ><span class="pdot"></span>{{ healthLabel(vmHealth(vm)) }}</span>
+            <span v-if="vm.updateAvailable" class="status-pill degraded">Update available</span>
+          </div>
+          <div v-if="appSub" class="ops-sub app-sub">{{ appSub }}</div>
+        </div>
+        <div class="ops-actions">
+          <label
+            class="boot-toggle"
+            :class="{ disabled: controlDisabled }"
+            :title="startOnBootFooterFromWorkload(vm)"
+          >
+            <span>{{ startOnBootLabel() }}</span>
+            <input
+              type="checkbox"
+              role="switch"
+              :checked="startOnBootOn"
+              :disabled="controlDisabled"
+              :aria-label="startOnBootLabel()"
+              @change="toggleStartOnBoot(($event.target as HTMLInputElement).checked)"
+            >
+          </label>
+          <AppButton
+            variant="primary"
+            :disabled="!(openUi && vm.state === 'running')"
+            @click="openAppUi"
+          >Open UI ↗</AppButton>
+          <AppButton
+            v-if="vm.updateAvailable && vm.state === 'running'"
+            :disabled="controlDisabled || updatingApp"
+            @click="action('update', () => updateAppImage())"
+          >Update</AppButton>
+          <AppButton
+            :disabled="controlDisabled || (vm.state !== 'stopped' && vm.state !== 'error')"
+            @click="action('start', () => startWorkload())"
+          >Start</AppButton>
+          <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
+          <AppButton v-else :disabled="true">Stop</AppButton>
+          <AppButton
+            v-if="vm.state === 'running'"
+            :disabled="controlDisabled"
+            @click="action('restart', () => restartWorkload())"
+          >Restart</AppButton>
+          <AppButton
+            variant="danger"
+            :disabled="!!actionLoading || (isMemberDetail && !memberReachable)"
+            @click="showDeleteDialog = true; keepDisk = false"
+          >Delete</AppButton>
+        </div>
+      </div>
+    </div>
+    <div v-else class="ops-toolbar vm-toolbar">
       <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
         <AppIcon name="chevron-left" :size="16" />
         <span>{{ WORKLOADS_NAV_LABEL }}</span>
       </button>
       <h1>{{ vm.name }}</h1>
-      <span v-if="isApp" class="badge badge-green">App</span>
-      <span v-if="isApp && appCatalog" class="badge badge-gray">{{ appCatalog }}</span>
       <span
         class="status-pill"
         :class="healthPillClass(vmHealth(vm))"
         :title="vm.status?.healthError || undefined"
       >{{ healthLabel(vmHealth(vm)) }}</span>
-      <span v-if="isApp && vm.updateAvailable" class="status-pill degraded">Update available</span>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
         <label
@@ -1455,23 +1631,13 @@ const healthBanner = computed(() => {
             @change="toggleStartOnBoot(($event.target as HTMLInputElement).checked)"
           >
         </label>
-        <AppButton
-          v-if="isApp && openUi && vm.state === 'running'"
-          variant="primary"
-          @click="openAppUi"
-        >Open UI ↗</AppButton>
-        <AppButton
-          v-if="isApp && vm.updateAvailable && vm.state === 'running'"
-          :disabled="controlDisabled || updatingApp"
-          @click="action('update', () => updateAppImage())"
-        >Update</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
         <AppButton v-if="vm.state === 'running'"
           :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
         <AppButton
-          v-if="!isApp && showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
+          v-if="showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
@@ -1500,7 +1666,7 @@ const healthBanner = computed(() => {
       <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
     </div>
 
-    <div v-if="tab === 'overview' && isApp" class="col-stack">
+    <div v-if="tab === 'overview' && isApp" class="app-overview-wrap">
       <div v-if="healthBanner" class="ops-banner">
         <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
         <div>
@@ -1508,7 +1674,13 @@ const healthBanner = computed(() => {
           <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
         </div>
       </div>
-      <AppDetailOverview :vm="vm" />
+      <AppDetailOverview
+        :vm="vm"
+        :device-label="appDeviceLabel"
+        :open-url="openUi"
+        :saving-ingress="savingIngress"
+        @update-ingress="saveIngress"
+      />
     </div>
 
     <div v-else-if="tab === 'overview'" class="twins">
@@ -1930,20 +2102,45 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
     />
-    <div v-if="tab === 'environment' && isApp" class="sheet">
-      <div class="sheet-head"><h3>Environment</h3></div>
-      <p class="dim-text" style="padding:12px 14px 0">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
-      <div v-if="appEnvKeys.length === 0" class="dim-text" style="padding:14px">No environment variables recorded.</div>
-      <div v-for="key in appEnvKeys" :key="key" class="detail-row" style="padding:10px 14px">
-        <span class="detail-label">{{ key }}</span>
-        <span class="mono dim-text">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+    <div v-if="tab === 'environment' && isApp" class="app-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <h2 style="margin:0">Environment</h2>
+        <AppButton v-if="!envEditing" size="sm" :disabled="isMemberDetail && !memberReachable" @click="startEnvEdit">Edit</AppButton>
       </div>
+      <p class="app-panel-sub">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
+      <template v-if="!envEditing">
+        <div v-if="appEnvKeys.length === 0" class="dim-text">No environment variables recorded.</div>
+        <div v-for="key in appEnvKeys" :key="key" class="app-kv">
+          <span class="k">{{ key }}</span>
+          <span class="v mono">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div v-for="row in envDraft" :key="row.key" class="app-kv">
+          <span class="k">{{ row.key }}</span>
+          <span style="display:flex;gap:8px;align-items:center;flex:1;justify-content:flex-end">
+            <input v-model="row.value" :aria-label="row.key" style="max-width:280px" />
+            <AppButton size="sm" variant="danger" :disabled="envSaving" @click="removeEnvRow(row.key)">Remove</AppButton>
+          </span>
+        </div>
+        <div v-for="key in envSecretKeys" :key="key" class="app-kv">
+          <span class="k">{{ key }}</span>
+          <span class="v mono">••••••••</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input v-model="envNewKey" placeholder="NEW_KEY" aria-label="New variable name" style="max-width:200px" />
+          <input v-model="envNewValue" placeholder="value" aria-label="New variable value" style="flex:1" />
+          <AppButton size="sm" :disabled="envSaving || !envNewKey.trim()" @click="addEnvRow">Add</AppButton>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <AppButton size="sm" :disabled="envSaving" @click="envEditing = false">Cancel</AppButton>
+          <AppButton size="sm" variant="primary" :loading="envSaving" loading-text="Saving..." @click="saveEnv">Save</AppButton>
+        </div>
+      </template>
     </div>
-    <div v-if="tab === 'volumes' && isApp" class="app-kimi-page">
-      <section class="app-kimi-card">
-        <div class="app-kimi-title">Volumes</div>
-        <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
-      </section>
+    <div v-if="tab === 'volumes' && isApp" class="app-panel">
+      <h2>Volumes</h2>
+      <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
@@ -2223,6 +2420,87 @@ const healthBanner = computed(() => {
   flex-wrap: wrap;
   padding-top: 8px;
   padding-bottom: 8px;
+}
+.app-overview-wrap {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.app-detail-head { margin-bottom: 6px; }
+.app-detail-head .crumb {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.app-detail-head .crumb a { color: var(--text-dim); text-decoration: none; }
+.app-detail-head .crumb a:hover { color: var(--accent); }
+.app-toolbar {
+  align-items: flex-start;
+  justify-content: space-between;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  margin-bottom: 6px;
+}
+.title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.app-toolbar h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.app-kind {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--green);
+}
+.app-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--green);
+}
+.app-pill .pdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.app-pill.degraded, .app-pill.failed { background: var(--amber-muted); color: var(--amber); }
+.app-sub { margin-top: 8px; margin-bottom: 0; color: var(--text-dim); font-size: 13px; }
+.app-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  max-width: 720px;
+}
+.app-panel h2 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+.app-panel-sub { font-size: 13px; color: var(--text-dim); margin: 0 0 12px; }
+.app-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.app-kv:last-child { border-bottom: none; }
+.app-kv .k { color: var(--text-dim); }
+.app-kv .v { color: var(--text); text-align: right; }
+.app-kv .v.mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
 }
 .boot-toggle {
   display: inline-flex;
