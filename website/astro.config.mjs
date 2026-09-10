@@ -58,6 +58,7 @@ export default defineConfig({
             { label: 'Dashboard', link: '/docs/using/dashboard/' },
             { label: 'Devices', link: '/docs/using/devices/' },
             { label: 'Virtual Machines', link: '/docs/using/vms/' },
+            { label: 'Apps', link: '/docs/using/apps/' },
             { label: 'Workload details', link: '/docs/using/vm-details/' },
             { label: 'Ollama', link: '/docs/using/ollama/' },
             { label: 'Images', link: '/docs/using/images/' },

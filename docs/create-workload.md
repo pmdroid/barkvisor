@@ -30,12 +30,17 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 - GPU attach is the existing passthrough path (IOMMU / vfio-pci / KVM). Fail closed if that is not ready. Linux host setup: [GPU passthrough](getting-started-gpu-passthrough.md).
 - Workload detail also has a **PCI** picker for other VFIO devices. The boot disk and the last remaining uplink stay excluded. The picker is hidden on **macOS**.
 
+## Create App
+
+Docker apps are a separate path: **Workloads → Create App**. See [Apps](using-apps.md).
+
 ## After create
 
 The Workload lives in that Device’s SQLite. Start, stop, and console from the Device detail page. If that Device is unreachable, the dashboard says so — it does not invent counts, and Workloads on other Devices keep running.
 
 ## Related
 
+- [Apps](using-apps.md)
 - [Quickstart](getting-started-quickstart.md)
 - [Home and pairing](home-and-pairing.md)
 - [Settings: Repositories](settings-repositories.md)
