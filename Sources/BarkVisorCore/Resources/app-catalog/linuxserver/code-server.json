@@ -4,7 +4,7 @@
     "arm64"
   ],
   "category": "Apps",
-  "compose": "services:\n  codeserver:\n    image: lscr.io/linuxserver/code-server:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n      - PASSWORD=password\n    volumes:\n      - config:/config\n    ports:\n      - 8443:8443\nvolumes:\n  config:\n",
+  "compose": "services:\n  codeserver:\n    image: lscr.io/linuxserver/code-server:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 8443:8443\nvolumes:\n  config:\n",
   "description": "Edit files on this Device from a browser.",
   "envSchema": [
     {
@@ -32,7 +32,6 @@
       "required": false
     },
     {
-      "default": "password",
       "kind": "secret",
       "name": "PASSWORD",
       "required": true
