@@ -12,8 +12,7 @@ final class ApplicationLifecycleServiceTests {
     deinit {
         HostInfoService.lanBindIPv4Provider = nil
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.installFailFast()
         ComposeTestIsolation.lock.unlock()
     }
 
@@ -124,7 +123,7 @@ final class ApplicationLifecycleServiceTests {
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-            ComposeRuntime.runner = LiveComposeCommandRunner()
+            ComposeTestIsolation.installFailFast()
         }
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -239,7 +238,7 @@ final class ApplicationLifecycleServiceTests {
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-            ComposeRuntime.runner = LiveComposeCommandRunner()
+            ComposeTestIsolation.installFailFast()
         }
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

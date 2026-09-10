@@ -48,9 +48,8 @@ final class WorkloadApplyServiceTests {
 
     deinit {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        ComposeRuntime.runner = LiveComposeCommandRunner()
         HostInfoService.lanBindIPv4Provider = nil
-        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.installFailFast()
         ComposeTestIsolation.lock.unlock()
         try? FileManager.default.removeItem(at: tmpDir)
     }

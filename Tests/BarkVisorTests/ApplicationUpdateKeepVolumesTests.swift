@@ -24,10 +24,8 @@ final class ApplicationUpdateKeepVolumesTests {
 
     deinit {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerCLI.runner = LiveDockerCommandRunner()
         ComposeRuntime.labeledStatesProvider = nil
-        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.installFailFast()
         try? FileManager.default.removeItem(at: dataDir)
         ComposeTestIsolation.lock.unlock()
     }
