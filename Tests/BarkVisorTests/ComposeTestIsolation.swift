@@ -1,5 +1,4 @@
 import Foundation
-import Testing
 @testable import BarkVisorCore
 
 enum ComposeTestIsolation {
@@ -28,15 +27,5 @@ struct FailFastComposeRunner: ComposeCommandRunning {
 struct FailFastDockerRunner: DockerCommandRunning {
     func run(arguments _: [String], timeout _: TimeInterval) throws -> CommandResult {
         throw BarkVisorError.internalError("test invoked live docker")
-    }
-}
-
-@Suite struct ComposeFailFastBootstrap {
-    init() {
-        ComposeTestIsolation.installFailFast()
-    }
-
-    @Test func failFastInstalled() {
-        #expect(Bool(true))
     }
 }
