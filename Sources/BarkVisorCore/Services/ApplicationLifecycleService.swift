@@ -87,7 +87,7 @@ public enum ApplicationLifecycleService {
     }
 
     public static func down(vm: VM, dataDir: URL = Config.dataDir) async {
-        try? await serial.run { () -> Void in
+        try? await serial.run {
             downLocked(vm: vm, dataDir: dataDir)
         }
     }
