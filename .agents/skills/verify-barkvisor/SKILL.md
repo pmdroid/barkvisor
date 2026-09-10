@@ -116,6 +116,8 @@ Capture into `.agents/skills/verify-barkvisor/evidence/<run-name>/` (gitignored,
 
 Proof standard: exercise the real user path (UI form/modal clicks against the running daemon); never internal setters, test-only endpoints, or direct DB writes as the *action* — DB reads are for verification only. Show-once secrets captured from a throwaway instance are fine to keep in evidence.
 
+Never upload a screenshot that shows a Tailscale hostname (`*.ts.net`). `shot.mjs` always redacts those to `device.local` before capture. Do not send unredacted evidence to Telegram, GitHub, or gists.
+
 ## Cleanup
 
 ```sh

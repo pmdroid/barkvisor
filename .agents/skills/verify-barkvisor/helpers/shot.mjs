@@ -19,7 +19,7 @@ const out = arg('out')
 const waitMs = Number(arg('wait-ms', '1200'))
 const raw = args.includes('--raw')
 const token = arg('token', '')
-const scrubs = []
+const scrubs = ['/[\\w.-]+\\.ts\\.net/device.local']
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--scrub') scrubs.push(args[i + 1])
 }
@@ -78,6 +78,13 @@ try {
         re.lastIndex = 0
       }
       document.title = document.title.replace(re, repl)
+      for (const el of document.querySelectorAll('input, textarea')) {
+        if (el.value && re.test(el.value)) {
+          re.lastIndex = 0
+          el.value = el.value.replace(re, repl)
+        }
+        re.lastIndex = 0
+      }
     }, { pattern: m[1], replacement: m[2] })
   }
   await page.screenshot({ path: out, fullPage: true })
