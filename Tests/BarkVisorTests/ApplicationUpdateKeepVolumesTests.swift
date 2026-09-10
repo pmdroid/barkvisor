@@ -11,6 +11,7 @@ final class ApplicationUpdateKeepVolumesTests {
     private let docker: RecordingDockerRunner
 
     init() throws {
+        ComposeTestIsolation.lock.lock()
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         dataDir = tmp
@@ -22,7 +23,12 @@ final class ApplicationUpdateKeepVolumesTests {
     }
 
     deinit {
+        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        ComposeRuntime.runner = LiveComposeCommandRunner()
+        DockerCLI.runner = LiveDockerCommandRunner()
+        DockerInspect.jsonForContainers = DockerInspect.liveJSON
         try? FileManager.default.removeItem(at: dataDir)
+        ComposeTestIsolation.lock.unlock()
     }
 
     private func withStubs<T>(_ body: () async throws -> T) async throws -> T {
@@ -36,8 +42,10 @@ final class ApplicationUpdateKeepVolumesTests {
                 composeOK: true,
             )
         }
-        defer { DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() } }
+        ComposeRuntime.runner = runner
+        DockerCLI.runner = docker
         let inspectJSON: @Sendable ([String]) throws -> Data = { _ in Data("[]".utf8) }
+        DockerInspect.jsonForContainers = inspectJSON
         return try await ComposeRuntime.$runnerOverride.withValue(runner) {
             try await DockerCLI.$runnerOverride.withValue(docker) {
                 try await DockerInspect.$jsonOverride.withValue(inspectJSON) {
