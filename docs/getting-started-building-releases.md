@@ -187,3 +187,10 @@ tag `v*` or manual dispatch. Full install matrix, layout, and runtime notes:
 Linux packages ship the daemon, SPA, and Swift runtime. QEMU/OVMF come from the
 distro as hard package dependencies. Bridged networking uses the host bridge path (no separate
 helper binary to bundle).
+
+## Windows zip
+
+CI workflow **Windows Package** (`.github/workflows/windows-package.yml`) builds
+`barkvisor-windows-amd64.zip` and `barkvisor-windows-arm64.zip` on tag `v*` or
+manual dispatch. The zip is the payload (`BarkVisor.exe`, Swift/VC DLLs, SPA).
+QEMU is not bundled. Install steps: [Installation (Windows)](getting-started-windows.md).

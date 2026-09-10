@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF), **Ubuntu / Debian** (`.deb` + systemd / KVM), and a portable **`.tar.gz`** for other glibc distros (Arch, SteamOS, Fedora) — including an agent-only, no-root install. See [Linux install](docs/getting-started-linux.md).
+**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF), **Ubuntu / Debian** (`.deb` + systemd / KVM), **Windows** (`zip` / WHPX), and a portable **`.tar.gz`** for other glibc distros (Arch, SteamOS, Fedora) — including an agent-only, no-root install. See [Linux install](docs/getting-started-linux.md) and [Windows install](docs/getting-started-windows.md).
 
 In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
 
@@ -58,6 +58,10 @@ sudo bash get-barkvisor.sh
 ```
 
 Other distros or no-root hosts: grab the `.tar.gz` from [Releases](https://github.com/pmdroid/barkvisor/releases) and follow **[Other distros: portable tarball, no root](docs/getting-started-linux.md#other-distros-portable-tarball-no-root)** (Arch/SteamOS package names included — `qemu-base` alone is not enough for VM display).
+
+### Windows
+
+Install QEMU and enable Windows Hypervisor Platform, then extract the zip and run `packaging\windows\install.ps1`. Full steps: **[Installation (Windows)](docs/getting-started-windows.md)**.
 
 ## Quick Start
 
@@ -179,7 +183,8 @@ The output is `build/stage/` (install layout), `build/BarkVisor-<version>-standa
 ## Configuration
 
 **macOS:** installed daemon data is under `/var/lib/barkvisor/`; development builds use `~/Library/Application Support/BarkVisor/`.  
-**Linux:** development default is `~/.local/share/barkvisor`; installed layout uses `/var/lib/barkvisor` (see Linux guide). Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR`.
+**Linux:** development default is `~/.local/share/barkvisor`; installed layout uses `/var/lib/barkvisor` (see Linux guide).  
+**Windows:** installed layout uses `C:\ProgramData\BarkVisor`; unpackaged uses `%LOCALAPPDATA%\BarkVisor` (see Windows guide). Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR`.
 
 | Path | Contents |
 |------|----------|
@@ -200,6 +205,7 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 - [Installation (macOS)](docs/getting-started-installation.md) — Apple Silicon `.pkg`, inspect-then-run bootstrap, Settings → Updates
 - [Installation (Linux)](docs/getting-started-linux.md) — Ubuntu / Debian `.deb`, root systemd, Networks Apply
+- [Installation (Windows)](docs/getting-started-windows.md) — zip payload, QEMU + WHPX, LocalSystem service
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, socket_vmnet (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing

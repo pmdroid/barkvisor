@@ -2,7 +2,7 @@
 title: "Using the web UI"
 description: "Run BarkVisor, sign in, and a map of every menu point in the console."
 ---
-BarkVisor is a headless daemon that manages QEMU virtual machines and serves a web console. Install it on a **Device** ([macOS](/docs/getting-started/installation/), [Linux](/docs/linux/)) and open `http://<device>:7777` in a browser — nothing to launch by hand; the daemon serves the UI itself. To hack on the UI or daemon, see [Development](/docs/getting-started/development/).
+BarkVisor is a headless daemon that manages QEMU virtual machines and serves a web console. Install it on a **Device** ([macOS](/docs/getting-started/installation/), [Linux](/docs/linux/), [Windows](/docs/getting-started/windows/)) and open `http://<device>:7777` in a browser — nothing to launch by hand; the daemon serves the UI itself. To hack on the UI or daemon, see [Development](/docs/getting-started/development/).
 
 ![The BarkVisor sign-in screen](/docs-img/login.png)
 

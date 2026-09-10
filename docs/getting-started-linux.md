@@ -8,6 +8,7 @@ This milestone is **Ubuntu / Debian `.deb`** and **macOS `.pkg`**. Not rpm, not 
 |----------|--------|
 | **macOS** | **[getting-started-installation.md](getting-started-installation.md)** — Apple Silicon `.pkg` |
 | **Linux** | This page |
+| **Windows** | **[getting-started-windows.md](getting-started-windows.md)** — zip, QEMU, Windows Hypervisor Platform |
 
 After install, open `http://localhost:7777` (or the Device IP) and finish the web setup. First Workload: [Quickstart](getting-started-quickstart.md) and [First launch](getting-started-first-launch.md). Words: **Home**, **Device**, **Workload**, **Library**. See [Product terminology](product-terminology.md).
 

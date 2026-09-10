@@ -119,3 +119,4 @@ Attach networks to a Workload in its [Create VM](create-workload.md) wizard step
 - [Devices](using-devices.md)
 - [Installation (Linux)](getting-started-linux.md#bridged-networking)
 - [Installation (macOS)](getting-started-installation.md)
+- [Installation (Windows)](getting-started-windows.md)
