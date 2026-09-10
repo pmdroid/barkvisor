@@ -238,6 +238,7 @@ public enum DockerEngine {
         let root = dataDir.appendingPathComponent("docker-cli", isDirectory: true)
         let plugins = root.appendingPathComponent("cli-plugins", isDirectory: true)
         try? FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+        importDockerConfig(into: root)
         let docker = dockerPath ?? resolveDockerPath()
         if let docker {
             if let compose = resolveComposePath(dockerPath: docker, isExecutable: isExecutable) {
@@ -259,6 +260,38 @@ public enum DockerEngine {
     ) -> [String: String] {
         let config = prepareCLIConfig(dataDir: dataDir, dockerPath: dockerPath)
         return ["DOCKER_CONFIG": config.path]
+    }
+
+    public static func dockerConfigJSONCandidates(
+        home: String = NSHomeDirectory(),
+        dockerConfigEnv: String? = ProcessInfo.processInfo.environment["DOCKER_CONFIG"],
+        socketOwner: String? = nil,
+    ) -> [String] {
+        var out: [String] = []
+        if let dir = dockerConfigEnv, !dir.isEmpty {
+            out.append(URL(fileURLWithPath: dir).appendingPathComponent("config.json").path)
+        }
+        out.append(URL(fileURLWithPath: home).appendingPathComponent(".docker/config.json").path)
+        let owner = socketOwner ?? dockerSocketOwner()
+        if let owner, !owner.isEmpty, owner != "root" {
+            out.append("/Users/\(owner)/.docker/config.json")
+        }
+        return out
+    }
+
+    private static func dockerSocketOwner() -> String? {
+        (try? FileManager.default.attributesOfItem(atPath: "/var/run/docker.sock")[.ownerAccountName]) as? String
+    }
+
+    private static func importDockerConfig(into root: URL) {
+        let dest = root.appendingPathComponent("config.json")
+        if FileManager.default.fileExists(atPath: dest.path) { return }
+        for source in dockerConfigJSONCandidates() {
+            if FileManager.default.fileExists(atPath: source) {
+                try? FileManager.default.copyItem(atPath: source, toPath: dest.path)
+                return
+            }
+        }
     }
 
     private static func linkPlugin(named: String, to: String, in plugins: URL) {

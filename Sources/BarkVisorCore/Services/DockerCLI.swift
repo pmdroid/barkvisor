@@ -13,6 +13,7 @@ public struct LiveDockerCommandRunner: DockerCommandRunning {
             executable: docker,
             arguments: arguments,
             timeout: timeout,
+            extraEnvironment: DockerEngine.cliEnvironment(dockerPath: docker.path),
         )
     }
 }

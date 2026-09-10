@@ -103,6 +103,16 @@ struct DockerEngineTests {
         #expect(dest == compose.path)
     }
 
+    @Test func `docker config candidates include launchd user socket owner`() {
+        let paths = DockerEngine.dockerConfigJSONCandidates(
+            home: "/var/root",
+            dockerConfigEnv: nil,
+            socketOwner: "pascal",
+        )
+        #expect(paths.contains("/var/root/.docker/config.json"))
+        #expect(paths.contains("/Users/pascal/.docker/config.json"))
+    }
+
     @Test func `compose invocation uses docker compose plugin when present`() throws {
         let snap = DockerEngineSnapshot(
             os: "macOS",
