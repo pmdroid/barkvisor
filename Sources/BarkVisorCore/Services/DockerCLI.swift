@@ -18,9 +18,10 @@ public struct LiveDockerCommandRunner: DockerCommandRunning {
 }
 
 public enum DockerCLI {
+    @TaskLocal public static var runnerOverride: (any DockerCommandRunning)?
     public nonisolated(unsafe) static var runner: any DockerCommandRunning = LiveDockerCommandRunner()
 
     public static func run(arguments: [String], timeout: TimeInterval = 30) throws -> CommandResult {
-        try runner.run(arguments: arguments, timeout: timeout)
+        try (runnerOverride ?? runner).run(arguments: arguments, timeout: timeout)
     }
 }

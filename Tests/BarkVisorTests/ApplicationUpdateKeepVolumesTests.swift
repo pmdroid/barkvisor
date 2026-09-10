@@ -19,19 +19,13 @@ final class ApplicationUpdateKeepVolumesTests {
         dbPool = pool
         runner = RecordingComposeRunner()
         docker = RecordingDockerRunner()
-        bindStubs()
     }
 
     deinit {
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerCLI.runner = LiveDockerCommandRunner()
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         try? FileManager.default.removeItem(at: dataDir)
     }
 
-    private func bindStubs() {
-        ComposeRuntime.runner = runner
-        DockerCLI.runner = docker
+    private func withStubs<T>(_ body: () async throws -> T) async throws -> T {
         DockerEngine.snapshotProvider = {
             DockerEngineSnapshot(
                 os: "Linux",
@@ -42,78 +36,92 @@ final class ApplicationUpdateKeepVolumesTests {
                 composeOK: true,
             )
         }
+        let previousCompose = ComposeRuntime.runner
+        let previousDocker = DockerCLI.runner
+        ComposeRuntime.runner = runner
+        DockerCLI.runner = docker
+        defer {
+            ComposeRuntime.runner = previousCompose
+            DockerCLI.runner = previousDocker
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        }
+        return try await DockerInspectTestGate.withStub({ _ in Data("[]".utf8) }) {
+            try await DockerCLI.$runnerOverride.withValue(docker) {
+                try await body()
+            }
+        }
     }
 
     @Test func `prepare records volume roots under the workload dir`() async throws {
-        bindStubs()
-        var vm = try await insertApp()
-        let yaml = vm.composeYaml ?? ""
-        let render = try ApplicationLifecycleService.prepare(
-            id: vm.id,
-            composeYaml: yaml,
-            env: nil,
-            dataDir: dataDir,
-        )
-        bindStubs()
-        try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
-        let id = vm.id
-        let live = try await dbPool.read { db in try VM.fetchOne(db, key: id) }
-        let roots = live?.decodedVolumeRoots ?? []
-        let root = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir).path
-        #expect(roots.contains(root))
-        #expect(roots.contains(root + "/volumes/config"))
-        #expect(render.namedVolumes == ["config"])
-        #expect(live?.imageRef == "lscr.io/linuxserver/qbittorrent:latest")
-        #expect(live?.digest == "sha256:aaa111bbb222")
+        try await withStubs {
+            var vm = try await insertApp()
+            let yaml = vm.composeYaml ?? ""
+            let render = try ApplicationLifecycleService.prepare(
+                id: vm.id,
+                composeYaml: yaml,
+                env: nil,
+                dataDir: dataDir,
+            )
+            try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
+            let id = vm.id
+            let live = try await dbPool.read { db in try VM.fetchOne(db, key: id) }
+            let roots = live?.decodedVolumeRoots ?? []
+            let root = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir).path
+            #expect(roots.contains(root))
+            #expect(roots.contains(root + "/volumes/config"))
+            #expect(render.namedVolumes == ["config"])
+            #expect(live?.imageRef == "lscr.io/linuxserver/qbittorrent:latest")
+            #expect(live?.digest == "sha256:aaa111bbb222")
+        }
     }
 
     @Test func `update pulls then ups and does not down volumes`() async throws {
-        bindStubs()
-        var vm = try await insertApp()
-        docker.inspectDigest = "sha256:bbb222ccc333"
-        docker.manifestDigest = "sha256:bbb222ccc333"
-        bindStubs()
-        try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
-        let joined = runner.calls.map { $0.joined(separator: " ") }
-        #expect(joined.contains { $0.contains("pull") })
-        #expect(joined.contains { $0.contains("up -d") })
-        #expect(!joined.contains { $0.contains("down") })
-        let updatedID = vm.id
-        let live = try await dbPool.read { db in try VM.fetchOne(db, key: updatedID) }
-        #expect(live?.digest == "sha256:bbb222ccc333")
-        #expect(live?.catalogDigest == "sha256:bbb222ccc333")
-        #expect(live?.updateAvailable == false)
+        try await withStubs {
+            var vm = try await insertApp()
+            docker.inspectDigest = "sha256:bbb222ccc333"
+            docker.manifestDigest = "sha256:bbb222ccc333"
+            try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
+            let joined = runner.calls.map { $0.joined(separator: " ") }
+            #expect(joined.contains { $0.contains("pull") })
+            #expect(joined.contains { $0.contains("up -d") })
+            #expect(!joined.contains { $0.contains("down") })
+            let updatedID = vm.id
+            let live = try await dbPool.read { db in try VM.fetchOne(db, key: updatedID) }
+            #expect(live?.digest == "sha256:bbb222ccc333")
+            #expect(live?.catalogDigest == "sha256:bbb222ccc333")
+            #expect(live?.updateAvailable == false)
+        }
     }
 
     @Test func `older catalog digest is update available`() async throws {
-        bindStubs()
-        var vm = try await insertApp()
-        docker.inspectDigest = "sha256:aaa111bbb222"
-        docker.manifestDigest = "sha256:fff999eee888"
-        bindStubs()
-        try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
-        #expect(vm.updateAvailable)
-        #expect(vm.catalogDigest == "sha256:fff999eee888")
-        #expect(vm.digest == "sha256:aaa111bbb222")
+        try await withStubs {
+            var vm = try await insertApp()
+            docker.inspectDigest = "sha256:aaa111bbb222"
+            docker.manifestDigest = "sha256:fff999eee888"
+            try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
+            #expect(vm.updateAvailable)
+            #expect(vm.catalogDigest == "sha256:fff999eee888")
+            #expect(vm.digest == "sha256:aaa111bbb222")
+        }
     }
 
     @Test func `compose logs snapshot returns compose output`() async throws {
-        bindStubs()
-        runner.calls = []
-        runner.logText = """
-        qbittorrent  | The WebUI administrator password was not set. A temporary password is provided for this session: helloQB
-        jellyfin  | listening
-        """
-        let vm = try await insertApp()
-        bindStubs()
-        let text = try ApplicationLifecycleService.logs(vm: vm, dataDir: dataDir)
-        #expect(text.contains("helloQB"))
-        #expect(ComposeLogHints.firstPassword(in: text) == "helloQB")
-        #expect(runner.calls.contains { $0.contains("logs") && $0.contains("--tail") })
-        #expect(!runner.calls.contains { call in
-            guard let i = call.firstIndex(of: "logs") else { return false }
-            return call[i...].contains("-f")
-        })
+        try await withStubs {
+            runner.calls = []
+            runner.logText = """
+            qbittorrent  | The WebUI administrator password was not set. A temporary password is provided for this session: helloQB
+            jellyfin  | listening
+            """
+            let vm = try await insertApp()
+            let text = try ApplicationLifecycleService.logs(vm: vm, dataDir: dataDir)
+            #expect(text.contains("helloQB"))
+            #expect(ComposeLogHints.firstPassword(in: text) == "helloQB")
+            #expect(runner.calls.contains { $0.contains("logs") && $0.contains("--tail") })
+            #expect(!runner.calls.contains { call in
+                guard let i = call.firstIndex(of: "logs") else { return false }
+                return call[i...].contains("-f")
+            })
+        }
     }
 
     private func insertApp() async throws -> VM {
