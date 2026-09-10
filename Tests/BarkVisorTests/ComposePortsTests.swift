@@ -32,32 +32,18 @@ struct ComposePortsTests {
         )
     }
 
-    @Test func `inspect wildcard HostIp is rejected on Linux proof`() throws {
+    @Test func `inspect wildcard HostIp is accepted`() throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
             """.utf8,
         )
         let bindings = try ComposePorts.parseInspectBindings(data)
-        let error = #expect(throws: BarkVisorError.self) {
-            try ComposePorts.requireLANHostIP(
-                bindings,
-                bindHost: "192.168.8.10",
-                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
-                allowWildcard: false,
-            )
-        }
-        guard case let .internalError(message) = error else {
-            Issue.record("expected internalError")
-            return
-        }
-        #expect(message.contains("192.168.8.10"))
-        #expect(message.contains("0.0.0.0"))
         try ComposePorts.requireLANHostIP(
             bindings,
-            bindHost: "192.168.8.10",
+            bindHost: "0.0.0.0",
             expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
-            allowWildcard: true,
+            allowWildcard: false,
         )
     }
 
@@ -96,22 +82,19 @@ struct ComposePortsTests {
         #expect(empty != nil)
     }
 
-    @Test func `inspect IPv6 any HostIp is a wildcard`() throws {
+    @Test func `inspect IPv6 any HostIp is accepted`() throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"::","HostPort":"8080"}]}}}]
             """.utf8,
         )
         let bindings = try ComposePorts.parseInspectBindings(data)
-        let error = #expect(throws: BarkVisorError.self) {
-            try ComposePorts.requireLANHostIP(
-                bindings,
-                bindHost: "192.168.8.10",
-                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
-                allowWildcard: false,
-            )
-        }
-        #expect(error != nil)
+        try ComposePorts.requireLANHostIP(
+            bindings,
+            bindHost: "0.0.0.0",
+            expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+            allowWildcard: false,
+        )
     }
 
     @Test func `inspect with no expected ports does not require a bind host`() throws {

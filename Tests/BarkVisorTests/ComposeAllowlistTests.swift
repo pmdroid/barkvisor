@@ -26,10 +26,8 @@ struct ComposeAllowlistTests {
             yaml: yaml, workloadID: "abc-123", stateDir: dir, bindHost: "192.168.8.10",
         )
         #expect(render.publishedPorts.contains { $0.hostPort == 8_080 && $0.containerPort == 80 })
-        #expect(render.bindHost == "192.168.8.10")
-        #expect(render.yaml.contains("192.168.8.10"))
-        #expect(render.yaml.contains("host_ip"))
-        #expect(!render.yaml.contains("0.0.0.0"))
+        #expect(render.bindHost == "0.0.0.0")
+        #expect(render.yaml.contains("0.0.0.0") || render.yaml.contains("host_ip"))
         #expect(render.namedVolumes == ["data"])
         #expect(render.yaml.contains("barkvisor.workload"))
         #expect(render.yaml.contains("abc-123"))
@@ -340,7 +338,7 @@ struct ComposeAllowlistTests {
         }
     }
 
-    @Test func `published ports bind the LAN address including UDP`() throws {
+    @Test func `published ports bind 0.0.0.0 including UDP`() throws {
         let yaml = """
         services:
           media:
@@ -356,28 +354,26 @@ struct ComposeAllowlistTests {
         #expect(render.publishedPorts.count == 3)
         #expect(render.publishedPorts.contains {
             $0.hostPort == 8_096 && $0.containerPort == 8_096 && $0.proto == "tcp"
-                && $0.hostAddress == "192.168.8.10"
+                && $0.hostAddress == "0.0.0.0"
         })
         #expect(render.publishedPorts.contains {
-            $0.hostPort == 1_900 && $0.proto == "udp" && $0.hostAddress == "192.168.8.10"
+            $0.hostPort == 1_900 && $0.proto == "udp" && $0.hostAddress == "0.0.0.0"
         })
         #expect(render.publishedPorts.contains {
-            $0.hostPort == 5_353 && $0.proto == "udp" && $0.hostAddress == "192.168.8.10"
+            $0.hostPort == 5_353 && $0.proto == "udp" && $0.hostAddress == "0.0.0.0"
         })
         #expect(
-            render.yaml.contains("host_ip: 192.168.8.10")
-                || render.yaml.contains("host_ip: '192.168.8.10'")
-                || render.yaml.contains("host_ip: \"192.168.8.10\""),
+            render.yaml.contains("host_ip: 0.0.0.0")
+                || render.yaml.contains("host_ip: '0.0.0.0'")
+                || render.yaml.contains("host_ip: \"0.0.0.0\""),
         )
-        #expect(!render.yaml.contains("0.0.0.0"))
-        #expect(!render.yaml.contains("::"))
         let rules = ApplicationLifecycleService.portRules(render.publishedPorts)
         try PortRegistry.assertUnique(rules)
         #expect(rules.contains { $0.hostPort == 1_900 && $0.protocol == "udp" })
         #expect(rules.contains { $0.hostPort == 8_096 && $0.protocol == "tcp" })
     }
 
-    @Test func `plex host network is rewritten to LAN 32400`() throws {
+    @Test func `plex host network is rewritten to published 32400`() throws {
         let yaml = """
         services:
           plex:
@@ -394,10 +390,9 @@ struct ComposeAllowlistTests {
         #expect(!render.yaml.contains("network_mode"))
         #expect(render.publishedPorts.contains {
             $0.hostPort == 32_400 && $0.containerPort == 32_400 && $0.proto == "tcp"
-                && $0.hostAddress == "192.168.8.10"
+                && $0.hostAddress == "0.0.0.0"
         })
         #expect(render.yaml.contains("32400"))
-        #expect(render.yaml.contains("192.168.8.10"))
     }
 
     @Test func `plex image match is the image name not a substring`() {
@@ -460,7 +455,7 @@ struct ComposeAllowlistTests {
         #expect(render.yaml.contains("alpine"))
     }
 
-    @Test func `wildcard bind host is rejected`() {
+    @Test func `wildcard bind host is accepted`() throws {
         let yaml = """
         services:
           x:
@@ -468,15 +463,10 @@ struct ComposeAllowlistTests {
             ports:
               - "8080:80"
         """
-        let error = #expect(throws: BarkVisorError.self) {
-            _ = try ComposeAllowlist.render(
-                yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "0.0.0.0",
-            )
-        }
-        guard case let .badRequest(message) = error else {
-            Issue.record("expected badRequest")
-            return
-        }
-        #expect(message == "No LAN address to bind published ports")
+        let render = try ComposeAllowlist.render(
+            yaml: yaml, workloadID: "id", stateDir: stateDir, bindHost: "0.0.0.0",
+        )
+        #expect(render.bindHost == "0.0.0.0")
+        #expect(render.publishedPorts.contains { $0.hostPort == 8_080 && $0.hostAddress == "0.0.0.0" })
     }
 }

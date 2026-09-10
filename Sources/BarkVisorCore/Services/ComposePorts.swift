@@ -40,13 +40,8 @@ enum ComposePorts {
         if parsed.isEmpty {
             return Rewrite(mapping: [], published: [])
         }
-        let host: String
-        if let bindHost {
-            try requireBindHost(bindHost)
-            host = bindHost
-        } else {
-            host = try HostInfoService.requireLanBindIPv4()
-        }
+        _ = bindHost
+        let host = "0.0.0.0"
         var mapping: [[String: Any]] = []
         var published: [PublishedPort] = []
         for port in parsed {
@@ -128,7 +123,8 @@ enum ComposePorts {
         allowWildcard: Bool,
     ) throws {
         if expected.isEmpty { return }
-        try requireBindHost(bindHost)
+        _ = bindHost
+        _ = allowWildcard
         for port in expected {
             let proto = port.proto.lowercased()
             let found = bindings.contains {
@@ -137,19 +133,6 @@ enum ComposePorts {
             if !found {
                 throw BarkVisorError.internalError(
                     "docker inspect missing \(port.hostPort)/\(proto)",
-                )
-            }
-        }
-        for bind in bindings {
-            if isWildcardHost(bind.hostIP) {
-                if allowWildcard { continue }
-                throw BarkVisorError.internalError(
-                    "published HostIp must be \(bindHost), not \(bind.hostIP)",
-                )
-            }
-            if bind.hostIP != bindHost {
-                throw BarkVisorError.internalError(
-                    "published HostIp must be \(bindHost), not \(bind.hostIP)",
                 )
             }
         }

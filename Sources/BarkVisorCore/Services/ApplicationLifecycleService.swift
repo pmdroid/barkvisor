@@ -35,7 +35,7 @@ public enum ApplicationLifecycleService {
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
-            bindHost: HostInfoService.lanBindIPv4(),
+            bindHost: nil,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -151,12 +151,11 @@ public enum ApplicationLifecycleService {
     ) throws {
         let data = try DockerInspect.jsonForContainers(containerNames)
         let bindings = try ComposePorts.parseInspectBindings(data)
-        let allowWildcard = PlatformHost.platformName == "macOS"
         try ComposePorts.requireLANHostIP(
             bindings,
             bindHost: bindHost,
             expected: expected,
-            allowWildcard: allowWildcard,
+            allowWildcard: true,
         )
     }
 

@@ -5,9 +5,7 @@ import Testing
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
-    @Test func `prepare rewrites published ports onto the LAN address`() throws {
-        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
-        defer { HostInfoService.lanBindIPv4Provider = nil }
+    @Test func `prepare rewrites published ports onto 0.0.0.0`() throws {
         let dataDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bv-app-lan-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dataDir) }
@@ -25,16 +23,14 @@ final class ApplicationLifecycleServiceTests {
             env: nil,
             dataDir: dataDir,
         )
-        #expect(render.bindHost == "192.168.8.10")
-        #expect(render.yaml.contains("192.168.8.10"))
-        #expect(!render.yaml.contains("0.0.0.0"))
+        #expect(render.bindHost == "0.0.0.0")
+        #expect(render.yaml.contains("0.0.0.0"))
         let written = try String(
             contentsOf: ComposeRuntime.projectDirectory(id: "whoami-1", dataDir: dataDir)
                 .appendingPathComponent("compose.yml"),
             encoding: .utf8,
         )
-        #expect(written.contains("192.168.8.10"))
-        #expect(!written.contains("0.0.0.0"))
+        #expect(written.contains("0.0.0.0"))
         let rules = ApplicationLifecycleService.portRules(render.publishedPorts)
         #expect(rules.contains { $0.protocol == "udp" && $0.hostPort == 1_900 })
         #expect(rules.contains { $0.protocol == "tcp" && $0.hostPort == 8_080 })
@@ -62,7 +58,7 @@ final class ApplicationLifecycleServiceTests {
         #expect(render.bindHost.isEmpty)
     }
 
-    @Test func `prepare with published ports still requires a LAN address`() throws {
+    @Test func `prepare with published ports does not require a LAN address`() throws {
         HostInfoService.lanBindIPv4Provider = { nil }
         defer { HostInfoService.lanBindIPv4Provider = nil }
         let dataDir = FileManager.default.temporaryDirectory
@@ -75,39 +71,28 @@ final class ApplicationLifecycleServiceTests {
             ports:
               - "8080:80"
         """
-        let error = #expect(throws: BarkVisorError.self) {
-            _ = try ApplicationLifecycleService.prepare(
-                id: "whoami-nolan",
-                composeYaml: yaml,
-                env: nil,
-                dataDir: dataDir,
-            )
-        }
-        guard case let .badRequest(message) = error else {
-            Issue.record("expected badRequest")
-            return
-        }
-        #expect(message == "No LAN address to bind published ports")
+        let render = try ApplicationLifecycleService.prepare(
+            id: "whoami-nolan",
+            composeYaml: yaml,
+            env: nil,
+            dataDir: dataDir,
+        )
+        #expect(render.bindHost == "0.0.0.0")
+        #expect(render.publishedPorts.contains { $0.hostPort == 8_080 })
     }
 
-    @Test func `inspect wildcard HostIp fails closed off macOS`() async throws {
+    @Test func `inspect wildcard HostIp is accepted`() async throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
             """.utf8,
         )
         try await DockerInspectTestGate.withStub({ _ in data }) {
-            do {
-                try ApplicationLifecycleService.verifyInspectedBinds(
-                    containerNames: ["bv-whoami-1-whoami"],
-                    bindHost: "192.168.8.10",
-                    expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
-                )
-                #expect(PlatformHost.platformName == "macOS")
-            } catch let BarkVisorError.internalError(message) {
-                #expect(PlatformHost.platformName != "macOS")
-                #expect(message.contains("0.0.0.0"))
-            }
+            try ApplicationLifecycleService.verifyInspectedBinds(
+                containerNames: ["bv-whoami-1-whoami"],
+                bindHost: "0.0.0.0",
+                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+            )
         }
     }
 
