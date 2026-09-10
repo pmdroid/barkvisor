@@ -306,6 +306,23 @@ final class ApplicationLifecycleServiceTests {
         #expect(WorkloadSpecJSON.decode(updated.specJson)?.spec.env?["PUID"] == "501")
     }
 
+    @Test func `application spec apply keeps omitted sharedPaths`() throws {
+        var vm = applicationVM(id: "plex-paths")
+        vm.composeYaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+        """
+        vm.setSharedPaths(["/mnt/media/movies"])
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.sharedPaths = nil
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedSharedPaths == ["/mnt/media/movies"])
+        spec.spec.sharedPaths = []
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedSharedPaths.isEmpty)
+    }
+
     @Test func `start refuses a deleting application`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
