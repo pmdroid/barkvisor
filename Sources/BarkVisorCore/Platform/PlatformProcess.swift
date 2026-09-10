@@ -169,22 +169,23 @@ public enum PlatformProcess {
             }
             if process.isRunning {
                 process.terminate()
-                // Brief grace period then hard-kill if still alive.
-                Thread.sleep(forTimeInterval: 0.5)
-                if process.isRunning {
-                    process.interrupt()
+                let killDeadline = Date().addingTimeInterval(0.5)
+                while process.isRunning, Date() < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.05)
                 }
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                process.waitUntilExit()
                 outPipe.fileHandleForReading.readabilityHandler = nil
                 errPipe.fileHandleForReading.readabilityHandler = nil
                 throw BarkVisorError.timeout(
                     "Process \(executable.lastPathComponent) timed out after \(Int(timeout))s",
                 )
             }
-        } else {
-            process.waitUntilExit()
         }
+        process.waitUntilExit()
 
-        // Ensure handlers finish and any remaining data is collected.
         outPipe.fileHandleForReading.readabilityHandler = nil
         errPipe.fileHandleForReading.readabilityHandler = nil
         let leftoverOut = outPipe.fileHandleForReading.readDataToEndOfFile()
