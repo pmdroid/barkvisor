@@ -175,8 +175,8 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
     public let whpx: Bool
     /// Host can bind a GPU with vfio-pci (Linux IOMMU + vfio + KVM + a GPU). Not QEMU attach.
     public let gpuPassthrough: Bool
-    /// IOMMU groups exist and vfio-pci (or `/dev/vfio/vfio`) is present.
     public let vfio: Bool
+    public let dockerEngine: Bool
 
     public init(
         bridgedNetworking: Bool,
@@ -188,6 +188,7 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         gpuPassthrough: Bool = false,
         vfio: Bool = false,
         whpx: Bool = false,
+        dockerEngine: Bool = false,
     ) {
         self.bridgedNetworking = bridgedNetworking
         self.managedBridgeDaemon = managedBridgeDaemon
@@ -198,11 +199,12 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         self.gpuPassthrough = gpuPassthrough
         self.vfio = vfio
         self.whpx = whpx
+        self.dockerEngine = dockerEngine
     }
 
     enum CodingKeys: String, CodingKey {
         case bridgedNetworking, managedBridgeDaemon, usbPassthrough, inAppUpdate
-        case kvmDevice, qemuBridgeHelper, gpuPassthrough, vfio, whpx
+        case kvmDevice, qemuBridgeHelper, gpuPassthrough, vfio, whpx, dockerEngine
     }
 
     public init(from decoder: Decoder) throws {
@@ -216,6 +218,7 @@ public struct VirtualizationFeatures: Codable, Sendable, Equatable {
         gpuPassthrough = try container.decodeIfPresent(Bool.self, forKey: .gpuPassthrough) ?? false
         vfio = try container.decodeIfPresent(Bool.self, forKey: .vfio) ?? false
         whpx = try container.decodeIfPresent(Bool.self, forKey: .whpx) ?? false
+        dockerEngine = try container.decodeIfPresent(Bool.self, forKey: .dockerEngine) ?? false
     }
 }
 

@@ -24,7 +24,7 @@ public struct QMPDiskService: Sendable {
         }
         let deviceName = try QEMUDeviceNames.blockDevice(
             diskId: disk.id,
-            bootDiskId: vm.bootDiskId,
+            bootDiskId: vm.bootDiskId ?? "",
             additionalDiskIds: vm.decodedAdditionalDiskIds,
         )
 

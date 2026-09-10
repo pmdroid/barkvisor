@@ -232,6 +232,8 @@ public enum TemplateCompatibility {
             return features.vfio
         case CapabilityCode.gpuPassthrough.rawValue:
             return features.gpuPassthrough
+        case CapabilityCode.dockerEngine.rawValue:
+            return features.dockerEngine
         default:
             return false
         }

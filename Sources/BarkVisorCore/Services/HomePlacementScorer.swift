@@ -77,8 +77,16 @@ public enum HomePlacementScorer {
                 ))
                 return finish(device: device, reasons: reasons)
             }
-            for feature in request.requiredFeatures where !features.supports(feature) {
+            for feature in request.requiredFeatures {
                 let name = HomeDeviceFeatureSummary.canonicalFeature(feature)
+                if features.supports(feature) { continue }
+                if name == CapabilityCode.dockerEngine.rawValue {
+                    reasons.append(.soft(
+                        featureMissingCode,
+                        "\(device.label) does not have dockerEngine. \(DockerEngine.helperRemediation(os: device.platform?.os ?? "")).",
+                    ))
+                    continue
+                }
                 reasons.append(.hard(
                     featureMissingCode,
                     "\(device.label) is missing required feature \(name).",

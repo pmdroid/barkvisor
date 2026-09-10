@@ -91,6 +91,9 @@ public enum WorkloadApplyService {
         db: DatabasePool,
     ) async throws -> WorkloadApplyResult {
         let before = WorkloadSpecProjector.fromVM(existing)
+        if let kind = stringValue(document["kind"]), kind != existing.kind {
+            throw BarkVisorError.badRequest("kind cannot change after create")
+        }
         let effective = try EffectiveWorkloadPipeline.evaluate(
             document: document,
             existing: existing,
@@ -109,8 +112,10 @@ public enum WorkloadApplyService {
         }
         if dryRun {
             let projected = preview
-            try await db.read { db in
-                try VMLifecycleService.validateAppliedVMSpec(spec: merged, vm: projected, db: db)
+            if !projected.isApplication {
+                try await db.read { db in
+                    try VMLifecycleService.validateAppliedVMSpec(spec: merged, vm: projected, db: db)
+                }
             }
             return WorkloadApplyResult(
                 op: .updated,
@@ -119,7 +124,10 @@ public enum WorkloadApplyService {
                 diff: WorkloadApplyDiff(before: before, after: after),
             )
         }
-        let vm = try await VMLifecycleService.updateVMSpec(id: existing.id, spec: merged, db: db)
+        var vm = try await VMLifecycleService.updateVMSpec(id: existing.id, spec: merged, db: db)
+        if vm.isApplication {
+            try await ApplicationLifecycleService.syncProject(vm: &vm, db: db)
+        }
         return WorkloadApplyResult(
             op: .updated,
             id: vm.id,
@@ -137,6 +145,9 @@ public enum WorkloadApplyService {
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> WorkloadApplyResult {
         let spec = try WorkloadSpecDocument.decode(document)
+        if spec.kind == WorkloadSpec.kindApplication {
+            return try await applyCreateApplication(spec: spec, dryRun: dryRun, db: db)
+        }
         let params = try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
         try await VMLifecycleService.validateCreateVMInputs(params: params, db: db)
         if dryRun {
@@ -169,6 +180,86 @@ public enum WorkloadApplyService {
         )
     }
 
+    private static func applyCreateApplication(
+        spec: WorkloadSpec,
+        dryRun: Bool,
+        db: DatabasePool,
+    ) async throws -> WorkloadApplyResult {
+        try WorkloadSpecProjector.validate(spec)
+        try DockerEngine.requireDeviceRuntime()
+        let requested = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let id = requested.isEmpty ? UUID().uuidString : requested
+        try validateVMID(id, label: "metadata.id")
+        if dryRun {
+            return WorkloadApplyResult(
+                op: .created,
+                id: id,
+                generation: 1,
+                diff: WorkloadApplyDiff(before: nil, after: spec),
+            )
+        }
+        let taken = try await db.read { db in try VM.fetchOne(db, key: id) }
+        if taken != nil {
+            throw BarkVisorError.conflict("Workload \(id) already exists")
+        }
+        let now = iso8601.string(from: Date())
+        var vm = VM(
+            id: id,
+            name: spec.metadata.name,
+            vmType: WorkloadSpec.applicationGuestType,
+            state: "stopped",
+            cpuCount: spec.spec.resources.cpu,
+            memoryMb: spec.spec.resources.memoryMb,
+            bootDiskId: nil,
+            kind: WorkloadSpec.kindApplication,
+            runtime: spec.spec.runtime ?? WorkloadSpec.runtimeDevice,
+            runtimeWorkloadId: spec.spec.runtimeWorkloadId,
+            composeYaml: spec.spec.compose,
+            composeProject: ComposeRuntime.composeProjectName(id: id),
+            isoIds: nil,
+            networkId: nil,
+            cloudInitPath: nil,
+            description: spec.metadata.description,
+            bootOrder: nil,
+            displayResolution: nil,
+            additionalDiskIds: nil,
+            uefi: false,
+            tpmEnabled: false,
+            macAddress: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            autoCreated: false,
+            pendingChanges: false,
+            startOnBoot: true,
+            createdAt: now,
+            updatedAt: now,
+        )
+        vm.setHealth(spec.spec.health)
+        var document = spec
+        document.metadata.id = id
+        vm.specJson = WorkloadSpecJSON.encode(document)
+        vm.syncSpecProjection(bumpGeneration: false)
+        let row = vm
+        try await db.write { db in
+            try row.insert(db)
+        }
+        do {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db)
+        } catch {
+            Log.vm.warning(
+                "Application \(vm.id) compose up failed: \(error.localizedDescription)",
+                vm: vm.id,
+            )
+        }
+        let persisted = try await db.read { db in try VM.fetchOne(db, key: id) } ?? vm
+        return WorkloadApplyResult(
+            op: .created,
+            id: persisted.id,
+            generation: persisted.specGeneration,
+            diff: WorkloadApplyDiff(before: nil, after: WorkloadSpecProjector.fromVM(persisted)),
+        )
+    }
+
     static func createParams(from spec: WorkloadSpec) throws -> CreateVMParams {
         try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
     }
@@ -182,10 +273,13 @@ public enum WorkloadApplyService {
                 "Unsupported apiVersion \(apiVersion). Expected \(WorkloadSpec.currentAPIVersion)",
             )
         }
-        if let kind = stringValue(document["kind"]), kind != WorkloadSpec.kindVirtualMachine {
-            throw BarkVisorError.badRequest(
-                "Unsupported kind \(kind). Expected \(WorkloadSpec.kindVirtualMachine)",
-            )
+        if let kind = stringValue(document["kind"]) {
+            let allowed = [WorkloadSpec.kindVirtualMachine, WorkloadSpec.kindApplication]
+            if !allowed.contains(kind) {
+                throw BarkVisorError.badRequest(
+                    "Unsupported kind \(kind). Expected \(WorkloadSpec.kindVirtualMachine) or \(WorkloadSpec.kindApplication)",
+                )
+            }
         }
         let metadata = metadataObject(document)
         if let id = stringValue(metadata["id"]) {

@@ -11,6 +11,7 @@ import {
   HOME_OF_ONE,
   NETWORKS_NAV_LABEL,
   THIS_DEVICE,
+  WORKLOADS_NAV_LABEL,
 } from './terminology'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -38,6 +39,7 @@ describe('PAS-97 Device terminology', () => {
     expect(DEVICE_MEMORY_LABEL).toBe('Device Memory')
     expect(THIS_DEVICE).toBe('this device')
     expect(NETWORKS_NAV_LABEL).toBe('Networks')
+    expect(WORKLOADS_NAV_LABEL).toBe('Workloads')
     expect(DEVICE_LABEL.toLowerCase()).not.toContain('node')
   })
 

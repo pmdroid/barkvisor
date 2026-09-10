@@ -123,6 +123,7 @@ describe('API contract (PAS-78)', () => {
       cpuCount: 2,
       memoryMB: 1024,
       bootDiskId: 'disk-1',
+      kind: 'VirtualMachine',
       isoId: null,
       isoIds: null,
       networkId: null,

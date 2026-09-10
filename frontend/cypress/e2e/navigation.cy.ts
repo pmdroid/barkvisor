@@ -7,7 +7,7 @@ describe('Navigation', () => {
   const sidebarRoutes = [
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/devices', label: 'Devices' },
-    { href: '/vms', label: 'Virtual Machines' },
+    { href: '/vms', label: 'Workloads' },
     { href: '/images', label: 'Images' },
     { href: '/disks', label: 'Disks' },
     { href: '/networks', label: 'Networks' },

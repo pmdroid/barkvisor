@@ -53,6 +53,7 @@ public enum HostInventoryService {
             gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
             vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
             whpx: accelerator == "whpx",
+            dockerEngine: DockerEngine.snapshot().capabilitySupported,
         )
 
         // Only advertise guest types this host can run natively (PAS-48).
@@ -152,6 +153,7 @@ public enum HostInventoryService {
             usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
             gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
             vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
+            dockerEngine: DockerEngine.snapshot().capabilitySupported,
         )
     }
 

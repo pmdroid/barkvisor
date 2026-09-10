@@ -94,6 +94,17 @@ public enum EffectiveWorkloadPipeline {
         _ spec: WorkloadSpec,
         host: WorkloadSpecResolver.HostPlatform = .current,
     ) throws -> EffectiveWorkload {
+        if spec.kind == WorkloadSpec.kindApplication {
+            return EffectiveWorkload(
+                portable: spec,
+                resolved: spec,
+                portableGuestType: WorkloadSpec.applicationGuestType,
+                launchGuestType: WorkloadSpec.applicationGuestType,
+                accelerator: nil,
+                hugepages: false,
+                storedDocument: nil,
+            )
+        }
         let merged = WorkloadSpecResolver.resolve(spec, host: host)
         let portableGuestType = try WorkloadSpecProjector.resolveGuestType(spec)
         let launchGuestType = try WorkloadSpecResolver.launchGuestType(spec, host: host)

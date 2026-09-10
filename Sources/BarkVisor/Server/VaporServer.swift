@@ -75,6 +75,7 @@ public final class VaporServer: @unchecked Sendable {
 
         let services = await createServices(app: app, database: database)
         await services.processMonitor.reconnectOrCleanup()
+        await ApplicationLifecycleService.reconcile(db: database.pool)
         await WorkloadAutostart.startEligible(db: database.pool, vmManager: services.manager)
 
         app.middleware.use(RequestLogMiddleware())
@@ -514,6 +515,11 @@ public final class VaporServer: @unchecked Sendable {
             ) {
                 await healthProbes.pollDue()
             }
+        }
+        await backgroundTasks.schedulePeriodicTask(
+            id: "application-reconcile", interval: 5 * 1_000_000_000,
+        ) {
+            await ApplicationLifecycleService.reconcile(db: pool)
         }
         let ollamaRefreshNs = UInt64(OllamaHomeMap.refreshInterval * 1_000_000_000)
         await backgroundTasks.schedulePeriodicTask(id: "ollama-map", interval: ollamaRefreshNs) {

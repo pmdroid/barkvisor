@@ -31,7 +31,7 @@ struct TemplateDeployRecipeTests {
         #expect(vm.state == "provisioning")
         let stored = try await pool.read { db in try VM.fetchOne(db, key: vm.id) }
         #expect(stored != nil)
-        #expect(stored?.bootDiskId.isEmpty == false)
+        #expect(stored?.bootDiskId?.isEmpty == false)
         let started = await downloader.startedURLs
         #expect(started.contains { $0.absoluteString == url })
         let templateCount = try await pool.read { db in try VMTemplate.fetchCount(db) }

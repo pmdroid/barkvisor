@@ -293,7 +293,7 @@ public enum DiskService {
     public static func attachmentsByDiskId(vms: [VM], disks: [Disk]) -> [String: [DiskAttachment]] {
         var map: [String: [DiskAttachment]] = [:]
         for vm in vms {
-            let diskIds = [vm.bootDiskId] + vm.decodedAdditionalDiskIds
+            let diskIds = [vm.bootDiskId].compactMap(\.self) + vm.decodedAdditionalDiskIds
             for diskId in diskIds where !diskId.isEmpty {
                 map[diskId, default: []].append(DiskAttachment(vmId: vm.id, vmName: vm.name))
             }

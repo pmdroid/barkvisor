@@ -6,6 +6,7 @@ Architecture: @DEB_ARCH@
 Maintainer: BarkVisor Contributors <noreply@barkvisor.dev>
 Homepage: https://github.com/pmdroid/barkvisor
 Depends: libc6, ca-certificates, libcurl4 | libcurl4t64, libxml2, libsqlite3-0, libncurses6 | libncursesw6, libzstd1, libedit2, zlib1g, qemu-system-x86 | qemu-system-arm | qemu-system-aarch64 | qemu-kvm, qemu-utils, ovmf | qemu-efi-aarch64 | edk2-ovmf, genisoimage | xorriso | mkisofs, usbutils
+Suggests: docker-ce | docker.io, docker-compose-v2
 Description: Headless QEMU VM manager with web UI
  BarkVisor is a headless daemon for managing QEMU virtual machines through
  a browser UI. Supports NAT and bridged networking, cloud images, cloud-init,

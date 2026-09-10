@@ -17,7 +17,7 @@ describe('VM Lifecycle', () => {
 
   it('shows the VM list page header and Create VM button', () => {
     cy.visit('/vms')
-    cy.contains('h1', 'Virtual Machines').should('be.visible')
+    cy.contains('h1', 'Workloads').should('be.visible')
     cy.contains('button', 'Create VM').should('be.visible')
   })
 

@@ -61,10 +61,10 @@ describe('Authentication', () => {
   it('persists session across page reload', () => {
     cy.login()
     cy.visit('/vms')
-    cy.contains('h1', 'Virtual Machines').should('be.visible')
+    cy.contains('h1', 'Workloads').should('be.visible')
     cy.reload()
     cy.url().should('include', '/vms')
-    cy.contains('h1', 'Virtual Machines').should('be.visible')
+    cy.contains('h1', 'Workloads').should('be.visible')
   })
 
   it('API returns 401 for unauthenticated requests', () => {

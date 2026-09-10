@@ -31,6 +31,14 @@ public enum WorkloadBackendProjector {
         accelerator: String = QEMUBuilder.accelerator,
         hostArch: String = PlatformCapabilities.hostArch,
     ) -> VMRuntimeBackend {
+        if vm.isApplication {
+            return VMRuntimeBackend(
+                accelerator: "compose",
+                guestArch: hostArch,
+                qemuBinary: "docker",
+                emulated: false,
+            )
+        }
         let effective = try? EffectiveWorkloadPipeline.evaluate(vm: vm)
         let guestType = effective?.launchGuestType ?? vm.vmType
         let accel = effective?.accelerator ?? accelerator

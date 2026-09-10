@@ -64,7 +64,13 @@ public enum WorkloadAutostart {
         guard plan.isDeviceBoot else { return }
         for vmID in plan.vmIDs {
             do {
-                try await vmManager.start(vmID: vmID)
+                if var app = try await db.read({ db in
+                    try VM.fetchOne(db, key: vmID)
+                }), app.isApplication {
+                    try await ApplicationLifecycleService.start(vm: &app, db: db)
+                } else {
+                    try await vmManager.start(vmID: vmID)
+                }
                 Log.vm.info("Autostarted Workload \(vmID) after Device boot", vm: vmID)
             } catch {
                 Log.vm.warning(

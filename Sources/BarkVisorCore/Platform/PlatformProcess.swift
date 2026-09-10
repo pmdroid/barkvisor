@@ -118,10 +118,14 @@ public enum PlatformProcess {
         executable: URL,
         arguments: [String] = [],
         timeout: TimeInterval? = 60,
+        currentDirectory: URL? = nil,
     ) throws -> CommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if let currentDirectory {
+            process.currentDirectoryURL = currentDirectory
+        }
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -192,8 +196,14 @@ public enum PlatformProcess {
         path: String,
         arguments: [String] = [],
         timeout: TimeInterval? = 60,
+        currentDirectory: URL? = nil,
     ) throws -> CommandResult {
-        try run(executable: URL(fileURLWithPath: path), arguments: arguments, timeout: timeout)
+        try run(
+            executable: URL(fileURLWithPath: path),
+            arguments: arguments,
+            timeout: timeout,
+            currentDirectory: currentDirectory,
+        )
     }
 
     // MARK: - Helpers

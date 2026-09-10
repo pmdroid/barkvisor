@@ -369,7 +369,7 @@ struct HealthProbeServiceTests {
         let running = vm
         try await pool.write { db in
             try Disk(
-                id: running.bootDiskId,
+                id: running.bootDiskId ?? "boot",
                 name: "boot",
                 path: tmp.appendingPathComponent("boot.qcow2").path,
                 sizeBytes: 1_024,

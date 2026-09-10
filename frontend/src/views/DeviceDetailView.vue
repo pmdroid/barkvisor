@@ -789,8 +789,11 @@ async function doStop() {
             <td>
               <div class="vm">{{ vm.name }}</div>
             </td>
-            <td>{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</td>
-            <td class="num">{{ formatCores(vm.cpuCount) }} · {{ formatMemoryMB(vm.memoryMB) }}</td>
+            <td>{{ (vm.kind === 'Application' || vm.spec?.kind === 'Application') ? 'App' : (vm.vmType.startsWith('windows') ? 'Windows' : 'Linux') }}</td>
+            <td class="num">
+              <template v-if="vm.kind === 'Application' || vm.spec?.kind === 'Application'">{{ formatPortForwards(vm.portForwards) || '—' }}</template>
+              <template v-else>{{ formatCores(vm.cpuCount) }} · {{ formatMemoryMB(vm.memoryMB) }}</template>
+            </td>
             <td class="ports">{{ formatPortForwards(vm.portForwards) }}</td>
             <td>
               <span

@@ -120,6 +120,20 @@ extension VMManager {
         lastSeenAt: String?,
         probes: HealthProbeResults = .unobserved,
     ) -> WorkloadHealthSignals {
+        if vm.isApplication {
+            let composeError = ApplicationLifecycleService.lastError(for: vm.id)
+            return WorkloadHealthSignals(
+                qemuProcess: vm.state == "running",
+                qmp: vm.state == "running",
+                lastError: composeError ?? lastHealthErrors[vm.id],
+                http: probes.http,
+                tcp: probes.tcp,
+                httpConfigured: probes.httpConfigured,
+                tcpConfigured: probes.tcpConfigured,
+                httpUnreachable: probes.httpUnreachable,
+                tcpUnreachable: probes.tcpUnreachable,
+            )
+        }
         let state = VMState.parse(vm.state)
         let lastError = lastHealthErrors[vm.id]
         if let running = runningVMs[vm.id] {
@@ -184,8 +198,10 @@ extension VMManager {
             guard let vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.vmNotRunning(id)
             }
-            guard let disk = try Disk.fetchOne(db, key: vm.bootDiskId) else {
-                throw BarkVisorError.diskCreateFailed("Boot disk \(vm.bootDiskId) not found")
+            guard let bootDiskId = vm.bootDiskId,
+                  let disk = try Disk.fetchOne(db, key: bootDiskId)
+            else {
+                throw BarkVisorError.diskCreateFailed("Boot disk \(vm.bootDiskId ?? "") not found")
             }
             // Load ISOs via typed accessor (includes legacy isoId fallback).
             var isos: [VMImage] = []

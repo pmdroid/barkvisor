@@ -218,7 +218,8 @@ struct DeviceDetailTests {
 
         // Unknown codes fall back to the raw code so new server rows still render.
         #expect(DeviceDoctor.title(for: "futureProbe") == "futureProbe")
-        #expect(DeviceDoctor.note(for: try #require(caps.detail(code: "futureProbe"))) == nil)
+        #expect(DeviceDoctor.title(for: "dockerEngine") == "Docker Engine")
+        #expect(try DeviceDoctor.note(for: #require(caps.detail(code: "futureProbe"))) == nil)
     }
 
     @Test func `doctor path uses local api or home proxy`() throws {
