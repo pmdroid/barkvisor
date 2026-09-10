@@ -166,6 +166,7 @@ export interface WorkloadSpecBody {
   cloudInit?: WorkloadCloudInit | null
   usb?: WorkloadUSBDevice[]
   gpu?: GPUPassthroughDevice[]
+  gpuShare?: WorkloadGPUShare[]
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
@@ -358,6 +359,27 @@ export interface GPUPassthroughDevice {
   pciClass?: string | null
   label?: string | null
   groupAddresses?: string[]
+}
+
+export interface WorkloadGPUShare {
+  id: string
+}
+
+export interface HostGPUShareDevice {
+  id: string
+  kind: 'drm' | 'nvidia' | string
+  name: string
+  label: string
+  driver?: string | null
+  pciAddress?: string | null
+  renderNodes?: string[]
+  cardNodes?: string[]
+  nvidiaUUID?: string | null
+  vfioBound?: boolean
+  attachable: boolean
+  excludedReason?: string | null
+  claimedByVMId?: string | null
+  claimedByVMName?: string | null
 }
 
 export interface HostGPUDevice {

@@ -58,6 +58,8 @@ struct DoctorServiceTests {
         qemuImgPath: String? = "/usr/bin/qemu-img",
         isoToolPath: String? = "/usr/bin/mkisofs",
         qemuMissingDevices: [String]? = [],
+        nvidiaPresent: Bool = false,
+        nvidiaToolkitPresent: Bool = false,
     ) -> DoctorFactInputs {
         DoctorFactInputs(
             os: os,
@@ -84,6 +86,8 @@ struct DoctorServiceTests {
             qemuImgPath: qemuImgPath,
             isoToolPath: isoToolPath,
             qemuMissingDevices: qemuMissingDevices,
+            nvidiaPresent: nvidiaPresent,
+            nvidiaToolkitPresent: nvidiaToolkitPresent,
         )
     }
 
@@ -140,6 +144,30 @@ struct DoctorServiceTests {
         let report = DoctorService.assemble(from: inputs(os: "Windows"))
         #expect(check(report, "docker").status == .skip)
         #expect(check(report, "docker-compose").status == .skip)
+    }
+
+    @Test func `missing nvidia toolkit is warn not fail`() {
+        let report = DoctorService.assemble(from: inputs(
+            nvidiaPresent: true,
+            nvidiaToolkitPresent: false,
+        ))
+        #expect(check(report, "nvidia-container-toolkit").status == .warn)
+        #expect(report.ok)
+    }
+
+    @Test func `nvidia toolkit ok when present`() {
+        let report = DoctorService.assemble(from: inputs(
+            uid: 0,
+            nvidiaPresent: true,
+            nvidiaToolkitPresent: true,
+        ))
+        #expect(check(report, "nvidia-container-toolkit").status == .ok)
+        #expect(report.ok)
+    }
+
+    @Test func `nvidia toolkit check is omitted without nvidia`() {
+        let report = DoctorService.assemble(from: inputs())
+        #expect(report.checks.contains { $0.id == "nvidia-container-toolkit" } == false)
     }
 
     @Test func `missing qemu fails`() {

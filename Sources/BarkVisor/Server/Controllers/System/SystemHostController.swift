@@ -15,6 +15,7 @@ struct SystemHostController: RouteCollection {
         system.get("usb", use: listUSBDevices)
         system.get("gpu-devices", use: listGPUDevices)
         system.get("gpu", use: listGPUDevices)
+        system.get("gpu-share", use: listGPUShare)
         system.get("pci-devices", use: listPCIDevices)
         system.get("block-devices", use: listBlockDevices)
     }
@@ -162,6 +163,12 @@ struct SystemHostController: RouteCollection {
         let hostDevices = GPUDeviceService.listDevices()
         let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
         return hostDevices.map { hostDeviceResponse(dev: $0, vms: allVMs) }
+    }
+
+    @Sendable
+    func listGPUShare(req: Vapor.Request) async throws -> [HostGPUShareDevice] {
+        let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
+        return GPUShareService.list(vms: allVMs)
     }
 
     @Sendable

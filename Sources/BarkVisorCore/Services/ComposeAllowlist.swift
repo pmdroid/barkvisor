@@ -42,6 +42,7 @@ public enum ComposeAllowlist {
         stateDir: URL,
         bindHost: String? = nil,
         allowedBinds: [String] = [],
+        gpuShare: GPUShareAttach = .empty,
     ) throws -> ComposeRender {
         let trimmed = yaml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -101,6 +102,7 @@ public enum ComposeAllowlist {
             if let depends = service["depends_on"] {
                 try validateDependsOn(depends)
             }
+            try injectGPUShare(&service, gpuShare: gpuShare)
             services[name] = service
         }
         root["services"] = services
@@ -206,6 +208,15 @@ public enum ComposeAllowlist {
         if let devices = service["devices"], !isEmptyValue(devices) {
             throw BarkVisorError.badRequest("unsupported compose feature: devices")
         }
+        if service["runtime"] != nil {
+            throw BarkVisorError.badRequest("unsupported compose feature: runtime")
+        }
+        if service["gpus"] != nil {
+            throw BarkVisorError.badRequest("unsupported compose feature: gpus")
+        }
+        if let deploy = service["deploy"], !isEmptyValue(deploy) {
+            throw BarkVisorError.badRequest("unsupported compose feature: deploy")
+        }
         if service["build"] != nil {
             throw BarkVisorError.badRequest("unsupported compose feature: build")
         }
@@ -223,6 +234,7 @@ public enum ComposeAllowlist {
             if !allowedServiceKeys.contains(key),
                ![
                    "privileged", "network_mode", "pid", "cap_add", "devices", "build", "secrets",
+                   "runtime", "gpus", "deploy",
                ].contains(key) {
                 throw BarkVisorError.badRequest("unsupported compose feature: \(key)")
             }
@@ -431,7 +443,39 @@ public enum ComposeAllowlist {
         return ParsedVolume(entry: entry, named: nil)
     }
 
+    private static func injectGPUShare(_ service: inout [String: Any], gpuShare: GPUShareAttach) throws {
+        if gpuShare.isEmpty { return }
+        var devices: [String] = []
+        for path in gpuShare.driDevices {
+            guard GPUShareService.isDRIPath(path) else {
+                throw BarkVisorError.badRequest("unsupported compose feature: devices")
+            }
+            devices.append("\(path):\(path)")
+        }
+        if !devices.isEmpty {
+            service["devices"] = devices
+        }
+        if gpuShare.nvidiaRuntime, !gpuShare.nvidiaUUIDs.isEmpty {
+            service["runtime"] = "nvidia"
+            var env: [String: String] = [:]
+            if let existing = service["environment"] {
+                env = try rewriteEnvironment(existing)
+            }
+            env["NVIDIA_VISIBLE_DEVICES"] = gpuShare.nvidiaUUIDs.joined(separator: ",")
+            if env["NVIDIA_DRIVER_CAPABILITIES"] == nil {
+                env["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility,video"
+            }
+            service["environment"] = env
+        }
+    }
+
     private static func rewriteEnvironment(_ value: Any) throws -> [String: String] {
+        if let typed = value as? [String: String] {
+            for key in typed.keys {
+                try ComposeRuntime.requireEnvKey(key)
+            }
+            return typed
+        }
         var out: [String: String] = [:]
         if let object = asObject(value) {
             for (key, raw) in object {

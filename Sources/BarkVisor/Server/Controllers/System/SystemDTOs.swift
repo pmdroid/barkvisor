@@ -180,6 +180,7 @@ extension HostBridgeRemediation: Content {}
 extension DoctorReport: Content {}
 extension DoctorCheck: Content {}
 extension DoctorCheckStatus: Content {}
+extension HostGPUShareDevice: Content {}
 
 struct HostGPUDeviceResponse: Content {
     let id: String

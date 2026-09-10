@@ -96,6 +96,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
     public var dataDirWritable: Bool
     public var listenPort: Int
     public var listenPortFree: Bool
+    public var nvidiaPresent: Bool
+    public var nvidiaToolkitPresent: Bool
 
     public init(
         os: String,
@@ -129,6 +131,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
         dataDirWritable: Bool = true,
         listenPort: Int = 7_777,
         listenPortFree: Bool = true,
+        nvidiaPresent: Bool = false,
+        nvidiaToolkitPresent: Bool = false,
     ) {
         self.os = os
         self.uid = uid
@@ -161,6 +165,8 @@ public struct DoctorFactInputs: Sendable, Equatable {
         self.dataDirWritable = dataDirWritable
         self.listenPort = listenPort
         self.listenPortFree = listenPortFree
+        self.nvidiaPresent = nvidiaPresent
+        self.nvidiaToolkitPresent = nvidiaToolkitPresent
     }
 }
 
@@ -199,6 +205,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             }
         }
         let docker = DockerEngine.liveSnapshot()
+        let nvidia = NVIDIAShareProbe.live()
         #if os(Windows)
             let whpxPresent = PlatformCapabilities.whpxPresent()
             let firmwarePath = Self.locateFirmware()
@@ -248,6 +255,8 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             dataDirWritable: dataDirWritable,
             listenPort: listenPort,
             listenPortFree: listenPortFree,
+            nvidiaPresent: nvidia.present,
+            nvidiaToolkitPresent: nvidia.toolkitPresent,
         )
     }
 
@@ -420,12 +429,17 @@ public enum DoctorService {
             qemuCheck(inputs),
             dockerCheck(inputs),
             dockerComposeCheck(inputs),
+        ]
+        if inputs.nvidiaPresent, !isWindows(inputs.os) {
+            checks.append(nvidiaToolkitCheck(inputs))
+        }
+        checks.append(contentsOf: [
             qemuDevicesCheck(inputs),
             qemuImgCheck(inputs),
             isoToolCheck(inputs),
             qemuProcessCheck(inputs),
             kvmCheck(inputs),
-        ]
+        ])
         if isWindows(inputs.os) {
             checks.append(whpxCheck(inputs))
             checks.append(firmwareCheck(inputs))
@@ -537,6 +551,29 @@ public enum DoctorService {
             id: "docker-compose",
             status: .warn,
             detail: "docker compose v2 not found. \(DockerEngine.helperRemediation(os: inputs.os))",
+        )
+    }
+
+    private static func nvidiaToolkitCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
+        if isWindows(inputs.os) {
+            return DoctorCheck(
+                id: "nvidia-container-toolkit",
+                status: .skip,
+                detail: "NVIDIA container toolkit is not used on this OS.",
+            )
+        }
+        if inputs.nvidiaToolkitPresent {
+            return DoctorCheck(
+                id: "nvidia-container-toolkit",
+                status: .ok,
+                detail: "nvidia-container-toolkit is installed.",
+            )
+        }
+        return DoctorCheck(
+            id: "nvidia-container-toolkit",
+            status: .warn,
+            detail: "NVIDIA GPU is present but nvidia-container-toolkit is missing. "
+                + "Docker apps can still use /dev/dri. Install nvidia-container-toolkit to share NVIDIA GPUs.",
         )
     }
 

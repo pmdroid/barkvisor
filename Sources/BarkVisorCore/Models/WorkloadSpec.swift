@@ -67,6 +67,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
     public var cloudInit: WorkloadCloudInit?
     public var usb: [WorkloadUSBDevice]
     public var gpu: [WorkloadGPUDevice]
+    public var gpuShare: [WorkloadGPUShare]
     public var display: WorkloadDisplay?
     /// Host bind-mounts (virtio-9p). Portable in the native spec; host paths stay host-local.
     public var sharedPaths: [String]?
@@ -91,6 +92,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         cloudInit: WorkloadCloudInit? = nil,
         usb: [WorkloadUSBDevice] = [],
         gpu: [WorkloadGPUDevice] = [],
+        gpuShare: [WorkloadGPUShare] = [],
         display: WorkloadDisplay? = nil,
         sharedPaths: [String]? = nil,
         health: WorkloadHealthSpec? = nil,
@@ -112,6 +114,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         self.cloudInit = cloudInit
         self.usb = usb
         self.gpu = gpu
+        self.gpuShare = gpuShare
         self.display = display
         self.sharedPaths = sharedPaths
         self.health = health
@@ -126,7 +129,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
 extension WorkloadSpecBody: Codable {
     enum CodingKeys: String, CodingKey {
         case resources, arch, guestType, osFamily, machine, firmware, bootOrder
-        case disks, networks, cloudInit, usb, gpu, display, sharedPaths, health, workloadClass
+        case disks, networks, cloudInit, usb, gpu, gpuShare, display, sharedPaths, health, workloadClass
         case runtime, compose, env, runtimeWorkloadId
     }
 
@@ -145,6 +148,7 @@ extension WorkloadSpecBody: Codable {
         cloudInit = try c.decodeIfPresent(WorkloadCloudInit.self, forKey: .cloudInit)
         usb = try c.decodeIfPresent([WorkloadUSBDevice].self, forKey: .usb) ?? []
         gpu = try c.decodeIfPresent([WorkloadGPUDevice].self, forKey: .gpu) ?? []
+        gpuShare = try c.decodeIfPresent([WorkloadGPUShare].self, forKey: .gpuShare) ?? []
         display = try c.decodeIfPresent(WorkloadDisplay.self, forKey: .display)
         sharedPaths = try c.decodeIfPresent([String].self, forKey: .sharedPaths)
         health = try c.decodeIfPresent(WorkloadHealthSpec.self, forKey: .health)
@@ -169,6 +173,9 @@ extension WorkloadSpecBody: Codable {
         try c.encodeIfPresent(cloudInit, forKey: .cloudInit)
         try c.encode(usb, forKey: .usb)
         try c.encode(gpu, forKey: .gpu)
+        if !gpuShare.isEmpty {
+            try c.encode(gpuShare, forKey: .gpuShare)
+        }
         try c.encodeIfPresent(display, forKey: .display)
         try c.encodeIfPresent(sharedPaths, forKey: .sharedPaths)
         try c.encodeIfPresent(health, forKey: .health)
@@ -280,6 +287,14 @@ public struct WorkloadUSBDevice: Codable, Equatable, Sendable {
         self.label = label
         self.serialNumber = USBDeviceIdentity.normalizedSerial(serialNumber)
         self.deviceId = deviceId ?? (ref.serial != nil ? ref.id : nil)
+    }
+}
+
+public struct WorkloadGPUShare: Codable, Equatable, Sendable {
+    public var id: String
+
+    public init(id: String) {
+        self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
