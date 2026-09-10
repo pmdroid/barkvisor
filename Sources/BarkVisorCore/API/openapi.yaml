@@ -521,6 +521,72 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/vms/{id}/logs:
+    get:
+      tags: [evolving]
+      operationId: getApplicationLogs
+      x-barkvisor-stability: evolving
+      summary: docker compose logs for an Application Workload
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - name: tail
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2000
+            default: 200
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lines, tail]
+                properties:
+                  lines:
+                    type: array
+                    items:
+                      type: string
+                  tail:
+                    type: integer
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/update:
+    post:
+      tags: [evolving]
+      operationId: updateApplicationImage
+      x-barkvisor-stability: evolving
+      summary: compose pull and recreate without removing volumes
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskAccepted"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/check-update:
+    post:
+      tags: [evolving]
+      operationId: checkApplicationImage
+      x-barkvisor-stability: evolving
+      summary: Compare running digest to the registry digest
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/attach-iso:
     post:
       tags: [vms]
@@ -1901,6 +1967,19 @@ paths:
         "200":
           description: text/event-stream
 
+  /api/vms/{id}/logs/stream:
+    get:
+      tags: [out-of-band]
+      operationId: streamApplicationLogs
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: sse
+      summary: Follow docker compose logs (`?ticket=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: text/event-stream
+
   /api/vms/{id}/events:
     get:
       tags: [vms]
@@ -2849,6 +2928,25 @@ components:
           nullable: true
         digest:
           type: string
+          nullable: true
+        catalogDigest:
+          type: string
+          nullable: true
+        updateAvailable:
+          type: boolean
+        volumeRoots:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: >
+            Host paths scheduled backup should include. Canonical root is
+            {dataDir}/workloads/{id}/.
+        updateTaskID:
+          type: string
+          nullable: true
+        updateProgress:
+          type: number
           nullable: true
         isoId:
           type: string

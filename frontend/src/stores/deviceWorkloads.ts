@@ -206,6 +206,17 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     await runAction(device, vmId, 'restart')
   }
 
+  async function checkAppUpdate(device: HomeDeviceHealthSnapshot, vmId: string): Promise<VM> {
+    const { data } = await api.post<VM>(deviceVmActionPath(device, vmId, 'check-update'))
+    await replaceOne(device, data)
+    return data
+  }
+
+  async function updateApp(device: HomeDeviceHealthSnapshot, vmId: string): Promise<string> {
+    const res = await api.post(deviceVmActionPath(device, vmId, 'update'))
+    return res.data.taskID
+  }
+
   async function remove(
     device: DeviceApiTarget,
     vmId: string,
@@ -263,6 +274,8 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     start,
     stop,
     restart,
+    checkAppUpdate,
+    updateApp,
     remove,
     noteSelf: inventory.noteSelf,
   }

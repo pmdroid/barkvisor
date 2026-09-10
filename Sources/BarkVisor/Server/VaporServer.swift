@@ -549,6 +549,10 @@ public final class VaporServer: @unchecked Sendable {
             backgroundTasks: backgroundTasks,
             syncService: syncService,
         )
+        await ApplicationDigestSync.scheduleDaily(
+            backgroundTasks: backgroundTasks,
+            db: pool,
+        )
     }
 
     private func configureRateLimit(

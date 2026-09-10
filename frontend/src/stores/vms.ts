@@ -128,6 +128,17 @@ export const useVMStore = defineStore('vms', () => {
     return data
   }
 
+  async function checkAppUpdate(id: string): Promise<VM> {
+    const { data } = await api.post(`/vms/${id}/check-update`)
+    applyLocal(data)
+    return data
+  }
+
+  async function updateApp(id: string): Promise<string> {
+    const res = await api.post(`/vms/${id}/update`)
+    return res.data.taskID
+  }
+
   async function fetchSpec(id: string): Promise<WorkloadSpec> {
     const { data } = await api.get(`/vms/${id}/spec`)
     return data
@@ -141,6 +152,7 @@ export const useVMStore = defineStore('vms', () => {
 
   return {
     vms, loading, error, fetchAll, fetchOne, create, start, stop, restart,
-    detachISO, attachISO, attachUSB, detachUSB, attachGPU, detachGPU, remove, update, fetchSpec, putSpec,
+    detachISO, attachISO, attachUSB, detachUSB, attachGPU, detachGPU, remove, update,
+    checkAppUpdate, updateApp, fetchSpec, putSpec,
   }
 })

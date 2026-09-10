@@ -62,7 +62,9 @@ public enum StreamTicketPolicy {
         case 4:
             return parts[3] == "vnc" || parts[3] == "console" || parts[3] == "state"
         case 5:
-            return parts[3] == "metrics" && parts[4] == "stream"
+            if parts[3] == "metrics", parts[4] == "stream" { return true }
+            if parts[3] == "logs", parts[4] == "stream" { return true }
+            return false
         default:
             return false
         }

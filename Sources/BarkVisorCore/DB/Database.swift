@@ -131,6 +131,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M019_AppCatalog.identifier) { db in
             try M019_AppCatalog.migrate(db)
         }
+        migrator.registerMigration(M020_ApplicationImageDigest.identifier) { db in
+            try M020_ApplicationImageDigest.migrate(db)
+        }
     }
 }
 

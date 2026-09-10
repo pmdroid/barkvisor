@@ -22,6 +22,7 @@ public actor BackgroundTaskManager {
         case repoSync
         case systemUpdate
         case ollamaPull
+        case appUpdate
     }
 
     public enum TaskStatus: String, Codable, Sendable {
@@ -70,6 +71,7 @@ public actor BackgroundTaskManager {
         .repoSync: 1,
         .systemUpdate: 1,
         .ollamaPull: 2,
+        .appUpdate: 2,
     ]
 
     private let maxDuration: [TaskKind: TimeInterval] = [
@@ -79,6 +81,7 @@ public actor BackgroundTaskManager {
         .repoSync: 120,
         .systemUpdate: 600,
         .ollamaPull: 3_600,
+        .appUpdate: 600,
     ]
 
     // MARK: - Public API

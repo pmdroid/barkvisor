@@ -12,8 +12,7 @@ final class ApplicationLifecycleServiceTests {
     deinit {
         HostInfoService.lanBindIPv4Provider = nil
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-        ComposeRuntime.runner = LiveComposeCommandRunner()
-        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.installFailFast()
         ComposeTestIsolation.lock.unlock()
     }
 
@@ -110,21 +109,21 @@ final class ApplicationLifecycleServiceTests {
 
     @Test func `restart inspect failure releases PortRegistry claims`() async throws {
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(
-                os: "Linux",
-                dockerPath: "/usr/bin/docker",
-                dockerVersion: "27.0.0",
-                daemonRunning: true,
-                composeVersion: "Docker Compose version v2.29.7",
-                composeOK: true,
-            )
-        }
-        ComposeRuntime.runner = SucceedingComposeRunner()
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = SucceedingComposeRunner()
+        ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-            ComposeRuntime.runner = LiveComposeCommandRunner()
+            ComposeTestIsolation.installFailFast()
         }
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -146,34 +145,38 @@ final class ApplicationLifecycleServiceTests {
         try await db.write { db in try seed.insert(db) }
 
         let inspect = RestartInspect()
-        try await DockerInspectTestGate.withStub({ names in
-            try inspect.data(for: names)
-        }) {
-            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
-            let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
-            #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-            #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
-
-            inspect.fail = true
-            do {
-                try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
-                Issue.record("expected restart inspect failure")
-            } catch {
-                if let stored = try await db.read({ db in
-                    try VM.fetchOne(db, key: "whoami-restart")
+        try await DockerEngine.$snapshotOverride.withValue(snap) {
+            try await ComposeRuntime.$runnerOverride.withValue(compose) {
+                try await DockerInspectTestGate.withStub({ names in
+                    try inspect.data(for: names)
                 }) {
-                    vm = stored
-                } else {
-                    Issue.record("whoami-restart row missing after restart failure")
+                    try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+                    let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
+                    #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+                    #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
+
+                    inspect.fail = true
+                    do {
+                        try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
+                        Issue.record("expected restart inspect failure")
+                    } catch {
+                        if let stored = try await db.read({ db in
+                            try VM.fetchOne(db, key: "whoami-restart")
+                        }) {
+                            vm = stored
+                        } else {
+                            Issue.record("whoami-restart row missing after restart failure")
+                        }
+                        let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+                        #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+                        #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
+                        #expect(vm.decodedPortForwards.isEmpty)
+                        try await PortRegistry.assertAvailable(
+                            [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
+                            db: db,
+                        )
+                    }
                 }
-                let claims = try await db.read { db in try PortRegistry.claims(db: db) }
-                #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-                #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
-                #expect(vm.decodedPortForwards.isEmpty)
-                try await PortRegistry.assertAvailable(
-                    [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
-                    db: db,
-                )
             }
         }
     }
@@ -221,21 +224,21 @@ final class ApplicationLifecycleServiceTests {
 
     @Test func `start allows catalog host folder binds from sharedPaths`() async throws {
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(
-                os: "Linux",
-                dockerPath: "/usr/bin/docker",
-                dockerVersion: "27.0.0",
-                daemonRunning: true,
-                composeVersion: "Docker Compose version v2.29.7",
-                composeOK: true,
-            )
-        }
-        ComposeRuntime.runner = SucceedingComposeRunner()
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = SucceedingComposeRunner()
+        ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
-            ComposeRuntime.runner = LiveComposeCommandRunner()
+            ComposeTestIsolation.installFailFast()
         }
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -260,13 +263,17 @@ final class ApplicationLifecycleServiceTests {
         let seed = vm
         try await db.write { db in try seed.insert(db) }
 
-        try await DockerInspectTestGate.withStub({ names in
-            let objects: [[String: Any]] = names.map { _ in
-                ["NetworkSettings": ["Ports": [:] as [String: Any]]]
+        try await DockerEngine.$snapshotOverride.withValue(snap) {
+            try await ComposeRuntime.$runnerOverride.withValue(compose) {
+                try await DockerInspectTestGate.withStub({ names in
+                    let objects: [[String: Any]] = names.map { _ in
+                        ["NetworkSettings": ["Ports": [:] as [String: Any]]]
+                    }
+                    return try JSONSerialization.data(withJSONObject: objects)
+                }) {
+                    try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+                }
             }
-            return try JSONSerialization.data(withJSONObject: objects)
-        }) {
-            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
         }
         #expect(vm.state == "running")
         let written = try String(
@@ -377,6 +384,71 @@ final class ApplicationLifecycleServiceTests {
         #expect(message == "Workload is deleting")
         let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-del")?.state }
         #expect(state == "deleting")
+    }
+
+    @Test func `published update is only queued or running`() {
+        func event(
+            _ status: BackgroundTaskManager.TaskStatus,
+            progress: Double?,
+        ) -> BackgroundTaskManager.TaskEvent {
+            BackgroundTaskManager.TaskEvent(
+                taskID: "app-update:a",
+                kind: BackgroundTaskManager.TaskKind.appUpdate.rawValue,
+                status: status,
+                progress: progress,
+                error: nil,
+                resultPayload: nil,
+            )
+        }
+
+        let running = ApplicationLifecycleService.publishedUpdate(event: event(.running, progress: 0.4))
+        #expect(running.taskID == "app-update:a")
+        #expect(running.progress == 0.4)
+
+        let queued = ApplicationLifecycleService.publishedUpdate(event: event(.queued, progress: nil))
+        #expect(queued.taskID == "app-update:a")
+        #expect(queued.progress == 0)
+
+        for status: BackgroundTaskManager.TaskStatus in [.completed, .failed, .cancelled] {
+            let published = ApplicationLifecycleService.publishedUpdate(event: event(status, progress: 0.8))
+            #expect(published.taskID == nil)
+            #expect(published.progress == nil)
+        }
+
+        let missing = ApplicationLifecycleService.publishedUpdate(event: nil)
+        #expect(missing.taskID == nil)
+        #expect(missing.progress == nil)
+    }
+
+    @Test func `queued app update cancel is not published`() async throws {
+        let manager = BackgroundTaskManager()
+        await manager.submit("app-update:a", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            return nil
+        }
+        await manager.submit("app-update:b", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            return nil
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        await manager.submit("app-update:c", kind: .appUpdate) {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            return nil
+        }
+
+        let queued = await manager.status("app-update:c")
+        #expect(queued?.status == .queued)
+        let before = ApplicationLifecycleService.publishedUpdate(event: queued)
+        #expect(before.taskID == "app-update:c")
+
+        await manager.cancel("app-update:c")
+        let cancelled = await manager.status("app-update:c")
+        #expect(cancelled?.status == .cancelled)
+        let published = ApplicationLifecycleService.publishedUpdate(event: cancelled)
+        #expect(published.taskID == nil)
+        #expect(published.progress == nil)
+
+        await manager.cancelAll()
     }
 }
 

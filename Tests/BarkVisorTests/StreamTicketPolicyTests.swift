@@ -28,6 +28,9 @@ struct StreamTicketPolicyTests {
     @Test func `owner device stream and SSE are allowlisted; control plane is not`() {
         #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/state") == .ownerDevice)
         #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/metrics/stream") == .ownerDevice)
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/logs/stream") == .ownerDevice)
+        #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/logs/stream") == "vm-1")
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/logs") == .other)
         #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/vnc") == "vm-1")
         #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/state") == "vm-1")
         #expect(

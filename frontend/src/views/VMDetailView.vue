@@ -17,6 +17,11 @@ import {
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
+import { appCatalogSource, appEnvSummary, isSecretEnvKey } from '../utils/appDetail'
+import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
+import AppDetailOverview from '../components/AppDetailOverview.vue'
+import AppMountList from '../components/AppMountList.vue'
+import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
@@ -40,6 +45,7 @@ import ConsolePanel from '../components/ConsolePanel.vue'
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
 import LogsPanel from '../components/LogsPanel.vue'
+import ComposeLogsPanel from '../components/ComposeLogsPanel.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -1309,6 +1315,61 @@ const guestMacCopy = computed(() =>
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
 const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
+const appCatalog = computed(() => (vm.value ? appCatalogSource(vm.value) : null))
+const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
+const appMounts = computed(() => {
+  const fromShared = mountsFromSharedPaths(vm.value?.sharedPaths)
+  if (fromShared.length) return fromShared
+  return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
+})
+const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
+const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
+const updatingApp = ref(false)
+
+watch(isApp, (app) => {
+  if (app && (tab.value === 'console' || tab.value === 'vnc' || tab.value === 'metrics')) {
+    tab.value = 'overview'
+  }
+})
+
+watch([isApp, () => vm.value?.id, hostId], () => {
+  if (!isApp.value || !vm.value) return
+  void refreshAppDigest()
+})
+
+async function refreshAppDigest() {
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.checkAppUpdate(device, vmId.value)
+      return
+    }
+    await store.checkAppUpdate(vmId.value)
+  } catch {
+    /* keep last known digest */
+  }
+}
+
+async function updateAppImage() {
+  updatingApp.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      const taskID = await homeWorkloads.updateApp(device, vmId.value)
+      await pollAppUpdate(taskID, { path: deviceTaskPath(device, taskID) })
+      await homeWorkloads.refreshOne(device, vmId.value)
+      return
+    }
+    const taskID = await store.updateApp(vmId.value)
+    await pollAppUpdate(taskID)
+    await store.fetchOne(vmId.value)
+  } finally {
+    updatingApp.value = false
+    stopAppUpdatePoll()
+  }
+}
 
 function openAppUi() {
   const url = openUi.value
@@ -1318,7 +1379,7 @@ function openAppUi() {
 const toolbarSub = computed(() => {
   const v = vm.value
   if (!v) return ''
-  const type = v.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+  const type = isApplicationWorkload(v) ? 'App' : (v.vmType.startsWith('windows') ? 'Windows' : 'Linux')
   const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
   return device ? `${type} · ${devicesStore.deviceLabel(device)}` : type
 })
@@ -1365,11 +1426,14 @@ const healthBanner = computed(() => {
         <span>{{ WORKLOADS_NAV_LABEL }}</span>
       </button>
       <h1>{{ vm.name }}</h1>
+      <span v-if="isApp" class="badge badge-green">App</span>
+      <span v-if="isApp && appCatalog" class="badge badge-gray">{{ appCatalog }}</span>
       <span
         class="status-pill"
         :class="healthPillClass(vmHealth(vm))"
         :title="vm.status?.healthError || undefined"
       >{{ healthLabel(vmHealth(vm)) }}</span>
+      <span v-if="isApp && vm.updateAvailable" class="status-pill degraded">Update available</span>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
         <label
@@ -1391,7 +1455,12 @@ const healthBanner = computed(() => {
           v-if="isApp && openUi && vm.state === 'running'"
           variant="primary"
           @click="openAppUi"
-        >Open UI</AppButton>
+        >Open UI ↗</AppButton>
+        <AppButton
+          v-if="isApp && vm.updateAvailable && vm.state === 'running'"
+          :disabled="controlDisabled || updatingApp"
+          @click="action('update', () => updateAppImage())"
+        >Update</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
@@ -1414,6 +1483,8 @@ const healthBanner = computed(() => {
       <div v-if="!isApp" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
@@ -1421,9 +1492,22 @@ const healthBanner = computed(() => {
       <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
     </div>
 
-    <div v-if="tab === 'overview'" class="twins">
+    <div v-if="tab === 'overview' && isApp" class="col-stack">
+      <div v-if="healthBanner" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+        <div>
+          <div class="ops-banner-title"><span class="ops-dot bad pulse"></span>{{ healthBanner.title }}</div>
+          <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
+        </div>
+      </div>
+      <AppDetailOverview :vm="vm" />
+    </div>
+
+    <div v-else-if="tab === 'overview'" class="twins">
       <div class="col-stack">
         <div v-if="healthBanner" class="ops-banner">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
@@ -1842,9 +1926,27 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
     />
-    <div v-if="tab === 'logs' && isApp" class="sheet">
-      <p class="dim-text">Logs for this app are not available yet.</p>
+    <div v-if="tab === 'environment' && isApp" class="sheet">
+      <div class="sheet-head"><h3>Environment</h3></div>
+      <p class="dim-text" style="padding:12px 14px 0">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
+      <div v-if="appEnvKeys.length === 0" class="dim-text" style="padding:14px">No environment variables recorded.</div>
+      <div v-for="key in appEnvKeys" :key="key" class="detail-row" style="padding:10px 14px">
+        <span class="detail-label">{{ key }}</span>
+        <span class="mono dim-text">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+      </div>
     </div>
+    <div v-if="tab === 'volumes' && isApp" class="app-kimi-page">
+      <section class="app-kimi-card">
+        <div class="app-kimi-title">Volumes</div>
+        <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
+      </section>
+    </div>
+    <ComposeLogsPanel
+      v-if="tab === 'logs' && isApp"
+      :key="`compose-logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
+      :vm-id="vmId"
+      :device="isMemberDetail ? memberDevice : undefined"
+    />
     <LogsPanel
       v-else-if="tab === 'logs'"
       :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
@@ -2324,5 +2426,54 @@ const healthBanner = computed(() => {
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-hover, rgba(255, 255, 255, 0.03));
+}
+.app-detail-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.app-ports {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 8px 0;
+}
+.app-ports th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.app-ports td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-secondary);
+}
+.app-ports-note {
+  margin: 0 0 8px;
+  padding: 0 8px;
+}
+@media (max-width: 900px) {
+  .app-detail-cards { grid-template-columns: 1fr; }
+}
+.app-kimi-page { max-width: 720px; }
+.app-kimi-card {
+  background: rgba(0, 144, 248, 0.05);
+  border: 1px solid rgba(184, 184, 180, 0.08);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  padding: 16px 18px;
+}
+.app-kimi-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
 }
 </style>

@@ -1,7 +1,15 @@
 import Foundation
 
 public enum DockerInspect {
+    @TaskLocal public static var jsonOverride: (@Sendable ([String]) throws -> Data)?
     public nonisolated(unsafe) static var jsonForContainers: @Sendable ([String]) throws -> Data = liveJSON
+
+    public static func json(_ names: [String]) throws -> Data {
+        if let jsonOverride {
+            return try jsonOverride(names)
+        }
+        return try jsonForContainers(names)
+    }
 
     public static func liveJSON(_ names: [String]) throws -> Data {
         if names.isEmpty { return Data("[]".utf8) }

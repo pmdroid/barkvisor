@@ -54,6 +54,12 @@ extension VM {
         JSONColumnCoding.decode(WorkloadHealthSpec.self, from: healthJson)
     }
 
+    public var decodedVolumeRoots: [String] {
+        JSONColumnCoding.decodeArrayOrEmpty(
+            String.self, from: volumeRootsJson, column: "volumeRootsJson",
+        )
+    }
+
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
@@ -98,5 +104,9 @@ extension VM {
         } else {
             healthJson = nil
         }
+    }
+
+    public mutating func setVolumeRoots(_ paths: [String]?) {
+        volumeRootsJson = JSONColumnCoding.encodeArrayOrNil(paths)
     }
 }

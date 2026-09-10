@@ -6,6 +6,8 @@ import Testing
 struct BuiltInCatalogSyncTests {
     @Test func `daily interval is 24 hours`() {
         #expect(BuiltInCatalogSync.intervalNanoseconds == 24 * 60 * 60 * 1_000_000_000)
+        #expect(ApplicationDigestSync.intervalNanoseconds == BuiltInCatalogSync.intervalNanoseconds)
+        #expect(ApplicationDigestSync.periodicTaskID == "app-digest-sync")
         #expect(BuiltInCatalogSync.periodicTaskID == "catalog-sync")
         #expect(BuiltInCatalogSync.startupTaskID == "catalog-sync-startup")
     }
