@@ -11,7 +11,7 @@ final class WorkloadApplyServiceTests {
     private let fixtureCPUCount: Int
     private let backgroundTasks = BackgroundTaskManager()
 
-    init() throws {
+    init() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         tmpDir = tmp
@@ -22,7 +22,8 @@ final class WorkloadApplyServiceTests {
         dbPool = pool
         hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
         fixtureCPUCount = min(2, max(1, PlatformHost.cpuCount))
-        ComposeTestIsolation.lock.lock()
+        await ComposeSerialGate.acquire()
+        ComposeTestIsolation.installFailFast()
         DockerEngine.snapshotProvider = {
             DockerEngineSnapshot(
                 os: "Linux",
@@ -51,7 +52,7 @@ final class WorkloadApplyServiceTests {
         GPUShareService.listProvider = nil
         HostInfoService.lanBindIPv4Provider = nil
         ComposeTestIsolation.installFailFast()
-        ComposeTestIsolation.lock.unlock()
+        Task { await ComposeSerialGate.release() }
         try? FileManager.default.removeItem(at: tmpDir)
     }
 

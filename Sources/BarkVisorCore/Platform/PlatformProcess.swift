@@ -119,12 +119,20 @@ public enum PlatformProcess {
         arguments: [String] = [],
         timeout: TimeInterval? = 60,
         currentDirectory: URL? = nil,
+        extraEnvironment: [String: String]? = nil,
     ) throws -> CommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         if let currentDirectory {
             process.currentDirectoryURL = currentDirectory
+        }
+        if let extraEnvironment {
+            var env = ProcessInfo.processInfo.environment
+            for (key, value) in extraEnvironment {
+                env[key] = value
+            }
+            process.environment = env
         }
 
         let outPipe = Pipe()
@@ -154,6 +162,7 @@ public enum PlatformProcess {
 
         try process.run()
 
+        var timeoutExceeded: TimeInterval?
         if let timeout {
             let deadline = Date().addingTimeInterval(timeout)
             while process.isRunning, Date() < deadline {
@@ -161,24 +170,24 @@ public enum PlatformProcess {
             }
             if process.isRunning {
                 process.terminate()
-                // Brief grace period then hard-kill if still alive.
-                Thread.sleep(forTimeInterval: 0.5)
-                if process.isRunning {
-                    process.interrupt()
+                let killDeadline = Date().addingTimeInterval(0.5)
+                while process.isRunning, Date() < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.05)
                 }
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                errPipe.fileHandleForReading.readabilityHandler = nil
-                throw BarkVisorError.timeout(
-                    "Process \(executable.lastPathComponent) timed out after \(Int(timeout))s",
-                )
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                timeoutExceeded = timeout
             }
-        } else {
-            process.waitUntilExit()
         }
-
-        // Ensure handlers finish and any remaining data is collected.
         outPipe.fileHandleForReading.readabilityHandler = nil
         errPipe.fileHandleForReading.readabilityHandler = nil
+        process.waitUntilExit()
+        if let timeoutExceeded {
+            throw BarkVisorError.timeout(
+                "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
+            )
+        }
         let leftoverOut = outPipe.fileHandleForReading.readDataToEndOfFile()
         let leftoverErr = errPipe.fileHandleForReading.readDataToEndOfFile()
         if !leftoverOut.isEmpty { stdoutBox.append(leftoverOut) }
@@ -203,6 +212,23 @@ public enum PlatformProcess {
             arguments: arguments,
             timeout: timeout,
             currentDirectory: currentDirectory,
+            extraEnvironment: nil,
+        )
+    }
+
+    public static func run(
+        path: String,
+        arguments: [String] = [],
+        timeout: TimeInterval? = 60,
+        currentDirectory: URL? = nil,
+        extraEnvironment: [String: String]?,
+    ) throws -> CommandResult {
+        try run(
+            executable: URL(fileURLWithPath: path),
+            arguments: arguments,
+            timeout: timeout,
+            currentDirectory: currentDirectory,
+            extraEnvironment: extraEnvironment,
         )
     }
 

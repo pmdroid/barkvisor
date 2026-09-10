@@ -5,15 +5,16 @@ import Testing
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
-    init() {
-        ComposeTestIsolation.lock.lock()
+    init() async {
+        await ComposeSerialGate.acquire()
+        ComposeTestIsolation.installFailFast()
     }
 
     deinit {
         HostInfoService.lanBindIPv4Provider = nil
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         ComposeTestIsolation.installFailFast()
-        ComposeTestIsolation.lock.unlock()
+        Task { await ComposeSerialGate.release() }
     }
 
     @Test func `prepare rewrites published ports onto 0.0.0.0`() throws {
@@ -220,6 +221,31 @@ final class ApplicationLifecycleServiceTests {
         await ApplicationLifecycleService.reconcile(db: db, dataDir: tmp)
         let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-live")?.state }
         #expect(state == "stopped")
+    }
+
+    @Test func `reconcile starts metrics for apps already running`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-metrics")
+        vm.state = "running"
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let collector = MetricsCollector()
+        ApplicationLifecycleService.setMetricsCollector(collector)
+        ComposeRuntime.labeledStatesProvider = { ["whoami-metrics": "running"] }
+        defer {
+            ComposeRuntime.labeledStatesProvider = nil
+            ApplicationLifecycleService.setMetricsCollector(nil)
+        }
+
+        await ApplicationLifecycleService.reconcile(db: db, dataDir: tmp)
+        #expect(await collector.isCollectingApp("whoami-metrics"))
+        await collector.stop(vmID: "whoami-metrics")
     }
 
     @Test func `start allows catalog host folder binds from sharedPaths`() async throws {

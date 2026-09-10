@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { HomeDeviceHealthSnapshot, VM } from '../api/types'
+import api from '../api/client'
+import type { HomeDeviceHealthSnapshot, SystemStats, VM } from '../api/types'
 import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
@@ -22,6 +23,8 @@ import {
 } from '../utils/dashboardWidgets'
 import { scopeRows } from '../utils/deviceScope'
 import { formatCores, formatMemoryMB } from '../utils/format'
+import { formatCpuPercent, formatNetworkIOLabel, sumWorkloadUsage } from '../utils/appUsage'
+import { canFetchDeviceWorkloads, devicePath } from '../utils/homeDeviceApi'
 import {
   doctorBannerSub,
   doctorBannerTitle,
@@ -181,6 +184,46 @@ function openDevice(row: HomeDeviceHealthSnapshot) {
   router.push({ name: 'device-detail', params: { hostId: row.hostId } })
 }
 
+const usageByHost = ref<Record<string, SystemStats>>({})
+
+const usageTotals = computed(() =>
+  sumWorkloadUsage(scopedDevices.value.map((row) => usageByHost.value[row.hostId])),
+)
+
+const vmUsageLabel = computed(() =>
+  `${formatCpuPercent(usageTotals.value.vmCpu)} · ${formatMemoryMB(usageTotals.value.vmMem)}`,
+)
+
+const appUsageLabel = computed(() => {
+  const total = usageTotals.value
+  const apps = total.totalApps > 0 ? `${total.runningApps} of ${total.totalApps} running · ` : ''
+  return `${apps}${formatCpuPercent(total.appCpu)} · ${formatMemoryMB(total.appMem)}`
+})
+
+const appNetLabel = computed(() =>
+  formatNetworkIOLabel(usageTotals.value.appRx, usageTotals.value.appTx),
+)
+
+const hasUsage = computed(() => {
+  const total = usageTotals.value
+  return total.vmCpu > 0 || total.vmMem > 0 || total.appCpu > 0 || total.appMem > 0
+    || total.appRx > 0 || total.appTx > 0
+})
+
+async function refreshUsage() {
+  const targets = scopedDevices.value.filter((row) =>
+    isReachabilityOk(row.reachability) && canFetchDeviceWorkloads(row),
+  )
+  await Promise.all(targets.map(async (row) => {
+    try {
+      const { data } = await api.get<SystemStats>(devicePath(row, '/system/stats'))
+      usageByHost.value = { ...usageByHost.value, [row.hostId]: data }
+    } catch {
+      /* keep last known snapshot */
+    }
+  }))
+}
+
 let homeRefreshInFlight = false
 async function refreshHomeWorkloads() {
   if (homeRefreshInFlight) return
@@ -193,6 +236,7 @@ async function refreshHomeWorkloads() {
       return
     }
     await homeWorkloads.fetchHomeAll(list)
+    await refreshUsage().catch(() => {})
   } finally {
     homeRefreshInFlight = false
   }
@@ -381,6 +425,24 @@ onUnmounted(() => {
               </button>
               <div v-if="!scopedDevices.length" class="empty">No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet</div>
             </div>
+            <div v-else-if="mod.id === 'usage'" class="panel">
+              <h2>Workload usage</h2>
+              <div v-if="hasUsage" class="use-rows">
+                <div class="use-row">
+                  <span>Virtual machines</span>
+                  <b>{{ vmUsageLabel }}</b>
+                </div>
+                <div class="use-row">
+                  <span>Applications</span>
+                  <b>{{ appUsageLabel }}</b>
+                </div>
+                <div class="use-row">
+                  <span>App network</span>
+                  <b>{{ appNetLabel }}</b>
+                </div>
+              </div>
+              <div v-else class="empty">No usage data yet</div>
+            </div>
           </template>
         </aside>
       </div>
@@ -543,6 +605,19 @@ onUnmounted(() => {
 }
 .side-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
 .side-dot.off { background: var(--red); }
+.use-rows { display: flex; flex-direction: column; }
+.use-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.use-row:first-child { border-top: 0; padding-top: 0; }
+.use-row span { color: var(--text-dim); flex-shrink: 0; }
+.use-row b { font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
 .empty {
   border: 1px dashed var(--line);
   border-radius: var(--radius);

@@ -19,6 +19,12 @@ struct SystemStatsResponse: Content {
     let totalVMs: Int
     let vmCpuPercent: Double
     let vmMemoryMB: Int
+    let appCpuPercent: Double
+    let appMemoryMB: Int
+    let appNetworkRxBytes: Int64
+    let appNetworkTxBytes: Int64
+    let runningApps: Int
+    let totalApps: Int
     let metrics: HostMetrics
     let historyRetentionMinutes: Int
     let historySampleIntervalSeconds: Int
@@ -40,17 +46,15 @@ struct MetricsController: RouteCollection {
 
     @Sendable
     func getSystemStats(req: Vapor.Request) async throws -> SystemStatsResponse {
-        // VM aggregate from metrics collector
         let samples = await metricsCollector.latestSamples()
-        var vmCpu = 0.0
-        var vmMem = 0
-        for (_, sample) in samples {
-            vmCpu += sample.cpuPercent
-            vmMem += sample.memoryUsedMB
-        }
+        let workloads = try await req.db.read { db in try VM.fetchAll(db) }
+        let appIDs = Set(workloads.filter(\.isApplication).map(\.id))
+        let split = MetricsAggregation.split(samples: samples, appIDs: appIDs)
 
         let totalVMs = try await req.db.read { db in try VM.fetchCount(db) }
         let runningVMs = await vmState.allRunningVMs().count
+        let totalApps = appIDs.count
+        let runningApps = workloads.count(where: { $0.isApplication && $0.state == "running" })
 
         let metrics = HostMetrics.live()
 
@@ -60,8 +64,14 @@ struct MetricsController: RouteCollection {
             hostMemoryUsedMB: metrics.memoryUsedMB,
             runningVMs: runningVMs,
             totalVMs: totalVMs,
-            vmCpuPercent: vmCpu,
-            vmMemoryMB: vmMem,
+            vmCpuPercent: split.vmCpuPercent,
+            vmMemoryMB: split.vmMemoryMB,
+            appCpuPercent: split.appCpuPercent,
+            appMemoryMB: split.appMemoryMB,
+            appNetworkRxBytes: split.appNetworkRxBytes,
+            appNetworkTxBytes: split.appNetworkTxBytes,
+            runningApps: runningApps,
+            totalApps: totalApps,
             metrics: metrics,
             historyRetentionMinutes: MetricsCollector.systemStatsRetentionMinutes,
             historySampleIntervalSeconds: MetricsCollector.systemStatsPollIntervalSeconds,
@@ -80,7 +90,7 @@ struct MetricsController: RouteCollection {
     func getMetrics(req: Vapor.Request) async throws -> [MetricSample] {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
 
-        guard await vmState.isRunning(id) else {
+        guard await isMetricsAvailable(id, req: req) else {
             throw Abort(.conflict, reason: "VM is not running")
         }
 
@@ -92,11 +102,19 @@ struct MetricsController: RouteCollection {
     func stream(req: Vapor.Request) async throws -> Response {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
 
-        guard await vmState.isRunning(id) else {
+        guard await isMetricsAvailable(id, req: req) else {
             throw Abort(.conflict, reason: "VM is not running")
         }
 
         let metricsStream = await metricsCollector.stream(vmID: id)
         return SSEResponse.stream(from: metricsStream)
+    }
+
+    private func isMetricsAvailable(_ id: String, req: Vapor.Request) async -> Bool {
+        if await vmState.isRunning(id) { return true }
+        guard let vm = try? await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
+            return false
+        }
+        return vm.isApplication && vm.state == "running"
     }
 }

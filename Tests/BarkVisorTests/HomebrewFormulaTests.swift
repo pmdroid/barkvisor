@@ -74,6 +74,8 @@ struct HomebrewFormulaTests {
         #expect(plist.contains("<string>/var/run/barkvisor</string>"))
         #expect(plist.contains("<key>PATH</key>"))
         #expect(plist.contains("@HOMEBREW_PREFIX@/bin"))
+        #expect(plist.contains("/usr/local/bin"))
+        #expect(plist.contains("/Applications/OrbStack.app/Contents/MacOS/xbin"))
         #expect(plist.contains("@PROGRAM@"))
         #expect(!plist.contains("barkvisor.helper"))
         #expect(!plist.contains("PrivilegedHelperTools"))

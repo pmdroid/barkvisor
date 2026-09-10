@@ -10,8 +10,7 @@ final class ApplicationUpdateKeepVolumesTests {
     private let runner: RecordingComposeRunner
     private let docker: RecordingDockerRunner
 
-    init() throws {
-        ComposeTestIsolation.lock.lock()
+    init() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         dataDir = tmp
@@ -20,6 +19,8 @@ final class ApplicationUpdateKeepVolumesTests {
         dbPool = pool
         runner = RecordingComposeRunner()
         docker = RecordingDockerRunner()
+        await ComposeSerialGate.acquire()
+        ComposeTestIsolation.installFailFast()
     }
 
     deinit {
@@ -27,7 +28,7 @@ final class ApplicationUpdateKeepVolumesTests {
         ComposeRuntime.labeledStatesProvider = nil
         ComposeTestIsolation.installFailFast()
         try? FileManager.default.removeItem(at: dataDir)
-        ComposeTestIsolation.lock.unlock()
+        Task { await ComposeSerialGate.release() }
     }
 
     private func withStubs<T>(_ body: () async throws -> T) async throws -> T {

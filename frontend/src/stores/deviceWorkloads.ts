@@ -111,6 +111,16 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     return data
   }
 
+  async function putSpec(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    spec: WorkloadSpec,
+  ): Promise<WorkloadSpec> {
+    const { data } = await api.put<WorkloadSpec>(deviceVmSpecPath(device, vmId), spec)
+    await refreshOne(device, vmId)
+    return data
+  }
+
   async function attachISO(
     device: HomeDeviceHealthSnapshot,
     vmId: string,
@@ -265,6 +275,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     refreshOne,
     update,
     fetchSpec,
+    putSpec,
     attachISO,
     detachISO,
     attachUSB,

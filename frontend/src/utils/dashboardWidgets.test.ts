@@ -19,6 +19,7 @@ describe('dashboard layout defaults', () => {
       'stopped',
       'failed',
       'devices',
+      'usage',
     ])
     expect(DASHBOARD_WIDGETS_STORAGE_KEY).toBe('barkvisor.dashboardWidgets')
     expect(resetDashboardLayout()).toEqual(DEFAULT_LAYOUT)
@@ -26,6 +27,7 @@ describe('dashboard layout defaults', () => {
     expect(isModuleOn(DEFAULT_LAYOUT, 'attention')).toBe(true)
     expect(isModuleOn(DEFAULT_LAYOUT, 'failed')).toBe(false)
     expect(isModuleOn(DEFAULT_LAYOUT, 'devices')).toBe(true)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'usage')).toBe(true)
   })
 })
 
@@ -53,6 +55,7 @@ describe('parseDashboardLayout', () => {
       'stopped',
       'failed',
       'devices',
+      'usage',
     ])
     expect(isModuleOn(parsed, 'running')).toBe(true)
     expect(isModuleOn(parsed, 'devices')).toBe(true)

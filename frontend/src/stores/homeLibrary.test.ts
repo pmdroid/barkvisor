@@ -515,10 +515,5 @@ describe('homeLibrary store (PAS-34)', () => {
     await store.removeCopy(self, 'mac-iso')
     expect(del.mock.calls.map((c) => c[0])).toEqual(['/images/mac-iso'])
     expect(store.images).toEqual([])
-=======
-    await store.fetchApps([peer])
-    expect(store.apps).toHaveLength(0)
-    expect(store.appsError).toBeTruthy()
->>>>>>> 750b0b3d (feat: Library Apps tab and Create App gallery)
   })
 })
