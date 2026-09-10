@@ -22,6 +22,7 @@ final class WorkloadApplyServiceTests {
         dbPool = pool
         hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
         fixtureCPUCount = min(2, max(1, PlatformHost.cpuCount))
+        ComposeTestIsolation.lock.lock()
         DockerEngine.snapshotProvider = {
             DockerEngineSnapshot(
                 os: "Linux",
@@ -40,6 +41,8 @@ final class WorkloadApplyServiceTests {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         ComposeRuntime.runner = LiveComposeCommandRunner()
         HostInfoService.lanBindIPv4Provider = nil
+        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.lock.unlock()
         try? FileManager.default.removeItem(at: tmpDir)
     }
 

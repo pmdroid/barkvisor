@@ -132,7 +132,7 @@ public struct SSRFCatalogURLFetcher: CatalogURLFetching {
             throw BarkVisorError.repositorySyncFailed(ssrfError)
         }
 
-        let maxCatalogSize = 10 * 1_024 * 1_024
+        let maxCatalogSize = 64 * 1_024 * 1_024
         let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ... 299).contains(httpResponse.statusCode)
@@ -304,6 +304,21 @@ public actor RepositorySyncService {
         persistLastGood: Bool,
         distribute: Bool,
     ) async throws {
+        if repoType == "apps" {
+            let document = try BigBearAppCatalog.decodeCatalog(data)
+            if document.apps.isEmpty {
+                throw BarkVisorError.repositorySyncFailed("App catalog contained no apps")
+            }
+            try await applyApps(document, repositoryID: repositoryID, repoName: repoName)
+            let stored = try BigBearAppCatalog.encodeCatalog(document)
+            if persistLastGood {
+                try lastGood?.save(repoType: repoType, data: stored)
+            }
+            if distribute {
+                await publish?(repoType, stored)
+            }
+            return
+        }
         let decoded = try RepositoryCatalogDecoder.decode(data, repoName: repoName)
         try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repoName)
         if persistLastGood {
@@ -314,8 +329,34 @@ public actor RepositorySyncService {
         }
     }
 
+    private func applyApps(
+        _ document: AppCatalogDocument,
+        repositoryID: String,
+        repoName: String,
+    ) async throws {
+        try await dbPool.write { db in
+            try AppCatalogRecord.filter(Column("repositoryId") == repositoryID).deleteAll(db)
+            let now = iso8601.string(from: Date())
+            for entry in document.apps {
+                try AppCatalogRecord.from(dto: entry, repositoryId: repositoryID, now: now).insert(db)
+            }
+            try db.execute(
+                sql:
+                "UPDATE image_repositories SET lastSyncedAt = ?, lastError = ?, updatedAt = ? WHERE id = ?",
+                arguments: [now, nil as String?, now, repositoryID],
+            )
+        }
+        Log.sync.info("Synced repository '\(repoName)': \(document.apps.count) apps")
+    }
+
     private func fetchRemoteCatalog(repo: ImageRepository) async throws -> Data {
-        guard let url = URL(string: repo.url) else {
+        let raw = repo.url
+        let resolved: URL? = if repo.repoType == "apps", let zip = BigBearAppCatalog.zipballURL(from: raw) {
+            zip
+        } else {
+            URL(string: raw)
+        }
+        guard let url = resolved else {
             throw BarkVisorError.repositorySyncFailed("Invalid URL: \(repo.url)")
         }
         return try await fetcher.fetch(url: url)

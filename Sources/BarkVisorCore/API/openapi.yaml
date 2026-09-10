@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/system/remote-access`, `/api/home/settings/remote-access`, `/api/apps` (apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/system/remote-access`, `/api/home/settings/remote-access`, `/api/catalog/apps`, `/api/apps` (apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -1011,6 +1011,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/catalog/apps:
+    get:
+      tags: [evolving]
+      operationId: listCatalogApps
+      x-barkvisor-stability: evolving
+      summary: Big Bear and other Application catalog entries on this Device
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppCatalogEntry"
         default:
           $ref: "#/components/responses/Error"
 
@@ -3605,6 +3622,88 @@ components:
           description: >
             In-flight download percent (0-100) from the live downloader.
             Null when total size is unknown or the image is not transferring.
+
+    AppCatalogEntry:
+      type: object
+      required:
+        [
+          id,
+          name,
+          category,
+          arches,
+          source,
+          compose,
+          envSchema,
+          volumes,
+          ports,
+          unsupportedReasons,
+          ui,
+        ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tagline:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        iconUrl:
+          type: string
+          nullable: true
+        category:
+          type: string
+        arches:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+        compose:
+          type: string
+        envSchema:
+          type: array
+          items:
+            type: object
+        volumes:
+          type: array
+          items:
+            type: object
+        ports:
+          type: array
+          items:
+            type: object
+        image:
+          type: string
+          nullable: true
+        digest:
+          type: string
+          nullable: true
+        unsupportedReasons:
+          type: array
+          items:
+            type: string
+        ui:
+          type: object
+          required: [scheme, path, proxy, basePathEnv]
+          properties:
+            scheme:
+              type: string
+            path:
+              type: string
+            tips:
+              type: object
+              additionalProperties:
+                type: string
+            proxy:
+              type: string
+              enum: [prefix, direct]
+            basePathEnv:
+              type: array
+              items:
+                type: string
 
     DownloadImageRequest:
       type: object

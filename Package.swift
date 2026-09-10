@@ -4,7 +4,14 @@ import PackageDescription
 // NOTE: PackageDescription.SupportedPlatform has no `.linux` case; Linux builds
 // are unconstrained by `platforms` and work when the toolchain targets Linux.
 
+#if os(Windows)
+let zlibInflateLinker: [LinkerSetting] = []
+#else
+let zlibInflateLinker: [LinkerSetting] = [.linkedLibrary("z")]
+#endif
+
 var coreDependencies: [Target.Dependency] = [
+    "BarkVisorZlibInflate",
     .product(name: "GRDB", package: "GRDB.swift"),
     .product(name: "JWTKit", package: "jwt-kit"),
     .product(name: "Yams", package: "Yams"),
@@ -50,6 +57,15 @@ packageTargets.append(
     )
 )
 #endif
+
+packageTargets.append(
+    .target(
+        name: "BarkVisorZlibInflate",
+        path: "Sources/BarkVisorZlibInflate",
+        publicHeadersPath: "include",
+        linkerSettings: zlibInflateLinker,
+    ),
+)
 
 packageTargets.append(contentsOf: [
     // Core library: services, models, helpers — no Vapor dependency

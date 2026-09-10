@@ -14,7 +14,7 @@ public enum HomeCatalogPlane {
         }
         guard normalized.hasPrefix(appliedPrefix) else { return nil }
         let rest = String(normalized.dropFirst(appliedPrefix.count))
-        if rest == "images" || rest == "templates" {
+        if HomeCatalogOrigin.repoTypes.contains(rest) {
             return rest
         }
         return nil

@@ -94,6 +94,10 @@ export function deviceTemplatesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/templates')
 }
 
+export function deviceCatalogAppsPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/catalog/apps')
+}
+
 export function deviceRepositoriesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/repositories')
 }

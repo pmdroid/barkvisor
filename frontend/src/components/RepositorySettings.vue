@@ -25,7 +25,7 @@ const toast = useToastStore()
 
 const showAddRepo = ref(false)
 const newUrl = ref('')
-const newRepoType = ref<'images' | 'templates'>('images')
+const newRepoType = ref<'images' | 'templates' | 'apps'>('images')
 const addError = ref('')
 const addLoading = ref(false)
 const confirmDeleteRepo = ref<{ id: string; name: string } | null>(null)
@@ -206,6 +206,7 @@ async function addRepo() {
       <div class="type-toggle">
         <button type="button" :class="{ active: newRepoType === 'images' }" @click="newRepoType = 'images'">Images</button>
         <button type="button" :class="{ active: newRepoType === 'templates' }" @click="newRepoType = 'templates'">Templates</button>
+        <button type="button" :class="{ active: newRepoType === 'apps' }" @click="newRepoType = 'apps'">Apps</button>
       </div>
     </div>
     <div class="form-group">

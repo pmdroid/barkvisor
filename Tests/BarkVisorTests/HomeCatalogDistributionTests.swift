@@ -93,6 +93,7 @@ struct HomeCatalogDistributionTests {
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.memberImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.memberTemplatesURL })
+        #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.memberAppsURL })
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }
 
@@ -104,6 +105,7 @@ struct HomeCatalogDistributionTests {
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.githubImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.githubTemplatesURL })
+        #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.githubAppsURL })
     }
 
     @Test func `existing GitHub built-in rows flip on member seed`() throws {
@@ -113,7 +115,7 @@ struct HomeCatalogDistributionTests {
         try Seeder.seedDefaultRepository(db: pool, isMember: false)
         try Seeder.seedDefaultRepository(db: pool, isMember: true)
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
-        #expect(repos.count == 2)
+        #expect(repos.count == 3)
         #expect(repos.allSatisfy { HomeCatalogOrigin.isMemberOrigin($0.url) })
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }
@@ -261,6 +263,7 @@ struct HomeCatalogDistributionTests {
     @Test func `applied path parsing`() {
         #expect(HomeCatalogPlane.repoType(path: "/api/catalogs/applied/images") == "images")
         #expect(HomeCatalogPlane.repoType(path: "/api/catalogs/applied/templates") == "templates")
+        #expect(HomeCatalogPlane.repoType(path: "/api/catalogs/applied/apps") == "apps")
         #expect(HomeCatalogPlane.repoType(path: "/api/catalogs/applied/other") == nil)
         #expect(HomeCatalogPlane.repoType(path: "/api/repositories") == nil)
     }

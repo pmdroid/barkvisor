@@ -5,6 +5,18 @@ import Testing
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
+    init() {
+        ComposeTestIsolation.lock.lock()
+    }
+
+    deinit {
+        HostInfoService.lanBindIPv4Provider = nil
+        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        ComposeRuntime.runner = LiveComposeCommandRunner()
+        DockerInspect.jsonForContainers = DockerInspect.liveJSON
+        ComposeTestIsolation.lock.unlock()
+    }
+
     @Test func `prepare rewrites published ports onto 0.0.0.0`() throws {
         let dataDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bv-app-lan-\(UUID().uuidString)")
