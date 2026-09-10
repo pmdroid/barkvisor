@@ -327,6 +327,10 @@ public enum ApplicationLifecycleService {
                 return false
             }
             try persisted.update(db)
+            try VM.filter(key: persisted.id).updateAll(
+                db,
+                Column("portForwards").set(to: persisted.portForwards),
+            )
             return true
         }
         if !applied {
