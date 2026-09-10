@@ -45,12 +45,13 @@ public struct DockerEngineSnapshot: Sendable, Equatable {
 }
 
 public enum DockerEngine {
+    @TaskLocal public static var snapshotOverride: DockerEngineSnapshot?
     public nonisolated(unsafe) static var snapshotProvider: @Sendable () -> DockerEngineSnapshot = {
         liveSnapshot()
     }
 
     public static func snapshot() -> DockerEngineSnapshot {
-        snapshotProvider()
+        snapshotOverride ?? snapshotProvider()
     }
 
     public static func liveSnapshot() -> DockerEngineSnapshot {
@@ -149,47 +150,7 @@ public enum DockerEngine {
         if let path = snapshot.composePath, !path.isEmpty {
             return (URL(fileURLWithPath: path), [])
         }
-        throw BarkVisorError.helperMissing(helperRemediation(os: snapshot.os))
-    }
-
-    public static func cliEnvironment(
-        dataDir: URL = Config.dataDir,
-        dockerPath: String? = nil,
-    ) -> [String: String] {
-        let config = prepareCLIConfig(dataDir: dataDir, dockerPath: dockerPath)
-        return ["DOCKER_CONFIG": config.path]
-    }
-
-    public static func prepareCLIConfig(
-        dataDir: URL = Config.dataDir,
-        dockerPath: String? = nil,
-        isExecutable: @Sendable (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
-    ) -> URL {
-        let root = dataDir.appendingPathComponent("docker-cli", isDirectory: true)
-        let plugins = root.appendingPathComponent("cli-plugins", isDirectory: true)
-        try? FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
-        let docker = dockerPath ?? resolveDockerPath()
-        if let docker {
-            if let compose = resolveComposePath(dockerPath: docker, isExecutable: isExecutable) {
-                linkPlugin(named: "docker-compose", to: compose, in: plugins)
-            }
-            let buildx = URL(fileURLWithPath: docker)
-                .deletingLastPathComponent()
-                .appendingPathComponent("docker-buildx").path
-            if isExecutable(buildx) {
-                linkPlugin(named: "docker-buildx", to: buildx, in: plugins)
-            }
-        }
-        return root
-    }
-
-    private static func linkPlugin(named: String, to: String, in plugins: URL) {
-        let dest = plugins.appendingPathComponent(named)
-        let target = URL(fileURLWithPath: to)
-        if FileManager.default.fileExists(atPath: dest.path) {
-            try? FileManager.default.removeItem(at: dest)
-        }
-        try? FileManager.default.createSymbolicLink(at: dest, withDestinationURL: target)
+        return (try dockerURL(snapshot: snapshot), ["compose"])
     }
 
     public static func helperRemediation(os: String) -> String {
@@ -202,10 +163,7 @@ public enum DockerEngine {
 
     public static func candidatePaths(os: String = PlatformHost.platformName) -> [String] {
         if os.caseInsensitiveCompare("Linux") == .orderedSame {
-            return [
-                "/usr/bin/docker",
-                "/usr/local/bin/docker",
-            ]
+            return ["/usr/bin/docker", "/usr/local/bin/docker"]
         }
         return [
             "/usr/local/bin/docker",
@@ -233,6 +191,25 @@ public enum DockerEngine {
         ]
     }
 
+    public static func resolveDockerPath(
+        os: String = PlatformHost.platformName,
+        pathEnvironment: String? = ProcessInfo.processInfo.environment["PATH"],
+        whichPath: String? = nil,
+        isExecutable: @Sendable (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+    ) -> String? {
+        if let whichPath, !whichPath.isEmpty, isExecutable(whichPath) {
+            return whichPath
+        }
+        let path = pathEnvironment ?? ""
+        for dir in path.split(separator: ":") {
+            let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("docker").path
+            if isExecutable(candidate) {
+                return candidate
+            }
+        }
+        return candidatePaths(os: os).first(where: isExecutable)
+    }
+
     public static func resolveComposePath(
         dockerPath: String,
         os: String = PlatformHost.platformName,
@@ -253,23 +230,44 @@ public enum DockerEngine {
         return nil
     }
 
-    public static func resolveDockerPath(
-        os: String = PlatformHost.platformName,
-        pathEnvironment: String? = ProcessInfo.processInfo.environment["PATH"],
-        whichPath: String? = nil,
+    public static func prepareCLIConfig(
+        dataDir: URL = Config.dataDir,
+        dockerPath: String? = nil,
         isExecutable: @Sendable (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
-    ) -> String? {
-        if let whichPath, !whichPath.isEmpty, isExecutable(whichPath) {
-            return whichPath
-        }
-        let path = pathEnvironment ?? ""
-        for dir in path.split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(dir)).appendingPathComponent("docker").path
-            if isExecutable(candidate) {
-                return candidate
+    ) -> URL {
+        let root = dataDir.appendingPathComponent("docker-cli", isDirectory: true)
+        let plugins = root.appendingPathComponent("cli-plugins", isDirectory: true)
+        try? FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+        let docker = dockerPath ?? resolveDockerPath()
+        if let docker {
+            if let compose = resolveComposePath(dockerPath: docker, isExecutable: isExecutable) {
+                linkPlugin(named: "docker-compose", to: compose, in: plugins)
+            }
+            let buildx = URL(fileURLWithPath: docker)
+                .deletingLastPathComponent()
+                .appendingPathComponent("docker-buildx").path
+            if isExecutable(buildx) {
+                linkPlugin(named: "docker-buildx", to: buildx, in: plugins)
             }
         }
-        return candidatePaths(os: os).first(where: isExecutable)
+        return root
+    }
+
+    public static func cliEnvironment(
+        dataDir: URL = Config.dataDir,
+        dockerPath: String? = nil,
+    ) -> [String: String] {
+        let config = prepareCLIConfig(dataDir: dataDir, dockerPath: dockerPath)
+        return ["DOCKER_CONFIG": config.path]
+    }
+
+    private static func linkPlugin(named: String, to: String, in plugins: URL) {
+        let dest = plugins.appendingPathComponent(named)
+        let target = URL(fileURLWithPath: to)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try? FileManager.default.removeItem(at: dest)
+        }
+        try? FileManager.default.createSymbolicLink(at: dest, withDestinationURL: target)
     }
 
     public static func which(_ name: String) -> URL? {

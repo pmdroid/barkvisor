@@ -221,6 +221,11 @@ public enum ApplicationLifecycleService {
                 if vm.state != observed {
                     try? await setState(&vm, state: observed, error: nil, db: db)
                 }
+                if observed == "running" {
+                    await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
+                } else {
+                    await metricsCollector?.stop(vmID: vm.id)
+                }
                 continue
             }
             if vm.state == "running" {
@@ -231,6 +236,7 @@ public enum ApplicationLifecycleService {
                     db: db,
                 )
             }
+            await metricsCollector?.stop(vmID: vm.id)
             _ = dataDir
         }
     }

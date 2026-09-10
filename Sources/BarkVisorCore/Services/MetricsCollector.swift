@@ -252,6 +252,10 @@ public actor MetricsCollector {
         continuations.removeValue(forKey: vmID)
     }
 
+    public func isCollectingApp(_ id: String) -> Bool {
+        appTasks[id] != nil
+    }
+
     public func startApp(id: String, project: String) {
         guard tasks[id] == nil, appTasks[id] == nil else { return }
 
