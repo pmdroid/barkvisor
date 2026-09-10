@@ -89,9 +89,23 @@ struct LinuxServerAppCatalogTests {
     @Test func `code-server password is a secret and proxy stays direct`() throws {
         let code = try #require(try LinuxServerAppCatalog.load().apps.first { $0.id == "code-server" })
         #expect(code.ui.proxy == "direct")
+        let password = try #require(code.envSchema.first { $0.name == "PASSWORD" })
+        #expect(password.kind == "secret")
+        #expect(password.required)
+        #expect((password.defaultValue ?? "").isEmpty)
+        #expect(!code.compose.contains("PASSWORD=password"))
         let fields = AppTemplate.fields(from: code)
         #expect(fields.contains { $0.envName == "PASSWORD" && $0.kind == "secret" })
         #expect(!fields.contains { $0.envName == "PROXY_DOMAIN" })
+        var values = AppTemplate.seedValues(fields)
+        values["port-8443-tcp"] = "8443"
+        let rendered = try AppTemplate.render(entry: code, values: values)
+        #expect(!rendered.compose.contains("PASSWORD=password"))
+        #expect(!rendered.compose.contains("PASSWORD"))
+        let seeded = try #require(rendered.env["PASSWORD"])
+        #expect(!seeded.isEmpty)
+        #expect(seeded != "password")
+        #expect(rendered.secretKeys.contains("PASSWORD"))
     }
 
     @Test func `plex claim and version stay on the form`() throws {
