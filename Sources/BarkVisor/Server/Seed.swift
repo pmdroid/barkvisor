@@ -328,32 +328,60 @@ enum Seeder {
                 Log.server.info("Seeded built-in templates repository")
             }
 
-            let appsRepoCount =
-                try ImageRepository
-                    .filter(Column("isBuiltIn") == true)
-                    .filter(Column("repoType") == "apps")
-                    .fetchCount(database)
-            if appsRepoCount == 0 {
-                let now = iso8601.string(from: Date())
-                let repo = ImageRepository(
-                    id: UUID().uuidString,
-                    name: BigBearAppCatalog.catalogName,
-                    url: HomeCatalogOrigin.seedURL(repoType: "apps", isMember: isMember),
-                    isBuiltIn: true,
-                    repoType: "apps",
-                    lastSyncedAt: nil,
-                    lastError: nil,
-                    syncStatus: "idle",
-                    createdAt: now,
-                    updatedAt: now,
-                )
-                try repo.insert(database)
-                Log.server.info("Seeded built-in apps repository")
-            }
+            try seedBuiltInAppsRepos(database: database, isMember: isMember)
 
             if isMember {
                 try HomeCatalogOrigin.flipGitHubBuiltIns(database)
             }
+        }
+    }
+
+    private static func seedBuiltInAppsRepos(database: Database, isMember: Bool) throws {
+        let appsRepoCount =
+            try ImageRepository
+                .filter(Column("isBuiltIn") == true)
+                .filter(Column("repoType") == "apps")
+                .filter(Column("url") != LinuxServerAppCatalog.originURL)
+                .fetchCount(database)
+        if appsRepoCount == 0 {
+            let now = iso8601.string(from: Date())
+            let repo = ImageRepository(
+                id: UUID().uuidString,
+                name: BigBearAppCatalog.catalogName,
+                url: HomeCatalogOrigin.seedURL(repoType: "apps", isMember: isMember),
+                isBuiltIn: true,
+                repoType: "apps",
+                lastSyncedAt: nil,
+                lastError: nil,
+                syncStatus: "idle",
+                createdAt: now,
+                updatedAt: now,
+            )
+            try repo.insert(database)
+            Log.server.info("Seeded built-in apps repository")
+        }
+
+        let linuxServerCount =
+            try ImageRepository
+                .filter(Column("isBuiltIn") == true)
+                .filter(Column("url") == LinuxServerAppCatalog.originURL)
+                .fetchCount(database)
+        if linuxServerCount == 0 {
+            let now = iso8601.string(from: Date())
+            let repo = ImageRepository(
+                id: UUID().uuidString,
+                name: LinuxServerAppCatalog.catalogName,
+                url: LinuxServerAppCatalog.originURL,
+                isBuiltIn: true,
+                repoType: "apps",
+                lastSyncedAt: nil,
+                lastError: nil,
+                syncStatus: "idle",
+                createdAt: now,
+                updatedAt: now,
+            )
+            try repo.insert(database)
+            Log.server.info("Seeded built-in LinuxServer catalog")
         }
     }
 }

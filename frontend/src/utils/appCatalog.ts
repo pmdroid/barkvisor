@@ -13,6 +13,16 @@ export function appArchLabel(arches: string[]): string {
   return labels.join(' · ') || 'any'
 }
 
+export function appSourceLabel(source: string): string {
+  if (source === 'linuxserver') return 'LinuxServer'
+  if (source === 'big-bear-universal') return 'Big Bear'
+  return source
+}
+
+export function appCatalogKey(app: { source: string; id: string }): string {
+  return `${app.source}:${app.id}`
+}
+
 export function appInstallBlockedReason(
   app: AppCatalogEntry,
   deviceArch: string | null | undefined,

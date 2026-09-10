@@ -278,6 +278,38 @@ final class ApplicationLifecycleServiceTests {
         #expect(written.contains("/movies"))
     }
 
+    @Test func `renderProject allows catalog host folder binds from sharedPaths`() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let media = tmp.appendingPathComponent("media")
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+
+        var vm = applicationVM(id: "plex-bind")
+        vm.composeYaml = """
+        services:
+          plex:
+            image: lscr.io/linuxserver/plex
+            volumes:
+              - type: bind
+                source: \(media.path)
+                target: /movies
+        """
+        let denied = #expect(throws: BarkVisorError.self) {
+            try ApplicationLifecycleService.renderProject(vm: vm, dataDir: tmp)
+        }
+        guard case let .badRequest(message) = denied else {
+            Issue.record("expected bind rejection")
+            return
+        }
+        #expect(message == "unsupported compose feature: bind")
+
+        vm.setSharedPaths([media.path])
+        let render = try ApplicationLifecycleService.renderProject(vm: vm, dataDir: tmp)
+        #expect(render.yaml.contains(media.path))
+        #expect(render.yaml.contains("/movies"))
+    }
+
     @Test func `updateVMSpec keeps redacted application secrets`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

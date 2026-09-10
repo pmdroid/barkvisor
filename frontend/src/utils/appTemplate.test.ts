@@ -84,7 +84,10 @@ describe('appTemplate', () => {
     const doc = applicationDocument(app(fields), 'plex', { 'path-movies': '/mnt/movies' }, [
       { hostPath: '/mnt/photos', containerPath: '/photos' },
     ])
-    expect((doc.metadata as { labels: { catalog: string } }).labels.catalog).toBe('plex')
+    expect((doc.metadata as { labels: { catalog: string; 'catalog-source': string } }).labels.catalog).toBe('plex')
+    expect((doc.metadata as { labels: { catalog: string; 'catalog-source': string } }).labels['catalog-source']).toBe(
+      'big-bear-universal',
+    )
     const template = doc.template as { values: Record<string, string>; extraFolders: Array<{ hostPath: string }> }
     expect(template.values['path-movies']).toBe('/mnt/movies')
     expect(template.extraFolders[0].hostPath).toBe('/mnt/photos')

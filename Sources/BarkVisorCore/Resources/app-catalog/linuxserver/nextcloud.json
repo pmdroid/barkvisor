@@ -1,0 +1,70 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Apps",
+  "compose": "services:\n  nextcloud:\n    image: lscr.io/linuxserver/nextcloud:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n      - data:/data\n    ports:\n      - 443:443\nvolumes:\n  config:\n  data:\n",
+  "description": "Self-hosted file sync with a web UI.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/nextcloud-icon.png",
+  "id": "nextcloud",
+  "image": "lscr.io/linuxserver/nextcloud:latest",
+  "name": "Nextcloud",
+  "ports": [
+    {
+      "container": 443,
+      "host": 443,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Files and photos",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "https",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/data",
+      "description": "Data",
+      "kind": "folder",
+      "name": "data"
+    }
+  ]
+}

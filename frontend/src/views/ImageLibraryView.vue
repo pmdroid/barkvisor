@@ -36,7 +36,7 @@ import {
   resolveImageArch,
   type ImageArch,
 } from '../utils/imageArch'
-import { appArchLabel } from '../utils/appCatalog'
+import { appArchLabel, appCatalogKey, appSourceLabel } from '../utils/appCatalog'
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
@@ -598,17 +598,17 @@ async function doDeleteImage() {
       v-else-if="homeLibrary.apps.length === 0"
       icon="image"
       title="No apps yet"
-      subtitle="Sync the Big Bear catalog from Settings → Repositories."
+      subtitle="Sync an apps catalog from Settings → Repositories."
     />
     <div v-else class="app-grid">
-      <article v-for="app in homeLibrary.apps" :key="app.id" class="app-card">
+      <article v-for="app in homeLibrary.apps" :key="appCatalogKey(app)" class="app-card">
         <img v-if="app.iconUrl" class="app-icon" :src="app.iconUrl" :alt="app.name" />
         <div v-else class="app-icon app-icon-fallback">{{ app.name.slice(0, 1) }}</div>
         <b>{{ app.name }}</b>
         <span class="app-tagline">{{ app.tagline || app.description || 'Application' }}</span>
         <div class="app-meta">
           <span class="arch">{{ appArchLabel(app.arches) }}</span>
-          <span class="src">{{ app.source }}</span>
+          <span class="src">{{ appSourceLabel(app.source) }}</span>
         </div>
         <span v-if="app.unsupportedReasons.length" class="app-block">{{ app.unsupportedReasons.join(', ') }}</span>
       </article>

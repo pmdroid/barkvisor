@@ -1,0 +1,75 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Apps",
+  "compose": "services:\n  codeserver:\n    image: lscr.io/linuxserver/code-server:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 8443:8443\nvolumes:\n  config:\n",
+  "description": "Edit files on this Device from a browser.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    },
+    {
+      "kind": "secret",
+      "name": "PASSWORD",
+      "required": true
+    },
+    {
+      "default": "",
+      "kind": "text",
+      "name": "PROXY_DOMAIN",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/code-server-banner.png",
+  "id": "code-server",
+  "image": "lscr.io/linuxserver/code-server:latest",
+  "name": "code-server",
+  "ports": [
+    {
+      "container": 8443,
+      "host": 8443,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "VS Code in the browser",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    }
+  ]
+}

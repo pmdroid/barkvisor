@@ -1,0 +1,78 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Media",
+  "compose": "services:\n  sonarr:\n    image: lscr.io/linuxserver/sonarr:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n      - tv:/tv\n      - downloads:/downloads\n    ports:\n      - 8989:8989\nvolumes:\n  config:\n  tv:\n  downloads:\n",
+  "description": "Find, download, and organize TV series.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/sonarr-icon.png",
+  "id": "sonarr",
+  "image": "lscr.io/linuxserver/sonarr:latest",
+  "name": "Sonarr",
+  "ports": [
+    {
+      "container": 8989,
+      "host": 8989,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "TV library manager",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {
+      "before_install": "Media folders on this Device must be owned by PUID."
+    }
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/tv",
+      "description": "TV",
+      "kind": "folder",
+      "name": "tv"
+    },
+    {
+      "container": "/downloads",
+      "description": "Downloads",
+      "kind": "folder",
+      "name": "downloads"
+    }
+  ]
+}

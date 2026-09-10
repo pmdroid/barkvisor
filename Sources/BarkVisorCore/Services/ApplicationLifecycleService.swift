@@ -23,6 +23,16 @@ public enum ApplicationLifecycleService {
         }
     }
 
+    static func renderProject(vm: VM, dataDir: URL) throws -> ComposeRender {
+        try prepare(
+            id: vm.id,
+            composeYaml: vm.composeYaml ?? "",
+            env: decodeEnv(vm, dataDir: dataDir),
+            dataDir: dataDir,
+            allowedBinds: vm.decodedSharedPaths,
+        )
+    }
+
     public static func prepare(
         id: String,
         composeYaml: String,
@@ -195,14 +205,8 @@ public enum ApplicationLifecycleService {
             try await startLocked(vm: &vm, db: db, dataDir: dataDir)
             return
         }
-        if let yaml = vm.composeYaml {
-            let render = try prepare(
-                id: vm.id,
-                composeYaml: yaml,
-                env: decodeEnv(vm, dataDir: dataDir),
-                dataDir: dataDir,
-                allowedBinds: vm.decodedSharedPaths,
-            )
+        if vm.composeYaml != nil {
+            let render = try renderProject(vm: vm, dataDir: dataDir)
             try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
             try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
         }
@@ -216,14 +220,7 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let yaml = vm.composeYaml ?? ""
-        let render = try prepare(
-            id: vm.id,
-            composeYaml: yaml,
-            env: decodeEnv(vm, dataDir: dataDir),
-            dataDir: dataDir,
-            allowedBinds: vm.decodedSharedPaths,
-        )
+        let render = try renderProject(vm: vm, dataDir: dataDir)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
@@ -267,14 +264,7 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let yaml = vm.composeYaml ?? ""
-        let render = try prepare(
-            id: vm.id,
-            composeYaml: yaml,
-            env: decodeEnv(vm, dataDir: dataDir),
-            dataDir: dataDir,
-            allowedBinds: vm.decodedSharedPaths,
-        )
+        let render = try renderProject(vm: vm, dataDir: dataDir)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)

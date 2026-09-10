@@ -11,7 +11,9 @@ import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import {
   appArchLabel,
+  appCatalogKey,
   appInstallBlockedReason,
+  appSourceLabel,
   appSupportsDeviceArch,
 } from '../utils/appCatalog'
 import {
@@ -264,7 +266,7 @@ async function submit() {
           <div v-else class="mag-shelf">
             <div
               v-for="app in homeLibrary.apps"
-              :key="app.id"
+              :key="appCatalogKey(app)"
               class="mag-card"
               @click="pickApp(app)"
             >
@@ -272,7 +274,7 @@ async function submit() {
               <span v-else class="mag-ic">{{ app.name.slice(0, 1) }}</span>
               <b>{{ app.name }}</b>
               <span>{{ app.tagline || app.description || 'Application' }}</span>
-              <span class="mag-meta">{{ appArchLabel(app.arches) }} · {{ app.source }}</span>
+              <span class="mag-meta">{{ appArchLabel(app.arches) }} · {{ appSourceLabel(app.source) }}</span>
               <span v-if="app.unsupportedReasons.length" class="mag-block">{{ app.unsupportedReasons.join(', ') }}</span>
             </div>
           </div>

@@ -1,0 +1,64 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Automation",
+  "compose": "services:\n  homeassistant:\n    image: lscr.io/linuxserver/homeassistant:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n    ports:\n      - 8123:8123\nvolumes:\n  config:\n",
+  "description": "Local home automation with a web UI on 8123.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/homeassistant-icon.png",
+  "id": "homeassistant",
+  "image": "lscr.io/linuxserver/homeassistant:latest",
+  "name": "Home Assistant",
+  "ports": [
+    {
+      "container": 8123,
+      "host": 8123,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Home automation",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {}
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    }
+  ]
+}

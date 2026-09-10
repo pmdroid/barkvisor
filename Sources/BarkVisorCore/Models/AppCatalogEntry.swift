@@ -134,6 +134,7 @@ public struct AppCatalogDocument: Codable, Equatable, Sendable {
 
 public struct AppCatalogEntryDTO: Codable, Equatable, Sendable {
     public static let bigBearSource = "big-bear-universal"
+    public static let linuxServerSource = "linuxserver"
 
     public var id: String
     public var name: String
@@ -317,6 +318,23 @@ public struct AppCatalogRecord: Codable, Sendable, FetchableRecord, PersistableR
             timezone: prefill.timezone,
         )
         return dto
+    }
+
+    public static func resolve(db: Database, slug: String, source: String?) throws -> AppCatalogRecord? {
+        let rows = try AppCatalogRecord.filter(Column("slug") == slug).fetchAll(db)
+        if let source, !source.isEmpty {
+            return rows.first { $0.source == source }
+        }
+        if rows.count == 1 {
+            return rows.first
+        }
+        if let bear = rows.first(where: { $0.source == AppCatalogEntryDTO.bigBearSource }) {
+            return bear
+        }
+        if rows.count > 1 {
+            throw BarkVisorError.badRequest("Ambiguous catalog app \(slug)")
+        }
+        return nil
     }
 
     public static func from(dto: AppCatalogEntryDTO, repositoryId: String, now: String) -> AppCatalogRecord {

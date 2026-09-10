@@ -1,0 +1,78 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Media",
+  "compose": "services:\n  radarr:\n    image: lscr.io/linuxserver/radarr:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n      - movies:/movies\n      - downloads:/downloads\n    ports:\n      - 7878:7878\nvolumes:\n  config:\n  movies:\n  downloads:\n",
+  "description": "Find, download, and organize movies.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/radarr.png",
+  "id": "radarr",
+  "image": "lscr.io/linuxserver/radarr:latest",
+  "name": "Radarr",
+  "ports": [
+    {
+      "container": 7878,
+      "host": 7878,
+      "protocol": "tcp",
+      "ui": true
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Movie library manager",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {
+      "before_install": "Media folders on this Device must be owned by PUID."
+    }
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/movies",
+      "description": "Movies",
+      "kind": "folder",
+      "name": "movies"
+    },
+    {
+      "container": "/downloads",
+      "description": "Downloads",
+      "kind": "folder",
+      "name": "downloads"
+    }
+  ]
+}

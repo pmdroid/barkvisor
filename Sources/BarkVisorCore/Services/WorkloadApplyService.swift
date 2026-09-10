@@ -286,8 +286,9 @@ public enum WorkloadApplyService {
         guard let template = document["template"] as? [String: Any] else { return spec }
         let values = stringKeyed(template["values"])
         let extra = extraFolders(template["extraFolders"])
+        let source = labels["catalog-source"]
         let row = try await db.read { db in
-            try AppCatalogRecord.filter(Column("slug") == catalogId).fetchOne(db)
+            try AppCatalogRecord.resolve(db: db, slug: catalogId, source: source)
         }
         guard let entry = row?.dto() else {
             throw BarkVisorError.badRequest("Unknown catalog app \(catalogId)")

@@ -94,6 +94,7 @@ struct HomeCatalogDistributionTests {
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.memberImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.memberTemplatesURL })
         #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.memberAppsURL })
+        #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }
 
@@ -106,6 +107,7 @@ struct HomeCatalogDistributionTests {
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.githubImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.githubTemplatesURL })
         #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.githubAppsURL })
+        #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
     }
 
     @Test func `existing GitHub built-in rows flip on member seed`() throws {
@@ -115,8 +117,12 @@ struct HomeCatalogDistributionTests {
         try Seeder.seedDefaultRepository(db: pool, isMember: false)
         try Seeder.seedDefaultRepository(db: pool, isMember: true)
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
-        #expect(repos.count == 3)
-        #expect(repos.allSatisfy { HomeCatalogOrigin.isMemberOrigin($0.url) })
+        #expect(repos.count == 4)
+        #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
+        #expect(
+            repos.filter { $0.url != LinuxServerAppCatalog.originURL }
+                .allSatisfy { HomeCatalogOrigin.isMemberOrigin($0.url) },
+        )
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }
 

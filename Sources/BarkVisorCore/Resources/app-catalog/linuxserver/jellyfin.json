@@ -1,0 +1,98 @@
+{
+  "arches": [
+    "amd64",
+    "arm64"
+  ],
+  "category": "Media",
+  "compose": "services:\n  jellyfin:\n    image: lscr.io/linuxserver/jellyfin:latest\n    restart: unless-stopped\n    environment:\n      - PUID=1000\n      - PGID=1000\n      - TZ=UTC\n    volumes:\n      - config:/config\n      - tvshows:/data/tvshows\n      - movies:/data/movies\n    ports:\n      - 8096:8096\n      - 7359:7359/udp\n      - 1900:1900/udp\nvolumes:\n  config:\n  tvshows:\n  movies:\n",
+  "description": "Stream movies, TV, and music on your LAN.",
+  "envSchema": [
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PUID",
+      "required": true
+    },
+    {
+      "default": "1000",
+      "kind": "text",
+      "name": "PGID",
+      "required": true
+    },
+    {
+      "default": "UTC",
+      "kind": "text",
+      "name": "TZ",
+      "required": true
+    },
+    {
+      "default": "022",
+      "kind": "text",
+      "name": "UMASK",
+      "required": false
+    },
+    {
+      "default": "",
+      "kind": "text",
+      "name": "JELLYFIN_PublishedServerUrl",
+      "required": false
+    }
+  ],
+  "iconUrl": "https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/jellyfin-logo.png",
+  "id": "jellyfin",
+  "image": "lscr.io/linuxserver/jellyfin:latest",
+  "name": "Jellyfin",
+  "ports": [
+    {
+      "container": 8096,
+      "host": 8096,
+      "protocol": "tcp",
+      "ui": true
+    },
+    {
+      "container": 7359,
+      "description": "Client discovery",
+      "host": 7359,
+      "protocol": "udp",
+      "ui": false
+    },
+    {
+      "container": 1900,
+      "description": "DLNA discovery",
+      "host": 1900,
+      "protocol": "udp",
+      "ui": false
+    }
+  ],
+  "source": "linuxserver",
+  "tagline": "Media server",
+  "ui": {
+    "basePathEnv": [],
+    "path": "",
+    "proxy": "direct",
+    "scheme": "http",
+    "tips": {
+      "before_install": "Media folders on this Device must be owned by PUID."
+    }
+  },
+  "unsupportedReasons": [],
+  "volumes": [
+    {
+      "container": "/config",
+      "kind": "volume",
+      "name": "config"
+    },
+    {
+      "container": "/data/tvshows",
+      "description": "TV",
+      "kind": "folder",
+      "name": "tvshows"
+    },
+    {
+      "container": "/data/movies",
+      "description": "Movies",
+      "kind": "folder",
+      "name": "movies"
+    }
+  ]
+}
