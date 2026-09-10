@@ -32,9 +32,7 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 
 ## Create App
 
-From **Workloads**, click **Create App**. Pick a catalog card (Big Bear or LinuxServer), fill folders and env, then Create. The Workload detail has Overview, Logs, Environment, and Volumes.
-
-Screenshots of the full flow: [Create App flow](app-workloads-mockups/flow/README.md).
+Docker apps are a separate path: **Workloads → Create App**. See [Apps](using-apps.md).
 
 ## After create
 
@@ -42,7 +40,7 @@ The Workload lives in that Device’s SQLite. Start, stop, and console from the 
 
 ## Related
 
-- [Create App flow](app-workloads-mockups/flow/README.md)
+- [Apps](using-apps.md)
 - [Quickstart](getting-started-quickstart.md)
 - [Home and pairing](home-and-pairing.md)
 - [Settings: Repositories](settings-repositories.md)

@@ -34,6 +34,7 @@ Empty Homes see "No virtual machines yet" with a **Create your first VM** button
 
 ## Related
 
+- [Apps](using-apps.md) — Docker Compose workloads
 - [Workload details](using-vm-details.md)
 - [Images](using-images.md) — pick what to boot
 - [Disks](using-disks.md) — attach extra disks

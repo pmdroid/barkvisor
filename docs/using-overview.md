@@ -35,7 +35,7 @@ Around every page sit four shared pieces of chrome:
 |------|------|
 | Dashboard | [Dashboard](using-dashboard.md) |
 | Devices | [Devices](using-devices.md) |
-| Virtual Machines | [Virtual Machines](using-vms.md) and [Workload details](using-vm-details.md) |
+| Workloads | [Virtual Machines](using-vms.md), [Apps](using-apps.md), and [Workload details](using-vm-details.md) |
 | Ollama | [Ollama](using-ollama.md) |
 | Images | [Images](using-images.md) |
 | Disks | [Disks](using-disks.md) |
