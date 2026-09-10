@@ -112,7 +112,7 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func login(req: Vapor.Request) async throws -> LoginResponse {
+    func login(req: Vapor.Request) async throws -> Response {
         try LoginRequest.validate(content: req)
         let body = try req.content.decode(LoginRequest.self)
 
@@ -125,10 +125,13 @@ struct AuthController: RouteCollection {
                 action: "auth.login", resourceType: "user", resourceId: session.user.id,
                 resourceName: session.user.username, req: req,
             )
-            return LoginResponse(
-                token: session.token,
-                refreshToken: session.refreshToken,
-                role: session.user.userRole.rawValue,
+            return try AppIngressSession.encodeLogin(
+                LoginResponse(
+                    token: session.token,
+                    refreshToken: session.refreshToken,
+                    role: session.user.userRole.rawValue,
+                ),
+                on: req,
             )
         } catch {
             // Log failed attempts without exposing the submitted username (could be a mistyped password)
@@ -148,7 +151,7 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func refresh(req: Vapor.Request) async throws -> LoginResponse {
+    func refresh(req: Vapor.Request) async throws -> Response {
         try RefreshRequest.validate(content: req)
         let body = try req.content.decode(RefreshRequest.self)
         do {
@@ -159,10 +162,13 @@ struct AuthController: RouteCollection {
                 action: "auth.refresh", resourceType: "user", resourceId: session.user.id,
                 resourceName: session.user.username, req: req,
             )
-            return LoginResponse(
-                token: session.token,
-                refreshToken: session.refreshToken,
-                role: session.user.userRole.rawValue,
+            return try AppIngressSession.encodeLogin(
+                LoginResponse(
+                    token: session.token,
+                    refreshToken: session.refreshToken,
+                    role: session.user.userRole.rawValue,
+                ),
+                on: req,
             )
         } catch {
             AuditService.log(action: "auth.refresh.failed", detail: "Invalid refresh token", req: req)
@@ -171,7 +177,7 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func logout(req: Vapor.Request) async throws -> HTTPStatus {
+    func logout(req: Vapor.Request) async throws -> Response {
         let body = try? req.content.decode(LogoutRequest.self)
         guard let refreshToken = body?.refreshToken, !refreshToken.isEmpty else {
             throw BarkVisorError.unauthorized("Missing refresh token")
@@ -187,7 +193,9 @@ struct AuthController: RouteCollection {
             AuditService.log(action: "auth.logout", resourceType: "user", req: req)
         }
         try await AuthService.revokeRefreshToken(refreshToken, db: req.db)
-        return .noContent
+        let response = Response(status: .noContent)
+        AppIngressSession.clear(response)
+        return response
     }
 
     @Sendable
@@ -228,7 +236,7 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func redeemLoginOffer(req: Vapor.Request) async throws -> LoginResponse {
+    func redeemLoginOffer(req: Vapor.Request) async throws -> Response {
         try LoginRedeemRequest.validate(content: req)
         let body = try req.content.decode(LoginRedeemRequest.self)
         do {
@@ -239,10 +247,13 @@ struct AuthController: RouteCollection {
                 action: "auth.login_offer.redeem", resourceType: "user",
                 resourceId: session.user.id, resourceName: session.user.username, req: req,
             )
-            return LoginResponse(
-                token: session.token,
-                refreshToken: session.refreshToken,
-                role: session.user.userRole.rawValue,
+            return try AppIngressSession.encodeLogin(
+                LoginResponse(
+                    token: session.token,
+                    refreshToken: session.refreshToken,
+                    role: session.user.userRole.rawValue,
+                ),
+                on: req,
             )
         } catch {
             AuditService.log(
@@ -349,7 +360,7 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func passkeyLoginFinish(req: Vapor.Request) async throws -> LoginResponse {
+    func passkeyLoginFinish(req: Vapor.Request) async throws -> Response {
         let raw = try await req.body.collect(upTo: 1 << 20)
         let data = Data(buffer: raw)
         let envelope = try passkeyFinishEnvelope(data)
@@ -366,10 +377,13 @@ struct AuthController: RouteCollection {
                 action: "auth.passkey.login", resourceType: "user", resourceId: session.user.id,
                 resourceName: session.user.username, req: req,
             )
-            return LoginResponse(
-                token: session.token,
-                refreshToken: session.refreshToken,
-                role: session.user.userRole.rawValue,
+            return try AppIngressSession.encodeLogin(
+                LoginResponse(
+                    token: session.token,
+                    refreshToken: session.refreshToken,
+                    role: session.user.userRole.rawValue,
+                ),
+                on: req,
             )
         } catch {
             if let bvError = error as? BarkVisorError, bvError.httpStatus == 401 {

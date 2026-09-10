@@ -113,16 +113,46 @@ export function uiPortField(fields: AppTemplateField[]): AppTemplateField | null
     ?? null
 }
 
+export type AppIngressInput = {
+  enabled: boolean
+  mode?: string | null
+  extraEnv?: Record<string, string>
+  hostPort?: number | null
+}
+
+export function catalogProxy(app: Pick<AppCatalogEntry, 'ui'>): 'prefix' | 'direct' {
+  return app.ui?.proxy === 'prefix' ? 'prefix' : 'direct'
+}
+
+export function managedEnvPreview(app: AppCatalogEntry, enabled: boolean, mode?: string | null): string[] {
+  const resolved = (mode || catalogProxy(app)).toLowerCase()
+  if (!enabled || resolved !== 'prefix') return []
+  const names = new Set(app.ui.basePathEnv || [])
+  names.add('BARKVISOR_BASE_PATH')
+  names.add('BARKVISOR_PUBLIC_URL')
+  return [...names].sort()
+}
+
 export function applicationDocument(
   app: AppCatalogEntry,
   name: string,
   values: AppTemplateValues,
   extraFolders: AppTemplateExtraFolder[] = [],
   gpuShareIds: string[] = [],
+  ingress?: AppIngressInput,
 ): Record<string, unknown> {
+  const extra = extraFolders.filter((row) => row.hostPath.trim() && row.containerPath.trim())
   const spec: Record<string, unknown> = {
     runtime: 'device',
     compose: app.compose,
+    ingress: ingress
+      ? {
+          enabled: ingress.enabled,
+          mode: ingress.mode || catalogProxy(app),
+          extraEnv: ingress.extraEnv,
+          hostPort: ingress.hostPort ?? undefined,
+        }
+      : { enabled: true, mode: catalogProxy(app) },
   }
   if (gpuShareIds.length) {
     spec.gpuShare = gpuShareIds.map((id) => ({ id }))
@@ -133,7 +163,16 @@ export function applicationDocument(
     metadata: { name, labels: { catalog: app.id, 'catalog-source': app.source } },
     template: {
       values,
-      extraFolders: extraFolders.filter((row) => row.hostPath.trim() && row.containerPath.trim()),
+      extraFolders: extra,
+      ingress: ingress
+        ? {
+            enabled: ingress.enabled,
+            mode: ingress.mode || catalogProxy(app),
+            extraEnv: ingress.extraEnv,
+            hostPort: ingress.hostPort ?? undefined,
+            extraBinds: extra.map((row) => row.hostPath),
+          }
+        : undefined,
     },
     spec,
   }

@@ -47,9 +47,11 @@
   "source": "linuxserver",
   "tagline": "RSS reader",
   "ui": {
-    "basePathEnv": [],
+    "basePathEnv": [
+      "SUBFOLDER"
+    ],
     "path": "",
-    "proxy": "direct",
+    "proxy": "prefix",
     "scheme": "http",
     "tips": {}
   },

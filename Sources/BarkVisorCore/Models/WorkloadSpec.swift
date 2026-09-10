@@ -78,6 +78,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
     public var compose: String?
     public var env: [String: String]?
     public var runtimeWorkloadId: String?
+    public var ingress: WorkloadIngress?
 
     public init(
         resources: WorkloadResources = WorkloadResources(cpu: 0, memoryMb: 0),
@@ -101,6 +102,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         compose: String? = nil,
         env: [String: String]? = nil,
         runtimeWorkloadId: String? = nil,
+        ingress: WorkloadIngress? = nil,
     ) {
         self.resources = resources
         self.arch = arch
@@ -123,6 +125,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         self.compose = compose
         self.env = env
         self.runtimeWorkloadId = runtimeWorkloadId
+        self.ingress = ingress
     }
 }
 
@@ -130,7 +133,7 @@ extension WorkloadSpecBody: Codable {
     enum CodingKeys: String, CodingKey {
         case resources, arch, guestType, osFamily, machine, firmware, bootOrder
         case disks, networks, cloudInit, usb, gpu, gpuShare, display, sharedPaths, health, workloadClass
-        case runtime, compose, env, runtimeWorkloadId
+        case runtime, compose, env, runtimeWorkloadId, ingress
     }
 
     public init(from decoder: Decoder) throws {
@@ -157,6 +160,7 @@ extension WorkloadSpecBody: Codable {
         compose = try c.decodeIfPresent(String.self, forKey: .compose)
         env = try c.decodeIfPresent([String: String].self, forKey: .env)
         runtimeWorkloadId = try c.decodeIfPresent(String.self, forKey: .runtimeWorkloadId)
+        ingress = try c.decodeIfPresent(WorkloadIngress.self, forKey: .ingress)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -184,6 +188,7 @@ extension WorkloadSpecBody: Codable {
         try c.encodeIfPresent(compose, forKey: .compose)
         try c.encodeIfPresent(env, forKey: .env)
         try c.encodeIfPresent(runtimeWorkloadId, forKey: .runtimeWorkloadId)
+        try c.encodeIfPresent(ingress, forKey: .ingress)
     }
 }
 

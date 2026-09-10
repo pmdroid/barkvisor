@@ -175,6 +175,15 @@ export interface WorkloadSpecBody {
   compose?: string | null
   env?: Record<string, string> | null
   runtimeWorkloadId?: string | null
+  ingress?: WorkloadIngress | null
+}
+
+export interface WorkloadIngress {
+  enabled?: boolean | null
+  mode?: 'prefix' | 'direct' | string | null
+  extraEnv?: Record<string, string> | null
+  hostPort?: number | null
+  extraBinds?: string[] | null
 }
 
 export interface WorkloadResourcesOverlay {
@@ -249,6 +258,7 @@ export interface VM {
   kind?: string | null
   runtime?: string | null
   openUrl?: string | null
+  ingress?: WorkloadIngress | null
   publishedPorts?: PublishedPort[] | null
   image?: string | null
   digest?: string | null

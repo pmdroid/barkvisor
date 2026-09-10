@@ -42,6 +42,23 @@
           "type": ["object", "null"],
           "additionalProperties": { "type": "string" }
         },
+        "ingress": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "mode": { "type": ["string", "null"], "enum": ["prefix", "direct", null] },
+            "extraEnv": {
+              "type": ["object", "null"],
+              "additionalProperties": { "type": "string" }
+            },
+            "hostPort": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
+            "extraBinds": {
+              "type": ["array", "null"],
+              "items": { "type": "string" }
+            }
+          }
+        },
         "runtimeWorkloadId": { "type": ["string", "null"] },
         "workloadClass": { "type": ["string", "null"] },
         "resources": {

@@ -57,9 +57,10 @@ public enum HomeDeviceProxy {
         guard let host = PairingPayload.sanitizeProxyHost(host) else {
             throw BarkVisorError.badRequest("Device address is not reachable")
         }
-        try rejectNestedHome(path)
-        try rejectConsoleLocalOnly(path)
-        guard path.hasPrefix("/api/") else {
+        if path.hasPrefix("/api/") {
+            try rejectNestedHome(path)
+            try rejectConsoleLocalOnly(path)
+        } else if !path.hasPrefix("/go/") {
             throw BarkVisorError.badRequest("Invalid member API path")
         }
         let wrapped = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
@@ -71,6 +72,17 @@ public enum HomeDeviceProxy {
             throw BarkVisorError.badRequest("Unable to build Device URL")
         }
         return url
+    }
+
+    public static func goPath(id: String, remainder: [String]) throws -> String {
+        try rejectPathSegment(id)
+        for part in remainder {
+            try rejectPathSegment(part)
+        }
+        if remainder.isEmpty {
+            return AppIngress.basePath(id: id)
+        }
+        return "/go/\(id)/" + remainder.joined(separator: "/")
     }
 
     public static func localURL(

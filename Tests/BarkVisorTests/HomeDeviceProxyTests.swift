@@ -157,6 +157,20 @@ struct HomeDeviceProxyTests {
                 path: "/api/home/devices",
             )
         }
+        let go = try HomeDeviceProxy.memberURL(
+            host: "192.168.1.9",
+            port: 7_778,
+            path: "/go/app-1/",
+        )
+        #expect(go.absoluteString.contains("/go/app-1/"))
+        #expect(try HomeDeviceProxy.goPath(id: "app-1", remainder: ["web"]) == "/go/app-1/web")
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberURL(
+                host: "192.168.1.9",
+                port: 7_778,
+                path: "/secret",
+            )
+        }
     }
 
     @Test func `agent proxy path decodes and rejects traversal before guards`() throws {

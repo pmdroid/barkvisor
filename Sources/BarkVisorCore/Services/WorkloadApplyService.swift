@@ -293,12 +293,57 @@ public enum WorkloadApplyService {
         guard let entry = row?.dto() else {
             throw BarkVisorError.badRequest("Unknown catalog app \(catalogId)")
         }
-        let rendered = try AppTemplate.render(entry: entry, values: values, extraFolders: extra)
+        let ingress = decodeIngress(template["ingress"]) ?? spec.spec.ingress
+        let rendered = try AppTemplate.render(
+            entry: entry,
+            values: values,
+            extraFolders: extra,
+            ingress: ingress,
+            workloadID: spec.metadata.id,
+        )
         var next = spec
         next.spec.compose = rendered.compose
         next.spec.env = rendered.env
         next.spec.sharedPaths = rendered.sharedPaths
+        next.spec.ingress = resolvedIngress(ingress, catalogProxy: entry.ui.proxy)
         return next
+    }
+
+    private static func decodeIngress(_ value: Any?) -> WorkloadIngress? {
+        guard let object = value as? [String: Any] else { return nil }
+        let enabled = object["enabled"] as? Bool ?? true
+        let mode = object["mode"] as? String
+        let hostPort = ingressInt(object["hostPort"]) ?? ingressInt(object["host_port"])
+        let extraEnv = stringKeyed(object["extraEnv"])
+        let extraBinds: [String] = if let array = object["extraBinds"] as? [String] {
+            array
+        } else if let array = object["extraBinds"] as? [Any] {
+            array.compactMap { $0 as? String }
+        } else {
+            []
+        }
+        return WorkloadIngress(
+            enabled: enabled,
+            mode: mode,
+            extraEnv: extraEnv.isEmpty ? nil : extraEnv,
+            hostPort: hostPort,
+            extraBinds: extraBinds.isEmpty ? nil : extraBinds,
+        )
+    }
+
+    private static func resolvedIngress(_ ingress: WorkloadIngress?, catalogProxy: String) -> WorkloadIngress {
+        var next = ingress ?? WorkloadIngress()
+        if next.mode == nil || next.mode?.isEmpty == true {
+            next.mode = AppIngress.resolvedMode(catalogProxy: catalogProxy, override: nil)
+        }
+        return next
+    }
+
+    private static func ingressInt(_ value: Any?) -> Int? {
+        if let int = value as? Int { return int }
+        if let number = value as? NSNumber { return number.intValue }
+        if let text = value as? String { return Int(text) }
+        return nil
     }
 
     private static func stringKeyed(_ value: Any?) -> [String: String] {

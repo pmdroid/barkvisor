@@ -47,7 +47,10 @@
   "source": "linuxserver",
   "tagline": "Files and photos",
   "ui": {
-    "basePathEnv": [],
+    "basePathEnv": [
+      "TRUSTED_PROXIES",
+      "OVERWRITEPROTOCOL"
+    ],
     "path": "",
     "proxy": "direct",
     "scheme": "https",

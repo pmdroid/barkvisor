@@ -32,6 +32,8 @@ struct AgentLocalProxyController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         for method in [HTTPMethod.GET, .POST, .PUT, .PATCH, .DELETE] {
             routes.on(method, "api", "**", use: forward)
+            routes.on(method, "go", ":id", use: forwardGo)
+            routes.on(method, "go", ":id", "**", use: forwardGo)
         }
     }
 
@@ -139,6 +141,30 @@ struct AgentLocalProxyController: RouteCollection {
     }
 
     @Sendable
+    func forwardGo(req: Vapor.Request) async throws -> Response {
+        _ = try requirePeer(req)
+        let id = try req.parameters.require("id")
+        let remainder = req.parameters.getCatchall()
+        let path = try HomeDeviceProxy.goPath(id: id, remainder: remainder)
+        if req.headers[.upgrade].joined(separator: " ").lowercased().contains("websocket") {
+            return req.webSocket { req, inbound in
+                Task {
+                    do {
+                        let http = try HomeDeviceProxy.localURL(
+                            port: self.localPort, path: path, query: req.url.query,
+                        )
+                        let url = try HomeDeviceProxy.webSocketURL(from: http)
+                        await WebSocketHop.run(inbound: inbound, url: url, dialer: self.dialer)
+                    } catch {
+                        WebSocketRelay.close(inbound)
+                    }
+                }
+            }
+        }
+        return try await hopLocal(req: req, path: path)
+    }
+
+    @Sendable
     func forward(req: Vapor.Request) async throws -> Response {
         let peer = try requirePeer(req)
         try HomeConsoleProxy.rejectStrippedUpgrade(req)
@@ -153,6 +179,10 @@ struct AgentLocalProxyController: RouteCollection {
         guard path.hasPrefix("/api/") else {
             throw BarkVisorError.badRequest("Invalid member API path")
         }
+        return try await hopLocal(req: req, path: path)
+    }
+
+    private func hopLocal(req: Vapor.Request, path: String) async throws -> Response {
         let url = try HomeDeviceProxy.localURL(
             port: localPort,
             path: path,

@@ -43,11 +43,12 @@ public enum ApplicationLifecycleService {
         vm: VM,
         dataDir: URL,
         gpuShare: GPUShareAttach = .empty,
+        catalog: AppCatalogEntryDTO? = nil,
     ) throws -> ComposeRender {
         try prepare(
             id: vm.id,
             composeYaml: vm.composeYaml ?? "",
-            env: decodeEnv(vm, dataDir: dataDir),
+            env: decodeEnv(vm, dataDir: dataDir, catalog: catalog),
             dataDir: dataDir,
             allowedBinds: vm.decodedSharedPaths,
             gpuShare: gpuShare,
@@ -253,6 +254,23 @@ public enum ApplicationLifecycleService {
         ports.compactMap(\.openURL).first
     }
 
+    public static func openURL(
+        id: String,
+        ports: [PublishedPort],
+        spec: WorkloadSpec?,
+        listenPort: Int = Config.port,
+        lanHost: String? = HostInfoService.lanBindIPv4(),
+    ) -> String? {
+        AppIngress.openURL(
+            id: id,
+            catalogProxy: spec?.spec.ingress?.mode,
+            ingress: spec?.spec.ingress,
+            lanURL: openURL(from: ports),
+            listenHost: lanHost,
+            listenPort: listenPort,
+        )
+    }
+
     public static func projectName(_ vm: VM) -> String {
         if let name = vm.composeProject, !name.isEmpty { return name }
         return ComposeRuntime.composeProjectName(id: vm.id)
@@ -271,7 +289,8 @@ public enum ApplicationLifecycleService {
         }
         if vm.composeYaml != nil {
             let gpuShare = try await shareAttach(for: vm, db: db)
-            let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
+            let catalog = await catalogEntry(for: vm, db: db)
+            let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
             try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
             try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
@@ -287,7 +306,8 @@ public enum ApplicationLifecycleService {
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
         let gpuShare = try await shareAttach(for: vm, db: db)
-        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
+        let catalog = await catalogEntry(for: vm, db: db)
+        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
@@ -333,7 +353,8 @@ public enum ApplicationLifecycleService {
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
         let gpuShare = try await shareAttach(for: vm, db: db)
-        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare)
+        let catalog = await catalogEntry(for: vm, db: db)
+        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
@@ -505,11 +526,46 @@ public enum ApplicationLifecycleService {
         vm.setPortForwards(rules.isEmpty ? nil : rules)
     }
 
-    private static func decodeEnv(_ vm: VM, dataDir: URL = Config.dataDir) -> [String: String]? {
-        AppTemplate.mergeEnv(
-            existing: WorkloadSpecJSON.decode(vm.specJson)?.spec.env,
+    private static func catalogEntry(for vm: VM, db: DatabasePool) async -> AppCatalogEntryDTO? {
+        let labels = WorkloadSpecJSON.decode(vm.specJson)?.metadata.labels ?? [:]
+        guard let slug = labels["catalog"], !slug.isEmpty else { return nil }
+        let source = labels["catalog-source"]
+        return try? await db.read { db in
+            try AppCatalogRecord.resolve(db: db, slug: slug, source: source)?.dto()
+        }
+    }
+
+    private static func decodeEnv(
+        _ vm: VM,
+        dataDir: URL,
+        catalog: AppCatalogEntryDTO? = nil,
+    ) -> [String: String]? {
+        let spec = WorkloadSpecJSON.decode(vm.specJson)
+        let existing = AppTemplate.mergeEnv(
+            existing: spec?.spec.env,
             incoming: nil,
             disk: ComposeRuntime.readEnv(id: vm.id, dataDir: dataDir),
+        )
+        let lan = HostInfoService.lanBindIPv4()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = lan.isEmpty ? "127.0.0.1" : lan
+        let names = AppIngress.envNames(
+            catalog: catalog?.ui ?? AppCatalogUI(),
+            schema: catalog?.envSchema ?? [],
+        )
+        let managed = AppIngress.managedEnv(
+            id: vm.id,
+            names: names,
+            catalogProxy: spec?.spec.ingress?.mode,
+            ingress: spec?.spec.ingress,
+            scheme: "http",
+            host: host,
+            listenPort: Config.port,
+        )
+        return AppIngress.mergeEnv(
+            existing: existing,
+            extra: spec?.spec.ingress?.extraEnv,
+            managed: managed,
+            enabled: AppIngress.isEnabled(spec?.spec.ingress),
         )
     }
 
