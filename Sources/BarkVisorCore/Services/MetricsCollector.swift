@@ -256,6 +256,20 @@ public actor MetricsCollector {
         appTasks[id] != nil
     }
 
+    public func stopApp(_ id: String) {
+        appTasks[id]?.cancel()
+        appTasks.removeValue(forKey: id)
+        buffers.removeValue(forKey: id)
+        prevNetRx.removeValue(forKey: id)
+        prevNetTx.removeValue(forKey: id)
+        if let conts = continuations[id] {
+            for (_, cont) in conts {
+                cont.finish()
+            }
+        }
+        continuations.removeValue(forKey: id)
+    }
+
     public func startApp(id: String, project: String) {
         guard tasks[id] == nil, appTasks[id] == nil else { return }
 
