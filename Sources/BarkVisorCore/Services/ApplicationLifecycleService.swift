@@ -351,20 +351,16 @@ public enum ApplicationLifecycleService {
         progress: (@Sendable (Double) -> Void)?,
     ) async throws {
         try await refuseDeleting(id: vm.id, db: db)
+        try await requireRunning(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let yaml = vm.composeYaml ?? ""
-        let render = try prepare(
-            id: vm.id,
-            composeYaml: yaml,
-            env: decodeEnv(vm, dataDir: dataDir),
-            dataDir: dataDir,
-            allowedBinds: vm.decodedSharedPaths,
-        )
+        let render = try renderProject(vm: vm, dataDir: dataDir)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         progress?(0.2)
+        try await refuseDeleting(id: vm.id, db: db)
         try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
         progress?(0.6)
+        try await refuseDeleting(id: vm.id, db: db)
         try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
         progress?(0.85)
         try verifyInspectedBinds(
@@ -416,6 +412,13 @@ public enum ApplicationLifecycleService {
         let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
         if state == "deleting" {
             throw BarkVisorError.conflict("Workload is deleting")
+        }
+    }
+
+    private static func requireRunning(id: String, db: DatabasePool) async throws {
+        let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
+        if state != "running" {
+            throw BarkVisorError.conflict("Application must be running to update images")
         }
     }
 

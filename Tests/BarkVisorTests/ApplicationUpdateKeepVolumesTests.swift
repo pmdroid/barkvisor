@@ -81,6 +81,7 @@ final class ApplicationUpdateKeepVolumesTests {
     @Test func `update pulls then ups and does not down volumes`() async throws {
         try await withStubs {
             var vm = try await insertApp()
+            try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
             docker.inspectDigest = "sha256:bbb222ccc333"
             docker.manifestDigest = "sha256:bbb222ccc333"
             try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
@@ -93,6 +94,22 @@ final class ApplicationUpdateKeepVolumesTests {
             #expect(live?.digest == "sha256:bbb222ccc333")
             #expect(live?.catalogDigest == "sha256:bbb222ccc333")
             #expect(live?.updateAvailable == false)
+        }
+    }
+
+    @Test func `update of a stopped application does not compose up`() async throws {
+        try await withStubs {
+            var vm = try await insertApp()
+            runner.calls = []
+            await #expect(throws: BarkVisorError.self) {
+                try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
+            }
+            let joined = runner.calls.map { $0.joined(separator: " ") }
+            #expect(!joined.contains { $0.contains("pull") })
+            #expect(!joined.contains { $0.contains("up -d") })
+            let id = vm.id
+            let live = try await dbPool.read { db in try VM.fetchOne(db, key: id) }
+            #expect(live?.state == "stopped")
         }
     }
 

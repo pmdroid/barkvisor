@@ -57,6 +57,9 @@ struct ApplicationOpsController: RouteCollection {
     @Sendable
     func update(req: Request) async throws -> Response {
         let vm = try await requireApplication(req)
+        if vm.state != "running" {
+            throw BarkVisorError.conflict("Application must be running to update images")
+        }
         let taskID = ApplicationLifecycleService.taskID(forUpdate: vm.id)
         let db = req.db
         let workloadID = vm.id

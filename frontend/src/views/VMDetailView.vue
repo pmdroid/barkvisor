@@ -1445,7 +1445,7 @@ const healthBanner = computed(() => {
           @click="openAppUi"
         >Open UI</AppButton>
         <AppButton
-          v-if="isApp && vm.updateAvailable"
+          v-if="isApp && vm.updateAvailable && vm.state === 'running'"
           :disabled="controlDisabled || updatingApp"
           @click="action('update', () => updateAppImage())"
         >Update</AppButton>
@@ -1505,7 +1505,7 @@ const healthBanner = computed(() => {
             <div class="ops-banner-title">Catalog image is newer than the running image</div>
             <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
           </div>
-          <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
+          <AppButton v-if="vm.state === 'running'" size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
         </div>
 
         <div v-if="vm.pendingChanges" class="ops-banner amber">
@@ -1914,7 +1914,7 @@ const healthBanner = computed(() => {
         <div class="ops-banner-title">Catalog image is newer than the running image</div>
         <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
       </div>
-      <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
+      <AppButton v-if="vm.state === 'running'" size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
