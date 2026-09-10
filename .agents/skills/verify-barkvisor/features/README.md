@@ -8,6 +8,7 @@ Maintained verification source for the web console (Swift daemon + Vue SPA at `/
 | Dashboard triage inbox | `/dashboard` | [dashboard.md](dashboard.md) |
 | Devices & device detail | `/devices`, `/devices/:hostId` | [devices.md](devices.md) |
 | Virtual Machines list & Workload detail | `/vms`, `/vms/:id` | [virtual-machines.md](virtual-machines.md) |
+| Workloads list & Create App | `/vms` | [workloads.md](workloads.md) |
 | Ollama | `/models` | [ollama.md](ollama.md) |
 | Images | `/images` | [images.md](images.md) |
 | Disks | `/disks` | [disks.md](disks.md) |

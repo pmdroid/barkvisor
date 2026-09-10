@@ -2,14 +2,15 @@
 
 ## Sub-features
 
-- List with health filter chips (All / Running / Failed / Stopped, each with counts) and table Name · Device · OS · CPU·Mem · Ports · Status
-- **Create VM** magazine dialog: Gallery → Configure → Disk (templates, Windows ISO, custom image, optional Coding Agent)
+- List with health filter chips (All / Running / Failed / Stopped, each with counts) and table Name · Device · OS · CPU·Mem · Ports · Status. Sidebar label is **Workloads**
+- **Create VM** magazine dialog: Gallery → Configure → Disk (templates, Windows ISO, custom image). **Create App** is a separate magazine — see [workloads.md](workloads.md)
+- Coding Agent class is gone (PR #577); do not assert an Agent gallery card
 - Workload detail toolbar: Start on boot, Start, Stop split (**Stop** + **ACPI Shutdown** / **Force Stop**), Restart, VNC pop-out window, Delete (stopped/error only)
 - Detail tabs: Overview (Session/Hardware/Network/Guest/Disks/Shared folders/USB/GPU passthrough/PCI — no Recent events), Chat (conditional), Console vs Terminal (agent-class workloads say Terminal), VNC, Metrics (running only), Logs. Bare VNC window: `/vms/:id/vnc` (self) or `/devices/:hostId/vms/:id/vnc`
 
 ## How to get to it (user POV)
 
-Sidebar **Virtual Machines** → `/vms`; login lands here. Row click or name → `/vms/:id`.
+Sidebar **Workloads** → `/vms`; login lands here. Row click or name → `/vms/:id`.
 
 ## Driving it with Playwright
 
