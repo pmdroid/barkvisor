@@ -18,8 +18,9 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appCatalogSource, appEnvSummary, isSecretEnvKey } from '../utils/appDetail'
-import { parseComposeMounts } from '../utils/composeMounts'
+import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
+import AppMountList from '../components/AppMountList.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
@@ -1316,7 +1317,11 @@ const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false
 const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
 const appCatalog = computed(() => (vm.value ? appCatalogSource(vm.value) : null))
 const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
-const appMounts = computed(() => parseComposeMounts(vm.value?.spec?.spec?.compose ?? ''))
+const appMounts = computed(() => {
+  const fromShared = mountsFromSharedPaths(vm.value?.sharedPaths)
+  if (fromShared.length) return fromShared
+  return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
+})
 const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
 const updatingApp = ref(false)
@@ -1930,17 +1935,11 @@ const healthBanner = computed(() => {
         <span class="mono dim-text">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
       </div>
     </div>
-    <div v-if="tab === 'volumes' && isApp" class="sheet">
-      <div class="sheet-head"><h3>Volumes</h3></div>
-      <div v-if="appMounts.length === 0 && !(vm.volumeRoots ?? []).length" class="dim-text" style="padding:14px">No mounts recorded.</div>
-      <div v-for="(m, i) in appMounts" :key="i" class="detail-row" style="padding:10px 14px">
-        <span class="badge" :class="m.kind === 'bind' ? 'badge-blue' : 'badge-green'">{{ m.kind }}</span>
-        <span class="mono">{{ m.source }} → {{ m.target }}</span>
-      </div>
-      <div v-for="root in (vm.volumeRoots ?? [])" :key="root" class="detail-row" style="padding:10px 14px">
-        <span class="detail-label">Root</span>
-        <span class="mono">{{ root }}</span>
-      </div>
+    <div v-if="tab === 'volumes' && isApp" class="app-kimi-page">
+      <section class="app-kimi-card">
+        <div class="app-kimi-title">Volumes</div>
+        <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
+      </section>
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
@@ -2460,5 +2459,21 @@ const healthBanner = computed(() => {
 }
 @media (max-width: 900px) {
   .app-detail-cards { grid-template-columns: 1fr; }
+}
+.app-kimi-page { max-width: 720px; }
+.app-kimi-card {
+  background: rgba(0, 144, 248, 0.05);
+  border: 1px solid rgba(184, 184, 180, 0.08);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  padding: 16px 18px;
+}
+.app-kimi-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
 }
 </style>

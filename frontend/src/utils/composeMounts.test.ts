@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseComposeMounts } from './composeMounts'
+import { mountsFromSharedPaths, parseComposeMounts } from './composeMounts'
 
 describe('parseComposeMounts', () => {
   it('parses bind and named volume lines', () => {
@@ -13,6 +13,15 @@ services:
     const mounts = parseComposeMounts(yaml)
     expect(mounts).toEqual([
       { kind: 'bind', source: '/media/movies', target: '/data/movies' },
+      { kind: 'volume', source: 'plex-config', target: '/config' },
+    ])
+  })
+})
+
+describe('mountsFromSharedPaths', () => {
+  it('splits host:guest binds', () => {
+    expect(mountsFromSharedPaths(['/media/movies:/movies', 'plex-config:/config'])).toEqual([
+      { kind: 'bind', source: '/media/movies', target: '/movies' },
       { kind: 'volume', source: 'plex-config', target: '/config' },
     ])
   })

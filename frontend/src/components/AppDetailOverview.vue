@@ -3,14 +3,19 @@ import { computed } from 'vue'
 import type { VM } from '../api/types'
 import { firstOpenUrl } from '../utils/workloadKind'
 import { shortDigest } from '../utils/composeLogs'
-import { parseComposeMounts } from '../utils/composeMounts'
+import { parseComposeMounts, mountsFromSharedPaths } from '../utils/composeMounts'
+import AppMountList from './AppMountList.vue'
 import { appCatalogSource, appEnvSummary, appIngressMode } from '../utils/appDetail'
 
 const props = defineProps<{ vm: VM }>()
 
 const openUi = computed(() => firstOpenUrl(props.vm))
 const catalog = computed(() => appCatalogSource(props.vm))
-const mounts = computed(() => parseComposeMounts(props.vm.spec?.spec?.compose ?? ''))
+const mounts = computed(() => {
+  const fromShared = mountsFromSharedPaths(props.vm.sharedPaths)
+  if (fromShared.length) return fromShared
+  return parseComposeMounts(props.vm.spec?.spec?.compose ?? '')
+})
 const env = computed(() => appEnvSummary(props.vm))
 const ingress = computed(() => appIngressMode(props.vm))
 const ports = computed(() => props.vm.publishedPorts ?? [])
@@ -88,16 +93,7 @@ const image = computed(() => {
 
       <section class="card storage">
         <div class="card-title">Storage</div>
-        <div v-if="mounts.length === 0 && roots.length === 0" class="dim">No mounts recorded.</div>
-        <div class="mount-list">
-          <div v-for="(m, i) in mounts" :key="i" class="mount">
-            <span class="kind" :class="m.kind">{{ m.kind }}</span>
-            <span class="paths">{{ m.source }}<span class="arrow">→</span>{{ m.target }}</span>
-          </div>
-        </div>
-        <div v-if="roots.length" class="volume-root">
-          Volume roots: <span class="mono">{{ roots[0] }}</span>
-        </div>
+        <AppMountList :mounts="mounts" :roots="roots" />
       </section>
 
       <section class="card env">
