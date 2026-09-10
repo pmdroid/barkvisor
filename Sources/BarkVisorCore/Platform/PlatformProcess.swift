@@ -162,6 +162,7 @@ public enum PlatformProcess {
 
         try process.run()
 
+        var timeoutExceeded: TimeInterval?
         if let timeout {
             let deadline = Date().addingTimeInterval(timeout)
             while process.isRunning, Date() < deadline {
@@ -176,18 +177,17 @@ public enum PlatformProcess {
                 if process.isRunning {
                     kill(process.processIdentifier, SIGKILL)
                 }
-                process.waitUntilExit()
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                errPipe.fileHandleForReading.readabilityHandler = nil
-                throw BarkVisorError.timeout(
-                    "Process \(executable.lastPathComponent) timed out after \(Int(timeout))s",
-                )
+                timeoutExceeded = timeout
             }
         }
-        process.waitUntilExit()
-
         outPipe.fileHandleForReading.readabilityHandler = nil
         errPipe.fileHandleForReading.readabilityHandler = nil
+        process.waitUntilExit()
+        if let timeoutExceeded {
+            throw BarkVisorError.timeout(
+                "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
+            )
+        }
         let leftoverOut = outPipe.fileHandleForReading.readDataToEndOfFile()
         let leftoverErr = errPipe.fileHandleForReading.readDataToEndOfFile()
         if !leftoverOut.isEmpty { stdoutBox.append(leftoverOut) }
