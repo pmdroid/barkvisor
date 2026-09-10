@@ -27,7 +27,7 @@ enum ComposePorts {
         let image = stringValue(service["image"]) ?? ""
         guard isPlexImage(image) else { return }
         service.removeValue(forKey: "network_mode")
-        if parsePorts(service["ports"]).isEmpty {
+        if try parsePorts(service["ports"]).isEmpty {
             service["ports"] = ["32400:32400"]
         }
     }
@@ -36,7 +36,7 @@ enum ComposePorts {
         if let value, !(value is NSNull), !(value is [Any]) {
             throw BarkVisorError.badRequest("unsupported compose feature: ports")
         }
-        let parsed = parsePorts(value)
+        let parsed = try parsePorts(value)
         if parsed.isEmpty {
             return Rewrite(mapping: [], published: [])
         }
@@ -165,17 +165,20 @@ enum ComposePorts {
         return name == "plex" || name == "pms-docker"
     }
 
-    static func parsePorts(_ value: Any?) -> [PublishedPort] {
+    static func parsePorts(_ value: Any?) throws -> [PublishedPort] {
         guard let value, !(value is NSNull) else { return [] }
         let items: [Any]
         if let array = value as? [Any] {
             items = array
         } else {
-            return []
+            throw BarkVisorError.badRequest("unsupported compose feature: ports")
         }
         var result: [PublishedPort] = []
         for item in items {
-            if let text = stringValue(item), let port = parsePortString(text) {
+            if let text = stringValue(item) {
+                guard let port = parsePortString(text) else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
+                }
                 result.append(port)
                 continue
             }
@@ -183,13 +186,17 @@ enum ComposePorts {
                 let published = intValue(object["published"]) ?? intValue(object["host_port"])
                 let target = intValue(object["target"]) ?? intValue(object["container_port"])
                 let proto = (stringValue(object["protocol"]) ?? "tcp").lowercased()
-                if let published, let target, (1 ... 65_535).contains(published),
-                   (1 ... 65_535).contains(target) {
-                    result.append(
-                        PublishedPort(hostPort: published, containerPort: target, proto: proto),
-                    )
+                guard let published, let target, (1 ... 65_535).contains(published),
+                      (1 ... 65_535).contains(target)
+                else {
+                    throw BarkVisorError.badRequest("unsupported compose feature: ports")
                 }
+                result.append(
+                    PublishedPort(hostPort: published, containerPort: target, proto: proto),
+                )
+                continue
             }
+            throw BarkVisorError.badRequest("unsupported compose feature: ports")
         }
         return result
     }

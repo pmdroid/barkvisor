@@ -62,10 +62,17 @@ public enum ApplicationLifecycleService {
 
     public static func start(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await startLocked(vm: &current, db: db, dataDir: dataDir)
-            return current
+        do {
+            vm = try await serial.run { () -> VM in
+                var current = snapshot
+                try await startLocked(vm: &current, db: db, dataDir: dataDir)
+                return current
+            }
+        } catch {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+                vm = stored
+            }
+            throw error
         }
     }
 
@@ -80,10 +87,17 @@ public enum ApplicationLifecycleService {
 
     public static func restart(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await restartLocked(vm: &current, db: db, dataDir: dataDir)
-            return current
+        do {
+            vm = try await serial.run { () -> VM in
+                var current = snapshot
+                try await restartLocked(vm: &current, db: db, dataDir: dataDir)
+                return current
+            }
+        } catch {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+                vm = stored
+            }
+            throw error
         }
     }
 
