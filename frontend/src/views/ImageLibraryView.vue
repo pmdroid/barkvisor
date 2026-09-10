@@ -655,6 +655,7 @@ async function doDeleteImage() {
     </tbody>
   </table>
   </div>
+  <p v-else-if="listLoading" class="ops-sub">Loading images…</p>
   </template>
   </div>
 

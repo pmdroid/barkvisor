@@ -26,6 +26,18 @@ struct DeviceDetailView: View {
                 }
             }
 
+            if let doctor = device.doctor, !doctor.ok, !doctor.failures.isEmpty {
+                Section("Missing dependencies") {
+                    ForEach(doctor.failures, id: \.id) { failure in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(failure.id)
+                            Text(failure.detail)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             if device.isSelf || device.isReachable {
                 DiskDirectorySection(device: device)
                     .id(device.hostId)

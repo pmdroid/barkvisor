@@ -22,6 +22,24 @@ struct DashboardView: View {
                 }
             }
 
+            if !missingDeps.isEmpty {
+                Section("Missing dependencies") {
+                    ForEach(missingDeps) { device in
+                        NavigationLink {
+                            DeviceDetailView(deviceID: device.hostId, fallbackDevice: device)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(device.title)
+                                if let detail = device.doctor?.failures.first?.detail {
+                                    Text(detail)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Section(Copy.device) {
                 if let device = model.selectedDevice {
                     NavigationLink {
@@ -69,6 +87,10 @@ struct DashboardView: View {
 
     private var reachable: Int {
         model.totals?.reachable ?? model.devices.filter(\.isReachable).count
+    }
+
+    private var missingDeps: [HomeDeviceHealthSnapshot] {
+        model.devices.filter { $0.isReachable && $0.doctor?.ok == false && !($0.doctor?.failures.isEmpty ?? true) }
     }
 
     private var recent: [Workload] {

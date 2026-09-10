@@ -1,5 +1,6 @@
 /** Home dashboard health display (PAS-52). */
 
+import type { DoctorReport, HomeDeviceDoctorFailure, HomeDeviceHealthSnapshot } from '../api/types'
 import { DEVICE_LABEL } from './terminology'
 
 /** CPU/memory from the health snapshot. Never GPU occupancy (gpu-devices). */
@@ -96,6 +97,37 @@ export function reachabilityCardClass(code: string | undefined): string {
   if (code === 'ok' || !code) return ''
   if (code === 'memberHTTP') return 'http-error'
   return 'unreachable'
+}
+
+export function doctorFailuresFromReport(
+  report: DoctorReport | null | undefined,
+): HomeDeviceDoctorFailure[] {
+  if (!report?.checks) return []
+  return report.checks
+    .filter((row) => row.status === 'fail')
+    .map((row) => ({ id: row.id, detail: row.detail }))
+}
+
+export function doctorFailures(
+  device: Pick<HomeDeviceHealthSnapshot, 'doctor'> | null | undefined,
+): HomeDeviceDoctorFailure[] {
+  if (!device?.doctor || device.doctor.ok) return []
+  return device.doctor.failures ?? []
+}
+
+export function hasDoctorFailures(
+  device: Pick<HomeDeviceHealthSnapshot, 'doctor'> | null | undefined,
+): boolean {
+  return doctorFailures(device).length > 0
+}
+
+export function doctorBannerTitle(failures: HomeDeviceDoctorFailure[]): string {
+  if (failures.length === 1) return 'Missing required dependency'
+  return `${failures.length} missing required dependencies`
+}
+
+export function doctorBannerSub(failures: HomeDeviceDoctorFailure[]): string {
+  return failures.map((row) => row.detail).filter(Boolean).join(' · ')
 }
 
 export function reachabilityHint(

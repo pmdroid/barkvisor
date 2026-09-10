@@ -4567,6 +4567,28 @@ components:
           type: object
           additionalProperties:
             type: integer
+        doctor:
+          $ref: "#/components/schemas/HomeDeviceDoctorSummary"
+
+    HomeDeviceDoctorFailure:
+      type: object
+      required: [id, detail]
+      properties:
+        id:
+          type: string
+        detail:
+          type: string
+
+    HomeDeviceDoctorSummary:
+      type: object
+      required: [ok, failures]
+      properties:
+        ok:
+          type: boolean
+        failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeDeviceDoctorFailure"
 
     HomeDeviceFeatureSummary:
       type: object
