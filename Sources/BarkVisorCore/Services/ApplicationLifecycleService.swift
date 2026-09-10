@@ -133,7 +133,7 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
-        progress: ((Double) -> Void)? = nil,
+        progress: (@Sendable (Double) -> Void)? = nil,
     ) async throws {
         let snapshot = vm
         vm = try await serial.run { () -> VM in
@@ -348,7 +348,7 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
-        progress: ((Double) -> Void)?,
+        progress: (@Sendable (Double) -> Void)?,
     ) async throws {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
