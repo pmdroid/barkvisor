@@ -53,7 +53,6 @@ final class WorkloadApplyServiceTests {
         DockerInspect.jsonForContainers = DockerInspect.liveJSON
         ComposeTestIsolation.lock.unlock()
         try? FileManager.default.removeItem(at: tmpDir)
-        ComposeTestIsolation.lock.unlock()
     }
 
     // MARK: - Parse / merge
