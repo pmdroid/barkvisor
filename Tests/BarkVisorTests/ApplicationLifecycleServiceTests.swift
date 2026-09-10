@@ -110,17 +110,17 @@ final class ApplicationLifecycleServiceTests {
 
     @Test func `restart inspect failure releases PortRegistry claims`() async throws {
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(
-                os: "Linux",
-                dockerPath: "/usr/bin/docker",
-                dockerVersion: "27.0.0",
-                daemonRunning: true,
-                composeVersion: "Docker Compose version v2.29.7",
-                composeOK: true,
-            )
-        }
-        ComposeRuntime.runner = SucceedingComposeRunner()
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = SucceedingComposeRunner()
+        ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
@@ -146,34 +146,38 @@ final class ApplicationLifecycleServiceTests {
         try await db.write { db in try seed.insert(db) }
 
         let inspect = RestartInspect()
-        try await DockerInspectTestGate.withStub({ names in
-            try inspect.data(for: names)
-        }) {
-            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
-            let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
-            #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-            #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
-
-            inspect.fail = true
-            do {
-                try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
-                Issue.record("expected restart inspect failure")
-            } catch {
-                if let stored = try await db.read({ db in
-                    try VM.fetchOne(db, key: "whoami-restart")
+        try await DockerEngine.$snapshotOverride.withValue(snap) {
+            try await ComposeRuntime.$runnerOverride.withValue(compose) {
+                try await DockerInspectTestGate.withStub({ names in
+                    try inspect.data(for: names)
                 }) {
-                    vm = stored
-                } else {
-                    Issue.record("whoami-restart row missing after restart failure")
+                    try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+                    let afterStart = try await db.read { db in try PortRegistry.claims(db: db) }
+                    #expect(afterStart.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+                    #expect(afterStart.contains { $0.hostPort == 51_900 && $0.proto == "udp" })
+
+                    inspect.fail = true
+                    do {
+                        try await ApplicationLifecycleService.restart(vm: &vm, db: db, dataDir: tmp)
+                        Issue.record("expected restart inspect failure")
+                    } catch {
+                        if let stored = try await db.read({ db in
+                            try VM.fetchOne(db, key: "whoami-restart")
+                        }) {
+                            vm = stored
+                        } else {
+                            Issue.record("whoami-restart row missing after restart failure")
+                        }
+                        let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+                        #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
+                        #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
+                        #expect(vm.decodedPortForwards.isEmpty)
+                        try await PortRegistry.assertAvailable(
+                            [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
+                            db: db,
+                        )
+                    }
                 }
-                let claims = try await db.read { db in try PortRegistry.claims(db: db) }
-                #expect(!claims.contains { $0.hostPort == 58_080 && $0.workloadId == "whoami-restart" })
-                #expect(!claims.contains { $0.hostPort == 51_900 && $0.workloadId == "whoami-restart" })
-                #expect(vm.decodedPortForwards.isEmpty)
-                try await PortRegistry.assertAvailable(
-                    [PortForwardRule(protocol: "tcp", hostPort: 58_080, guestPort: 80)],
-                    db: db,
-                )
             }
         }
     }
@@ -221,17 +225,17 @@ final class ApplicationLifecycleServiceTests {
 
     @Test func `start allows catalog host folder binds from sharedPaths`() async throws {
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(
-                os: "Linux",
-                dockerPath: "/usr/bin/docker",
-                dockerVersion: "27.0.0",
-                daemonRunning: true,
-                composeVersion: "Docker Compose version v2.29.7",
-                composeOK: true,
-            )
-        }
-        ComposeRuntime.runner = SucceedingComposeRunner()
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = SucceedingComposeRunner()
+        ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
             DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
@@ -260,13 +264,17 @@ final class ApplicationLifecycleServiceTests {
         let seed = vm
         try await db.write { db in try seed.insert(db) }
 
-        try await DockerInspectTestGate.withStub({ names in
-            let objects: [[String: Any]] = names.map { _ in
-                ["NetworkSettings": ["Ports": [:] as [String: Any]]]
+        try await DockerEngine.$snapshotOverride.withValue(snap) {
+            try await ComposeRuntime.$runnerOverride.withValue(compose) {
+                try await DockerInspectTestGate.withStub({ names in
+                    let objects: [[String: Any]] = names.map { _ in
+                        ["NetworkSettings": ["Ports": [:] as [String: Any]]]
+                    }
+                    return try JSONSerialization.data(withJSONObject: objects)
+                }) {
+                    try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+                }
             }
-            return try JSONSerialization.data(withJSONObject: objects)
-        }) {
-            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
         }
         #expect(vm.state == "running")
         let written = try String(

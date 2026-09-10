@@ -26,30 +26,33 @@ final class ApplicationUpdateKeepVolumesTests {
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         ComposeRuntime.runner = LiveComposeCommandRunner()
         DockerCLI.runner = LiveDockerCommandRunner()
+        ComposeRuntime.labeledStatesProvider = nil
         DockerInspect.jsonForContainers = DockerInspect.liveJSON
         try? FileManager.default.removeItem(at: dataDir)
         ComposeTestIsolation.lock.unlock()
     }
 
     private func withStubs<T>(_ body: () async throws -> T) async throws -> T {
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(
-                os: "Linux",
-                dockerPath: "/usr/bin/docker",
-                dockerVersion: "27.0.0",
-                daemonRunning: true,
-                composeVersion: "Docker Compose version v2.29.7",
-                composeOK: true,
-            )
-        }
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
         ComposeRuntime.runner = runner
         DockerCLI.runner = docker
+        ComposeRuntime.labeledStatesProvider = { [:] }
         let inspectJSON: @Sendable ([String]) throws -> Data = { _ in Data("[]".utf8) }
         DockerInspect.jsonForContainers = inspectJSON
-        return try await ComposeRuntime.$runnerOverride.withValue(runner) {
-            try await DockerCLI.$runnerOverride.withValue(docker) {
-                try await DockerInspect.$jsonOverride.withValue(inspectJSON) {
-                    try await body()
+        return try await DockerEngine.$snapshotOverride.withValue(snap) {
+            try await ComposeRuntime.$runnerOverride.withValue(runner) {
+                try await DockerCLI.$runnerOverride.withValue(docker) {
+                    try await DockerInspect.$jsonOverride.withValue(inspectJSON) {
+                        try await body()
+                    }
                 }
             }
         }

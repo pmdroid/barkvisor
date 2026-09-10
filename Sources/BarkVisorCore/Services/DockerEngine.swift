@@ -39,12 +39,13 @@ public struct DockerEngineSnapshot: Sendable, Equatable {
 }
 
 public enum DockerEngine {
+    @TaskLocal public static var snapshotOverride: DockerEngineSnapshot?
     public nonisolated(unsafe) static var snapshotProvider: @Sendable () -> DockerEngineSnapshot = {
         liveSnapshot()
     }
 
     public static func snapshot() -> DockerEngineSnapshot {
-        snapshotProvider()
+        snapshotOverride ?? snapshotProvider()
     }
 
     public static func liveSnapshot() -> DockerEngineSnapshot {
