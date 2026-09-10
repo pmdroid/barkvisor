@@ -81,7 +81,8 @@ struct LinuxServerAppCatalogTests {
     @Test func `nextcloud opens https on 443 and requires data`() throws {
         let nextcloud = try #require(try LinuxServerAppCatalog.load().apps.first { $0.id == "nextcloud" })
         #expect(nextcloud.ui.scheme == "https")
-        #expect(nextcloud.ui.proxy == "prefix")
+        #expect(nextcloud.ui.proxy == "direct")
+        #expect(nextcloud.ui.basePathEnv.contains("TRUSTED_PROXIES"))
         #expect(nextcloud.ports.contains { $0.container == 443 && $0.ui })
         let fields = AppTemplate.fields(from: nextcloud)
         #expect(fields.contains { $0.volumePath == "/data" && $0.required })

@@ -52,7 +52,7 @@
       "OVERWRITEPROTOCOL"
     ],
     "path": "",
-    "proxy": "prefix",
+    "proxy": "direct",
     "scheme": "https",
     "tips": {}
   },
