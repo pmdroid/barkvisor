@@ -396,6 +396,9 @@ struct VMController: RouteCollection {
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,
             )
+            if vm.isApplication {
+                try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
+            }
         }
 
         AuditService.log(
