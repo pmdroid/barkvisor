@@ -278,6 +278,34 @@ final class ApplicationLifecycleServiceTests {
         #expect(written.contains("/movies"))
     }
 
+    @Test func `updateVMSpec keeps redacted application secrets`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-secret")
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+        """
+        var stored = WorkloadSpecProjector.fromVM(vm)
+        stored.spec.env = ["DB_PASSWORD": "keep-me", "PUID": "1000"]
+        vm.specJson = WorkloadSpecJSON.encode(stored)
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        var incoming = WorkloadSpecProjector.fromVM(vm)
+        incoming.spec.env = ["DB_PASSWORD": "***", "PUID": "501"]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "whoami-secret", spec: incoming, db: db,
+        )
+        #expect(WorkloadSpecJSON.decode(updated.specJson)?.spec.env?["DB_PASSWORD"] == "keep-me")
+        #expect(WorkloadSpecJSON.decode(updated.specJson)?.spec.env?["PUID"] == "501")
+    }
+
     @Test func `start refuses a deleting application`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
