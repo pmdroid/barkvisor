@@ -1,6 +1,12 @@
 ---
 import '../styles/landing.css';
 import PostHog from '../components/posthog.astro';
+const site = Astro.site ?? new URL('https://barkvisor.dev/');
+const pageUrl = new URL('/', site).href;
+const ogImage = new URL('/og-image.png', site).href;
+const ogTitle = 'BarkVisor — Home virtualization for every Device';
+const ogDescription =
+  'Pair Devices into a Home. Create Workloads from one dashboard. Each machine keeps running on its own.';
 ---
 
 <!doctype html>
@@ -17,21 +23,24 @@ import PostHog from '../components/posthog.astro';
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="canonical" href={pageUrl} />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="BarkVisor — Home virtualization for every Device" />
-    <meta
-      property="og:description"
-      content="Pair Devices into a Home. Create Workloads from one dashboard. Each machine keeps running on its own."
-    />
-    <meta property="og:image" content="https://barkvisor.dev/og-image.png" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="BarkVisor — Home virtualization for every Device" />
-    <meta
-      name="twitter:description"
-      content="Pair Devices into a Home. Create Workloads from one dashboard. Each machine keeps running on its own."
-    />
-    <meta name="twitter:image" content="https://barkvisor.dev/og-image.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <meta property="og:site_name" content="BarkVisor" />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={ogDescription} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:secure_url" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="BarkVisor" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={ogDescription} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content="BarkVisor" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"

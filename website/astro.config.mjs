@@ -102,6 +102,7 @@ export default defineConfig({
           attrs: {
             rel: 'preconnect',
             href: 'https://fonts.googleapis.com',
+            crossorigin: 'anonymous',
           },
         },
         {
