@@ -61,19 +61,16 @@ struct DockerStatsTests {
         #expect(totals.networkTxBytes == 3_000)
     }
 
-    @Test func `snapshot sums the compose project containers`() throws {
-        ComposeTestIsolation.lock.lock()
-        defer {
-            ComposeTestIsolation.installFailFast()
-            ComposeTestIsolation.lock.unlock()
+    @Test func `snapshot sums the compose project containers`() async throws {
+        let totals = try await ComposeSerialGate.run {
+            ComposeRuntime.runner = StatsComposeRunner(ids: ["aaa", "bbb"])
+            DockerCLI.runner = StatsDockerRunner(output: """
+            {"CPUPerc":"2.50%","MemUsage":"128MiB / 4GiB","Name":"c1","NetIO":"10kB / 20kB"}
+            {"CPUPerc":"0.50%","MemUsage":"128MiB / 4GiB","Name":"c2","NetIO":"5kB / 6kB"}
+            """)
+        } operation: {
+            try #require(DockerStats.snapshot(id: "app-1", project: "barkvisor-app1"))
         }
-        ComposeRuntime.runner = StatsComposeRunner(ids: ["aaa", "bbb"])
-        DockerCLI.runner = StatsDockerRunner(output: """
-        {"CPUPerc":"2.50%","MemUsage":"128MiB / 4GiB","Name":"c1","NetIO":"10kB / 20kB"}
-        {"CPUPerc":"0.50%","MemUsage":"128MiB / 4GiB","Name":"c2","NetIO":"5kB / 6kB"}
-        """)
-
-        let totals = try #require(DockerStats.snapshot(id: "app-1", project: "barkvisor-app1"))
         #expect(totals.containerCount == 2)
         #expect(totals.cpuPercent == 3.0)
         #expect(totals.memoryUsedBytes == 2 * 134_217_728)
@@ -82,14 +79,13 @@ struct DockerStatsTests {
         #expect(totals.networkTxBytes == 26_000)
     }
 
-    @Test func `snapshot is nil without running containers`() {
-        ComposeTestIsolation.lock.lock()
-        defer {
-            ComposeTestIsolation.installFailFast()
-            ComposeTestIsolation.lock.unlock()
+    @Test func `snapshot is nil without running containers`() async {
+        let snapshot = await ComposeSerialGate.run {
+            ComposeRuntime.runner = StatsComposeRunner(ids: [])
+        } operation: {
+            DockerStats.snapshot(id: "app-1", project: "barkvisor-app1")
         }
-        ComposeRuntime.runner = StatsComposeRunner(ids: [])
-        #expect(DockerStats.snapshot(id: "app-1", project: "barkvisor-app1") == nil)
+        #expect(snapshot == nil)
     }
 
     @Test func `metric samples decode payloads without network fields`() throws {
@@ -136,23 +132,29 @@ struct DockerStatsTests {
     }
 
     @Test func `startApp records collection until stopApp`() async {
-        ComposeTestIsolation.installFailFast()
-        let collector = MetricsCollector()
-        await collector.startApp(id: "app-1", project: "barkvisor-app1")
-        #expect(await collector.isCollectingApp("app-1"))
-        await collector.stopApp("app-1")
-        #expect(await collector.isCollectingApp("app-1") == false)
-        #expect(await collector.latestSamples()["app-1"] == nil)
+        await ComposeSerialGate.run {
+            ComposeTestIsolation.installFailFast()
+        } operation: {
+            let collector = MetricsCollector()
+            await collector.startApp(id: "app-1", project: "barkvisor-app1")
+            #expect(await collector.isCollectingApp("app-1"))
+            await collector.stopApp("app-1")
+            #expect(await collector.isCollectingApp("app-1") == false)
+            #expect(await collector.latestSamples()["app-1"] == nil)
+        }
     }
 
     @Test func `stop does not cancel an unrelated app collector`() async {
-        ComposeTestIsolation.installFailFast()
-        let collector = MetricsCollector()
-        await collector.startApp(id: "app-keep", project: "barkvisor-appkeep")
-        await collector.stop(vmID: "vm-other")
-        #expect(await collector.isCollectingApp("app-keep"))
-        await collector.stopApp("app-keep")
-        #expect(await collector.isCollectingApp("app-keep") == false)
+        await ComposeSerialGate.run {
+            ComposeTestIsolation.installFailFast()
+        } operation: {
+            let collector = MetricsCollector()
+            await collector.startApp(id: "app-keep", project: "barkvisor-appkeep")
+            await collector.stop(vmID: "vm-other")
+            #expect(await collector.isCollectingApp("app-keep"))
+            await collector.stopApp("app-keep")
+            #expect(await collector.isCollectingApp("app-keep") == false)
+        }
     }
 }
 

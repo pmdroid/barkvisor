@@ -5,15 +5,16 @@ import Testing
 
 @Suite(.serialized)
 final class ApplicationLifecycleServiceTests {
-    init() {
-        ComposeTestIsolation.lock.lock()
+    init() async {
+        await ComposeSerialGate.acquire()
+        ComposeTestIsolation.installFailFast()
     }
 
     deinit {
         HostInfoService.lanBindIPv4Provider = nil
         DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
         ComposeTestIsolation.installFailFast()
-        ComposeTestIsolation.lock.unlock()
+        Task { await ComposeSerialGate.release() }
     }
 
     @Test func `prepare rewrites published ports onto 0.0.0.0`() throws {
