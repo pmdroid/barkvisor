@@ -15,10 +15,17 @@ function parseRole(raw: unknown): UserRole {
   return 'inference'
 }
 
+function syncIngressCookie(value: string) {
+  if (typeof document === 'undefined') return
+  if (value) document.cookie = `barkvisor=${value}; Path=/; SameSite=Lax`
+  else document.cookie = 'barkvisor=; Path=/; Max-Age=0; SameSite=Lax'
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const refreshToken = ref(localStorage.getItem(REFRESH_TOKEN_KEY) || '')
   const role = ref<UserRole | ''>((localStorage.getItem(USER_ROLE_KEY) as UserRole | null) || '')
+  if (token.value) syncIngressCookie(token.value)
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => role.value === 'admin')
@@ -30,9 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('token', nextToken)
     if (nextRefresh) localStorage.setItem(REFRESH_TOKEN_KEY, nextRefresh)
     else localStorage.removeItem(REFRESH_TOKEN_KEY)
-    if (typeof document !== 'undefined') {
-      document.cookie = `barkvisor=${nextToken}; Path=/; SameSite=Lax`
-    }
+    syncIngressCookie(nextToken)
   }
 
   function persistRole(next: UserRole) {
@@ -49,9 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token')
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_ROLE_KEY)
-    if (typeof document !== 'undefined') {
-      document.cookie = 'barkvisor=; Path=/; Max-Age=0; SameSite=Lax'
-    }
+    syncIngressCookie('')
   }
 
   async function fetchMe(): Promise<void> {
