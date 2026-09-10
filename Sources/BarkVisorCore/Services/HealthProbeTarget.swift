@@ -71,6 +71,12 @@ public enum HealthProbeTarget: Equatable, Sendable {
         if let rule = vm.decodedPortForwards.first(where: {
             $0.protocol == "tcp" && $0.guestPort == port
         }) {
+            if vm.isApplication {
+                guard let lan = HostInfoService.lanBindIPv4(), !ComposePorts.isWildcardHost(lan) else {
+                    return nil
+                }
+                return Resolved(host: lan, port: rule.hostPort, via: "publish")
+            }
             return Resolved(host: "127.0.0.1", port: rule.hostPort, via: "hostfwd")
         }
         guard policy.allowGuestReportedIPs else { return nil }

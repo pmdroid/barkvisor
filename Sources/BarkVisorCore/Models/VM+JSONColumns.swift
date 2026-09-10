@@ -69,7 +69,11 @@ extension VM {
     }
 
     public mutating func setPortForwards(_ rules: [PortForwardRule]?) {
-        portForwards = JSONColumnCoding.encodeArrayOrNil(rules)
+        if let rules, !rules.isEmpty {
+            portForwards = JSONColumnCoding.encode(rules)
+        } else {
+            portForwards = "[]"
+        }
     }
 
     public mutating func setUSBDevices(_ devices: [USBPassthroughDevice]?) {

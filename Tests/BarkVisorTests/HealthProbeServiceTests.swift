@@ -53,6 +53,19 @@ struct HealthProbeServiceTests {
         #expect(!results.configured)
     }
 
+    @Test func `application published port probes the LAN bind`() {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        defer { HostInfoService.lanBindIPv4Provider = nil }
+        var vm = makeVM(forwards: [
+            PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+        ])
+        vm.kind = WorkloadSpec.kindApplication
+        let target = HealthProbeTarget.resolve(port: 80, vm: vm, guestIPs: ["10.0.2.15"])
+        #expect(target?.host == "192.168.8.10")
+        #expect(target?.port == 8_080)
+        #expect(target?.via == "publish")
+    }
+
     @Test func `hostfwd is preferred over guest ip`() {
         let vm = makeVM(forwards: [
             PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 8_080),

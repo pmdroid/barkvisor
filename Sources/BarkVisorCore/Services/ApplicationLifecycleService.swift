@@ -35,6 +35,7 @@ public enum ApplicationLifecycleService {
             yaml: composeYaml,
             workloadID: id,
             stateDir: dir,
+            bindHost: nil,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -61,10 +62,17 @@ public enum ApplicationLifecycleService {
 
     public static func start(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await startLocked(vm: &current, db: db, dataDir: dataDir)
-            return current
+        do {
+            vm = try await serial.run { () -> VM in
+                var current = snapshot
+                try await startLocked(vm: &current, db: db, dataDir: dataDir)
+                return current
+            }
+        } catch {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+                vm = stored
+            }
+            throw error
         }
     }
 
@@ -79,10 +87,17 @@ public enum ApplicationLifecycleService {
 
     public static func restart(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
         let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await restartLocked(vm: &current, db: db, dataDir: dataDir)
-            return current
+        do {
+            vm = try await serial.run { () -> VM in
+                var current = snapshot
+                try await restartLocked(vm: &current, db: db, dataDir: dataDir)
+                return current
+            }
+        } catch {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+                vm = stored
+            }
+            throw error
         }
     }
 
@@ -143,6 +158,21 @@ public enum ApplicationLifecycleService {
         }
     }
 
+    static func verifyInspectedBinds(
+        containerNames: [String],
+        bindHost: String,
+        expected: [PublishedPort],
+    ) throws {
+        let data = try DockerInspect.jsonForContainers(containerNames)
+        let bindings = try ComposePorts.parseInspectBindings(data)
+        try ComposePorts.requireLANHostIP(
+            bindings,
+            bindHost: bindHost,
+            expected: expected,
+            allowWildcard: true,
+        )
+    }
+
     public static func openURL(from ports: [PublishedPort]) -> String? {
         ports.compactMap(\.openURL).first
     }
@@ -183,8 +213,14 @@ public enum ApplicationLifecycleService {
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try verifyInspectedBinds(
+                containerNames: render.containerNames,
+                bindHost: render.bindHost,
+                expected: render.publishedPorts,
+            )
             try await setState(&vm, state: "running", error: nil, db: db)
         } catch {
+            try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             vm.setPortForwards(nil)
             try await setState(&vm, state: "error", error: message, db: db)
@@ -223,9 +259,16 @@ public enum ApplicationLifecycleService {
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
+            try verifyInspectedBinds(
+                containerNames: render.containerNames,
+                bindHost: render.bindHost,
+                expected: render.publishedPorts,
+            )
             try await setState(&vm, state: "running", error: nil, db: db)
         } catch {
+            try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+            vm.setPortForwards(nil)
             try await setState(&vm, state: "error", error: message, db: db)
             throw error
         }
@@ -284,6 +327,10 @@ public enum ApplicationLifecycleService {
                 return false
             }
             try persisted.update(db)
+            try VM.filter(key: persisted.id).updateAll(
+                db,
+                Column("portForwards").set(to: persisted.portForwards),
+            )
             return true
         }
         if !applied {

@@ -14,6 +14,36 @@ struct HostInfoServiceTests {
         #endif
     }
 
+    @Test func `lan bind skips docker veth and loopback`() {
+        let interfaces = [
+            HostInterfaceInfo(name: "lo", ipAddress: "127.0.0.1"),
+            HostInterfaceInfo(name: "docker0", ipAddress: "172.17.0.1"),
+            HostInterfaceInfo(name: "veth0abc", ipAddress: "172.18.0.1"),
+            HostInterfaceInfo(name: "br-1234abcd5678", ipAddress: "172.19.0.1"),
+            HostInterfaceInfo(name: "eth0", ipAddress: "192.168.8.10"),
+            HostInterfaceInfo(name: "tailscale0", ipAddress: "100.64.1.2"),
+        ]
+        #expect(HostInfoService.pickLanBindIPv4(from: interfaces) == "192.168.8.10")
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("docker0"))
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("docker_gwbridge"))
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("veth1a2b"))
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("cni0"))
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("flannel.1"))
+        #expect(LinuxHostNetwork.isHiddenContainerInterface("br-1234abcd5678"))
+        #expect(!LinuxHostNetwork.isHiddenContainerInterface("eth0"))
+        #expect(!LinuxHostNetwork.isHiddenContainerInterface("br0"))
+        #expect(!LinuxHostNetwork.isHiddenContainerInterface("br-lan"))
+        #expect(!LinuxHostNetwork.isHiddenContainerInterface("en0"))
+    }
+
+    @Test func `lan bind does not use docker RFC1918 when it is the only private address`() {
+        let interfaces = [
+            HostInterfaceInfo(name: "lo", ipAddress: "127.0.0.1"),
+            HostInterfaceInfo(name: "docker0", ipAddress: "172.17.0.1"),
+        ]
+        #expect(HostInfoService.pickLanBindIPv4(from: interfaces) == nil)
+    }
+
     @Test func `list interfaces returns at least loopback`() {
         let interfaces = HostInfoService.listInterfaces()
         #expect(!interfaces.isEmpty, "Should find at least one network interface")

@@ -359,10 +359,12 @@ public enum WorkloadSpecProjector {
             try WorkloadHealthSpec.validate(health)
         }
         let dummy = URL(fileURLWithPath: "/tmp/barkvisor-compose-validate/\(existingID ?? "new")")
+        let bindHost = "0.0.0.0"
         _ = try ComposeAllowlist.render(
             yaml: spec.spec.compose ?? "",
             workloadID: existingID ?? spec.metadata.id ?? "new",
             stateDir: dummy,
+            bindHost: bindHost,
         )
     }
 

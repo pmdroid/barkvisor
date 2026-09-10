@@ -150,6 +150,49 @@ public enum HostInfoService {
         return out
     }
 
+    public nonisolated(unsafe) static var lanBindIPv4Provider: (@Sendable () -> String?)?
+
+    public static func lanBindIPv4(
+        from interfaces: [HostInterfaceInfo]? = nil,
+    ) -> String? {
+        if interfaces == nil, let provider = lanBindIPv4Provider {
+            return provider()
+        }
+        return pickLanBindIPv4(from: interfaces ?? listInterfaceAddresses())
+    }
+
+    public static func requireLanBindIPv4(
+        from interfaces: [HostInterfaceInfo]? = nil,
+    ) throws -> String {
+        guard let ip = lanBindIPv4(from: interfaces) else {
+            throw BarkVisorError.badRequest("No LAN address to bind published ports")
+        }
+        try ComposePorts.requireBindHost(ip)
+        return ip
+    }
+
+    public static func pickLanBindIPv4(from interfaces: [HostInterfaceInfo]) -> String? {
+        let usable = interfaces.filter { iface in
+            if LinuxHostNetwork.isHiddenContainerInterface(iface.name) { return false }
+            let name = iface.name
+            if name == "lo" || name == "lo0" || name == "Loopback" { return false }
+            return true
+        }
+        let advertised = PairingAddresses.advertisedIPv4(from: usable)
+        let v4 = advertised.filter { !$0.contains(":") }
+        if let rfc1918 = v4.first(where: isPrivateLANIPv4) { return rfc1918 }
+        return v4.first
+    }
+
+    private static func isPrivateLANIPv4(_ ip: String) -> Bool {
+        let parts = ip.split(separator: ".").compactMap { UInt8($0) }
+        guard parts.count == 4 else { return false }
+        if parts[0] == 10 { return true }
+        if parts[0] == 192, parts[1] == 168 { return true }
+        if parts[0] == 172, (16 ... 31).contains(parts[1]) { return true }
+        return false
+    }
+
     /// List all IPv4 network interfaces on this host.
     public static func listInterfaces() -> [HostInterfaceInfo] {
         #if os(Windows)
