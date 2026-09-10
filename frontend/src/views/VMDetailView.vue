@@ -17,6 +17,9 @@ import {
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { firstOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
+import { appCatalogSource, appEnvSummary, isSecretEnvKey } from '../utils/appDetail'
+import { parseComposeMounts } from '../utils/composeMounts'
+import AppDetailOverview from '../components/AppDetailOverview.vue'
 import { shortDigest } from '../utils/composeLogs'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
@@ -1312,6 +1315,10 @@ const guestMacCopy = computed(() =>
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
 const openUi = computed(() => (vm.value ? firstOpenUrl(vm.value) : null))
+const appCatalog = computed(() => (vm.value ? appCatalogSource(vm.value) : null))
+const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
+const appMounts = computed(() => parseComposeMounts(vm.value?.spec?.spec?.compose ?? ''))
+const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
 const updatingApp = ref(false)
 
@@ -1416,6 +1423,7 @@ const healthBanner = computed(() => {
       </button>
       <h1>{{ vm.name }}</h1>
       <span v-if="isApp" class="badge badge-green">App</span>
+      <span v-if="isApp && appCatalog" class="badge badge-gray">{{ appCatalog }}</span>
       <span
         class="status-pill"
         :class="healthPillClass(vmHealth(vm))"
@@ -1443,7 +1451,7 @@ const healthBanner = computed(() => {
           v-if="isApp && openUi && vm.state === 'running'"
           variant="primary"
           @click="openAppUi"
-        >Open UI</AppButton>
+        >Open UI ↗</AppButton>
         <AppButton
           v-if="isApp && vm.updateAvailable && vm.state === 'running'"
           :disabled="controlDisabled || updatingApp"
@@ -1471,6 +1479,8 @@ const healthBanner = computed(() => {
       <div v-if="!isApp" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
@@ -1478,9 +1488,29 @@ const healthBanner = computed(() => {
       <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
+      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
     </div>
 
-    <div v-if="tab === 'overview'" class="twins">
+    <div v-if="tab === 'overview' && isApp" class="col-stack">
+      <div v-if="healthBanner" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+        <div>
+          <div class="ops-banner-title"><span class="ops-dot bad pulse"></span>{{ healthBanner.title }}</div>
+          <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
+        </div>
+      </div>
+      <div v-if="vm.updateAvailable" class="ops-banner amber">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+        <div>
+          <div class="ops-banner-title">Catalog image is newer than the running image</div>
+          <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
+        </div>
+      </div>
+      <AppDetailOverview :vm="vm" />
+    </div>
+
+    <div v-else-if="tab === 'overview'" class="twins">
       <div class="col-stack">
         <div v-if="healthBanner" class="ops-banner">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
@@ -1915,6 +1945,27 @@ const healthBanner = computed(() => {
         <div class="ops-banner-sub">Running <span class="mono">{{ shortDigest(vm.digest) }}</span> · Catalog <span class="mono">{{ shortDigest(vm.catalogDigest) }}</span> · Update recreates the container, volumes and config are kept.</div>
       </div>
       <AppButton v-if="vm.state === 'running'" size="sm" style="margin-left:auto;flex-shrink:0" :disabled="controlDisabled || updatingApp" :loading="updatingApp" loading-text="Updating..." @click="action('update', () => updateAppImage())">Update</AppButton>
+    </div>
+    <div v-if="tab === 'environment' && isApp" class="sheet">
+      <div class="sheet-head"><h3>Environment</h3></div>
+      <p class="dim-text" style="padding:12px 14px 0">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
+      <div v-if="appEnvKeys.length === 0" class="dim-text" style="padding:14px">No environment variables recorded.</div>
+      <div v-for="key in appEnvKeys" :key="key" class="detail-row" style="padding:10px 14px">
+        <span class="detail-label">{{ key }}</span>
+        <span class="mono dim-text">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+      </div>
+    </div>
+    <div v-if="tab === 'volumes' && isApp" class="sheet">
+      <div class="sheet-head"><h3>Volumes</h3></div>
+      <div v-if="appMounts.length === 0 && !(vm.volumeRoots ?? []).length" class="dim-text" style="padding:14px">No mounts recorded.</div>
+      <div v-for="(m, i) in appMounts" :key="i" class="detail-row" style="padding:10px 14px">
+        <span class="badge" :class="m.kind === 'bind' ? 'badge-blue' : 'badge-green'">{{ m.kind }}</span>
+        <span class="mono">{{ m.source }} → {{ m.target }}</span>
+      </div>
+      <div v-for="root in (vm.volumeRoots ?? [])" :key="root" class="detail-row" style="padding:10px 14px">
+        <span class="detail-label">Root</span>
+        <span class="mono">{{ root }}</span>
+      </div>
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
@@ -2401,5 +2452,38 @@ const healthBanner = computed(() => {
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-hover, rgba(255, 255, 255, 0.03));
+}
+.app-detail-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.app-ports {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 8px 0;
+}
+.app-ports th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.app-ports td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-secondary);
+}
+.app-ports-note {
+  margin: 0 0 8px;
+  padding: 0 8px;
+}
+@media (max-width: 900px) {
+  .app-detail-cards { grid-template-columns: 1fr; }
 }
 </style>
