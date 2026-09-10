@@ -27,8 +27,13 @@ public struct LiveComposeCommandRunner: ComposeCommandRunning {
 }
 
 public enum ComposeRuntime {
+    @TaskLocal public static var runnerOverride: (any ComposeCommandRunning)?
     public nonisolated(unsafe) static var runner: any ComposeCommandRunning = LiveComposeCommandRunner()
     public nonisolated(unsafe) static var labeledStatesProvider: (() -> [String: String]?)?
+
+    static func currentRunner() -> any ComposeCommandRunning {
+        runnerOverride ?? runner
+    }
 
     public static func projectDirectory(id: String, dataDir: URL = Config.dataDir) -> URL {
         dataDir.appendingPathComponent("workloads", isDirectory: true)
@@ -297,7 +302,7 @@ public enum ComposeRuntime {
             "-f", file,
             "--project-directory", dir.path,
         ] + command
-        return try runner.run(arguments: arguments, projectDirectory: dir, timeout: timeout)
+        return try currentRunner().run(arguments: arguments, projectDirectory: dir, timeout: timeout)
     }
 
     static func decodeComposeState(_ stdout: String) -> String {

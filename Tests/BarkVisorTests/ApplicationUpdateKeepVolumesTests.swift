@@ -45,8 +45,10 @@ final class ApplicationUpdateKeepVolumesTests {
         ComposeRuntime.runner = runner
         DockerCLI.runner = docker
         DockerInspect.jsonForContainers = { _ in Data("[]".utf8) }
-        return try await DockerCLI.$runnerOverride.withValue(docker) {
-            try await body()
+        return try await ComposeRuntime.$runnerOverride.withValue(runner) {
+            try await DockerCLI.$runnerOverride.withValue(docker) {
+                try await body()
+            }
         }
     }
 
