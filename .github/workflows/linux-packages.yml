@@ -91,7 +91,12 @@ jobs:
           barkvisor_inject_config_version "${{ steps.ver.outputs.version }}"
 
       - name: Build release binary
-        run: swift build -c release --product BarkVisorApp
+        run: |
+          # RPATH makes the binary find its bundled Swift runtime in
+          # /usr/local/lib/barkvisor/swift without LD_LIBRARY_PATH, so it
+          # also starts outside systemd (manual runs, tarball installs).
+          swift build -c release --product BarkVisorApp \
+            -Xlinker -rpath -Xlinker '$ORIGIN/../lib/barkvisor/swift'
 
       - name: Build packages
         env:

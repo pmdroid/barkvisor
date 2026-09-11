@@ -36,6 +36,7 @@ RUN if [ -n "${BARKVISOR_VERSION}" ]; then \
       && barkvisor_inject_config_version "${BARKVISOR_VERSION}"; \
     fi
 RUN swift build -c release --product BarkVisorApp \
+    -Xlinker -rpath -Xlinker '$ORIGIN/../lib/barkvisor/swift' \
     && install -d /out \
     && cp -a .build/release/BarkVisorApp /out/BarkVisorApp
 
