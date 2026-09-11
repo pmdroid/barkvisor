@@ -334,7 +334,7 @@ cmd_token() {
   [[ -f "$(meta_file "$name")" ]] || die_usage "no instance named '$name'"
   if [[ "$(read_meta_field authDisabled "$name")" == "true" ]]; then
     : > "$(token_file "$name")"
-    exit 0
+    return 0
   fi
   url="$(read_meta_field url "$name")"
   user="$(read_meta_field adminUser "$name")"
