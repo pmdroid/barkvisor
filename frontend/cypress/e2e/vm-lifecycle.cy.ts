@@ -36,7 +36,7 @@ describe('VM Lifecycle', () => {
       if ($b.find('table').length) {
         cy.get('table thead').should('contain', 'Name')
         cy.get('table thead').should('contain', 'Status')
-        cy.get('table thead').should('contain', 'OS')
+        cy.get('table thead').should('contain', 'Type')
         cy.get('table thead').should('contain', 'CPU')
         cy.get('table thead').should('contain', 'Ports')
       } else {

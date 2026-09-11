@@ -328,7 +328,7 @@ async function doStop() {
         <tr>
           <th>Name</th>
           <th>Device</th>
-          <th>OS</th>
+          <th>Type</th>
           <th>CPU · Mem</th>
           <th>Ports</th>
           <th>Status</th>
