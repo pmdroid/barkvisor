@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import router, { clearSetupCache } from './router'
+import router, { clearSetupCache, refreshFrontDoorStatus } from './router'
 import App from './App.vue'
 import './style.css'
 import { useToastStore } from './stores/toast'
@@ -22,7 +22,15 @@ useCapabilitiesStore().fetchCapabilities()
 
 // Soft redirect on 401 (preserves SPA state instead of full page reload)
 setUnauthorizedHandler(() => {
-  if (useAuthStore().bypassed) return
+  const auth = useAuthStore()
+  if (auth.bypassed) {
+    void refreshFrontDoorStatus().then(() => {
+      if (!auth.bypassed && router.currentRoute.value.name !== 'login') {
+        router.push({ name: 'login' })
+      }
+    })
+    return
+  }
   if (router.currentRoute.value.name !== 'login') {
     router.push({ name: 'login' })
   }

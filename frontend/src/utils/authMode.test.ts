@@ -55,4 +55,9 @@ describe('front-door auth mode', () => {
     expect(setup).toContain('refreshFrontDoorStatus')
     expect(setup).not.toContain('applyBypass(')
   })
+
+  test('a 401 while bypassed re-checks the front door instead of wedging the tab', () => {
+    const main = readFileSync(join(here, '../main.ts'), 'utf8')
+    expect(main).toContain('refreshFrontDoorStatus')
+  })
 })
