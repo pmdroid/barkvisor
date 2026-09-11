@@ -44,4 +44,15 @@ describe('front-door auth mode', () => {
     const app = readFileSync(join(here, '../App.vue'), 'utf8')
     expect(app).toContain('authBannerText')
   })
+
+  test('bypass state comes from the per-request status, not the server mode', () => {
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).not.toContain('syncFrontDoorSession')
+    expect(settings).not.toContain('v-if="securityMode')
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    expect(router).toContain('export async function refreshFrontDoorStatus')
+    const setup = readFileSync(join(here, '../views/SetupView.vue'), 'utf8')
+    expect(setup).toContain('refreshFrontDoorStatus')
+    expect(setup).not.toContain('applyBypass(')
+  })
 })

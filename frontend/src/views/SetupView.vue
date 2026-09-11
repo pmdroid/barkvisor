@@ -19,7 +19,7 @@ import {
 import { getSetupDeviceName, saveSetupDeviceName } from '../api/deviceName'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { clearSetupCache } from '../router'
+import { clearSetupCache, refreshFrontDoorStatus } from '../router'
 import { saveSecuritySettings } from '../api/security'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { isPasskeyAvailable, passkeyBlock, passkeyUnavailableMessage } from '../utils/webauthn'
@@ -194,7 +194,7 @@ async function finishSetup() {
     localStorage.setItem('token', token)
     if (skipSignIn.value) {
       await saveSecuritySettings('loopback', false)
-      authStore.applyBypass('loopback')
+      await refreshFrontDoorStatus()
     }
     router.replace('/dashboard')
   } catch (e: any) {

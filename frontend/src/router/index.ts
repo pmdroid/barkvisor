@@ -90,6 +90,14 @@ export function clearSetupCache() {
   cachedAuthMode = 'secure'
 }
 
+export async function refreshFrontDoorStatus(): Promise<void> {
+  clearSetupCache()
+  await checkSetupRequired()
+  const auth = useAuthStore()
+  if (authDisabled) auth.applyBypass(parseAuthMode(cachedAuthMode))
+  else auth.clearBypass()
+}
+
 router.beforeEach(async (to) => {
   const needsSetup = await checkSetupRequired()
 

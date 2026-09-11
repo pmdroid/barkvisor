@@ -9,6 +9,7 @@ import api, {
   isHomeMemberProxyRequest,
   setUnauthorizedHandler,
 } from '../api/client'
+import { clearFrontDoorBypass } from '../utils/frontDoor'
 import { REFRESH_TOKEN_KEY, useAuthStore } from './auth'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -38,6 +39,7 @@ describe('auth store (PAS-242)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    clearFrontDoorBypass()
   })
 
   afterEach(() => {

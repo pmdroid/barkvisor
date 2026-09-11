@@ -3,6 +3,12 @@ import { ref, computed } from 'vue'
 import api from '../api/client'
 import type { AuthMe, LoginSession, UserRole } from '../api/types'
 import type { AuthMode } from '../utils/authMode'
+import {
+  applyFrontDoorBypass,
+  clearFrontDoorBypass,
+  frontDoorAuthMode,
+  frontDoorBypassed,
+} from '../utils/frontDoor'
 import { getPasskey } from '../utils/webauthn'
 import { useLogStore } from './logs'
 import { useMetricsStore } from './metrics'
@@ -26,8 +32,8 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const refreshToken = ref(localStorage.getItem(REFRESH_TOKEN_KEY) || '')
   const role = ref<UserRole | ''>((localStorage.getItem(USER_ROLE_KEY) as UserRole | null) || '')
-  const bypassed = ref(false)
-  const authMode = ref<AuthMode>('secure')
+  const bypassed = frontDoorBypassed
+  const authMode = frontDoorAuthMode
   if (token.value) syncIngressCookie(token.value)
 
   const isAuthenticated = computed(() => bypassed.value || !!token.value)
@@ -61,14 +67,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function applyBypass(mode: AuthMode) {
-    bypassed.value = mode === 'loopback' || mode === 'disabled'
-    authMode.value = mode
+    applyFrontDoorBypass(mode)
     if (bypassed.value) persistRole('admin')
   }
 
   function clearBypass() {
-    bypassed.value = false
-    authMode.value = 'secure'
+    clearFrontDoorBypass()
   }
 
   async function fetchMe(): Promise<void> {

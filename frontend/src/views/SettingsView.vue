@@ -42,8 +42,8 @@ import { formatDeviceURL } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { getSecuritySettings, saveSecuritySettings } from '../api/security'
 import { parseAuthMode, type AuthMode } from '../utils/authMode'
-import { syncFrontDoorSession } from '../utils/frontDoorSession'
-import { clearSetupCache } from '../router'
+import { refreshFrontDoorStatus } from '../router'
+import { frontDoorBypassed } from '../utils/frontDoor'
 import {
   isCurrentPairingSeq,
   nextPairingLoadSeq,
@@ -745,7 +745,6 @@ async function loadSecurity() {
     const settings = await getSecuritySettings()
     securityMode.value = parseAuthMode(settings.authMode)
     securityEnvLocked.value = settings.envLocked
-    syncFrontDoorSession(securityMode.value)
     await devicesStore.fetchHealth()
     deviceConfirmName.value = homeDeviceName.value
   } catch (e: unknown) {
@@ -769,8 +768,7 @@ async function persistSecurity(next: AuthMode, acknowledged: boolean) {
     const settings = await saveSecuritySettings(next, acknowledged)
     securityMode.value = parseAuthMode(settings.authMode)
     securityEnvLocked.value = settings.envLocked
-    syncFrontDoorSession(securityMode.value)
-    clearSetupCache()
+    await refreshFrontDoorStatus()
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -822,9 +820,9 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
     <button :class="{ active: tab === 'repositories' }" @click="openRepositoriesTab">Repositories</button>
     <button :class="{ active: tab === 'security' }" @click="applySettingsTab('security')">Security</button>
-    <button v-if="securityMode === 'secure'" :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
+    <button v-if="!frontDoorBypassed" :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
-    <button v-if="securityMode === 'secure'" :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
+    <button v-if="!frontDoorBypassed" :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
     <button :class="{ active: tab === 'updates' }" @click="tab = 'updates'">Updates</button>
   </div>
@@ -1039,7 +1037,7 @@ onUnmounted(() => {
       <input type="radio" name="auth-mode" :checked="securityMode === 'disabled'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('disabled')" />
       Skip sign-in for my whole network
     </label>
-    <p v-if="securityMode !== 'secure'" style="color:var(--text-secondary);font-size:13px;margin-top:16px">
+    <p v-if="frontDoorBypassed" style="color:var(--text-secondary);font-size:13px;margin-top:16px">
       Passkeys and API keys are hidden while sign-in is skipped. They come back when you require sign-in again.
     </p>
     <div v-if="securityConfirmOpen" class="modal-overlay stack" @click.self="securityConfirmOpen = false">
