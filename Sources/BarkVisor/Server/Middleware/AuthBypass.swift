@@ -1,4 +1,5 @@
 import BarkVisorCore
+import Foundation
 import Vapor
 
 enum AuthBypass {
@@ -122,6 +123,6 @@ enum AuthModeStartup {
         let line =
             "BarkVisor sign-in is \(mode.rawValue). The HTTP server binds 0.0.0.0. Re-enable sign-in in Settings or unset \(AuthModeStore.envKey)."
         Log.auth.warning(line)
-        fputs("*** \(line)\n", stderr)
+        FileHandle.standardError.write(Data("*** \(line)\n".utf8))
     }
 }
