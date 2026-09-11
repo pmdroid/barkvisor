@@ -121,6 +121,24 @@ barkvisor_stage_install_tree() {
   install -m 0755 "$bin" "$stage/usr/local/bin/barkvisor"
   ln -s barkvisor "$stage/usr/local/bin/barkvisor-agent"
 
+  # SwiftPM resource bundle (openapi.yaml, workload spec schema, app
+  # catalog). Bundle.module looks next to the executable at runtime; a
+  # missing bundle is a fatalError crash loop on first resource access.
+  local res_candidates=(
+    "$(dirname "$bin")/BarkVisor_BarkVisorCore.resources"
+    "$ROOT/.build/release/BarkVisor_BarkVisorCore.resources"
+  )
+  local res_src=""
+  for cand in "${res_candidates[@]}"; do
+    if [[ -d "$cand" ]]; then res_src="$cand"; break; fi
+  done
+  if [[ -n "$res_src" ]]; then
+    cp -a "$res_src" "$stage/usr/local/bin/"
+    echo "    resources: $res_src"
+  else
+    echo "warning: BarkVisor_BarkVisorCore.resources not found next to $bin — package will crash on resource access" >&2
+  fi
+
   if [[ -n "$fe" && -f "$fe/index.html" ]]; then
     cp -a "$fe"/. "$stage/usr/local/share/barkvisor/frontend/dist/"
   else

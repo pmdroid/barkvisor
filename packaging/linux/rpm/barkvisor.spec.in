@@ -34,6 +34,7 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 %defattr(-,root,root,-)
 /usr/local/bin/barkvisor
 /usr/local/bin/barkvisor-agent
+/usr/local/bin/BarkVisor_BarkVisorCore.resources
 /usr/local/share/barkvisor
 /usr/local/lib/barkvisor
 /usr/lib/systemd/system/barkvisor.service

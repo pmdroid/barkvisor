@@ -38,7 +38,8 @@ RUN if [ -n "${BARKVISOR_VERSION}" ]; then \
 RUN swift build -c release --product BarkVisorApp \
     -Xlinker -rpath -Xlinker '$ORIGIN/../lib/barkvisor/swift' \
     && install -d /out \
-    && cp -a .build/release/BarkVisorApp /out/BarkVisorApp
+    && cp -a .build/release/BarkVisorApp /out/BarkVisorApp \
+    && cp -a .build/release/BarkVisor_BarkVisorCore.resources /out/BarkVisor_BarkVisorCore.resources
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:${UBUNTU_VERSION} AS package
@@ -59,6 +60,7 @@ COPY scripts ./scripts
 COPY packaging ./packaging
 COPY Resources ./Resources
 COPY --from=build /out/BarkVisorApp /src/.build/release/BarkVisorApp
+COPY --from=build /out/BarkVisor_BarkVisorCore.resources /src/.build/release/BarkVisor_BarkVisorCore.resources
 COPY --from=frontend /frontend/dist /src/frontend/dist
 RUN chmod +x /src/scripts/build-linux-packages.sh \
     && chmod +x /src/scripts/lib/linux-package-stage.sh \
