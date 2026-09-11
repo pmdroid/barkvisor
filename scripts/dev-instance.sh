@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/dev-instance.sh start [--name TAG] [--data-dir DIR] [--seed]
 #                                 [--keep] [--port N] [--admin-user U]
-#                                 [--admin-pass P] [--skip-build]
+#                                 [--admin-pass P] [--skip-build] [--no-auth]
 #   scripts/dev-instance.sh stop [--name TAG | --data-dir DIR | --all] [--keep]
 #   scripts/dev-instance.sh list
 #   scripts/dev-instance.sh token [--name TAG]
@@ -158,6 +158,7 @@ seed_demo_data() {
 
 write_entry_files() {
   local name="$1" token="$2" admin_user="$3" admin_pass="$4" seeded="$5" provisioned="$6"
+  local auth_disabled="${7:-false}"
   mkdir -p "$REGISTRY_DIR/$name"
   jq -n \
     --arg name "$name" \
@@ -171,20 +172,23 @@ write_entry_files() {
     --arg adminPass "$admin_pass" \
     --argjson seeded "$seeded" \
     --argjson provisioned "$provisioned" \
+    --argjson authDisabled "$auth_disabled" \
     --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{name:$name,url:$url,port:$port,agentPort:$agentPort,pid:$pid,
       dataDir:$dataDir,logFile:$logFile,adminUser:$adminUser,
       adminPass:$adminPass,seeded:$seeded,provisioned:$provisioned,
-      createdAt:$createdAt}' > "$(meta_file "$name")"
+      authDisabled:$authDisabled,createdAt:$createdAt}' > "$(meta_file "$name")"
   printf '%s\n' "$token" > "$(token_file "$name")"
   chmod 600 "$(meta_file "$name")" "$(token_file "$name")"
 }
 
 start_instance() {
   local name="$1" data_dir_arg="$2" want_seed="$3" port_arg="$4" want_provision="${5:-1}"
+  local no_auth="${6:-0}"
   local admin_user="${BARKVISOR_ADMIN_USER:-admin}"
   local admin_pass="${BARKVISOR_ADMIN_PASSWORD:-dev-instance-pass}"
   local bin data_dir port agent_port token
+  local auth_disabled=false
 
   if entry_alive "$name"; then
     die_usage "instance '$name' already running at $(read_meta_field url "$name")"
@@ -206,6 +210,11 @@ start_instance() {
   export BARKVISOR_DATA_DIR="$data_dir"
   export BARKVISOR_ADMIN_USER="$admin_user"
   export BARKVISOR_ADMIN_PASSWORD="$admin_pass"
+  if [[ "$no_auth" == "1" ]]; then
+    export BARKVISOR_AUTH_MODE=loopback
+    want_provision=0
+    auth_disabled=true
+  fi
   LOG_FILE="${data_dir}/server.log"
 
   log "starting '$name' (ephemeral ports) data=${data_dir}"
@@ -227,7 +236,10 @@ start_instance() {
   log "starting '$name' on :${port} (agent :${agent_port}) data=${data_dir}"
   wait_health 120 1
 
-  if [[ "$want_provision" == "1" ]]; then
+  if [[ "$no_auth" == "1" ]]; then
+    log "starting '$name' with BARKVISOR_AUTH_MODE=loopback (no login)"
+    TOKEN=""
+  elif [[ "$want_provision" == "1" ]]; then
     setup_or_login
     TOKEN="$(api POST /api/auth/login -d "$(jq -n --arg u "$admin_user" --arg p "$admin_pass" '{username:$u,password:$p}')" | jq -r '.token')"
     [[ -n "$TOKEN" && "$TOKEN" != "null" ]] || fail "login after setup returned no token"
@@ -240,17 +252,21 @@ start_instance() {
   fi
 
   if [[ "$want_seed" == "1" ]]; then
-    [[ -n "$TOKEN" ]] || fail "--seed needs a provisioned instance"
+    if [[ "$no_auth" != "1" && -z "$TOKEN" ]]; then
+      fail "--seed needs a provisioned instance"
+    fi
     log "seeding demo data"
     seed_demo_data
   fi
 
-  write_entry_files "$name" "$TOKEN" "$admin_user" "$admin_pass" "$([[ $want_seed == 1 ]] && echo true || echo false)" "$([[ $want_provision == 1 ]] && echo true || echo false)"
+  local provisioned_json=false
+  [[ "$want_provision" == "1" || "$no_auth" == "1" ]] && provisioned_json=true
+  write_entry_files "$name" "$TOKEN" "$admin_user" "$admin_pass" "$([[ $want_seed == 1 ]] && echo true || echo false)" "$provisioned_json" "$auth_disabled"
   cat "$(meta_file "$name")"
 }
 
 cmd_start() {
-  local name="$DEFAULT_NAME" data_dir="" seed=0 keep=0 port="" provision=1
+  local name="$DEFAULT_NAME" data_dir="" seed=0 keep=0 port="" provision=1 no_auth=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --name) name="$2"; shift 2 ;;
@@ -259,6 +275,7 @@ cmd_start() {
       --keep) keep=1; shift ;;
       --port) port="$2"; shift 2 ;;
       --no-provision) provision=0; shift ;;
+      --no-auth) no_auth=1; shift ;;
       --admin-user) BARKVISOR_ADMIN_USER="$2"; shift 2 ;;
       --admin-pass) BARKVISOR_ADMIN_PASSWORD="$2"; shift 2 ;;
       --skip-build) SKIP_BUILD=1; shift ;;
@@ -266,7 +283,8 @@ cmd_start() {
     esac
   done
   [[ "$keep" == "1" && -z "$data_dir" ]] && log "--keep ignored (temp dirs are cleaned by 'stop'; custom --data-dir paths are never deleted)"
-  start_instance "$name" "$data_dir" "$seed" "$port" "$provision"
+  [[ "$no_auth" == "1" && "$provision" == "0" ]] && die_usage "--no-auth cannot be combined with --no-provision"
+  start_instance "$name" "$data_dir" "$seed" "$port" "$provision" "$no_auth"
 }
 
 cmd_stop() {
@@ -314,6 +332,10 @@ cmd_token() {
   fi
   local user pass token url
   [[ -f "$(meta_file "$name")" ]] || die_usage "no instance named '$name'"
+  if [[ "$(read_meta_field authDisabled "$name")" == "true" ]]; then
+    : > "$(token_file "$name")"
+    exit 0
+  fi
   url="$(read_meta_field url "$name")"
   user="$(read_meta_field adminUser "$name")"
   pass="$(read_meta_field adminPass "$name")"
@@ -344,6 +366,9 @@ restart_entry() {
   export BARKVISOR_PORT="$port"
   export BARKVISOR_AGENT_PORT="$agent"
   export BARKVISOR_DATA_DIR="$data_dir"
+  if [[ "$(read_meta_field authDisabled "$name")" == "true" ]]; then
+    export BARKVISOR_AUTH_MODE=loopback
+  fi
   BASE="http://127.0.0.1:${port}"
   LOG_FILE="${data_dir}/server.log"
   log "restarting '$name' on :${port}"
@@ -352,7 +377,8 @@ restart_entry() {
   wait_health 120 1
   write_entry_files "$name" "$token" \
     "$(read_meta_field adminUser "$name")" "$(read_meta_field adminPass "$name")" \
-    "$(read_meta_field seeded "$name")" true
+    "$(read_meta_field seeded "$name")" true \
+    "$(read_meta_field authDisabled "$name")"
 }
 
 cmd_pair() {
@@ -440,6 +466,27 @@ cmd_self_test() {
   [[ "$code" == "200" ]] || fail "setup status -> HTTP $code"
 
   log "SELF-TEST PASS ($url)"
+  stop_one "$name" 0
+  trap - EXIT
+
+  name="${SELF_TEST_NAME_PREFIX}-noauth-$$"
+  trap 'stop_one "'"$name"'" 0 2>/dev/null || true' EXIT
+  meta_json="$(SKIP_BUILD=1 start_instance "$name" "" 0 "" 1 1)"
+  url="$(jq -r .url <<<"$meta_json")"
+  [[ "$(jq -r .authDisabled <<<"$meta_json")" == "true" ]] || fail "--no-auth meta missing authDisabled"
+  [[ -z "$(cat "$(token_file "$name")")" ]] || fail "--no-auth token file should be empty"
+  BASE="$url"
+  TOKEN=""
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: 127.0.0.1" "$url/api/networks")"
+  [[ "$code" == "200" ]] || fail "--no-auth GET /api/networks -> HTTP $code"
+  local status_json
+  status_json="$(curl -sf -H "Host: 127.0.0.1" "$url/api/setup/status")"
+  [[ "$(jq -r .authDisabled <<<"$status_json")" == "true" ]] || fail "--no-auth setup status authDisabled"
+  [[ "$(jq -r .authMode <<<"$status_json")" == "loopback" ]] || fail "--no-auth setup status authMode"
+  cmd_token --name "$name" >/dev/null
+  [[ -z "$(cat "$(token_file "$name")")" ]] || fail "token cmd should leave empty token for --no-auth"
+
+  log "SELF-TEST PASS no-auth ($url)"
 }
 
 main() {

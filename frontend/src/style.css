@@ -644,6 +644,28 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   margin-top: 14px;
 }
 
+.auth-bypass-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--amber-dim, rgba(245, 166, 35, 0.15));
+  color: var(--amber);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-glass);
+}
+.auth-bypass-banner button {
+  background: none;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .ops-ticker {
   height: 30px;
   flex-shrink: 0;

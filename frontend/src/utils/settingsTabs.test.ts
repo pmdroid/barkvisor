@@ -40,6 +40,8 @@ describe('settings tab query', () => {
     expect(settingsTabFromQuery('audit')).toBe('audit')
     expect(settingsTabFromQuery('updates')).toBe('updates')
     expect(SETTINGS_TABS).toContain('updates')
+    expect(SETTINGS_TABS).toContain('security')
+    expect(settingsTabFromQuery('security')).toBe('security')
 
     expect(settingsTabFromQuery({ tab: 'pairing' })).toBe('pairing')
     expect(settingsTabFromQuery({ tab: 'home' })).toBe('home')

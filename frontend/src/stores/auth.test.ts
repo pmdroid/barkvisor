@@ -109,6 +109,26 @@ describe('auth store (PAS-242)', () => {
     expect(post).toHaveBeenCalledTimes(1)
   })
 
+  test('bypass makes the session an admin without a token', () => {
+    const store = useAuthStore()
+    store.applyBypass('loopback')
+    expect(store.bypassed).toBe(true)
+    expect(store.isAuthenticated).toBe(true)
+    expect(store.isAdmin).toBe(true)
+    expect(store.token).toBe('')
+  })
+
+  test('logout is a no-op while sign-in is bypassed', async () => {
+    const store = useAuthStore()
+    store.applyBypass('disabled')
+    const post = mock(() => Promise.resolve({ status: 204 }))
+    api.post = post as typeof api.post
+    await store.logout()
+    expect(post).not.toHaveBeenCalled()
+    expect(store.bypassed).toBe(true)
+    expect(store.isAdmin).toBe(true)
+  })
+
   test('logout still clears local session when revoke fails', async () => {
     localStorage.setItem('token', 'jwt-1')
     localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')

@@ -4,6 +4,7 @@ export const SETTINGS_TABS = [
   'pairing',
   'library',
   'repositories',
+  'security',
   'apikeys',
   'sshkeys',
   'passkeys',

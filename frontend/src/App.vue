@@ -8,6 +8,7 @@ import { useThemeStore } from './stores/theme'
 import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
 import { isReachabilityOk } from './utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL, WORKLOADS_NAV_LABEL } from './utils/terminology'
+import { authBannerText } from './utils/authMode'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
@@ -16,6 +17,8 @@ const themeStore = useThemeStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const mobileMenuOpen = ref(false)
+const bannerDismissed = ref(false)
+const bannerText = computed(() => (auth.bypassed ? authBannerText(auth.authMode) : ''))
 
 const tickerDevice = computed(() =>
   deviceScope.isAll ? null : devices.deviceByHostId(deviceScope.selectedHostId),
@@ -176,7 +179,7 @@ function isActive(path: string) {
           </svg>
           <span class="nav-label">{{ themeStore.theme === 'dark' ? 'Light Mode' : 'Dark Mode' }}</span>
         </button>
-        <button @click="auth.logout(); $router.push('/login')" title="Logout">
+        <button v-if="!auth.bypassed" @click="auth.logout(); $router.push('/login')" title="Logout">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
@@ -186,6 +189,10 @@ function isActive(path: string) {
       <div class="sidebar-footer">Made with ❤️ in SF</div>
     </aside>
     <main class="main">
+      <div v-if="bannerText && !bannerDismissed" class="auth-bypass-banner" role="status">
+        <span>{{ bannerText }}</span>
+        <button type="button" @click="bannerDismissed = true">Dismiss</button>
+      </div>
       <div class="ops-ticker">
         <span class="ops-ticker-label">{{ tickerLabel }}</span>
         <span class="ops-tick"><span class="ops-dot ok"></span><b>{{ tickerCounts.running }}</b>&nbsp;running</span>
