@@ -64,26 +64,62 @@ enum AuthBypass {
         }
     }
 
-    static func attachIfAllowed(_ request: Request) throws -> Bool {
+    static func attachIfAllowed(_ request: Request) async throws -> Bool {
         guard allows(request) else { return false }
-        try validateFrontDoor(request)
-        request.authenticatedUser = syntheticAdmin
-        return true
-    }
-
-    static func validateFrontDoor(_ request: Request) throws {
-        switch AuthFrontDoorGuard.evaluate(
-            host: request.headers[.host].first,
-            origin: request.headers[.origin].first,
-            method: request.method.rawValue,
-            extras: AuthFrontDoorGuard.configuredHosts(),
-        ) {
+        switch await frontDoorDecision(for: request) {
         case .allow:
-            return
+            request.authenticatedUser = syntheticAdmin
+            return true
         case .rejectHost:
+            if hasOwnCredentials(request) { return false }
             throw Abort(.forbidden, reason: "Invalid Host")
         case .rejectOrigin:
+            if hasOwnCredentials(request) { return false }
             throw Abort(.forbidden, reason: "Invalid Origin")
+        }
+    }
+
+    static func frontDoorOK(_ request: Request) async -> Bool {
+        await frontDoorDecision(for: request) == .allow
+    }
+
+    static func frontDoorDecision(for request: Request) async -> AuthFrontDoorDecision {
+        let host = request.headers[.host].first
+        let origin = request.headers[.origin].first
+        let method = request.method.rawValue
+        if AuthFrontDoorGuard.evaluate(
+            host: host,
+            origin: origin,
+            method: method,
+            extras: AuthFrontDoorGuard.configuredHosts(),
+        ) == .allow {
+            return .allow
+        }
+        var extras = AuthFrontDoorGuard.configuredHosts()
+        if let database = request.application.databaseIfPresent,
+           let deviceUrl = try? await database.pool.read({ db in
+               try RemoteAccessSettings.load(from: db).deviceUrl
+           }) {
+            extras.formUnion(AuthFrontDoorGuard.advertisedHosts(from: deviceUrl))
+        }
+        return AuthFrontDoorGuard.evaluate(
+            host: host,
+            origin: origin,
+            method: method,
+            extras: extras,
+        )
+    }
+
+    static func hasOwnCredentials(_ request: Request) -> Bool {
+        if !request.headers["Authorization"].isEmpty {
+            return true
+        }
+        if !request.headers["Cookie"].isEmpty {
+            return true
+        }
+        let ticketNames = [StreamTicketPolicy.ticketQueryName, StreamTicketPolicy.tokenRewriteQueryName]
+        return ticketNames.contains { name in
+            request.query[String.self, at: name] != nil
         }
     }
 }
