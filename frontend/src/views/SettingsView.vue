@@ -41,7 +41,6 @@ import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpac
 import { formatDeviceURL } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { getSecuritySettings, saveSecuritySettings } from '../api/security'
-import { getDeviceName } from '../api/deviceName'
 import { parseAuthMode, type AuthMode } from '../utils/authMode'
 import { syncFrontDoorSession } from '../utils/frontDoorSession'
 import { clearSetupCache } from '../router'
@@ -747,8 +746,8 @@ async function loadSecurity() {
     securityMode.value = parseAuthMode(settings.authMode)
     securityEnvLocked.value = settings.envLocked
     syncFrontDoorSession(securityMode.value)
-    const named = await getDeviceName({ hostId: 'local', role: 'self' })
-    deviceConfirmName.value = named.displayName || named.hostname
+    await devicesStore.fetchHealth()
+    deviceConfirmName.value = homeDeviceName.value
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   }
