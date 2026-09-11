@@ -20,30 +20,48 @@ enum AuthBypass {
         request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
     }
 
-    static func allows(mode: AuthMode, peerIP: String?) -> Bool {
+    static func isProxied(_ request: Request) -> Bool {
+        let headers = request.headers
+        return !headers["X-Forwarded-For"].isEmpty
+            || !headers["X-Real-IP"].isEmpty
+            || !headers["Forwarded"].isEmpty
+    }
+
+    static func allows(mode: AuthMode, peerIP: String?, proxied: Bool = false) -> Bool {
         switch mode {
         case .secure:
             return false
         case .loopback:
-            return AuthFrontDoorGuard.isLoopbackPeer(peerIP)
+            return !proxied && AuthFrontDoorGuard.isLoopbackPeer(peerIP)
         case .disabled:
             return true
         }
     }
 
     static func allows(_ request: Request) -> Bool {
-        allows(mode: Config.authMode, peerIP: peerIP(request))
+        allows(mode: Config.authMode, peerIP: peerIP(request), proxied: isProxied(request))
     }
 
-    static func pairingJoinAllowed(mode: AuthMode, peerIP: String?) -> Bool {
+    static func pairingJoinAllowed(mode: AuthMode, peerIP: String?, proxied: Bool = false) -> Bool {
         if mode == .disabled {
-            return AuthFrontDoorGuard.isLoopbackPeer(peerIP)
+            return !proxied && AuthFrontDoorGuard.isLoopbackPeer(peerIP)
         }
         return true
     }
 
     static func pairingJoinAllowed(_ request: Request) -> Bool {
-        pairingJoinAllowed(mode: Config.authMode, peerIP: peerIP(request))
+        pairingJoinAllowed(
+            mode: Config.authMode,
+            peerIP: peerIP(request),
+            proxied: isProxied(request),
+        )
+    }
+
+    static func validateSyntheticSubject(_ subject: String, request: Request) throws {
+        guard subject == syntheticUserId else { return }
+        guard allows(request) else {
+            throw Abort(.unauthorized, reason: "Bypass session is only valid where sign-in is skipped")
+        }
     }
 
     static func attachIfAllowed(_ request: Request) throws -> Bool {

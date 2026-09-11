@@ -56,45 +56,18 @@ public enum AuthModeStore: Sendable {
     }
 }
 
-private final class AuthModeOverrideBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: AuthMode?
-
-    func snapshot() -> AuthMode? {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
-    }
-
-    func swap(_ next: AuthMode?) -> AuthMode? {
-        lock.lock()
-        defer { lock.unlock() }
-        let previous = value
-        value = next
-        return previous
-    }
-}
-
 public enum AuthModeTesting: Sendable {
-    private static let box = AuthModeOverrideBox()
+    @TaskLocal public static var current: AuthMode?
 
     public static func withOverride<T>(_ mode: AuthMode?, _ body: () throws -> T) rethrows -> T {
-        let previous = box.swap(mode)
-        defer { _ = box.swap(previous) }
-        return try body()
+        try $current.withValue(mode, operation: body)
     }
 
     public static func withOverride<T>(
         _ mode: AuthMode?,
         _ body: () async throws -> T,
     ) async rethrows -> T {
-        let previous = box.swap(mode)
-        defer { _ = box.swap(previous) }
-        return try await body()
-    }
-
-    public static var current: AuthMode? {
-        box.snapshot()
+        try await $current.withValue(mode, operation: body)
     }
 }
 

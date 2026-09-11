@@ -314,6 +314,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         } catch {
             throw Abort(.unauthorized, reason: "Invalid or expired token")
         }
+        try AuthBypass.validateSyntheticSubject(payload.sub.value, request: request)
 
         let role = try await Self.resolveRole(
             userId: payload.sub.value,
@@ -389,6 +390,7 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             } catch {
                 throw Abort(.unauthorized, reason: "Invalid or expired token")
             }
+            try AuthBypass.validateSyntheticSubject(payload.sub.value, request: request)
             let role = try await JWTAuthMiddleware.resolveRole(
                 userId: payload.sub.value,
                 sessionFallback: payload.role,
