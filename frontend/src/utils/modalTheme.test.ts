@@ -39,6 +39,17 @@ describe('modal light mode', () => {
     expect(css).toMatch(/\.line:hover \{ background: var\(--term-row-hover\)/)
   })
 
+  test('compose log pane matches device log tokens, not a hardcoded dark pane', () => {
+    const css = readFileSync(join(srcRoot, 'style.css'), 'utf8')
+    const panel = readFileSync(join(srcRoot, 'components/ComposeLogsPanel.vue'), 'utf8')
+    expect(css).toContain('--log-dim-bg: rgba(0, 0, 0, 0.2)')
+    expect(css).toContain('--log-dim-bg: rgba(0, 0, 0, 0.04)')
+    expect(panel).toMatch(/\.terminal \{[\s\S]*?background: var\(--log-dim-bg\)/)
+    expect(panel).not.toMatch(/\.terminal \{[\s\S]{0,180}background: #[0-9a-f]{6}/)
+    expect(panel).toMatch(/\.line \{[\s\S]{0,80}color: var\(--text-secondary\)/)
+    expect(panel).not.toMatch(/background:\s*#[0-3][0-9a-f]{5}/)
+  })
+
   test('USB picker teleports out of the Create VM frame', () => {
     const text = readFileSync(join(srcRoot, 'components/create-vm/CreateVMNetworkStep.vue'), 'utf8')
     expect(text).toContain('Teleport')
