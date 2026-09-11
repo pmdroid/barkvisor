@@ -29,9 +29,8 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
-          # Uncomment when arm64 runners are available on the org:
-          # - arch: arm64
-          #   runner: ubuntu-24.04-arm
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -142,9 +141,12 @@ jobs:
           echo "Uploading ${#files[@]} file(s) to release $TAG:"
           printf '  %s\n' "${files[@]}"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
+            # Matrix legs (amd64/arm64) race here: if create loses, the
+            # winner's release must exist before we fall through to upload.
             gh release create "$TAG" \
               --title "BarkVisor ${TAG#v}" \
               --generate-notes \
-              --verify-tag
+              --verify-tag \
+              || gh release view "$TAG" >/dev/null
           fi
           gh release upload "$TAG" "${files[@]}" --clobber
