@@ -116,8 +116,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func login(req: Vapor.Request) async throws -> Response {
-        if AuthBypass.allows(req) {
-            try AuthBypass.validateFrontDoor(req)
+        if AuthBypass.allows(req), await AuthBypass.frontDoorOK(req) {
             req.authenticatedUser = AuthBypass.syntheticAdmin
             let token = try await AuthService.signBypassAccessToken(keys: keys)
             AuditService.log(

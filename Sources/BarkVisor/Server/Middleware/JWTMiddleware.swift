@@ -64,7 +64,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        if try AuthBypass.attachIfAllowed(request) {
+        if try await AuthBypass.attachIfAllowed(request) {
             try Self.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }
@@ -378,7 +378,7 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        if try AuthBypass.attachIfAllowed(request) {
+        if try await AuthBypass.attachIfAllowed(request) {
             try JWTAuthMiddleware.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }

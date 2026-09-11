@@ -83,6 +83,45 @@ public enum AuthFrontDoorGuard: Sendable {
         return .allow
     }
 
+    public static func advertisedHosts(from deviceUrl: String?) -> Set<String> {
+        guard let deviceUrl, !deviceUrl.isEmpty else { return [] }
+        var hosts: Set<String> = []
+        for candidate in PairingAddresses.advertisedHosts(
+            from: [],
+            tailnet: nil,
+            advertiseUrl: deviceUrl,
+            hostname: nil,
+        ) {
+            let host = normalizedHost(candidate)
+            if !host.isEmpty {
+                hosts.insert(host)
+            }
+        }
+        var remaining = deviceUrl
+        while !remaining.isEmpty {
+            var piece = remaining
+            if let comma = remaining.range(of: ",") {
+                piece = String(remaining[remaining.startIndex ..< comma.lowerBound])
+                remaining = String(remaining[comma.upperBound...])
+            } else {
+                remaining = ""
+            }
+            var value = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty { continue }
+            if let schemeRange = value.range(of: "://") {
+                value = String(value[schemeRange.upperBound...])
+            }
+            if let slash = value.firstIndex(of: "/") {
+                value = String(value[value.startIndex ..< slash])
+            }
+            let host = normalizedHost(value)
+            if !host.isEmpty {
+                hosts.insert(host)
+            }
+        }
+        return hosts
+    }
+
     public static func configuredHosts(
         hostname: String = ProcessInfo.processInfo.hostName,
         interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaces(),
