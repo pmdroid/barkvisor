@@ -11,6 +11,7 @@ extension AuditService {
         detail: String? = nil,
         req: Vapor.Request,
     ) {
+        guard let pool = req.application.databaseIfPresent?.pool else { return }
         let user = req.authenticatedUser
         log(
             action: action,
@@ -22,7 +23,7 @@ extension AuditService {
             username: user?.username,
             authMethod: user?.authMethod,
             apiKeyId: user?.apiKeyId,
-            db: req.db,
+            db: pool,
         )
     }
 }

@@ -31,7 +31,7 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
     func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
         let path = request.url.path
 
-        if isSetupComplete {
+        if isSetupComplete || AuthBypass.allows(request) {
             return try await next.respond(to: request)
         }
 

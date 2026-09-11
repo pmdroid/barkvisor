@@ -192,6 +192,42 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/settings/security:
+    get:
+      tags: [evolving]
+      operationId: getSecuritySettings
+      x-barkvisor-stability: evolving
+      summary: Effective front-door auth mode (admin)
+      responses:
+        "200":
+          description: Effective and persisted auth mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySettings"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateSecuritySettings
+      x-barkvisor-stability: evolving
+      summary: Persist front-door auth mode (admin). Env BARKVISOR_AUTH_MODE still wins.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecuritySettingsRequest"
+      responses:
+        "200":
+          description: Effective and persisted auth mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySettings"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/auth/login-offers:
     post:
       tags: [evolving]
@@ -1340,6 +1376,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceName"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/setup/status:
+    get:
+      tags: [evolving]
+      operationId: getSetupStatus
+      security: []
+      x-barkvisor-stability: evolving
+      summary: First-run setup state and whether this request skips sign-in
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2777,6 +2830,45 @@ components:
         role:
           type: string
           enum: [admin, inference]
+
+    SecuritySettings:
+      type: object
+      required: [authMode, persistedAuthMode, envLocked]
+      properties:
+        authMode:
+          type: string
+          enum: [secure, loopback, disabled]
+        persistedAuthMode:
+          type: string
+          enum: [secure, loopback, disabled]
+        envLocked:
+          type: boolean
+
+    SecuritySettingsRequest:
+      type: object
+      required: [authMode]
+      properties:
+        authMode:
+          type: string
+          enum: [secure, loopback, disabled]
+        acknowledged:
+          type: boolean
+
+    SetupStatus:
+      type: object
+      required: [complete, joined, admin, authDisabled, authMode]
+      properties:
+        complete:
+          type: boolean
+        joined:
+          type: boolean
+        admin:
+          type: boolean
+        authDisabled:
+          type: boolean
+        authMode:
+          type: string
+          enum: [secure, loopback, disabled]
 
     RefreshRequest:
       type: object

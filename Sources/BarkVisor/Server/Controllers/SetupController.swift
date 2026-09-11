@@ -46,6 +46,8 @@ struct SetupController: RouteCollection {
         /// alone is not enough — applyTrust persists it before pin / identity.
         let joined: Bool
         let admin: Bool
+        let authDisabled: Bool
+        let authMode: String
     }
 
     /// Resume join-ready only after identity is complete. A pairing receipt can
@@ -74,14 +76,17 @@ struct SetupController: RouteCollection {
             hasReceipt: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
             hasAdmin: snapshot.hasAdmin,
         )
+        let bypassed = AuthBypass.allows(req)
         return StatusResponse(
-            complete: Self.isSetupFinished(
+            complete: bypassed || Self.isSetupFinished(
                 middlewareComplete: setupMiddleware.isSetupComplete,
                 joined: joined,
                 libraryChosen: snapshot.libraryChosen,
             ),
             joined: joined,
             admin: snapshot.hasAdmin,
+            authDisabled: bypassed,
+            authMode: Config.authMode.rawValue,
         )
     }
 

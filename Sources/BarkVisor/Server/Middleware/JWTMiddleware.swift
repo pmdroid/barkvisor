@@ -64,7 +64,10 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        // PAS-280: spend Device `?ticket=` only on owner-Device stream/SSE paths.
+        if try AuthBypass.attachIfAllowed(request) {
+            try Self.enforceInferenceACL(request)
+            return try await next.respond(to: request)
+        }
         switch StreamTicketPolicy.site(path: request.url.path) {
         case .homeTunnel:
             return try await authenticateHomeTunnel(request, chainingTo: next)
@@ -375,6 +378,10 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
+        if try AuthBypass.attachIfAllowed(request) {
+            try JWTAuthMiddleware.enforceInferenceACL(request)
+            return try await next.respond(to: request)
+        }
         if let auth = request.headers.bearerAuthorization {
             let payload: UserPayload
             do {
