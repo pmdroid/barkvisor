@@ -107,7 +107,7 @@ struct AuthBypassTests {
                 origin: "http://evil.example",
                 method: "GET",
                 extras: extras,
-            ) == .allow,
+            ) == .rejectOrigin,
         )
         #expect(AuthFrontDoorGuard.normalizedHost("[::1]:7777") == "::1")
         #expect(AuthFrontDoorGuard.hostIsAllowed("studio.local:7777", extras: extras))
@@ -178,6 +178,29 @@ struct AuthBypassTests {
                 do {
                     _ = try await jwt.respond(to: req, chainingTo: OKResponder())
                     Issue.record("expected forbidden host")
+                } catch let error as AbortError {
+                    #expect(error.status == .forbidden)
+                }
+            }
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
+    @Test func `jwt middleware disabled rejects cross-origin get`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        do {
+            try await AuthModeTesting.withOverride(.disabled) {
+                let req = request(app, path: "/api/vms")
+                req.headers.replaceOrAdd(name: .host, value: "localhost:7777")
+                req.headers.replaceOrAdd(name: .origin, value: "http://evil.example")
+                do {
+                    _ = try await jwt.respond(to: req, chainingTo: OKResponder())
+                    Issue.record("expected forbidden origin on GET")
                 } catch let error as AbortError {
                     #expect(error.status == .forbidden)
                 }

@@ -48,6 +48,7 @@ struct SetupController: RouteCollection {
         let admin: Bool
         let authDisabled: Bool
         let authMode: String
+        let proxied: Bool
     }
 
     /// Resume join-ready only after identity is complete. A pairing receipt can
@@ -87,6 +88,7 @@ struct SetupController: RouteCollection {
             admin: snapshot.hasAdmin,
             authDisabled: bypassed,
             authMode: Config.authMode.rawValue,
+            proxied: AuthBypass.isProxied(req),
         )
     }
 

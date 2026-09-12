@@ -108,6 +108,7 @@ struct JWTAuthMiddlewareTests {
         let token = try await keys.sign(payload)
         do {
             let denied = request(app, path: "/go/app-1/")
+            denied.headers.replaceOrAdd(name: .host, value: "localhost")
             do {
                 _ = try await jwt.respond(to: denied, chainingTo: OKResponder())
                 Issue.record("expected unauthorized without cookie")
@@ -115,6 +116,7 @@ struct JWTAuthMiddlewareTests {
                 #expect(error.status == .unauthorized)
             }
             let req = request(app, path: "/go/app-1/")
+            req.headers.replaceOrAdd(name: .host, value: "localhost")
             req.cookies[AppIngress.cookieName] = HTTPCookies.Value(string: token)
             let response = try await jwt.respond(to: req, chainingTo: OKResponder())
             #expect(response.status == .ok)

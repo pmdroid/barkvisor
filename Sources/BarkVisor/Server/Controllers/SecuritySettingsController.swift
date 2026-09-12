@@ -12,6 +12,33 @@ struct SecuritySettingsRequest: Content {
     var acknowledged: Bool?
 }
 
+enum SecuritySettingsPolicy {
+    static func validatedMode(
+        raw: String,
+        acknowledged: Bool?,
+        envLocked: Bool,
+        hasProvisionedAdmin: Bool,
+    ) throws -> AuthMode {
+        if envLocked {
+            throw BarkVisorError.conflict("authMode is locked by \(AuthModeStore.envKey)")
+        }
+        guard let mode = AuthModeStore.parse(raw) else {
+            throw BarkVisorError.badRequest("authMode must be secure, loopback, or disabled")
+        }
+        if mode == .disabled, acknowledged != true {
+            throw BarkVisorError.badRequest(
+                "Disabling sign-in for the whole network requires acknowledged=true",
+            )
+        }
+        if mode == .secure, !hasProvisionedAdmin {
+            throw BarkVisorError.preconditionFailed(
+                "Create an admin account before requiring sign-in",
+            )
+        }
+        return mode
+    }
+}
+
 struct SecuritySettingsController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let security = routes.grouped("api", "settings", "security")
@@ -29,14 +56,15 @@ struct SecuritySettingsController: RouteCollection {
     func updateSettings(req: Request) async throws -> SecuritySettingsResponse {
         _ = try Self.requireAdmin(req)
         let body = try req.content.decode(SecuritySettingsRequest.self)
-        guard let mode = AuthModeStore.parse(body.authMode) else {
-            throw BarkVisorError.badRequest("authMode must be secure, loopback, or disabled")
+        let hasAdmin = try await req.db.read { db in
+            try User.hasProvisionedAdmin(db)
         }
-        if mode == .disabled, body.acknowledged != true {
-            throw BarkVisorError.badRequest(
-                "Disabling sign-in for the whole network requires acknowledged=true",
-            )
-        }
+        let mode = try SecuritySettingsPolicy.validatedMode(
+            raw: body.authMode,
+            acknowledged: body.acknowledged,
+            envLocked: Config.authModeEnvLocked,
+            hasProvisionedAdmin: hasAdmin,
+        )
         let previous = Config.authMode
         Config.persistAuthMode(mode, acknowledged: body.acknowledged == true)
         let next = Config.authMode
@@ -45,7 +73,6 @@ struct SecuritySettingsController: RouteCollection {
                 action: "auth.mode_changed",
                 resourceType: "settings",
                 resourceName: next.rawValue,
-                detail: "\(previous.rawValue)->\(next.rawValue)",
                 req: req,
             )
         }
