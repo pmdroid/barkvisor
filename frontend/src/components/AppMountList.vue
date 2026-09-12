@@ -40,6 +40,7 @@ function managedRoots(): string[] {
 }
 
 function isManaged(mount: ComposeMount): boolean {
+  if (mount.kind === 'volume') return true
   return managedRoots().some((root) => mount.source.startsWith(root))
 }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage, isNotFoundError } from '../api/errors'
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
@@ -1506,7 +1506,10 @@ function openAppVolumePicker() {
 }
 
 function onAppHostPicked(path: string) {
-  appPickedHost.value = path
+  appPickedHost.value = ''
+  void nextTick(() => {
+    appPickedHost.value = path
+  })
   appVolumePickerOpen.value = false
 }
 
