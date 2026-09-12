@@ -28,6 +28,34 @@ public enum ApplicationLifecycleService {
         "app-create:\(id)"
     }
 
+    public static func resumePending(db: DatabasePool, backgroundTasks: BackgroundTaskManager) async {
+        let apps: [VM]
+        do {
+            apps = try await db.read { db in
+                try VM
+                    .filter(Column("kind") == WorkloadSpec.kindApplication)
+                    .filter(Column("state") == "provisioning" || Column("state") == "starting")
+                    .fetchAll(db)
+            }
+        } catch {
+            Log.vm.warning("Application resume list failed: \(error.localizedDescription)")
+            return
+        }
+        for vm in apps {
+            let workloadID = vm.id
+            _ = await backgroundTasks.submit(taskID(forCreate: workloadID), kind: .appCreate) {
+                guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
+                    throw BarkVisorError.notFound("Workload \(workloadID) not found")
+                }
+                if live.state == "deleting" || live.state == "running" {
+                    return workloadID
+                }
+                try await ApplicationLifecycleService.start(vm: &live, db: db)
+                return workloadID
+            }
+        }
+    }
+
     public static func publishedUpdate(
         event: BackgroundTaskManager.TaskEvent?,
     ) -> (taskID: String?, progress: Double?) {

@@ -199,7 +199,7 @@ public enum VMLifecycleService {
         let vm = try await db.read { db in try VM.fetchOne(db, key: id) }
         guard let vm else { throw BarkVisorError.notFound() }
 
-        guard vm.state == "stopped" || vm.state == "error" else {
+        guard canDelete(vm) else {
             throw BarkVisorError.conflict("VM must be stopped before deleting")
         }
 

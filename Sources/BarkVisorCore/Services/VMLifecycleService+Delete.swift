@@ -6,9 +6,7 @@ import GRDB
 extension VMLifecycleService {
     static func markVMAsDeleting(id: String, db: DatabasePool) async throws {
         let marked = try await db.write { db -> Bool in
-            guard let current = try VM.fetchOne(db, key: id),
-                  current.state == "stopped" || current.state == "error"
-            else {
+            guard let current = try VM.fetchOne(db, key: id), canDelete(current) else {
                 return false
             }
             try db.execute(
