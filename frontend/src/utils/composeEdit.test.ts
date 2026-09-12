@@ -3,6 +3,7 @@ import { parseComposeMounts } from './composeMounts'
 import {
   addComposeMount,
   afterRemoveSharedPaths,
+  appPortEditorRows,
   applyComposeDocumentDrafts,
   composeBindFromDraft,
   composeMountFromDraft,
@@ -30,6 +31,21 @@ const base = `services:
 `
 
 describe('composeEdit', () => {
+  test('appPortEditorRows prefers compose and does not duplicate live host ports', () => {
+    const parsed = [
+      { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '127.0.0.1' },
+    ]
+    const live = [
+      { hostPort: 8080, containerPort: 80, proto: 'tcp' },
+      { hostPort: 8080, containerPort: 8080, proto: 'tcp' },
+    ]
+    expect(appPortEditorRows(parsed, live)).toEqual(parsed)
+    expect(appPortEditorRows([], live)).toEqual([
+      { hostPort: 8080, containerPort: 80, proto: 'tcp' },
+      { hostPort: 8080, containerPort: 8080, proto: 'tcp' },
+    ])
+  })
+
   test('parseComposePorts reads quoted and plain entries with protocols', () => {
     expect(parseComposePorts(base)).toEqual([
       { hostPort: 8080, containerPort: 80, proto: 'tcp' },

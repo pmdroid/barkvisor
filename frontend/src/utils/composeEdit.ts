@@ -106,6 +106,18 @@ export function isComposePortRow(row: ComposePortRow): boolean {
   return isHostPort(row.hostPort) && isHostPort(row.containerPort)
 }
 
+export function appPortEditorRows(
+  parsed: ComposePortRow[],
+  live: { hostPort: number; containerPort: number; proto: string }[],
+): ComposePortRow[] {
+  if (parsed.length) return parsed
+  return live.map((row) => ({
+    hostPort: row.hostPort,
+    containerPort: row.containerPort,
+    proto: row.proto === 'udp' ? 'udp' : 'tcp',
+  }))
+}
+
 function portHostPrefix(hostIP?: string): string {
   const ip = hostIP?.trim()
   if (!ip) return ''

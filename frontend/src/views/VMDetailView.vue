@@ -23,6 +23,7 @@ import { parseComposeMounts, visibleAppMounts, type ComposeMount } from '../util
 import {
   addComposeMount,
   afterRemoveSharedPaths,
+  appPortEditorRows,
   isComposePortRow,
   parseComposePorts,
   removeComposeMount,
@@ -1538,33 +1539,7 @@ function openAppPortsEditor() {
   const compose = vm.value?.spec?.spec?.compose ?? ''
   const parsed = parseComposePorts(compose)
   const live = vm.value?.publishedPorts ?? []
-  const fromLive = live.map((p) => {
-    const proto = (p.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol']
-    const match = parsed.find(
-      (row) =>
-        row.hostPort === p.hostPort &&
-        row.containerPort === p.containerPort &&
-        row.proto === proto,
-    )
-    return {
-      protocol: proto,
-      hostPort: p.hostPort,
-      guestPort: p.containerPort,
-      hostIP: match?.hostIP,
-    }
-  })
-  const extras = parsed
-    .filter(
-      (row) =>
-        !fromLive.some(
-          (p) =>
-            p.hostPort === row.hostPort &&
-            p.guestPort === row.containerPort &&
-            p.protocol === row.proto,
-        ),
-    )
-    .map(appPortDraftFromRow)
-  appPortsDraft.value = live.length ? [...fromLive, ...extras] : parsed.map(appPortDraftFromRow)
+  appPortsDraft.value = appPortEditorRows(parsed, live).map(appPortDraftFromRow)
   showAppPortsEditor.value = true
 }
 
