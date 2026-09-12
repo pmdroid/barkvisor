@@ -585,6 +585,31 @@ export function mergeApplicationSharedPaths(
   return [...kept, ...extra]
 }
 
+export function applyAppVolumeChange(
+  compose: string | null,
+  sharedPaths: string[] | null | undefined,
+  change: { type: 'add' | 'remove'; mount: ComposeMountDraft },
+): { compose: string | null; sharedPaths: string[] } {
+  if (change.type === 'add') {
+    const nextCompose = compose ? addComposeMount(compose, change.mount) : compose
+    const paths = sharedPaths ?? []
+    const nextPaths = paths.some((path) => sharedHostKey(path) === change.mount.source)
+      ? paths
+      : [...paths, change.mount.source]
+    return { compose: nextCompose, sharedPaths: nextPaths }
+  }
+  let remaining: ComposeMount[] = []
+  let nextCompose = compose
+  if (compose) {
+    nextCompose = removeComposeMount(compose, change.mount)
+    remaining = parseComposeMounts(nextCompose)
+  }
+  return {
+    compose: nextCompose,
+    sharedPaths: afterRemoveSharedPaths(sharedPaths, change.mount, remaining),
+  }
+}
+
 export function ensureApplicationSharedPaths(
   document: string,
   previousCompose?: string | null,

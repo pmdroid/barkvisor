@@ -4,6 +4,7 @@ import {
   addComposeMount,
   afterRemoveSharedPaths,
   appPortEditorRows,
+  applyAppVolumeChange,
   applyComposeDocumentDrafts,
   composeBindFromDraft,
   composeMountFromDraft,
@@ -31,6 +32,21 @@ const base = `services:
 `
 
 describe('composeEdit', () => {
+  test('applyAppVolumeChange edits sharedPaths when compose is absent', () => {
+    const added = applyAppVolumeChange(null, ['/keep'], {
+      type: 'add',
+      mount: { source: '/media', target: '/media', readOnly: false },
+    })
+    expect(added.compose).toBeNull()
+    expect(added.sharedPaths).toEqual(['/keep', '/media'])
+    const removed = applyAppVolumeChange(null, ['/keep', '/media'], {
+      type: 'remove',
+      mount: { source: '/media', target: '/media', readOnly: false },
+    })
+    expect(removed.compose).toBeNull()
+    expect(removed.sharedPaths).toEqual(['/keep'])
+  })
+
   test('appPortEditorRows prefers compose and does not duplicate live host ports', () => {
     const parsed = [
       { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '127.0.0.1' },

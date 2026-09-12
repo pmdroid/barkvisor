@@ -19,16 +19,13 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
-import { parseComposeMounts, visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
+import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
 import {
-  addComposeMount,
-  afterRemoveSharedPaths,
+  applyAppVolumeChange,
   appPortEditorRows,
   isComposePortRow,
   parseComposePorts,
-  removeComposeMount,
   setComposePorts,
-  sharedHostKey,
   type ComposeMountDraft,
   type ComposePortRow,
 } from '../utils/composeEdit'
@@ -1468,15 +1465,13 @@ async function addAppVolume(draft: ComposeMountDraft) {
   appVolumeSaving.value = true
   try {
     const spec = await loadAppSpec()
-    const compose = appComposeOf(spec)
-    if (!compose) throw new Error('This app has no compose document yet')
-    const nextCompose = addComposeMount(compose, draft)
-    if (nextCompose === compose) return
-    spec.spec.compose = nextCompose
-    const paths = spec.spec.sharedPaths ?? []
-    if (!paths.some((path) => sharedHostKey(path) === draft.source)) {
-      spec.spec.sharedPaths = [...paths, draft.source]
-    }
+    const next = applyAppVolumeChange(appComposeOf(spec), spec.spec.sharedPaths, {
+      type: 'add',
+      mount: draft,
+    })
+    if (next.compose === appComposeOf(spec) && next.sharedPaths === spec.spec.sharedPaths) return
+    if (next.compose !== null) spec.spec.compose = next.compose
+    spec.spec.sharedPaths = next.sharedPaths
     await saveAppSpec(spec)
     await refreshWorkload()
     if (vm.value?.state === 'running') {
@@ -1496,19 +1491,12 @@ async function removeAppVolume(mount: ComposeMount) {
   appVolumeSaving.value = true
   try {
     const spec = await loadAppSpec()
-    const compose = appComposeOf(spec)
-    if (!compose) throw new Error('This app has no compose document yet')
-    const nextCompose = removeComposeMount(compose, {
-      source: mount.source,
-      target: mount.target,
-      readOnly: mount.readOnly,
+    const next = applyAppVolumeChange(appComposeOf(spec), spec.spec.sharedPaths, {
+      type: 'remove',
+      mount: { source: mount.source, target: mount.target, readOnly: mount.readOnly },
     })
-    spec.spec.compose = nextCompose
-    spec.spec.sharedPaths = afterRemoveSharedPaths(
-      spec.spec.sharedPaths,
-      { source: mount.source, target: mount.target, readOnly: mount.readOnly },
-      parseComposeMounts(nextCompose),
-    )
+    if (next.compose !== null) spec.spec.compose = next.compose
+    spec.spec.sharedPaths = next.sharedPaths
     await saveAppSpec(spec)
     await refreshWorkload()
     if (vm.value?.state === 'running') {
