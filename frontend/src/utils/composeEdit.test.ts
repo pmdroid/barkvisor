@@ -41,6 +41,67 @@ describe('composeEdit', () => {
     ])
     expect(parseComposePorts('ports:\n  - "0:80"\n  - "80:0"\n  - "80:70000"\n  - foo:bar')).toEqual([])
     expect(parseComposePorts('environment:\n  - "9090:90"')).toEqual([])
+    expect(parseComposePorts('ports:\n  - "127.0.0.1:8080:80"\n  - 0.0.0.0:5353:5353/udp')).toEqual([
+      { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '127.0.0.1' },
+      { hostPort: 5353, containerPort: 5353, proto: 'udp', hostIP: '0.0.0.0' },
+    ])
+    expect(parseComposePorts('ports:\n  - "[::1]:8080:80"')).toEqual([
+      { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '::1' },
+    ])
+  })
+
+  test('parseComposePorts reads long-form port objects', () => {
+    const yaml = `services:
+  a:
+    image: img
+    ports:
+      - target: 80
+        published: 8080
+        protocol: tcp
+        host_ip: 127.0.0.1
+      - { target: 53, published: 5353, protocol: udp, host_ip: 0.0.0.0 }
+`
+    expect(parseComposePorts(yaml)).toEqual([
+      { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '127.0.0.1' },
+      { hostPort: 5353, containerPort: 53, proto: 'udp', hostIP: '0.0.0.0' },
+    ])
+  })
+
+  test('setComposePorts keeps IP-bound mappings and leaves unknown rows', () => {
+    const yaml = `services:
+  a:
+    image: img
+    ports:
+      - "127.0.0.1:8080:80"
+      - "0.0.0.0:5353:5353/udp"
+      - "not-a-port"
+`
+    const rewritten = setComposePorts(yaml, parseComposePorts(yaml))
+    expect(rewritten).toContain('"127.0.0.1:8080:80"')
+    expect(rewritten).toContain('"0.0.0.0:5353:5353/udp"')
+    expect(rewritten).toContain('not-a-port')
+    const emptied = setComposePorts(yaml, [])
+    expect(emptied).toContain('not-a-port')
+    expect(emptied).not.toContain('8080')
+    expect(emptied).not.toContain('5353')
+  })
+
+  test('setComposePorts rewrites long-form objects without leaving orphans', () => {
+    const yaml = `services:
+  a:
+    image: img
+    ports:
+      - target: 80
+        published: 8080
+        protocol: tcp
+        host_ip: 127.0.0.1
+    restart: unless-stopped
+`
+    const next = setComposePorts(yaml, parseComposePorts(yaml))
+    expect(next).toContain('"127.0.0.1:8080:80"')
+    expect(next).not.toContain('target:')
+    expect(next).not.toContain('published:')
+    expect(next).toContain('restart: unless-stopped')
   })
 
   test('parseComposePorts reads ports blocks and ignores env-like siblings', () => {

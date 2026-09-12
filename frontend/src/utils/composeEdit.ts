@@ -5,6 +5,7 @@ export type ComposePortRow = {
   hostPort: number
   containerPort: number
   proto: string
+  hostIP?: string
 }
 
 export type ComposeMountDraft = {
@@ -21,14 +22,72 @@ function isHostPort(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 65535
 }
 
+function parsePortObject(raw: string): ComposePortRow | null {
+  const text = raw.trim().replace(/^-\s+/, '')
+  if (!/target:|published:|host_port:|container_port:/.test(text)) return null
+  const fields: Record<string, string> = {}
+  const body = text.replace(/^\{/, '').replace(/\}$/, '')
+  for (const part of body.split(/[,\n]/)) {
+    const m = part.match(/^\s*([A-Za-z_]+)\s*:\s*(.+?)\s*$/)
+    if (!m) continue
+    fields[m[1]] = unquote(m[2])
+  }
+  const published = Number(fields.published ?? fields.host_port)
+  const target = Number(fields.target ?? fields.container_port)
+  if (!isHostPort(published) || !isHostPort(target)) return null
+  const proto = (fields.protocol || 'tcp').toLowerCase()
+  const hostIP = fields.host_ip?.trim()
+  return {
+    hostPort: published,
+    containerPort: target,
+    proto,
+    ...(hostIP ? { hostIP } : {}),
+  }
+}
+
 function parsePortEntry(raw: string): ComposePortRow | null {
-  const line = unquote(raw.trim().replace(/^-\s+/, ''))
-  const m = line.match(/^(\d+)(?::(\d+))?(?:\/([a-zA-Z]+))?$/)
-  if (!m) return null
-  const host = Number(m[1])
-  const container = m[2] ? Number(m[2]) : host
+  const asObject = parsePortObject(raw)
+  if (asObject) return asObject
+  let line = unquote(raw.trim().replace(/^-\s+/, ''))
+  let proto = 'tcp'
+  const slash = line.lastIndexOf('/')
+  if (slash >= 0) {
+    const suffix = line.slice(slash + 1)
+    if (!/^[a-zA-Z]+$/.test(suffix)) return null
+    proto = suffix.toLowerCase()
+    line = line.slice(0, slash)
+  }
+  let hostIP: string | undefined
+  if (line.startsWith('[')) {
+    const close = line.indexOf(']')
+    if (close < 0) return null
+    hostIP = line.slice(1, close)
+    line = line.slice(close + 1)
+    if (line.startsWith(':')) line = line.slice(1)
+  }
+  const parts = line.split(':')
+  let host: number
+  let container: number
+  if (parts.length === 1) {
+    host = Number(parts[0])
+    container = host
+  } else if (parts.length === 2) {
+    host = Number(parts[0])
+    container = Number(parts[1])
+  } else if (parts.length === 3) {
+    hostIP = hostIP ?? parts[0]
+    host = Number(parts[1])
+    container = Number(parts[2])
+  } else {
+    return null
+  }
   if (!isHostPort(host) || !isHostPort(container)) return null
-  return { hostPort: host, containerPort: container, proto: (m[3] || 'tcp').toLowerCase() }
+  return {
+    hostPort: host,
+    containerPort: container,
+    proto,
+    ...(hostIP ? { hostIP } : {}),
+  }
 }
 
 export function parseComposePorts(yaml: string): ComposePortRow[] {
@@ -47,9 +106,16 @@ export function isComposePortRow(row: ComposePortRow): boolean {
   return isHostPort(row.hostPort) && isHostPort(row.containerPort)
 }
 
+function portHostPrefix(hostIP?: string): string {
+  const ip = hostIP?.trim()
+  if (!ip) return ''
+  if (ip.includes(':') && !ip.startsWith('[')) return `[${ip}]:`
+  return `${ip}:`
+}
+
 function portEntryText(row: ComposePortRow): string {
   const proto = row.proto && row.proto !== 'tcp' ? `/${row.proto}` : ''
-  return `"${row.hostPort}:${row.containerPort}${proto}"`
+  return `"${portHostPrefix(row.hostIP)}${row.hostPort}:${row.containerPort}${proto}"`
 }
 
 function mountEntryText(mount: ComposeMountDraft): string {
@@ -66,11 +132,15 @@ function payloadMatches(payload: string, mount: ComposeMountDraft): boolean {
   return ro === mount.readOnly
 }
 
+type ListItem = {
+  span: number[]
+}
+
 type ListBlock = {
   key: number
   keyName: string
   keyIndent: string
-  entries: number[]
+  items: ListItem[]
   entryIndent: string
   flow: boolean
 }
@@ -82,7 +152,7 @@ function findListBlocks(lines: string[], key: string): ListBlock[] {
     const m = lines[i].match(keyRe)
     if (!m) continue
     const keyIndent = m[1]
-    const entries: number[] = []
+    const items: ListItem[] = []
     let entryIndent = `${keyIndent}  `
     let j = i + 1
     for (; j < lines.length; j++) {
@@ -95,24 +165,44 @@ function findListBlocks(lines: string[], key: string): ListBlock[] {
       }
       const indented = row.match(/^(\s*)-\s+(\S.*)$/)
       if (indented && indented[1].length > keyIndent.length) {
-        if (!entries.length) entryIndent = indented[1]
-        entries.push(j)
+        if (!items.length) entryIndent = indented[1]
+        const span = [j]
+        let k = j + 1
+        for (; k < lines.length; k++) {
+          const cont = lines[k]
+          if (!cont.trim()) break
+          const cIndent = cont.match(/^(\s*)/)?.[1].length ?? 0
+          if (cIndent > indented[1].length && !/^\s*-\s+/.test(cont)) {
+            span.push(k)
+            continue
+          }
+          break
+        }
+        items.push({ span })
+        j = k - 1
         continue
       }
       break
     }
-    if (!entries.length && !m[2]) {
+    if (!items.length && !m[2]) {
       const next = lines.slice(i + 1).find((r) => r.trim() !== '')
       const nextIndent = next?.match(/^(\s*)/)?.[1].length ?? 0
       if (next && nextIndent > keyIndent.length && !next.trim().startsWith('-')) continue
     }
-    blocks.push({ key: i, keyName: key, keyIndent, entries, entryIndent, flow: Boolean(m[2]) })
+    blocks.push({ key: i, keyName: key, keyIndent, items, entryIndent, flow: Boolean(m[2]) })
   }
   return blocks
 }
 
 function blockPayloads(lines: string[], block: ListBlock): string[] {
-  return block.entries.map((idx) => lines[idx].trim().replace(/^-\s+/, ''))
+  return block.items.map((item) =>
+    item.span
+      .map((idx, i) => {
+        const raw = lines[idx].trim()
+        return i === 0 ? raw.replace(/^-\s+/, '') : raw
+      })
+      .join('\n'),
+  )
 }
 
 function applyBlocks(
@@ -125,7 +215,7 @@ function applyBlocks(
   const keyRewrite = new Map<number, string>()
   blocks.forEach((block, b) => {
     const entries = perBlock[b] ?? []
-    block.entries.forEach((idx) => drop.add(idx))
+    block.items.forEach((item) => item.span.forEach((idx) => drop.add(idx)))
     if (!entries.length) {
       drop.add(block.key)
       return
@@ -175,7 +265,7 @@ function replaceListKey(yaml: string, key: string, entries: string[]): string {
     if (!entries.length) return yaml
     return insertFreshBlock(yaml, key, entries)
   }
-  const counts = blocks.map((block) => block.entries.length)
+  const counts = blocks.map((block) => block.items.length)
   const allocation: number[] = []
   let remaining = entries.length
   blocks.forEach((_, b) => {
@@ -193,7 +283,17 @@ function replaceListKey(yaml: string, key: string, entries: string[]): string {
 }
 
 export function setComposePorts(yaml: string, rows: ComposePortRow[]): string {
-  return replaceListKey(yaml, 'ports', rows.filter(isComposePortRow).map(portEntryText))
+  const lines = yaml.split('\n')
+  const kept: string[] = []
+  for (const block of findListBlocks(lines, 'ports')) {
+    for (const payload of blockPayloads(lines, block)) {
+      if (!parsePortEntry(payload)) kept.push(payload)
+    }
+  }
+  return replaceListKey(yaml, 'ports', [
+    ...rows.filter(isComposePortRow).map(portEntryText),
+    ...kept,
+  ])
 }
 
 export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): string {

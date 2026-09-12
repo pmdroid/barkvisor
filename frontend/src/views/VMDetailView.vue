@@ -29,6 +29,7 @@ import {
   setComposePorts,
   sharedHostKey,
   type ComposeMountDraft,
+  type ComposePortRow,
 } from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
@@ -1417,7 +1418,18 @@ const appPortSaving = ref(false)
 const appVolumePickerOpen = ref(false)
 const appPickedHost = ref('')
 const showAppPortsEditor = ref(false)
-const appPortsDraft = ref<PortForwardRule[]>([])
+type AppPortDraft = PortForwardRule & { hostIP?: string }
+
+const appPortsDraft = ref<AppPortDraft[]>([])
+
+function appPortDraftFromRow(row: ComposePortRow): AppPortDraft {
+  return {
+    protocol: (row.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
+    hostPort: row.hostPort,
+    guestPort: row.containerPort,
+    hostIP: row.hostIP,
+  }
+}
 const canEditWorkload = computed(() =>
   isApp.value && (!isMemberDetail.value || memberReachable.value === true),
 )
@@ -1523,18 +1535,36 @@ function onAppHostPicked(path: string) {
 }
 
 function openAppPortsEditor() {
-  const ports = vm.value?.publishedPorts ?? []
-  appPortsDraft.value = ports.length
-    ? ports.map((p) => ({
-        protocol: (p.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
-        hostPort: p.hostPort,
-        guestPort: p.containerPort,
-      }))
-    : parseComposePorts(vm.value?.spec?.spec?.compose ?? '').map((row) => ({
-        protocol: (row.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
-        hostPort: row.hostPort,
-        guestPort: row.containerPort,
-      }))
+  const compose = vm.value?.spec?.spec?.compose ?? ''
+  const parsed = parseComposePorts(compose)
+  const live = vm.value?.publishedPorts ?? []
+  const fromLive = live.map((p) => {
+    const proto = (p.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol']
+    const match = parsed.find(
+      (row) =>
+        row.hostPort === p.hostPort &&
+        row.containerPort === p.containerPort &&
+        row.proto === proto,
+    )
+    return {
+      protocol: proto,
+      hostPort: p.hostPort,
+      guestPort: p.containerPort,
+      hostIP: match?.hostIP,
+    }
+  })
+  const extras = parsed
+    .filter(
+      (row) =>
+        !fromLive.some(
+          (p) =>
+            p.hostPort === row.hostPort &&
+            p.guestPort === row.containerPort &&
+            p.protocol === row.proto,
+        ),
+    )
+    .map(appPortDraftFromRow)
+  appPortsDraft.value = live.length ? [...fromLive, ...extras] : parsed.map(appPortDraftFromRow)
   showAppPortsEditor.value = true
 }
 
@@ -1557,6 +1587,7 @@ async function saveAppPorts() {
         hostPort: row.hostPort,
         containerPort: row.guestPort,
         proto: row.protocol === 'udp' ? 'udp' : 'tcp',
+        hostIP: row.hostIP,
       })),
     )
     await saveAppSpec(spec)
