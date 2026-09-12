@@ -139,6 +139,28 @@ describe('createProgress', () => {
     expect((api.post as ReturnType<typeof mock>).mock.calls.length).toBe(0)
   })
 
+  test('mergeInto overlays application pull and start', () => {
+    const store = useCreateProgressStore()
+    const pulling = store.mergeInto([{
+      vm: { ...provisionVm(), id: 'app-1', kind: 'Application', state: 'provisioning' },
+      hostId: 'desk',
+      label: 'Desk',
+      role: 'self',
+      reachable: true,
+    }])
+    expect(pulling[0]?.createPhase).toBe('pulling')
+    expect(pulling[0]?.createDetail).toBe('Pulling image…')
+    const starting = store.mergeInto([{
+      vm: { ...provisionVm(), id: 'app-1', kind: 'Application', state: 'starting' },
+      hostId: 'desk',
+      label: 'Desk',
+      role: 'self',
+      reachable: true,
+    }])
+    expect(starting[0]?.createPhase).toBe('starting')
+    expect(starting[0]?.createDetail).toBe('Starting…')
+  })
+
   test('mergeInto uses downloadPercent from the VM row', () => {
     const store = useCreateProgressStore()
     const vm = { ...provisionVm(), pendingImageId: 'img-1', downloadPercent: 12 }
@@ -205,5 +227,72 @@ describe('createProgress', () => {
     expect(merged.some((row) => row.createPhase === 'provisioning' && row.vm.id === 'vm-alma')).toBe(true)
     await done
     expect(store.jobs).toHaveLength(0)
+  })
+
+  test('app create pending row then running toast', async () => {
+    let state = 'provisioning'
+    api.post = mock((url: string) => {
+      expect(String(url)).toContain('/workloads/apply')
+      return Promise.resolve({ data: { op: 'created', id: 'app-whoami' } })
+    }) as typeof api.post
+    api.get = mock((url: string) => {
+      expect(String(url)).toContain('/vms/app-whoami')
+      if (state === 'provisioning') {
+        state = 'starting'
+        return Promise.resolve({
+          data: { ...provisionVm(), id: 'app-whoami', name: 'whoami', kind: 'Application', state: 'provisioning' },
+        })
+      }
+      if (state === 'starting') {
+        state = 'running'
+        return Promise.resolve({
+          data: { ...provisionVm(), id: 'app-whoami', name: 'whoami', kind: 'Application', state: 'starting' },
+        })
+      }
+      return Promise.resolve({
+        data: { ...provisionVm(), id: 'app-whoami', name: 'whoami', kind: 'Application', state: 'running' },
+      })
+    }) as typeof api.get
+
+    const store = useCreateProgressStore()
+    const pending = store.followApp({
+      name: 'whoami',
+      body: { kind: 'Application' },
+      device: { hostId: 'desk', role: 'self' },
+    })
+    expect(store.jobs[0]?.phase).toBe('pulling')
+    expect(store.mergeInto([])[0]?.vm.kind).toBe('Application')
+    expect(store.mergeInto([])[0]?.createPhase).toBe('pulling')
+    await pending
+    expect(store.jobs).toHaveLength(0)
+    expect(useToastStore().toasts.some((t) => t.type === 'success' && t.message.includes('whoami'))).toBe(true)
+    const home = useDeviceWorkloadsStore()
+    expect(home.vmsFor(home.selfHostId || 'desk').some((vm) => vm.id === 'app-whoami' && vm.state === 'running')).toBe(true)
+  })
+
+  test('app create failure stays on the list', async () => {
+    api.post = mock(() => Promise.resolve({ data: { op: 'created', id: 'app-bad' } })) as typeof api.post
+    api.get = mock(() => Promise.resolve({
+      data: {
+        ...provisionVm(),
+        id: 'app-bad',
+        name: 'bad',
+        kind: 'Application',
+        state: 'error',
+        description: 'compose up failed',
+      },
+    })) as typeof api.get
+
+    const store = useCreateProgressStore()
+    await store.followApp({
+      name: 'bad',
+      body: { kind: 'Application' },
+      device: { hostId: 'desk', role: 'self' },
+    })
+    expect(store.jobs[0]?.phase).toBe('error')
+    expect(store.jobs[0]?.detail).toContain('compose up')
+    expect(useToastStore().toasts.some((t) => t.type === 'error')).toBe(true)
+    expect(store.mergeInto([])[0]?.createPhase).toBe('error')
+    expect(store.mergeInto([])[0]?.vm.id).toBe('app-bad')
   })
 })

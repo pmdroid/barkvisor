@@ -248,6 +248,63 @@ final class ApplicationLifecycleServiceTests {
         await collector.stop(vmID: "whoami-metrics")
     }
 
+    @Test func `start from provisioning pulls then ups`() async throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = RecordingStartComposeRunner()
+        ComposeRuntime.runner = compose
+        defer {
+            HostInfoService.lanBindIPv4Provider = nil
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            ComposeTestIsolation.installFailFast()
+        }
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-pull")
+        vm.state = "provisioning"
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "58081:80"
+        """
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        try await DockerInspectTestGate.withStub({ names in
+            let ports: [String: Any] = [
+                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58081"]],
+            ]
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": ports]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }) {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+        }
+
+        #expect(compose.calls.contains { $0.contains("pull") })
+        #expect(compose.calls.contains { $0.contains("up") })
+        let pullAt = compose.calls.firstIndex { $0.contains("pull") } ?? .max
+        let upAt = compose.calls.firstIndex { $0.contains("up") } ?? .min
+        #expect(pullAt < upAt)
+        #expect(vm.state == "running")
+    }
+
     @Test func `start allows catalog host folder binds from sharedPaths`() async throws {
         HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
         let snap = DockerEngineSnapshot(
@@ -521,6 +578,26 @@ private final class RestartInspect: @unchecked Sendable {
             ["NetworkSettings": ["Ports": ports]]
         }
         return try JSONSerialization.data(withJSONObject: objects)
+    }
+}
+
+private final class RecordingStartComposeRunner: ComposeCommandRunning, @unchecked Sendable {
+    var calls: [[String]] = []
+
+    func run(
+        arguments: [String],
+        projectDirectory _: URL,
+        timeout _: TimeInterval,
+    ) throws -> CommandResult {
+        calls.append(arguments)
+        if arguments.contains("ps") {
+            return CommandResult(
+                exitCode: 0,
+                stdout: Data(#"[{"State":"running"}]"#.utf8),
+                stderr: Data(),
+            )
+        }
+        return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
     }
 }
 

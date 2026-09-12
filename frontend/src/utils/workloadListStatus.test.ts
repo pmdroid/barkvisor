@@ -50,6 +50,14 @@ describe('workloadListStatusLabel', () => {
     })).toBe('Decompressing')
     expect(workloadListStatusLabel({
       vm: vm({ state: 'provisioning', health: 'starting' }),
+      createPhase: 'pulling',
+    })).toBe('Pulling image…')
+    expect(workloadListStatusLabel({
+      vm: vm({ state: 'starting', health: 'starting' }),
+      createPhase: 'starting',
+    })).toBe('Starting…')
+    expect(workloadListStatusLabel({
+      vm: vm({ state: 'provisioning', health: 'starting' }),
     })).toBe('Provisioning')
     expect(workloadListStatusLabel({
       vm: vm({ state: 'starting', health: 'starting' }),

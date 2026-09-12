@@ -5,10 +5,12 @@ import { apiErrorMessage } from '../api/errors'
 import type { DeployTemplateRequest, DeployTemplateResponse, Image, TaskEvent, VM } from '../api/types'
 import {
   deviceImagePath,
+  devicePath,
   deviceTaskPath,
   deviceVmPath,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
+import { isApplicationWorkload } from '../utils/workloadKind'
 import { imageRowDownloadPercent } from '../utils/imageProgress'
 import {
   createPhaseHealth,
@@ -33,6 +35,7 @@ export type CreateJob = {
   cpuCount: number
   memoryMB: number
   vmId?: string
+  kind?: string
 }
 
 function sleep(ms: number) {
@@ -49,11 +52,18 @@ function newJobId() {
 
 function pendingVM(job: CreateJob): VM {
   const now = new Date().toISOString()
+  const isApp = job.kind === 'Application'
+  const state = job.phase === 'error'
+    ? 'error'
+    : job.phase === 'starting'
+      ? 'starting'
+      : 'provisioning'
   return {
     id: job.vmId ?? `${PENDING_CREATE_ID_PREFIX}${job.id}`,
     name: job.name,
-    vmType: 'linux-arm64',
-    state: job.phase === 'error' ? 'error' : 'provisioning',
+    kind: job.kind ?? null,
+    vmType: isApp ? 'application' : 'linux-arm64',
+    state,
     health: createPhaseHealth(job.phase),
     cpuCount: job.cpuCount,
     memoryMB: job.memoryMB,
@@ -79,6 +89,15 @@ function pendingVM(job: CreateJob): VM {
 }
 
 function overlayFromVM(vm: VM): Pick<HomeWorkloadRow, 'createPhase' | 'createDetail' | 'createPercent'> | null {
+  if (isApplicationWorkload(vm)) {
+    if (vm.state === 'provisioning') {
+      return { createPhase: 'pulling', createDetail: 'Pulling image…', createPercent: null }
+    }
+    if (vm.state === 'starting') {
+      return { createPhase: 'starting', createDetail: 'Starting…', createPercent: null }
+    }
+    return null
+  }
   if (!vm.pendingImageId) return null
   if (vm.state === 'error') {
     return {
@@ -335,6 +354,84 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     }
   }
 
+  function applyPhase(vm: VM): { phase: CreateListPhase; detail: string } | null {
+    if (vm.state === 'error') {
+      return { phase: 'error', detail: vm.status?.healthError || vm.description || 'App failed to start' }
+    }
+    if (vm.state === 'provisioning') {
+      return { phase: 'pulling', detail: 'Pulling image…' }
+    }
+    if (vm.state === 'starting') {
+      return { phase: 'starting', detail: 'Starting…' }
+    }
+    return null
+  }
+
+  async function waitApp(id: string, vmId: string, device: DeviceApiTarget | undefined) {
+    for (let i = 0; i < 600; i++) {
+      if (!living(id)) return
+      const { data } = await api.get(vmPath(device, vmId))
+      if (!living(id)) return
+      const vm = data as VM
+      if (!vm || typeof vm !== 'object' || Array.isArray(vm)) {
+        await sleep(intervalMs.value)
+        continue
+      }
+      applyVM(device, vm)
+      if (vm.state === 'running') return
+      if (vm.state === 'error') {
+        throw new Error(vm.status?.healthError || vm.description || 'App failed to start')
+      }
+      const next = applyPhase(vm)
+      if (next) {
+        patchJob(id, { phase: next.phase, detail: next.detail, percent: null, vmId: vm.id })
+      }
+      await sleep(intervalMs.value)
+    }
+    throw new Error('Timed out waiting for the app to start')
+  }
+
+  async function followApp(opts: {
+    name: string
+    body: unknown
+    headers?: Record<string, string>
+    device?: DeviceApiTarget
+  }) {
+    const place = placement(opts.device)
+    const job = addJob({
+      name: opts.name,
+      hostId: place.hostId,
+      label: place.label,
+      role: place.role,
+      reachable: place.reachable,
+      phase: 'pulling',
+      percent: null,
+      detail: 'Pulling image…',
+      cpuCount: 0,
+      memoryMB: 0,
+      kind: 'Application',
+    })
+    try {
+      const { data } = await api.post(
+        place.target ? devicePath(place.target, '/workloads/apply') : '/workloads/apply',
+        opts.body,
+        opts.headers ? { headers: opts.headers } : undefined,
+      )
+      const result = data as { id?: string }
+      if (!result?.id) {
+        throw new Error('Create did not return an app')
+      }
+      if (!living(job.id)) return
+      patchJob(job.id, { vmId: result.id })
+      await waitApp(job.id, result.id, opts.device)
+      if (!living(job.id)) return
+      useToastStore().success(`${opts.name} is running`)
+      dropJob(job.id)
+    } catch (e: unknown) {
+      fail(job.id, apiErrorMessage(e))
+    }
+  }
+
   async function followVM(opts: {
     vm: VM
     taskID?: string
@@ -393,6 +490,7 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     jobs,
     intervalMs,
     followTemplate,
+    followApp,
     followVM,
     mergeInto,
     cancelAll,
