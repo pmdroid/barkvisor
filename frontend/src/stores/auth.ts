@@ -2,6 +2,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api/client'
 import type { AuthMe, LoginSession, UserRole } from '../api/types'
+import type { AuthMode } from '../utils/authMode'
+import {
+  applyFrontDoorBypass,
+  clearFrontDoorBypass,
+  frontDoorAuthMode,
+  frontDoorBypassed,
+} from '../utils/frontDoor'
 import { getPasskey } from '../utils/webauthn'
 import { useLogStore } from './logs'
 import { useMetricsStore } from './metrics'
@@ -25,11 +32,13 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const refreshToken = ref(localStorage.getItem(REFRESH_TOKEN_KEY) || '')
   const role = ref<UserRole | ''>((localStorage.getItem(USER_ROLE_KEY) as UserRole | null) || '')
+  const bypassed = frontDoorBypassed
+  const authMode = frontDoorAuthMode
   if (token.value) syncIngressCookie(token.value)
 
-  const isAuthenticated = computed(() => !!token.value)
-  const isAdmin = computed(() => role.value === 'admin')
-  const isInference = computed(() => role.value === 'inference')
+  const isAuthenticated = computed(() => bypassed.value || !!token.value)
+  const isAdmin = computed(() => bypassed.value || role.value === 'admin')
+  const isInference = computed(() => !bypassed.value && role.value === 'inference')
 
   function persistSession(nextToken: string, nextRefresh: string) {
     token.value = nextToken
@@ -57,8 +66,17 @@ export const useAuthStore = defineStore('auth', () => {
     syncIngressCookie('')
   }
 
+  function applyBypass(mode: AuthMode, proxied = false) {
+    applyFrontDoorBypass(mode, proxied)
+    if (bypassed.value) persistRole('admin')
+  }
+
+  function clearBypass() {
+    clearFrontDoorBypass()
+  }
+
   async function fetchMe(): Promise<void> {
-    if (!token.value) return
+    if (!token.value && !bypassed.value) return
     try {
       const { data } = await api.get<AuthMe>('/auth/me')
       persistRole(parseRole(data.role))
@@ -94,6 +112,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
+    if (bypassed.value) return
     const access = token.value
     const presented = refreshToken.value
     clearSessionLocally()
@@ -113,6 +132,8 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     refreshToken,
     role,
+    bypassed,
+    authMode,
     isAuthenticated,
     isAdmin,
     isInference,
@@ -120,5 +141,7 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithPasskey,
     logout,
     fetchMe,
+    applyBypass,
+    clearBypass,
   }
 })

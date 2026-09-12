@@ -19,7 +19,8 @@ import {
 import { getSetupDeviceName, saveSetupDeviceName } from '../api/deviceName'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { clearSetupCache } from '../router'
+import { clearSetupCache, refreshFrontDoorStatus } from '../router'
+import { saveSecuritySettings } from '../api/security'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { isPasskeyAvailable, passkeyBlock, passkeyUnavailableMessage } from '../utils/webauthn'
 import PasskeyBlocked from '../components/PasskeyBlocked.vue'
@@ -40,6 +41,7 @@ const error = ref('')
 const loading = ref(false)
 const deviceName = ref('')
 const deviceHostname = ref('')
+const skipSignIn = ref(false)
 
 const passkeysAvailable = isPasskeyAvailable()
 const passkeyBlocked = passkeyBlock()
@@ -190,6 +192,10 @@ async function finishSetup() {
     clearSetupCache()
     authStore.token = token
     localStorage.setItem('token', token)
+    if (skipSignIn.value) {
+      await saveSecuritySettings('loopback', false)
+      await refreshFrontDoorStatus()
+    }
     router.replace('/dashboard')
   } catch (e: any) {
     error.value = apiErrorMessage(e, 'Failed to complete setup')
@@ -275,6 +281,10 @@ async function finishSetup() {
                 :placeholder="deviceHostname || 'Studio Mac'"
               />
             </div>
+            <label class="skip-signin">
+              <input v-model="skipSignIn" type="checkbox" />
+              Private single-user machine — skip sign-in on this computer
+            </label>
             <FormError v-if="error" :message="error" />
             <div class="actions">
               <div class="spacer"></div>
@@ -428,6 +438,14 @@ async function finishSetup() {
 </template>
 
 <style scoped>
+.skip-signin {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 .setup-page {
   --s-bg: var(--bg);
   --s-panel: var(--panel, rgba(255, 255, 255, 0.03));
