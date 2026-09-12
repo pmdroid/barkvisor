@@ -145,7 +145,7 @@ onUnmounted(() => disconnect())
 .log-actions { display: flex; gap: 8px; align-items: center; }
 .log-hint { font-size: 11.5px; color: var(--text-dim); }
 .terminal {
-  background: #070a10;
+  background: var(--log-dim-bg);
   padding: 16px 18px;
   font-family: ui-monospace, 'SF Mono', monospace;
   font-size: 12px;
