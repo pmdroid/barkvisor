@@ -6,7 +6,10 @@ import {
   applyComposeDocumentDrafts,
   composeBindFromDraft,
   composeMountFromDraft,
+  ensureApplicationSharedPaths,
+  extractApplicationSharedPaths,
   extractComposeBlock,
+  mergeApplicationSharedPaths,
   parseComposePorts,
   removeComposeMount,
   replaceComposeBlock,
@@ -394,5 +397,71 @@ spec:
     })
     expect(portsOnly).toContain('- "9000:80"')
     expect(portsOnly).toContain('"/data/config:/config"')
+    expect(extractApplicationSharedPaths(next!)).toEqual(['/srv/ds'])
+    expect(extractApplicationSharedPaths(named!)).toEqual([])
+    expect(extractApplicationSharedPaths(portsOnly!)).toEqual([])
+  })
+
+  test('custom YAML host binds write spec.sharedPaths', () => {
+    const document = `apiVersion: barkvisor.dev/v1
+kind: Application
+metadata:
+  name: whoami
+spec:
+  runtime: device
+  compose: |
+    services:
+      whoami:
+        image: traefik/whoami
+        volumes:
+          - "/data/config:/config"
+`
+    const next = applyComposeDocumentDrafts(document, {
+      mounts: [
+        { source: '/Users/me/photos', target: '/photos', readOnly: false },
+        { source: 'whoami-data', target: '/data', readOnly: false },
+      ],
+    })
+    expect(next).toContain('"/Users/me/photos:/photos"')
+    expect(next).toContain('"whoami-data:/data"')
+    expect(extractApplicationSharedPaths(next!)).toEqual(['/Users/me/photos'])
+    expect(ensureApplicationSharedPaths(document)).toContain('  sharedPaths:\n    - "/data/config"')
+    expect(extractApplicationSharedPaths(ensureApplicationSharedPaths(document))).toEqual(['/data/config'])
+  })
+
+  test('sharedPaths merge keeps unparsed bind allowlists', () => {
+    const document = `apiVersion: barkvisor.dev/v1
+kind: Application
+metadata:
+  name: whoami
+spec:
+  runtime: device
+  sharedPaths:
+    - "/secret"
+    - "/data/config"
+  compose: |
+    services:
+      whoami:
+        image: traefik/whoami
+        volumes:
+          - "/data/config:/config"
+          - type: bind
+            source: /secret
+            target: /run/secret
+            read_only: true
+`
+    const next = applyComposeDocumentDrafts(document, {
+      mounts: [{ source: '/media', target: '/media', readOnly: false }],
+    })
+    expect(next).toContain('"/media:/media"')
+    expect(next).not.toContain('/data/config:/config')
+    expect(next).toContain('type: bind')
+    expect(next).toContain('source: /secret')
+    expect(extractApplicationSharedPaths(next!)).toEqual(['/secret', '/media'])
+    expect(mergeApplicationSharedPaths(
+      ['/secret', '/data/config'],
+      parseComposeMounts(extractComposeBlock(document)!),
+      [{ source: '/media', target: '/media', readOnly: false }],
+    )).toEqual(['/secret', '/media'])
   })
 })

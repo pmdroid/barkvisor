@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { ComposeMount } from '../utils/composeMounts'
+import { isManagedAppMount, type ComposeMount } from '../utils/composeMounts'
 import { composeBindFromDraft, type ComposeMountDraft } from '../utils/composeEdit'
 import AppButton from './ui/AppButton.vue'
 
@@ -35,13 +35,8 @@ const canAdd = computed(() => Boolean(composeBindFromDraft({
   readOnly: readOnly.value,
 })))
 
-function managedRoots(): string[] {
-  return (props.roots ?? []).filter(Boolean).map((root) => (root.endsWith('/') ? root : `${root}/`))
-}
-
 function isManaged(mount: ComposeMount): boolean {
-  if (mount.kind === 'volume') return true
-  return managedRoots().some((root) => mount.source.startsWith(root))
+  return isManagedAppMount(mount, props.roots)
 }
 
 function addMount() {

@@ -37,6 +37,7 @@ import {
 import {
   applyComposeDocumentDrafts,
   composeMountFromDraft,
+  ensureApplicationSharedPaths,
   extractComposeBlock,
   isComposePortRow,
   parseComposePorts,
@@ -391,16 +392,21 @@ function yamlDraftIssues(): string[] {
 }
 
 function applyYamlDrafts(document: string): string | null {
-  if (!yamlVolumeDirty.value && !yamlPortDirty.value) return document
   const mounts = yamlVolumes.value
     .filter((row) => !yamlRowEmpty(row))
     .map((row) => composeMountFromDraft(row))
     .filter((row): row is ComposeMountDraft => row !== null)
   const ports = yamlPorts.value.filter((row) => !yamlRowEmpty(row) && isComposePortRow(row))
-  return applyComposeDocumentDrafts(document, {
+  if (!yamlVolumeDirty.value && !yamlPortDirty.value) {
+    return ensureApplicationSharedPaths(document)
+  }
+  const rewritten = applyComposeDocumentDrafts(document, {
     ports: yamlPortDirty.value ? ports : undefined,
     mounts: yamlVolumeDirty.value ? mounts : undefined,
   })
+  if (rewritten === null) return null
+  if (yamlVolumeDirty.value) return rewritten
+  return ensureApplicationSharedPaths(rewritten)
 }
 
 async function submit() {

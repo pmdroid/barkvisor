@@ -434,6 +434,156 @@ export function composeBindFromDraft(draft: ComposeMountDraft): ComposeMountDraf
   return mount
 }
 
+function yamlQuoted(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+function parseSharedPathItem(raw: string): string | null {
+  const text = unquote(raw.trim().replace(/^-\s+/, ''))
+  return text || null
+}
+
+function specChildIndent(document: string): { specLine: number; specIndent: number; childIndent: string } | null {
+  const region = composeBlockRegion(document)
+  const lines = document.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    if (region && i >= region.start && i < region.end) continue
+    const m = lines[i].match(/^(\s*)spec:\s*$/)
+    if (!m) continue
+    return { specLine: i, specIndent: m[1].length, childIndent: `${m[1]}  ` }
+  }
+  return null
+}
+
+function sharedPathsBlock(document: string): { keyLine: number; itemEnd: number; flow: boolean } | null {
+  const spec = specChildIndent(document)
+  if (!spec) return null
+  const region = composeBlockRegion(document)
+  const lines = document.split('\n')
+  for (let i = spec.specLine + 1; i < lines.length; i++) {
+    if (region && i >= region.start && i < region.end) continue
+    if (!lines[i].trim()) continue
+    const indent = lines[i].match(/^(\s*)/)![1].length
+    if (indent <= spec.specIndent) break
+    const m = lines[i].match(/^(\s*)sharedPaths:\s*(\[[^\]]*\])?\s*$/)
+    if (!m || m[1] !== spec.childIndent) continue
+    let itemEnd = i + 1
+    if (!m[2]) {
+      for (let j = i + 1; j < lines.length; j++) {
+        if (region && j >= region.start && j < region.end) break
+        if (!lines[j].trim()) {
+          itemEnd = j + 1
+          continue
+        }
+        const jIndent = lines[j].match(/^(\s*)/)![1].length
+        if (jIndent <= m[1].length) break
+        itemEnd = j + 1
+      }
+    }
+    return { keyLine: i, itemEnd, flow: Boolean(m[2]) }
+  }
+  return null
+}
+
+export function extractApplicationSharedPaths(document: string): string[] {
+  const block = sharedPathsBlock(document)
+  if (!block) return []
+  const lines = document.split('\n')
+  const key = lines[block.keyLine]
+  const flow = key.match(/sharedPaths:\s*(\[[^\]]*\])\s*$/)
+  if (flow?.[1]) {
+    const inner = flow[1].slice(1, -1).trim()
+    if (!inner) return []
+    return inner.split(',').map((part) => parseSharedPathItem(part)).filter((row): row is string => row !== null)
+  }
+  const out: string[] = []
+  for (let i = block.keyLine + 1; i < block.itemEnd; i++) {
+    const row = lines[i].trim()
+    if (!row.startsWith('-')) continue
+    const parsed = parseSharedPathItem(row)
+    if (parsed) out.push(parsed)
+  }
+  return out
+}
+
+export function replaceApplicationSharedPaths(document: string, paths: string[]): string {
+  const spec = specChildIndent(document)
+  if (!spec) return document
+  const lines = document.split('\n')
+  const block = sharedPathsBlock(document)
+  const entries = paths.map((path) => `${spec.childIndent}  - ${yamlQuoted(path)}`)
+  if (!paths.length) {
+    if (!block) return document
+    return [...lines.slice(0, block.keyLine), ...lines.slice(block.itemEnd)].join('\n')
+  }
+  if (block) {
+    return [
+      ...lines.slice(0, block.keyLine),
+      `${spec.childIndent}sharedPaths:`,
+      ...entries,
+      ...lines.slice(block.itemEnd),
+    ].join('\n')
+  }
+  let insertAt = spec.specLine + 1
+  const region = composeBlockRegion(document)
+  for (let i = spec.specLine + 1; i < lines.length; i++) {
+    if (region && i >= region.start && i < region.end) continue
+    if (!lines[i].trim()) continue
+    const indent = lines[i].match(/^(\s*)/)![1].length
+    if (indent <= spec.specIndent) break
+    if (lines[i].startsWith(`${spec.childIndent}runtime:`)) {
+      insertAt = i + 1
+      break
+    }
+  }
+  return [
+    ...lines.slice(0, insertAt),
+    `${spec.childIndent}sharedPaths:`,
+    ...entries,
+    ...lines.slice(insertAt),
+  ].join('\n')
+}
+
+export function mergeApplicationSharedPaths(
+  existing: string[] | undefined,
+  previous: ComposeMount[],
+  next: ComposeMountDraft[],
+): string[] {
+  const prevHosts = new Set(previous.filter((mount) => mount.kind === 'bind').map((mount) => mount.source))
+  const nextHosts = next
+    .map((row) => composeBindFromDraft(row))
+    .filter((row): row is ComposeMountDraft => row !== null)
+    .map((row) => row.source)
+  const nextSet = new Set(nextHosts)
+  const kept = (existing ?? []).filter((path) => {
+    const key = sharedHostKey(path)
+    if (nextSet.has(key)) return true
+    if (prevHosts.has(key)) return false
+    return true
+  })
+  const extra = nextHosts.filter((source) => !kept.some((path) => sharedHostKey(path) === source))
+  return [...kept, ...extra]
+}
+
+export function ensureApplicationSharedPaths(
+  document: string,
+  previousCompose?: string | null,
+  nextMounts?: ComposeMountDraft[],
+): string {
+  const compose = extractComposeBlock(document)
+  if (compose === null) return document
+  const previous = parseComposeMounts(previousCompose ?? compose)
+  const mounts = nextMounts ?? previous.map((mount) => ({
+    source: mount.source,
+    target: mount.target,
+    readOnly: mount.readOnly,
+  }))
+  return replaceApplicationSharedPaths(
+    document,
+    mergeApplicationSharedPaths(extractApplicationSharedPaths(document), previous, mounts),
+  )
+}
+
 export function applyComposeDocumentDrafts(
   document: string,
   drafts: { ports?: ComposePortRow[]; mounts?: ComposeMountDraft[] },
@@ -442,5 +592,15 @@ export function applyComposeDocumentDrafts(
   if (compose === null) {
     return (drafts.ports?.length || drafts.mounts?.length) ? null : document
   }
-  return replaceComposeBlock(document, applyComposeDrafts(compose, drafts))
+  const next = replaceComposeBlock(document, applyComposeDrafts(compose, drafts))
+  if (next === null) return null
+  if (drafts.mounts === undefined) return next
+  return replaceApplicationSharedPaths(
+    next,
+    mergeApplicationSharedPaths(
+      extractApplicationSharedPaths(document),
+      parseComposeMounts(compose),
+      drafts.mounts,
+    ),
+  )
 }

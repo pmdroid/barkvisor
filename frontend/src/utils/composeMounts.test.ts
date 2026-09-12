@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { mountsFromSharedPaths, parseComposeMounts, visibleAppMounts } from './composeMounts'
+import {
+  isManagedAppMount,
+  isUnderManagedRoot,
+  mountsFromSharedPaths,
+  parseComposeMounts,
+  visibleAppMounts,
+} from './composeMounts'
 
 describe('parseComposeMounts', () => {
   test('parses bind and named volume lines', () => {
@@ -34,6 +40,46 @@ describe('mountsFromSharedPaths', () => {
     expect(mountsFromSharedPaths(['/media:/media:ro'])).toEqual([
       { kind: 'bind', source: '/media', target: '/media', readOnly: true },
     ])
+  })
+})
+
+describe('isManagedAppMount', () => {
+  const root = '/var/lib/barkvisor/apps/whoami'
+  const roots = [root, `${root}/volumes`, `${root}/volumes/config`]
+
+  test('protects an exact volume-root bind', () => {
+    expect(isUnderManagedRoot(root, root)).toBe(true)
+    expect(isUnderManagedRoot(`${root}/`, root)).toBe(true)
+    expect(isManagedAppMount(
+      { kind: 'bind', source: root, target: '/data', readOnly: false },
+      roots,
+    )).toBe(true)
+    expect(isManagedAppMount(
+      { kind: 'bind', source: `${root}/`, target: '/data', readOnly: false },
+      [`${root}/`],
+    )).toBe(true)
+  })
+
+  test('protects children without treating a sibling prefix as managed', () => {
+    expect(isManagedAppMount(
+      { kind: 'bind', source: `${root}/volumes/config`, target: '/config', readOnly: false },
+      roots,
+    )).toBe(true)
+    expect(isManagedAppMount(
+      { kind: 'bind', source: `${root}-extra`, target: '/x', readOnly: false },
+      roots,
+    )).toBe(false)
+    expect(isManagedAppMount(
+      { kind: 'bind', source: '/media/movies', target: '/movies', readOnly: false },
+      roots,
+    )).toBe(false)
+  })
+
+  test('locks named volumes regardless of roots', () => {
+    expect(isManagedAppMount(
+      { kind: 'volume', source: 'plex-config', target: '/config', readOnly: false },
+      [],
+    )).toBe(true)
   })
 })
 
