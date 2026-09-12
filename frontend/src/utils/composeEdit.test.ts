@@ -12,6 +12,7 @@ import {
   extractApplicationSharedPaths,
   extractComposeBlock,
   mergeApplicationSharedPaths,
+  parseComposeMountSlots,
   parseComposePortSlots,
   parseComposePorts,
   removeComposeMount,
@@ -375,6 +376,32 @@ environment:
     expect(composeBindFromDraft({ source: 'plex-config', target: '/config', readOnly: false })).toBeNull()
     expect(composeBindFromDraft({ source: '/a', target: '/b', readOnly: false }))
       .toEqual({ source: '/a', target: '/b', readOnly: false })
+  })
+
+  test('setComposeMounts keeps a deleted first-service bind out of later services', () => {
+    const yaml = `services:
+  a:
+    image: img-a
+    volumes:
+      - "/a:/a"
+  b:
+    image: img-b
+    volumes:
+      - "/b:/b"
+      - type: bind
+        source: /secret
+        target: /run/secret
+`
+    const slots = parseComposeMountSlots(yaml).filter((row) => row.source !== '/a')
+    const next = setComposeMounts(yaml, slots)
+    expect(next).not.toContain('/a:/a')
+    expect(next).toContain('  a:\n    image: img-a\n  b:')
+    expect(next).toContain('"/b:/b"')
+    expect(next).toContain('type: bind')
+    expect(next).toContain('source: /secret')
+    expect(parseComposeMounts(next)).toEqual([
+      { kind: 'bind', source: '/b', target: '/b', readOnly: false },
+    ])
   })
 
   test('setComposeMounts replaces the volumes list', () => {

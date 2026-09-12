@@ -13,6 +13,7 @@ export type ComposeMountDraft = {
   source: string
   target: string
   readOnly: boolean
+  block?: number
 }
 
 function unquote(text: string): string {
@@ -349,7 +350,24 @@ function setComposePortsByBlock(yaml: string, rows: ComposePortRow[]): string {
   return applyBlocks(lines, blocks, perBlock)
 }
 
+export function parseComposeMountSlots(yaml: string): ComposeMountDraft[] {
+  const lines = yaml.split('\n')
+  const blocks = findListBlocks(lines, 'volumes')
+  if (!blocks.length) return []
+  const out: ComposeMountDraft[] = []
+  blocks.forEach((block, b) => {
+    for (const payload of blockPayloads(lines, block)) {
+      const parsed = parseMountPayload(payload)
+      if (parsed) out.push({ ...parsed, block: b })
+    }
+  })
+  return out
+}
+
 export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): string {
+  if (mounts.some((mount) => typeof mount.block === 'number')) {
+    return setComposeMountsByBlock(yaml, mounts)
+  }
   const valid = mounts
     .map((mount) => composeMountFromDraft(mount))
     .filter((mount): mount is ComposeMountDraft => mount !== null)
@@ -361,6 +379,25 @@ export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): str
     }
   }
   return replaceListKey(yaml, 'volumes', [...valid.map(mountEntryText), ...kept])
+}
+
+function setComposeMountsByBlock(yaml: string, mounts: ComposeMountDraft[]): string {
+  const lines = yaml.split('\n')
+  const blocks = findListBlocks(lines, 'volumes')
+  const valid = mounts
+    .map((mount) => composeMountFromDraft(mount))
+    .filter((mount): mount is ComposeMountDraft => mount !== null)
+  if (!blocks.length) {
+    return valid.length ? insertFreshBlock(yaml, 'volumes', valid.map(mountEntryText)) : yaml
+  }
+  const perBlock = blocks.map((block, b) => {
+    const unknowns = blockPayloads(lines, block).filter((payload) => !parseMountPayload(payload))
+    const assigned = valid.filter((row) => row.block === b).map(mountEntryText)
+    return [...assigned, ...unknowns]
+  })
+  const extras = valid.filter((row) => typeof row.block !== 'number' || row.block < 0 || row.block >= blocks.length)
+  if (extras.length) perBlock[perBlock.length - 1].push(...extras.map(mountEntryText))
+  return applyBlocks(lines, blocks, perBlock)
 }
 
 export function applyComposeDrafts(
@@ -472,7 +509,12 @@ export function composeMountFromDraft(draft: ComposeMountDraft): ComposeMountDra
   const source = draft.source.trim()
   const target = draft.target.trim()
   if (!source || source.includes(' ') || !target.startsWith('/') || target === '/') return null
-  return { source, target, readOnly: draft.readOnly }
+  return {
+    source,
+    target,
+    readOnly: draft.readOnly,
+    ...(typeof draft.block === 'number' ? { block: draft.block } : {}),
+  }
 }
 
 export function composeBindFromDraft(draft: ComposeMountDraft): ComposeMountDraft | null {

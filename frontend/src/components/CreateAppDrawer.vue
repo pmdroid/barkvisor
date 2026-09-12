@@ -40,11 +40,11 @@ import {
   ensureApplicationSharedPaths,
   extractComposeBlock,
   isComposePortRow,
+  parseComposeMountSlots,
   parseComposePortSlots,
   type ComposeMountDraft,
   type ComposePortRow,
 } from '../utils/composeEdit'
-import { parseComposeMounts } from '../utils/composeMounts'
 import AppButton from './ui/AppButton.vue'
 import AppSelect from './ui/AppSelect.vue'
 import FolderPicker from './FolderPicker.vue'
@@ -298,11 +298,7 @@ function pickYaml() {
 
 function seedYamlDrafts() {
   const compose = extractComposeBlock(yaml.value) ?? ''
-  yamlVolumes.value = parseComposeMounts(compose).map((mount) => ({
-    source: mount.source,
-    target: mount.target,
-    readOnly: mount.readOnly,
-  }))
+  yamlVolumes.value = parseComposeMountSlots(compose)
   yamlPorts.value = parseComposePortSlots(compose)
   yamlVolumeDirty.value = false
   yamlPortDirty.value = false
