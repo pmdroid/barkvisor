@@ -1036,18 +1036,29 @@ onUnmounted(() => {
     <p v-if="proxyWarning" style="color:var(--amber);font-size:13px">
       {{ proxyWarning }}
     </p>
-    <label class="security-choice">
-      <input type="radio" name="auth-mode" :checked="securityMode === 'secure'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('secure')" />
-      Require sign-in (recommended)
-    </label>
-    <label class="security-choice">
-      <input type="radio" name="auth-mode" :checked="securityMode === 'loopback'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('loopback')" />
-      Skip sign-in on this computer
-    </label>
-    <label class="security-choice">
-      <input type="radio" name="auth-mode" :checked="securityMode === 'disabled'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('disabled')" />
-      Skip sign-in for my whole network
-    </label>
+    <div class="security-options" role="radiogroup" aria-label="Sign-in requirement">
+      <label class="security-choice" :class="{ selected: securityMode === 'secure' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'secure'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('secure')" />
+        <span>
+          <b>Require sign-in</b>
+          <small>Recommended. Protect this Device with an account or passkey.</small>
+        </span>
+      </label>
+      <label class="security-choice" :class="{ selected: securityMode === 'loopback' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'loopback'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('loopback')" />
+        <span>
+          <b>Skip sign-in on this computer</b>
+          <small>Local browser access only. Network requests still require sign-in.</small>
+        </span>
+      </label>
+      <label class="security-choice" :class="{ selected: securityMode === 'disabled' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'disabled'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('disabled')" />
+        <span>
+          <b>Skip sign-in for my whole network</b>
+          <small>Anyone who can reach this Device gets full control.</small>
+        </span>
+      </label>
+    </div>
     <p v-if="frontDoorBypassed" style="color:var(--text-secondary);font-size:13px;margin-top:16px">
       Passkeys and API keys are hidden while sign-in is skipped. They come back when you require sign-in again.
     </p>
@@ -1060,7 +1071,7 @@ onUnmounted(() => {
               Anyone on the network can start, stop, and wipe VMs. Type the Device name
               <b>{{ deviceConfirmName }}</b> to confirm. Prefer a passkey if you just want faster sign-in.
             </p>
-            <input v-model="securityConfirmName" type="text" autocomplete="off" spellcheck="false" :placeholder="deviceConfirmName" />
+            <input v-model="securityConfirmName" type="text" autocomplete="off" spellcheck="false" :placeholder="deviceConfirmName" aria-label="Type the Device name to confirm" />
           </div>
           <div class="split-foot">
             <button class="btn-ghost" @click="securityConfirmOpen = false">Cancel</button>
@@ -1463,10 +1474,57 @@ onUnmounted(() => {
 }
 .security-choice {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 8px 0;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
   font-size: 14px;
+  cursor: pointer;
+}
+.security-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 960px;
+}
+.security-choice.selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.security-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.security-choice input {
+  margin-top: 2px;
+}
+.security-choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.security-choice b {
+  font-weight: 600;
+}
+.security-choice small {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.split-warn {
+  color: var(--amber);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 0;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .security-options {
+    grid-template-columns: 1fr;
+  }
 }
 .badge-yellow { background: var(--yellow-muted, rgba(234,179,8,0.15)); color: var(--yellow, #eab308); }
 

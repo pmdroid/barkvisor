@@ -542,6 +542,7 @@ async function submit() {
             <div v-for="(row, index) in yamlVolumes" :key="'yaml-vol-' + index" class="yaml-row">
               <input
                 class="mono"
+                aria-label="Host folder"
                 :value="row.source"
                 placeholder="Host folder"
                 @input="setYamlVolumeSource(index, ($event.target as HTMLInputElement).value)"
@@ -549,6 +550,7 @@ async function submit() {
               <AppButton size="sm" @click="pickerYamlIndex = index">Choose</AppButton>
               <input
                 class="mono"
+                aria-label="Container path"
                 :value="row.target"
                 placeholder="/data"
                 @input="setYamlVolumeTarget(index, ($event.target as HTMLInputElement).value)"
@@ -556,6 +558,7 @@ async function submit() {
               <label class="ro-cell">
                 <input
                   type="checkbox"
+                  aria-label="Read only"
                   :checked="row.readOnly"
                   @change="setYamlVolumeReadOnly(index, ($event.target as HTMLInputElement).checked)"
                 />
@@ -577,6 +580,7 @@ async function submit() {
               <input
                 class="mono"
                 type="number"
+                aria-label="Host port"
                 :value="row.hostPort || ''"
                 placeholder="Host port"
                 min="1"
@@ -587,6 +591,7 @@ async function submit() {
               <input
                 class="mono"
                 type="number"
+                aria-label="Container port"
                 :value="row.containerPort || ''"
                 placeholder="Container port"
                 min="1"
@@ -948,7 +953,7 @@ async function submit() {
   align-items: center;
   margin-bottom: 8px;
 }
-.yaml-row input {
+.yaml-row input.mono {
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border);

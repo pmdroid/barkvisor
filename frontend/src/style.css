@@ -292,6 +292,14 @@ input, select, textarea {
   box-shadow: var(--glass-shine);
   transition: border-color var(--transition), box-shadow var(--transition);
 }
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  flex-shrink: 0;
+  backdrop-filter: none;
+  box-shadow: none;
+}
 input:focus, select:focus, textarea:focus {
   border-color: rgba(167,139,250,0.5);
   box-shadow: 0 0 0 3px rgba(167,139,250,0.08), var(--glass-shine);
@@ -651,10 +659,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   justify-content: space-between;
   gap: 12px;
   padding: 8px 16px;
-  background: var(--amber-dim, rgba(245, 166, 35, 0.15));
+  background: var(--amber-muted, rgba(245, 166, 35, 0.15));
   color: var(--amber);
   font-size: 13px;
   border-bottom: 1px solid var(--border-glass);
+}
+:root[data-theme="light"] .auth-bypass-banner,
+:root[data-theme="light"] .auth-bypass-banner button {
+  color: #92400e;
+  border-color: #92400e;
 }
 .auth-bypass-banner button {
   background: none;
