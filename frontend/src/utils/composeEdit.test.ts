@@ -283,6 +283,11 @@ environment:
       { source: '/gone', target: '/x', readOnly: false },
       parseComposeMounts('    volumes:\n      - "/keep:/app"\n'),
     )).toEqual(['/keep'])
+    expect(afterRemoveSharedPaths(
+      ['/secret', '/gone', '/keep'],
+      { source: '/gone', target: '/x', readOnly: false },
+      parseComposeMounts('    volumes:\n      - "/keep:/app"\n'),
+    )).toEqual(['/secret', '/keep'])
   })
 
   test('composeMountFromDraft normalizes or rejects', () => {

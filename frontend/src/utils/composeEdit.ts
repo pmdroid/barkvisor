@@ -417,8 +417,16 @@ export function afterRemoveSharedPaths(
   mount: ComposeMountDraft,
   remaining: ComposeMount[],
 ): string[] {
-  if (remaining.length) return retainUsedPaths(paths, remaining)
-  return (paths ?? []).filter((path) => sharedHostKey(path) !== mount.source)
+  const previous: ComposeMount[] = [
+    ...remaining,
+    {
+      kind: mount.source.startsWith('/') || mount.source.startsWith('.') ? 'bind' : 'volume',
+      source: mount.source,
+      target: mount.target,
+      readOnly: mount.readOnly,
+    },
+  ]
+  return mergeApplicationSharedPaths(paths ?? [], previous, remaining)
 }
 
 export function composeMountFromDraft(draft: ComposeMountDraft): ComposeMountDraft | null {
