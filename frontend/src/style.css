@@ -292,6 +292,14 @@ input, select, textarea {
   box-shadow: var(--glass-shine);
   transition: border-color var(--transition), box-shadow var(--transition);
 }
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  flex-shrink: 0;
+  backdrop-filter: none;
+  box-shadow: none;
+}
 input:focus, select:focus, textarea:focus {
   border-color: rgba(167,139,250,0.5);
   box-shadow: 0 0 0 3px rgba(167,139,250,0.08), var(--glass-shine);
