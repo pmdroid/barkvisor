@@ -83,6 +83,7 @@ function removeMount(mount: ComposeMount) {
         v-model="hostPath"
         class="mono"
         type="text"
+        aria-label="Host folder"
         placeholder="/data/host-path"
         :disabled="busy"
       />
@@ -91,11 +92,12 @@ function removeMount(mount: ComposeMount) {
         v-model="containerPath"
         class="mono"
         type="text"
+        aria-label="Container path"
         placeholder="/container/path"
         :disabled="busy"
       />
       <label class="ro-toggle">
-        <input v-model="readOnly" type="checkbox" :disabled="busy" />
+        <input v-model="readOnly" type="checkbox" :disabled="busy" aria-label="Read only" />
         <span>ro</span>
       </label>
       <AppButton size="sm" variant="primary" :disabled="busy || !canAdd" @click="addMount">Add</AppButton>
