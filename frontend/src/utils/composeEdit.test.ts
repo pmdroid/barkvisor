@@ -12,6 +12,7 @@ import {
   extractApplicationSharedPaths,
   extractComposeBlock,
   mergeApplicationSharedPaths,
+  parseComposePortSlots,
   parseComposePorts,
   removeComposeMount,
   replaceComposeBlock,
@@ -99,6 +100,27 @@ describe('composeEdit', () => {
     expect(parseComposePorts(yaml)).toEqual([
       { hostPort: 8080, containerPort: 80, proto: 'tcp', hostIP: '127.0.0.1' },
       { hostPort: 5353, containerPort: 53, proto: 'udp', hostIP: '0.0.0.0' },
+    ])
+  })
+
+  test('setComposePorts keeps a deleted first-service row out of later services', () => {
+    const yaml = `services:
+  a:
+    image: img-a
+    ports:
+      - "111:111"
+  b:
+    image: img-b
+    ports:
+      - "222:222"
+`
+    const slots = parseComposePortSlots(yaml).filter((row) => row.hostPort !== 111)
+    const next = setComposePorts(yaml, slots)
+    expect(next).not.toContain('111')
+    expect(next).toContain('  a:\n    image: img-a\n  b:')
+    expect(next).toContain('  b:\n    image: img-b\n    ports:\n      - "222:222"')
+    expect(parseComposePorts(next)).toEqual([
+      { hostPort: 222, containerPort: 222, proto: 'tcp' },
     ])
   })
 

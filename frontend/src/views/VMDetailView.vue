@@ -24,7 +24,7 @@ import {
   applyAppVolumeChange,
   appPortEditorRows,
   isComposePortRow,
-  parseComposePorts,
+  parseComposePortSlots,
   setComposePorts,
   type ComposeMountDraft,
   type ComposePortRow,
@@ -1416,7 +1416,7 @@ const appPortSaving = ref(false)
 const appVolumePickerOpen = ref(false)
 const appPickedHost = ref('')
 const showAppPortsEditor = ref(false)
-type AppPortDraft = PortForwardRule & { hostIP?: string }
+type AppPortDraft = PortForwardRule & { hostIP?: string; block?: number }
 
 const appPortsDraft = ref<AppPortDraft[]>([])
 
@@ -1426,6 +1426,7 @@ function appPortDraftFromRow(row: ComposePortRow): AppPortDraft {
     hostPort: row.hostPort,
     guestPort: row.containerPort,
     hostIP: row.hostIP,
+    block: row.block,
   }
 }
 const canEditWorkload = computed(() =>
@@ -1525,7 +1526,11 @@ function onAppHostPicked(path: string) {
 
 function openAppPortsEditor() {
   const compose = vm.value?.spec?.spec?.compose ?? ''
-  const parsed = parseComposePorts(compose)
+  if (!compose.trim()) {
+    toast.error('This app has no compose document yet')
+    return
+  }
+  const parsed = parseComposePortSlots(compose)
   const live = vm.value?.publishedPorts ?? []
   appPortsDraft.value = appPortEditorRows(parsed, live).map(appPortDraftFromRow)
   showAppPortsEditor.value = true
@@ -1551,6 +1556,7 @@ async function saveAppPorts() {
         containerPort: row.guestPort,
         proto: row.protocol === 'udp' ? 'udp' : 'tcp',
         hostIP: row.hostIP,
+        block: row.block,
       })),
     )
     await saveAppSpec(spec)
@@ -2539,7 +2545,7 @@ const healthBanner = computed(() => {
   <FolderPicker
     v-if="appVolumePickerOpen"
     :modelValue="''"
-    :device="isMemberDetail ? memberDevice : null"
+    :device="isMemberDetail ? memberDevice : undefined"
     @update:modelValue="onAppHostPicked($event)"
     @close="appVolumePickerOpen = false"
   />

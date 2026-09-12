@@ -6,6 +6,7 @@ export type ComposePortRow = {
   containerPort: number
   proto: string
   hostIP?: string
+  block?: number
 }
 
 export type ComposeMountDraft = {
@@ -90,16 +91,22 @@ function parsePortEntry(raw: string): ComposePortRow | null {
   }
 }
 
-export function parseComposePorts(yaml: string): ComposePortRow[] {
+export function parseComposePortSlots(yaml: string): ComposePortRow[] {
   const lines = yaml.split('\n')
   const blocks = findListBlocks(lines, 'ports')
   if (!blocks.length) return []
   const out: ComposePortRow[] = []
-  for (const row of blocks.flatMap((block) => blockPayloads(lines, block))) {
-    const parsed = parsePortEntry(row)
-    if (parsed) out.push(parsed)
-  }
+  blocks.forEach((block, b) => {
+    for (const row of blockPayloads(lines, block)) {
+      const parsed = parsePortEntry(row)
+      if (parsed) out.push({ ...parsed, block: b })
+    }
+  })
   return out
+}
+
+export function parseComposePorts(yaml: string): ComposePortRow[] {
+  return parseComposePortSlots(yaml).map(({ block: _block, ...row }) => row)
 }
 
 export function isComposePortRow(row: ComposePortRow): boolean {
@@ -309,6 +316,9 @@ function replaceListKey(yaml: string, key: string, entries: string[]): string {
 }
 
 export function setComposePorts(yaml: string, rows: ComposePortRow[]): string {
+  if (rows.some((row) => typeof row.block === 'number')) {
+    return setComposePortsByBlock(yaml, rows)
+  }
   const lines = yaml.split('\n')
   const kept: string[] = []
   for (const block of findListBlocks(lines, 'ports')) {
@@ -320,6 +330,23 @@ export function setComposePorts(yaml: string, rows: ComposePortRow[]): string {
     ...rows.filter(isComposePortRow).map(portEntryText),
     ...kept,
   ])
+}
+
+function setComposePortsByBlock(yaml: string, rows: ComposePortRow[]): string {
+  const lines = yaml.split('\n')
+  const blocks = findListBlocks(lines, 'ports')
+  const valid = rows.filter(isComposePortRow)
+  if (!blocks.length) {
+    return valid.length ? insertFreshBlock(yaml, 'ports', valid.map(portEntryText)) : yaml
+  }
+  const perBlock = blocks.map((block, b) => {
+    const unknowns = blockPayloads(lines, block).filter((payload) => !parsePortEntry(payload))
+    const assigned = valid.filter((row) => row.block === b).map(portEntryText)
+    return [...assigned, ...unknowns]
+  })
+  const extras = valid.filter((row) => typeof row.block !== 'number' || row.block < 0 || row.block >= blocks.length)
+  if (extras.length) perBlock[perBlock.length - 1].push(...extras.map(portEntryText))
+  return applyBlocks(lines, blocks, perBlock)
 }
 
 export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): string {

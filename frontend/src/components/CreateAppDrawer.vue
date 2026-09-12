@@ -40,7 +40,7 @@ import {
   ensureApplicationSharedPaths,
   extractComposeBlock,
   isComposePortRow,
-  parseComposePorts,
+  parseComposePortSlots,
   type ComposeMountDraft,
   type ComposePortRow,
 } from '../utils/composeEdit'
@@ -303,7 +303,7 @@ function seedYamlDrafts() {
     target: mount.target,
     readOnly: mount.readOnly,
   }))
-  yamlPorts.value = parseComposePorts(compose)
+  yamlPorts.value = parseComposePortSlots(compose)
   yamlVolumeDirty.value = false
   yamlPortDirty.value = false
 }
