@@ -277,6 +277,9 @@ final class WorkloadApplyServiceTests {
                 backgroundTasks: backgroundTasks,
             )
             #expect(created.op == .created)
+            let inserted = try await fetchVM(created.id)
+            #expect(inserted.state == "provisioning" || inserted.state == "starting" || inserted.state == "running")
+            try await waitForAppCreate(created.id)
             let vm = try await fetchVM(created.id)
             #expect(vm.isApplication)
             #expect(vm.bootDiskId == nil)
@@ -603,6 +606,19 @@ final class WorkloadApplyServiceTests {
 
     private func fetchVM(_ id: String) async throws -> VM {
         try #require(try await dbPool.read { db in try VM.fetchOne(db, key: id) })
+    }
+
+    private func waitForAppCreate(_ id: String) async throws {
+        let taskID = ApplicationLifecycleService.taskID(forCreate: id)
+        for _ in 0 ..< 200 {
+            if let event = await backgroundTasks.status(taskID) {
+                if event.status == .completed || event.status == .failed || event.status == .cancelled {
+                    return
+                }
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        throw BarkVisorError.internalError("timed out waiting for app create \(id)")
     }
 
     private func vmCount() async throws -> Int {

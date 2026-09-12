@@ -199,8 +199,12 @@ public enum VMLifecycleService {
         let vm = try await db.read { db in try VM.fetchOne(db, key: id) }
         guard let vm else { throw BarkVisorError.notFound() }
 
-        guard vm.state == "stopped" || vm.state == "error" else {
-            throw BarkVisorError.conflict("VM must be stopped before deleting")
+        guard canDelete(vm) else {
+            throw BarkVisorError.conflict(
+                vm.isApplication
+                    ? "App must be stopped before deleting"
+                    : "VM must be stopped before deleting",
+            )
         }
 
         guard await !vmManager.isActiveOrStarting(id) else {
@@ -208,6 +212,9 @@ public enum VMLifecycleService {
         }
 
         try await markVMAsDeleting(id: id, db: db)
+        if vm.isApplication {
+            await backgroundTasks.cancel(ApplicationLifecycleService.taskID(forCreate: id))
+        }
 
         let taskID = "vm-delete:\(id)"
         await backgroundTasks.submit(taskID, kind: .vmDelete) { @Sendable in

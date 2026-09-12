@@ -464,6 +464,7 @@ public final class VaporServer: @unchecked Sendable {
             backgroundTasks: backgroundTasks,
             db: pool,
         )
+        await ApplicationLifecycleService.resumePending(db: pool, backgroundTasks: backgroundTasks)
         await BuiltInCatalogSync.submitStartup(
             backgroundTasks: backgroundTasks,
             syncService: syncService,

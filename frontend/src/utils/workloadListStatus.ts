@@ -1,7 +1,13 @@
 import type { VM, WorkloadHealth } from '../api/types'
 import { healthLabel, vmHealth } from './workloadHealth'
 
-export type CreateListPhase = 'downloading' | 'decompressing' | 'provisioning' | 'error'
+export type CreateListPhase =
+  | 'downloading'
+  | 'decompressing'
+  | 'provisioning'
+  | 'pulling'
+  | 'starting'
+  | 'error'
 
 export const PENDING_CREATE_ID_PREFIX = 'pending:'
 
@@ -20,6 +26,8 @@ export type WorkloadListStatusRow = {
 export function workloadListStatusLabel(row: WorkloadListStatusRow): string {
   if (row.createPhase === 'downloading') return 'Downloading'
   if (row.createPhase === 'decompressing') return 'Decompressing'
+  if (row.createPhase === 'pulling') return 'Pulling image…'
+  if (row.createPhase === 'starting') return 'Starting…'
   if (row.createPhase === 'provisioning' || row.vm.state === 'provisioning') return 'Provisioning'
   if (row.createPhase === 'error' || row.vm.state === 'error') return 'Failed'
   if (row.vm.state === 'starting') return 'Starting'
@@ -53,6 +61,8 @@ export function workloadListStatusClass(row: WorkloadListStatusRow): 'ok' | 'bad
     row.createPhase === 'downloading'
     || row.createPhase === 'decompressing'
     || row.createPhase === 'provisioning'
+    || row.createPhase === 'pulling'
+    || row.createPhase === 'starting'
     || row.vm.state === 'provisioning'
     || row.vm.state === 'starting'
     || row.vm.state === 'stopping'
@@ -77,7 +87,13 @@ export function workloadListHealthBucket(
 
 export function createPhaseHealth(phase: CreateListPhase | undefined): WorkloadHealth {
   if (phase === 'error') return 'failed'
-  if (phase === 'downloading' || phase === 'decompressing' || phase === 'provisioning') {
+  if (
+    phase === 'downloading'
+    || phase === 'decompressing'
+    || phase === 'provisioning'
+    || phase === 'pulling'
+    || phase === 'starting'
+  ) {
     return 'starting'
   }
   return 'unknown'

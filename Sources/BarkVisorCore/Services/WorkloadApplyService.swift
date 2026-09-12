@@ -158,7 +158,12 @@ public enum WorkloadApplyService {
         var spec = try WorkloadSpecDocument.decode(document)
         if spec.kind == WorkloadSpec.kindApplication {
             spec = try await applyCatalogTemplate(document: document, spec: spec, db: db)
-            return try await applyCreateApplication(spec: spec, dryRun: dryRun, db: db)
+            return try await applyCreateApplication(
+                spec: spec,
+                dryRun: dryRun,
+                db: db,
+                backgroundTasks: backgroundTasks,
+            )
         }
         let params = try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
         try await VMLifecycleService.validateCreateVMInputs(params: params, db: db)
@@ -196,6 +201,7 @@ public enum WorkloadApplyService {
         spec: WorkloadSpec,
         dryRun: Bool,
         db: DatabasePool,
+        backgroundTasks: BackgroundTaskManager,
     ) async throws -> WorkloadApplyResult {
         try WorkloadSpecProjector.validate(spec)
         try DockerEngine.requireDeviceRuntime()
@@ -219,7 +225,7 @@ public enum WorkloadApplyService {
             id: id,
             name: spec.metadata.name,
             vmType: WorkloadSpec.applicationGuestType,
-            state: "stopped",
+            state: "provisioning",
             cpuCount: spec.spec.resources.cpu,
             memoryMb: spec.spec.resources.memoryMb,
             bootDiskId: nil,
@@ -255,20 +261,22 @@ public enum WorkloadApplyService {
         try await db.write { db in
             try row.insert(db)
         }
-        do {
-            try await ApplicationLifecycleService.start(vm: &vm, db: db)
-        } catch {
-            Log.vm.warning(
-                "Application \(vm.id) compose up failed: \(error.localizedDescription)",
-                vm: vm.id,
-            )
+        let workloadID = id
+        _ = await backgroundTasks.submit(
+            ApplicationLifecycleService.taskID(forCreate: workloadID),
+            kind: .appCreate,
+        ) {
+            guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
+                throw BarkVisorError.notFound("Workload \(workloadID) not found")
+            }
+            try await ApplicationLifecycleService.start(vm: &live, db: db)
+            return workloadID
         }
-        let persisted = try await db.read { db in try VM.fetchOne(db, key: id) } ?? vm
         return WorkloadApplyResult(
             op: .created,
-            id: persisted.id,
-            generation: persisted.specGeneration,
-            diff: WorkloadApplyDiff(before: nil, after: WorkloadSpecProjector.fromVM(persisted)),
+            id: vm.id,
+            generation: vm.specGeneration,
+            diff: WorkloadApplyDiff(before: nil, after: WorkloadSpecProjector.fromVM(vm)),
         )
     }
 

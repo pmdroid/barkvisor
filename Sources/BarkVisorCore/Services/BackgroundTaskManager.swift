@@ -23,6 +23,7 @@ public actor BackgroundTaskManager {
         case systemUpdate
         case ollamaPull
         case appUpdate
+        case appCreate
     }
 
     public enum TaskStatus: String, Codable, Sendable {
@@ -72,6 +73,7 @@ public actor BackgroundTaskManager {
         .systemUpdate: 1,
         .ollamaPull: 2,
         .appUpdate: 2,
+        .appCreate: 2,
     ]
 
     private let maxDuration: [TaskKind: TimeInterval] = [
@@ -82,6 +84,7 @@ public actor BackgroundTaskManager {
         .systemUpdate: 600,
         .ollamaPull: 3_600,
         .appUpdate: 600,
+        .appCreate: 600,
     ]
 
     // MARK: - Public API

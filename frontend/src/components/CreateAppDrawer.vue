@@ -3,9 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type { AppTemplateField, HostGPUShareDevice, SystemCapabilities } from '../api/types'
+import { useCreateProgressStore } from '../stores/createProgress'
 import { useDevicesStore } from '../stores/devices'
 import { useHomeLibraryStore, type HomeApp } from '../stores/homeLibrary'
-import { useToastStore } from '../stores/toast'
 import { useFeature } from '../composables/useFeature'
 import { deviceGpuSharePath, devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { defaultGPUShareIds, gpuShareOccupancy, gpuShareVisible } from '../utils/gpuShare'
@@ -54,7 +54,7 @@ const emit = defineEmits(['close', 'created'])
 
 const devices = useDevicesStore()
 const homeLibrary = useHomeLibraryStore()
-const toast = useToastStore()
+const createProgress = useCreateProgressStore()
 const docker = useFeature('dockerEngine')
 
 const step = ref<'gallery' | 'configure'>('gallery')
@@ -430,6 +430,8 @@ async function submit() {
   }
   submitting.value = true
   try {
+    let body: unknown
+    let headers: Record<string, string> | undefined
     if (customYaml.value) {
       const rewritten = applyYamlDrafts(yaml.value)
       if (rewritten === null) {
@@ -437,12 +439,11 @@ async function submit() {
         submitting.value = false
         return
       }
-      await api.post(devicePath(device, '/workloads/apply'), rewritten, {
-        headers: { 'Content-Type': 'application/yaml' },
-      })
+      body = rewritten
+      headers = { 'Content-Type': 'application/yaml' }
     } else if (selected.value) {
       const hostPort = Number(portOverride.value)
-      const body = applicationDocument(
+      body = applicationDocument(
         selected.value,
         name.value.trim() || selected.value.id,
         values.value,
@@ -455,13 +456,17 @@ async function submit() {
           hostPort: Number.isFinite(hostPort) && hostPort > 0 ? hostPort : null,
         },
       )
-      await api.post(devicePath(device, '/workloads/apply'), body)
     } else {
       error.value = 'Pick an app.'
       submitting.value = false
       return
     }
-    toast.success('App applied')
+    void createProgress.followApp({
+      name: name.value.trim() || selected.value?.id || 'App',
+      body,
+      headers,
+      device,
+    })
     emit('created')
   } catch (e: unknown) {
     error.value = apiErrorMessage(e)
