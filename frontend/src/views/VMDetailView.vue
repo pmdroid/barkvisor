@@ -19,7 +19,16 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
-import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
+import { mountsFromSharedPaths, parseComposeMounts, type ComposeMount } from '../utils/composeMounts'
+import {
+  addComposeMount,
+  isComposePortRow,
+  parseComposePorts,
+  removeComposeMount,
+  retainUsedPaths,
+  setComposePorts,
+  type ComposeMountDraft,
+} from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -39,6 +48,7 @@ import type {
   HostUSBDevice,
   GPUPassthroughDevice,
   USBPassthroughDevice,
+  WorkloadSpec,
 } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
@@ -1401,6 +1411,157 @@ async function saveEnv() {
     envSaving.value = false
   }
 }
+
+const appVolumeSaving = ref(false)
+const appPortSaving = ref(false)
+const appVolumePickerOpen = ref(false)
+const appPickedHost = ref('')
+const showAppPortsEditor = ref(false)
+const appPortsDraft = ref<PortForwardRule[]>([])
+const canEditWorkload = computed(() =>
+  isApp.value && (!isMemberDetail.value || memberReachable.value === true),
+)
+
+async function loadAppSpec(): Promise<WorkloadSpec> {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) {
+      throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+    }
+    return await homeWorkloads.fetchSpec(device, vmId.value)
+  }
+  return await store.fetchSpec(vmId.value)
+}
+
+async function saveAppSpec(spec: WorkloadSpec) {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) {
+      throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+    }
+    await homeWorkloads.putSpec(device, vmId.value, spec)
+  } else {
+    await store.putSpec(vmId.value, spec)
+  }
+}
+
+function appComposeOf(spec: WorkloadSpec | null): string | null {
+  const compose = spec?.spec?.compose
+  return typeof compose === 'string' && compose.trim() ? compose : null
+}
+
+async function addAppVolume(draft: ComposeMountDraft) {
+  if (appVolumeSaving.value) return
+  appVolumeSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const compose = appComposeOf(spec)
+    if (!compose) throw new Error('This app has no compose document yet')
+    spec.spec.compose = addComposeMount(compose, draft)
+    const paths = spec.spec.sharedPaths ?? []
+    if (!paths.includes(draft.source)) spec.spec.sharedPaths = [...paths, draft.source]
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply volume changes.')
+    } else {
+      toast.success('Volume added')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appVolumeSaving.value = false
+  }
+}
+
+async function removeAppVolume(mount: ComposeMount) {
+  if (appVolumeSaving.value) return
+  appVolumeSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const compose = appComposeOf(spec)
+    if (!compose) throw new Error('This app has no compose document yet')
+    const nextCompose = removeComposeMount(compose, {
+      source: mount.source,
+      target: mount.target,
+      readOnly: mount.readOnly,
+    })
+    spec.spec.compose = nextCompose
+    spec.spec.sharedPaths = retainUsedPaths(spec.spec.sharedPaths, parseComposeMounts(nextCompose))
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply volume changes.')
+    } else {
+      toast.success('Volume removed')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appVolumeSaving.value = false
+  }
+}
+
+function openAppVolumePicker() {
+  appVolumePickerOpen.value = true
+}
+
+function onAppHostPicked(path: string) {
+  appPickedHost.value = path
+  appVolumePickerOpen.value = false
+}
+
+function openAppPortsEditor() {
+  const ports = vm.value?.publishedPorts ?? []
+  appPortsDraft.value = ports.length
+    ? ports.map((p) => ({
+        protocol: (p.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
+        hostPort: p.hostPort,
+        guestPort: p.containerPort,
+      }))
+    : parseComposePorts(vm.value?.spec?.spec?.compose ?? '').map((row) => ({
+        protocol: (row.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
+        hostPort: row.hostPort,
+        guestPort: row.containerPort,
+      }))
+  showAppPortsEditor.value = true
+}
+
+const appPortsDraftValid = computed(() =>
+  appPortsDraft.value.every((row) =>
+    isComposePortRow({ hostPort: row.hostPort, containerPort: row.guestPort, proto: row.protocol }),
+  ),
+)
+
+async function saveAppPorts() {
+  if (appPortSaving.value || !appPortsDraftValid.value) return
+  appPortSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const compose = appComposeOf(spec)
+    if (!compose) throw new Error('This app has no compose document yet')
+    spec.spec.compose = setComposePorts(
+      compose,
+      appPortsDraft.value.map((row) => ({
+        hostPort: row.hostPort,
+        containerPort: row.guestPort,
+        proto: row.protocol === 'udp' ? 'udp' : 'tcp',
+      })),
+    )
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    showAppPortsEditor.value = false
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply port changes.')
+    } else {
+      toast.success('Ports saved')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appPortSaving.value = false
+  }
+}
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
 const updatingApp = ref(false)
 
@@ -1734,7 +1895,15 @@ const healthBanner = computed(() => {
         :open-url="openUi"
         :saving-ingress="savingIngress"
         :metrics="appMetrics"
+        :editable="canEditWorkload"
+        :saving-volumes="appVolumeSaving"
+        :saving-ports="appPortSaving"
+        :picked-host="appPickedHost"
         @update-ingress="saveIngress"
+        @add-mount="addAppVolume"
+        @remove-mount="removeAppVolume"
+        @pick-host="openAppVolumePicker"
+        @edit-ports="openAppPortsEditor"
       />
     </div>
 
@@ -2195,7 +2364,16 @@ const healthBanner = computed(() => {
     </div>
     <div v-if="tab === 'volumes' && isApp" class="app-panel">
       <h2>Volumes</h2>
-      <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
+      <AppMountList
+        :mounts="appMounts"
+        :roots="(vm.volumeRoots ?? []).filter(Boolean)"
+        :editable="canEditWorkload"
+        :busy="appVolumeSaving"
+        :picked-host="appPickedHost"
+        @add-mount="addAppVolume"
+        @remove-mount="removeAppVolume"
+        @pick-host="openAppVolumePicker"
+      />
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
@@ -2352,6 +2530,37 @@ const healthBanner = computed(() => {
     @update:modelValue="addSharedPath($event); showFolderPicker = false"
     @close="showFolderPicker = false"
   />
+
+  <FolderPicker
+    v-if="appVolumePickerOpen"
+    :modelValue="''"
+    :device="isMemberDetail ? memberDevice : null"
+    @update:modelValue="onAppHostPicked($event)"
+    @close="appVolumePickerOpen = false"
+  />
+
+  <AppModal
+    v-if="showAppPortsEditor"
+    title="Bound ports"
+    subtitle="Host ports published by this app (container ports stay fixed)."
+    max-width="520px"
+    @close="!appPortSaving && (showAppPortsEditor = false)"
+  >
+    <PortForwardEditor v-model="appPortsDraft" />
+    <p v-if="!appPortsDraftValid" style="color:var(--red);font-size:12px;margin-top:8px">
+      Every binding needs a host port and a container port between 1 and 65535.
+    </p>
+    <template #actions>
+      <AppButton :disabled="appPortSaving" @click="showAppPortsEditor = false">Cancel</AppButton>
+      <AppButton
+        variant="primary"
+        :loading="appPortSaving"
+        :disabled="!appPortsDraftValid"
+        loading-text="Saving..."
+        @click="saveAppPorts"
+      >Save</AppButton>
+    </template>
+  </AppModal>
 
   <ConfirmDialog
     v-if="stopConfirm"

@@ -34,7 +34,19 @@ import {
   type AppTemplateExtraFolder,
   type AppTemplateValues,
 } from '../utils/appTemplate'
+import {
+  addComposeMount,
+  extractComposeBlock,
+  isComposePortRow,
+  parseComposePorts,
+  replaceComposeBlock,
+  setComposePorts,
+  type ComposeMountDraft,
+  type ComposePortRow,
+} from '../utils/composeEdit'
+import { parseComposeMounts } from '../utils/composeMounts'
 import AppButton from './ui/AppButton.vue'
+import AppSelect from './ui/AppSelect.vue'
 import FolderPicker from './FolderPicker.vue'
 
 const props = defineProps<{ initialHostId?: string }>()
@@ -75,6 +87,9 @@ const portOverride = ref('')
 const advancedOpen = ref(false)
 const pickerFieldId = ref<string | null>(null)
 const pickerExtraIndex = ref<number | null>(null)
+const yamlVolumes = ref<ComposeMountDraft[]>([])
+const yamlPorts = ref<ComposePortRow[]>([])
+const pickerYamlIndex = ref<number | null>(null)
 const lanIPv4 = ref('')
 const showErrors = ref(false)
 const gpuShare = ref<HostGPUShareDevice[]>([])
@@ -201,6 +216,9 @@ function pickApp(app: HomeApp) {
   showErrors.value = false
   extraFolders.value = []
   extraEnv.value = []
+  yamlVolumes.value = []
+  yamlPorts.value = []
+  pickerYamlIndex.value = null
   openThrough.value = true
   modeOverride.value = ''
   portOverride.value = ''
@@ -272,7 +290,115 @@ function extraEnvRecord(): Record<string, string> {
 function pickYaml() {
   selected.value = null
   customYaml.value = true
+  seedYamlDrafts()
   step.value = 'configure'
+}
+
+function seedYamlDrafts() {
+  const compose = extractComposeBlock(yaml.value) ?? ''
+  yamlVolumes.value = parseComposeMounts(compose).map((mount) => ({
+    source: mount.source,
+    target: mount.target,
+    readOnly: mount.readOnly,
+  }))
+  yamlPorts.value = parseComposePorts(compose)
+}
+
+function addYamlVolume() {
+  yamlVolumes.value = [...yamlVolumes.value, { source: '', target: '/data', readOnly: false }]
+}
+
+function removeYamlVolume(index: number) {
+  yamlVolumes.value = yamlVolumes.value.filter((_, i) => i !== index)
+}
+
+function setYamlVolumeSource(index: number, value: string) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, source: value } : row))
+}
+
+function setYamlVolumeTarget(index: number, value: string) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, target: value } : row))
+}
+
+function setYamlVolumeReadOnly(index: number, value: boolean) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, readOnly: value } : row))
+}
+
+function onYamlVolumePicked(path: string) {
+  if (pickerYamlIndex.value === null) return
+  setYamlVolumeSource(pickerYamlIndex.value, path)
+  pickerYamlIndex.value = null
+}
+
+function addYamlPort() {
+  yamlPorts.value = [...yamlPorts.value, { hostPort: 0, containerPort: 0, proto: 'tcp' }]
+}
+
+function removeYamlPort(index: number) {
+  yamlPorts.value = yamlPorts.value.filter((_, i) => i !== index)
+}
+
+function setYamlPort(index: number, patch: Partial<ComposePortRow>) {
+  yamlPorts.value = yamlPorts.value.map((row, i) => (i === index ? { ...row, ...patch } : row))
+}
+
+const yamlDraftReady = computed(() => yamlDraftIssues().length === 0)
+
+function yamlRowEmpty(row: ComposeMountDraft | ComposePortRow): boolean {
+  if ('hostPort' in row) return !row.hostPort && !row.containerPort
+  return !row.source.trim() && !row.target.trim()
+}
+
+function yamlDraftIssues(): string[] {
+  const issues: string[] = []
+  for (const row of yamlVolumes.value) {
+    if (yamlRowEmpty(row)) continue
+    const source = row.source.trim()
+    const target = row.target.trim()
+    if (!source.startsWith('/') || !target.startsWith('/') || target === '/') {
+      issues.push('Volumes need an absolute host path and container path.')
+      break
+    }
+  }
+  for (const row of yamlPorts.value) {
+    if (yamlRowEmpty(row)) continue
+    if (!isComposePortRow(row)) {
+      issues.push('Ports need a host and container port between 1 and 65535.')
+      break
+    }
+  }
+  if (!issues.length && (yamlVolumes.value.length || yamlPorts.value.length)) {
+    if (extractComposeBlock(yaml.value) === null) {
+      issues.push('Add a compose block to the YAML before adding volumes or ports.')
+    }
+  }
+  return issues
+}
+
+function applyYamlDrafts(document: string): string | null {
+  const volumes = yamlVolumes.value
+    .map((row) => ({ source: row.source.trim(), target: row.target.trim(), readOnly: row.readOnly }))
+    .filter((row) => row.source.startsWith('/') && row.target.startsWith('/') && row.target !== '/')
+  const ports = yamlPorts.value.filter(isComposePortRow)
+  if (!volumes.length && !ports.length) return document
+  const compose = extractComposeBlock(document)
+  if (compose === null) return null
+  let next = compose
+  if (ports.length) {
+    const merged = parseComposePorts(next)
+    for (const row of ports) {
+      if (!merged.some((existing) => existing.hostPort === row.hostPort
+        && existing.containerPort === row.containerPort
+        && existing.proto === row.proto)) {
+        merged.push({ ...row })
+      }
+    }
+    next = setComposePorts(next, merged)
+  }
+  for (const row of volumes) {
+    next = addComposeMount(next, row)
+  }
+  return replaceComposeBlock(document, next)
 }
 
 async function submit() {
@@ -294,10 +420,20 @@ async function submit() {
       return
     }
   }
+  if (customYaml.value && !yamlDraftReady.value) {
+    error.value = yamlDraftIssues()[0] ?? 'Fix the volume or port rows first.'
+    return
+  }
   submitting.value = true
   try {
     if (customYaml.value) {
-      await api.post(devicePath(device, '/workloads/apply'), yaml.value, {
+      const rewritten = applyYamlDrafts(yaml.value)
+      if (rewritten === null) {
+        error.value = 'Could not apply the volume or port rows — edit the compose block directly.'
+        submitting.value = false
+        return
+      }
+      await api.post(devicePath(device, '/workloads/apply'), rewritten, {
         headers: { 'Content-Type': 'application/yaml' },
       })
     } else if (selected.value) {
@@ -392,6 +528,67 @@ async function submit() {
             <span>Workload spec</span>
             <textarea v-model="yaml" spellcheck="false" />
           </label>
+          <template v-if="customYaml">
+            <div class="section-label">Volumes</div>
+            <div v-for="(row, index) in yamlVolumes" :key="'yaml-vol-' + index" class="yaml-row">
+              <input
+                class="mono"
+                :value="row.source"
+                placeholder="Host folder"
+                @input="setYamlVolumeSource(index, ($event.target as HTMLInputElement).value)"
+              />
+              <AppButton size="sm" @click="pickerYamlIndex = index">Choose</AppButton>
+              <input
+                class="mono"
+                :value="row.target"
+                placeholder="/data"
+                @input="setYamlVolumeTarget(index, ($event.target as HTMLInputElement).value)"
+              />
+              <label class="ro-cell">
+                <input
+                  type="checkbox"
+                  :checked="row.readOnly"
+                  @change="setYamlVolumeReadOnly(index, ($event.target as HTMLInputElement).checked)"
+                />
+                <span>ro</span>
+              </label>
+              <AppButton size="sm" @click="removeYamlVolume(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addYamlVolume">Add volume</button>
+            <div class="section-label">Ports</div>
+            <div v-for="(row, index) in yamlPorts" :key="'yaml-port-' + index" class="yaml-row">
+              <AppSelect
+                :modelValue="row.proto"
+                style="width:80px"
+                @update:modelValue="setYamlPort(index, { proto: String($event) })"
+              >
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+              </AppSelect>
+              <input
+                class="mono"
+                type="number"
+                :value="row.hostPort || ''"
+                placeholder="Host port"
+                min="1"
+                max="65535"
+                @input="setYamlPort(index, { hostPort: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <span class="port-arrow">→</span>
+              <input
+                class="mono"
+                type="number"
+                :value="row.containerPort || ''"
+                placeholder="Container port"
+                min="1"
+                max="65535"
+                @input="setYamlPort(index, { containerPort: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <AppButton size="sm" @click="removeYamlPort(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addYamlPort">Add port</button>
+            <p v-if="!yamlDraftReady" class="warn">{{ yamlDraftIssues()[0] }}</p>
+          </template>
           <template v-else>
             <div v-if="folderFields.length" class="section-label">Folders</div>
             <label
@@ -570,6 +767,13 @@ async function submit() {
       @update:modelValue="onExtraPicked($event)"
       @close="pickerExtraIndex = null"
     />
+    <FolderPicker
+      v-if="pickerYamlIndex !== null"
+      :modelValue="yamlVolumes[pickerYamlIndex]?.source || ''"
+      :device="selectedDevice"
+      @update:modelValue="onYamlVolumePicked($event)"
+      @close="pickerYamlIndex = null"
+    />
   </div>
 </template>
 
@@ -728,6 +932,41 @@ async function submit() {
   border: 1px solid var(--border);
   border-radius: 2px;
   padding: 8px 10px;
+}
+.yaml-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.yaml-row input {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+  flex: 1;
+}
+.yaml-row select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 6px;
+}
+.yaml-row .port-arrow {
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+.yaml-row .ro-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 .callout {
   background: rgba(251, 191, 36, 0.08);
