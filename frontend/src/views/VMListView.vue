@@ -285,7 +285,7 @@ async function doStop() {
   </div>
 
   <div class="ops-body">
-  <div class="health-strip filters">
+  <div class="health-strip">
     <button
       type="button"
       class="fchip"
@@ -328,7 +328,7 @@ async function doStop() {
         <tr>
           <th>Name</th>
           <th>Device</th>
-          <th>OS</th>
+          <th>Type</th>
           <th>CPU · Mem</th>
           <th>Ports</th>
           <th>Status</th>
@@ -453,6 +453,8 @@ async function doStop() {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  background: var(--panel-2, rgba(255,255,255,0.08));
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-dim);
 }
 </style>
