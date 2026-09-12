@@ -2856,7 +2856,7 @@ components:
 
     SetupStatus:
       type: object
-      required: [complete, joined, admin, authDisabled, authMode]
+      required: [complete, joined, admin, authDisabled, authMode, proxied]
       properties:
         complete:
           type: boolean
@@ -2869,6 +2869,8 @@ components:
         authMode:
           type: string
           enum: [secure, loopback, disabled]
+        proxied:
+          type: boolean
 
     RefreshRequest:
       type: object
