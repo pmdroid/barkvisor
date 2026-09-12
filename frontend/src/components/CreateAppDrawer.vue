@@ -306,7 +306,7 @@ function seedYamlDrafts() {
 }
 
 watch(yaml, () => {
-  if (customYaml.value && step.value === 'configure') seedYamlDrafts()
+  if (customYaml.value && step.value === 'configure' && !yamlDraftsDirty.value) seedYamlDrafts()
 })
 
 function addYamlVolume() {
@@ -389,9 +389,10 @@ function yamlDraftIssues(): string[] {
 function applyYamlDrafts(document: string): string | null {
   if (!yamlDraftsDirty.value) return document
   const mounts = yamlVolumes.value
+    .filter((row) => !yamlRowEmpty(row))
     .map((row) => composeMountFromDraft(row))
     .filter((row): row is ComposeMountDraft => row !== null)
-  const ports = yamlPorts.value.filter(isComposePortRow)
+  const ports = yamlPorts.value.filter((row) => !yamlRowEmpty(row) && isComposePortRow(row))
   return applyComposeDocumentDrafts(document, { ports, mounts })
 }
 

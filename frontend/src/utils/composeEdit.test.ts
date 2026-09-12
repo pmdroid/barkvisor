@@ -159,6 +159,23 @@ describe('composeEdit', () => {
     expect(removeComposeMount(two, { source: '/nope', target: '/x', readOnly: false })).toBe(two)
   })
 
+  test('named volume mappings survive list rewrites', () => {
+    const yaml = `services:
+  a:
+    image: img
+    volumes:
+      - "/a:/app"
+volumes:
+  data:
+`
+    const removed = removeComposeMount(yaml, { source: '/a', target: '/app', readOnly: false })
+    expect(removed).not.toContain('/a:/app')
+    expect(removed).toContain('volumes:\n  data:')
+    const replaced = setComposeMounts(yaml, [{ source: '/b', target: '/data', readOnly: false }])
+    expect(replaced).toContain('"/b:/data"')
+    expect(replaced).toContain('volumes:\n  data:')
+  })
+
   test('removeComposeMount prunes emptied volumes and untouched keys survive', () => {
     const removed = removeComposeMount(base, { source: '/data/config', target: '/config', readOnly: false })
     expect(removed).not.toContain('volumes:')
