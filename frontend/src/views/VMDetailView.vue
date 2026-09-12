@@ -19,7 +19,7 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
-import { mountsFromSharedPaths, parseComposeMounts, type ComposeMount } from '../utils/composeMounts'
+import { parseComposeMounts, visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
 import {
   addComposeMount,
   isComposePortRow,
@@ -1332,11 +1332,10 @@ const openUi = computed(() => {
   return appOpenUrl(vm.value, device)
 })
 const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
-const appMounts = computed(() => {
-  const fromShared = mountsFromSharedPaths(vm.value?.sharedPaths)
-  if (fromShared.length) return fromShared
-  return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
-})
+const appMounts = computed(() => visibleAppMounts({
+  compose: vm.value?.spec?.spec?.compose,
+  sharedPaths: vm.value?.sharedPaths,
+}))
 const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
 const envEditing = ref(false)
 const envDraft = ref<{ key: string; value: string }[]>([])
@@ -2542,7 +2541,7 @@ const healthBanner = computed(() => {
   <AppModal
     v-if="showAppPortsEditor"
     title="Bound ports"
-    subtitle="Host ports published by this app (container ports stay fixed)."
+    subtitle="Host ports this app publishes on the Device."
     max-width="520px"
     @close="!appPortSaving && (showAppPortsEditor = false)"
   >

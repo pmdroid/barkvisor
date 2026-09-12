@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { MetricSample, VM } from '../api/types'
 import { firstOpenUrl } from '../utils/workloadKind'
 import { shortDigest } from '../utils/composeLogs'
-import { parseComposeMounts, mountsFromSharedPaths, type ComposeMount } from '../utils/composeMounts'
+import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
 import type { ComposeMountDraft } from '../utils/composeEdit'
 import AppMountList from './AppMountList.vue'
 import {
@@ -40,11 +40,10 @@ const emit = defineEmits<{
 
 const published = computed(() => props.openUrl || firstOpenUrl(props.vm))
 const catalog = computed(() => appCatalogSource(props.vm))
-const mounts = computed(() => {
-  const fromShared = mountsFromSharedPaths(props.vm.sharedPaths)
-  if (fromShared.length) return fromShared
-  return parseComposeMounts(props.vm.spec?.spec?.compose ?? '')
-})
+const mounts = computed(() => visibleAppMounts({
+  compose: props.vm.spec?.spec?.compose,
+  sharedPaths: props.vm.sharedPaths,
+}))
 const env = computed(() => appEnvSummary(props.vm))
 const ingress = computed(() => appIngressState(props.vm))
 

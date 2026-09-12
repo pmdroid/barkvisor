@@ -2,10 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { parseComposeMounts } from './composeMounts'
 import {
   addComposeMount,
+  applyComposeDocumentDrafts,
+  composeBindFromDraft,
   composeMountFromDraft,
+  extractComposeBlock,
   parseComposePorts,
   removeComposeMount,
+  replaceComposeBlock,
   retainUsedPaths,
+  setComposeMounts,
   setComposePorts,
 } from './composeEdit'
 
@@ -33,7 +38,21 @@ describe('composeEdit', () => {
     expect(parseComposePorts('- "80"')).toEqual([
       { hostPort: 80, containerPort: 80, proto: 'tcp' },
     ])
-    expect(parseComposePorts('- "0:80"\n- "80:0"\n- foo:bar')).toEqual([])
+    expect(parseComposePorts('- "0:80"\n- "80:0"\n- "80:70000"\n- foo:bar')).toEqual([])
+  })
+
+  test('parseComposePorts reads ports blocks and ignores env-like siblings', () => {
+    const yaml = `services:
+  whoami:
+    image: traefik/whoami
+    ports:
+      - "8080:80"
+    environment:
+      - "9090:90"
+`
+    expect(parseComposePorts(yaml)).toEqual([
+      { hostPort: 8080, containerPort: 80, proto: 'tcp' },
+    ])
   })
 
   test('setComposePorts replaces rows in place and keeps formatting', () => {
@@ -176,7 +195,83 @@ environment:
   test('composeMountFromDraft normalizes or rejects', () => {
     expect(composeMountFromDraft({ source: ' /a ', target: ' /b ', readOnly: true }))
       .toEqual({ source: '/a', target: '/b', readOnly: true })
-    expect(composeMountFromDraft({ source: 'rel', target: '/b', readOnly: false })).toBeNull()
+    expect(composeMountFromDraft({ source: 'plex-config', target: '/config', readOnly: false }))
+      .toEqual({ source: 'plex-config', target: '/config', readOnly: false })
+    expect(composeMountFromDraft({ source: 'rel path', target: '/b', readOnly: false })).toBeNull()
     expect(composeMountFromDraft({ source: '/a', target: '/', readOnly: false })).toBeNull()
+    expect(composeBindFromDraft({ source: 'plex-config', target: '/config', readOnly: false })).toBeNull()
+    expect(composeBindFromDraft({ source: '/a', target: '/b', readOnly: false }))
+      .toEqual({ source: '/a', target: '/b', readOnly: false })
+  })
+
+  test('setComposeMounts replaces the volumes list', () => {
+    const next = setComposeMounts(base, [
+      { source: '/data/media', target: '/media', readOnly: true },
+    ])
+    expect(parseComposeMounts(next)).toEqual([
+      { kind: 'bind', source: '/data/media', target: '/media', readOnly: true },
+    ])
+    expect(next).not.toContain('/data/config')
+    expect(setComposeMounts(base, [])).not.toContain('volumes:')
+  })
+
+  test('extract and replace keep the Application compose block', () => {
+    const document = `apiVersion: barkvisor.dev/v1
+kind: Application
+metadata:
+  name: whoami
+spec:
+  runtime: device
+  compose: |
+    services:
+      whoami:
+        image: traefik/whoami
+        ports:
+          - "8080:80"
+    restart: unless-stopped
+`
+    expect(extractComposeBlock(document)).toContain('image: traefik/whoami')
+    const rewritten = replaceComposeBlock(document, setComposePorts(extractComposeBlock(document)!, [
+      { hostPort: 9090, containerPort: 80, proto: 'tcp' },
+    ]))
+    expect(rewritten).toContain('      - "9090:80"')
+    expect(rewritten).toContain('  compose: |')
+    expect(rewritten).not.toContain('8080')
+  })
+
+  test('applyComposeDocumentDrafts replaces ports and volumes', () => {
+    const document = `apiVersion: barkvisor.dev/v1
+kind: Application
+metadata:
+  name: whoami
+spec:
+  runtime: device
+  compose: |
+    services:
+      whoami:
+        image: traefik/whoami
+        ports:
+          - "8080:80"
+        volumes:
+          - "/data/config:/config"
+`
+    const next = applyComposeDocumentDrafts(document, {
+      ports: [{ hostPort: 8181, containerPort: 80, proto: 'tcp' }],
+      mounts: [{ source: '/srv/ds', target: '/ds', readOnly: false }],
+    })
+    expect(next).toContain('- "8181:80"')
+    expect(next).toContain('"/srv/ds:/ds"')
+    expect(next).not.toContain('8080')
+    expect(next).not.toContain('/data/config')
+    expect(applyComposeDocumentDrafts(document, { ports: [], mounts: [] })).not.toContain('ports:')
+    expect(applyComposeDocumentDrafts('kind: Application\n', {
+      ports: [{ hostPort: 80, containerPort: 80, proto: 'tcp' }],
+      mounts: [],
+    })).toBeNull()
+    const named = applyComposeDocumentDrafts(document, {
+      ports: [{ hostPort: 8080, containerPort: 80, proto: 'tcp' }],
+      mounts: [{ source: 'plex-config', target: '/config', readOnly: false }],
+    })
+    expect(named).toContain('"plex-config:/config"')
   })
 })

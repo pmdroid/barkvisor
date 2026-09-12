@@ -17,24 +17,36 @@ function unquote(text: string): string {
   return text.trim().replace(/^["']|["']$/g, '')
 }
 
+function isHostPort(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 65535
+}
+
+function parsePortEntry(raw: string): ComposePortRow | null {
+  const line = unquote(raw.trim().replace(/^-\s+/, ''))
+  const m = line.match(/^(\d+)(?::(\d+))?(?:\/([a-zA-Z]+))?$/)
+  if (!m) return null
+  const host = Number(m[1])
+  const container = m[2] ? Number(m[2]) : host
+  if (!isHostPort(host) || !isHostPort(container)) return null
+  return { hostPort: host, containerPort: container, proto: (m[3] || 'tcp').toLowerCase() }
+}
+
 export function parseComposePorts(yaml: string): ComposePortRow[] {
+  const lines = yaml.split('\n')
+  const blocks = findListBlocks(lines, 'ports')
+  const raw = blocks.length
+    ? blocks.flatMap((block) => blockPayloads(lines, block))
+    : lines
   const out: ComposePortRow[] = []
-  for (const raw of yaml.split('\n')) {
-    const line = unquote(raw.trim().replace(/^-\s+/, ''))
-    const m = line.match(/^(\d+)(?::(\d+))?(?:\/([a-zA-Z]+))?$/)
-    if (!m) continue
-    const host = Number(m[1])
-    const container = m[2] ? Number(m[2]) : host
-    if (!Number.isFinite(host) || !Number.isFinite(container)) continue
-    if (host < 1 || container < 1) continue
-    out.push({ hostPort: host, containerPort: container, proto: (m[3] || 'tcp').toLowerCase() })
+  for (const row of raw) {
+    const parsed = parsePortEntry(row)
+    if (parsed) out.push(parsed)
   }
   return out
 }
 
 export function isComposePortRow(row: ComposePortRow): boolean {
-  return Number.isFinite(row.hostPort) && Number.isFinite(row.containerPort)
-    && row.hostPort >= 1 && row.containerPort >= 1
+  return isHostPort(row.hostPort) && isHostPort(row.containerPort)
 }
 
 function portEntryText(row: ComposePortRow): string {
@@ -153,30 +165,49 @@ function insertFreshBlock(yaml: string, key: string, entries: string[]): string 
   return out.join('\n')
 }
 
-export function setComposePorts(yaml: string, rows: ComposePortRow[]): string {
-  const valid = rows.filter(isComposePortRow)
+function replaceListKey(yaml: string, key: string, entries: string[]): string {
   const lines = yaml.split('\n')
-  const blocks = findListBlocks(lines, 'ports')
+  const blocks = findListBlocks(lines, key)
   if (!blocks.length) {
-    if (!valid.length) return yaml
-    return insertFreshBlock(yaml, 'ports', valid.map(portEntryText))
+    if (!entries.length) return yaml
+    return insertFreshBlock(yaml, key, entries)
   }
   const counts = blocks.map((block) => block.entries.length)
   const allocation: number[] = []
-  let remaining = valid.length
+  let remaining = entries.length
   blocks.forEach((_, b) => {
-    const want = Math.min(counts[b], remaining)
-    allocation.push(want)
-    remaining -= want
+    allocation.push(Math.min(counts[b], remaining))
+    remaining -= allocation[b]
   })
   if (remaining > 0) allocation[allocation.length - 1] += remaining
   let cursor = 0
   const perBlock = allocation.map((count) => {
-    const slice = valid.slice(cursor, cursor + count)
+    const slice = entries.slice(cursor, cursor + count)
     cursor += count
-    return slice.map(portEntryText)
+    return slice
   })
   return applyBlocks(lines, blocks, perBlock)
+}
+
+export function setComposePorts(yaml: string, rows: ComposePortRow[]): string {
+  return replaceListKey(yaml, 'ports', rows.filter(isComposePortRow).map(portEntryText))
+}
+
+export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): string {
+  const valid = mounts
+    .map((mount) => composeMountFromDraft(mount))
+    .filter((mount): mount is ComposeMountDraft => mount !== null)
+  return replaceListKey(yaml, 'volumes', valid.map(mountEntryText))
+}
+
+export function applyComposeDrafts(
+  compose: string,
+  drafts: { ports?: ComposePortRow[]; mounts?: ComposeMountDraft[] },
+): string {
+  let next = compose
+  if (drafts.ports) next = setComposePorts(next, drafts.ports)
+  if (drafts.mounts) next = setComposeMounts(next, drafts.mounts)
+  return next
 }
 
 export function addComposeMount(yaml: string, mount: ComposeMountDraft): string {
@@ -260,6 +291,23 @@ export function retainUsedPaths(paths: string[] | null | undefined, mounts: Comp
 export function composeMountFromDraft(draft: ComposeMountDraft): ComposeMountDraft | null {
   const source = draft.source.trim()
   const target = draft.target.trim()
-  if (!source.startsWith('/') || !target.startsWith('/') || target === '/') return null
+  if (!source || source.includes(' ') || !target.startsWith('/') || target === '/') return null
   return { source, target, readOnly: draft.readOnly }
+}
+
+export function composeBindFromDraft(draft: ComposeMountDraft): ComposeMountDraft | null {
+  const mount = composeMountFromDraft(draft)
+  if (!mount?.source.startsWith('/')) return null
+  return mount
+}
+
+export function applyComposeDocumentDrafts(
+  document: string,
+  drafts: { ports: ComposePortRow[]; mounts: ComposeMountDraft[] },
+): string | null {
+  const compose = extractComposeBlock(document)
+  if (compose === null) {
+    return drafts.ports.length || drafts.mounts.length ? null : document
+  }
+  return replaceComposeBlock(document, applyComposeDrafts(compose, drafts))
 }

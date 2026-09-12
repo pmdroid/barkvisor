@@ -35,12 +35,11 @@ import {
   type AppTemplateValues,
 } from '../utils/appTemplate'
 import {
-  addComposeMount,
+  applyComposeDocumentDrafts,
+  composeMountFromDraft,
   extractComposeBlock,
   isComposePortRow,
   parseComposePorts,
-  replaceComposeBlock,
-  setComposePorts,
   type ComposeMountDraft,
   type ComposePortRow,
 } from '../utils/composeEdit'
@@ -353,10 +352,8 @@ function yamlDraftIssues(): string[] {
   const issues: string[] = []
   for (const row of yamlVolumes.value) {
     if (yamlRowEmpty(row)) continue
-    const source = row.source.trim()
-    const target = row.target.trim()
-    if (!source.startsWith('/') || !target.startsWith('/') || target === '/') {
-      issues.push('Volumes need an absolute host path and container path.')
+    if (!composeMountFromDraft(row)) {
+      issues.push('Volumes need a host path or volume name and an absolute container path.')
       break
     }
   }
@@ -376,29 +373,11 @@ function yamlDraftIssues(): string[] {
 }
 
 function applyYamlDrafts(document: string): string | null {
-  const volumes = yamlVolumes.value
-    .map((row) => ({ source: row.source.trim(), target: row.target.trim(), readOnly: row.readOnly }))
-    .filter((row) => row.source.startsWith('/') && row.target.startsWith('/') && row.target !== '/')
+  const mounts = yamlVolumes.value
+    .map((row) => composeMountFromDraft(row))
+    .filter((row): row is ComposeMountDraft => row !== null)
   const ports = yamlPorts.value.filter(isComposePortRow)
-  if (!volumes.length && !ports.length) return document
-  const compose = extractComposeBlock(document)
-  if (compose === null) return null
-  let next = compose
-  if (ports.length) {
-    const merged = parseComposePorts(next)
-    for (const row of ports) {
-      if (!merged.some((existing) => existing.hostPort === row.hostPort
-        && existing.containerPort === row.containerPort
-        && existing.proto === row.proto)) {
-        merged.push({ ...row })
-      }
-    }
-    next = setComposePorts(next, merged)
-  }
-  for (const row of volumes) {
-    next = addComposeMount(next, row)
-  }
-  return replaceComposeBlock(document, next)
+  return applyComposeDocumentDrafts(document, { ports, mounts })
 }
 
 async function submit() {
@@ -684,6 +663,24 @@ async function submit() {
               />
               <span v-if="field.description" class="help">{{ field.description }}</span>
             </label>
+            <div class="section-label">Extra binds</div>
+            <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
+              <input
+                class="mono"
+                :value="row.hostPath"
+                placeholder="Host folder"
+                @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
+              />
+              <input
+                class="mono"
+                :value="row.containerPath"
+                placeholder="/media"
+                @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
+              />
+              <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
+              <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addFolder">Add bind</button>
             <div class="section-label">
               <button class="add-row" type="button" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? 'Hide advanced' : 'Advanced' }}</button>
             </div>
@@ -714,24 +711,6 @@ async function submit() {
                 <AppButton size="sm" @click="removeEnv(index)">Remove</AppButton>
               </div>
               <button class="add-row" type="button" @click="addEnv">Add env</button>
-              <div class="section-label">Extra binds</div>
-              <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
-                <input
-                  class="mono"
-                  :value="row.hostPath"
-                  placeholder="Host folder"
-                  @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  class="mono"
-                  :value="row.containerPath"
-                  placeholder="/media"
-                  @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
-                />
-                <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
-                <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
-              </div>
-              <button class="add-row" type="button" @click="addFolder">Add bind</button>
               <div v-if="managedKeys.length" class="section-label">Managed env</div>
               <p v-for="key in managedKeys" :key="key" class="managed">{{ key }}</p>
             </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { ComposeMount } from '../utils/composeMounts'
-import { composeMountFromDraft, type ComposeMountDraft } from '../utils/composeEdit'
+import { composeBindFromDraft, type ComposeMountDraft } from '../utils/composeEdit'
 import AppButton from './ui/AppButton.vue'
 
 const props = defineProps<{
@@ -29,7 +29,7 @@ watch(
   },
 )
 
-const canAdd = computed(() => Boolean(composeMountFromDraft({
+const canAdd = computed(() => Boolean(composeBindFromDraft({
   source: hostPath.value,
   target: containerPath.value,
   readOnly: readOnly.value,
@@ -44,7 +44,7 @@ function isManaged(mount: ComposeMount): boolean {
 }
 
 function addMount() {
-  const draft = composeMountFromDraft({
+  const draft = composeBindFromDraft({
     source: hostPath.value,
     target: containerPath.value,
     readOnly: readOnly.value,

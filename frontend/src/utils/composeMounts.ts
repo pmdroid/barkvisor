@@ -22,6 +22,15 @@ export function parseComposeMounts(yaml: string): ComposeMount[] {
   return out
 }
 
+export function visibleAppMounts(input: {
+  compose?: string | null
+  sharedPaths?: string[] | null
+}): ComposeMount[] {
+  const fromCompose = parseComposeMounts(input.compose ?? '')
+  if (fromCompose.length) return fromCompose
+  return mountsFromSharedPaths(input.sharedPaths)
+}
+
 export function mountsFromSharedPaths(paths: string[] | null | undefined): ComposeMount[] {
   if (!paths?.length) return []
   const out: ComposeMount[] = []
