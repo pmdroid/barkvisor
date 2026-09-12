@@ -22,13 +22,19 @@ export function parseComposeMounts(yaml: string): ComposeMount[] {
   return out
 }
 
+function mountKey(mount: ComposeMount): string {
+  return `${mount.source}\0${mount.target}`
+}
+
 export function visibleAppMounts(input: {
   compose?: string | null
   sharedPaths?: string[] | null
 }): ComposeMount[] {
   const fromCompose = parseComposeMounts(input.compose ?? '')
-  if (fromCompose.length) return fromCompose
-  return mountsFromSharedPaths(input.sharedPaths)
+  const fromShared = mountsFromSharedPaths(input.sharedPaths)
+  if (!fromCompose.length) return fromShared
+  const seen = new Set(fromCompose.map(mountKey))
+  return [...fromCompose, ...fromShared.filter((mount) => !seen.has(mountKey(mount)))]
 }
 
 export function stripTrailingSlash(path: string): string {

@@ -84,12 +84,13 @@ describe('isManagedAppMount', () => {
 })
 
 describe('visibleAppMounts', () => {
-  test('prefers compose mounts over sharedPaths', () => {
+  test('keeps sharedPaths binds after compose gains a volume', () => {
     expect(visibleAppMounts({
       compose: '    volumes:\n      - /compose:/app\n',
-      sharedPaths: ['/shared:/app'],
+      sharedPaths: ['/shared:/app', '/compose:/app'],
     })).toEqual([
       { kind: 'bind', source: '/compose', target: '/app', readOnly: false },
+      { kind: 'bind', source: '/shared', target: '/app', readOnly: false },
     ])
     expect(visibleAppMounts({
       compose: '',
