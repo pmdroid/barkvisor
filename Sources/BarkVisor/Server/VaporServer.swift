@@ -96,6 +96,7 @@ public final class VaporServer: @unchecked Sendable {
         )
 
         Log.server.info("BarkVisor server starting on port \(Config.port)")
+        AuthModeStartup.announce(mode: Config.authMode)
 
         let loginRateLimit = configureRateLimit(
             backgroundTasks: services.backgroundTasks,

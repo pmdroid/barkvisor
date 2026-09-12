@@ -74,6 +74,19 @@ public enum AuthService {
         return AuthSessionTokens(token: token, refreshToken: refresh, user: user)
     }
 
+    public static func signBypassAccessToken(
+        keys: JWTKeyCollection,
+        now: Date = Date(),
+    ) async throws -> String {
+        let payload = UserPayload(
+            sub: .init(value: "local-bypass"),
+            username: "local",
+            exp: .init(value: now.addingTimeInterval(accessTokenTTL)),
+            role: UserRole.admin.rawValue,
+        )
+        return try await keys.sign(payload)
+    }
+
     public static func signAccessToken(
         user: User,
         keys: JWTKeyCollection,

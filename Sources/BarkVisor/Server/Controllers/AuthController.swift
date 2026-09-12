@@ -81,7 +81,9 @@ struct AuthController: RouteCollection {
         limited.post("refresh", use: refresh)
         limited.post("logout", use: logout)
         limited.post("login-offers", "redeem", use: redeemLoginOffer)
-        let passkeyLogin = limited.grouped("passkeys", "login")
+        let passkeyLogin = limited.grouped(
+            RejectPasskeysWhenBypassedMiddleware(),
+        ).grouped("passkeys", "login")
         passkeyLogin.post("begin", use: passkeyLoginBegin)
         passkeyLogin.post("finish", use: passkeyLoginFinish)
     }
@@ -93,7 +95,8 @@ struct AuthController: RouteCollection {
         offers.post(use: issueLoginOffer)
         offers.get(use: currentLoginOffer)
         offers.delete(use: revokeLoginOffer)
-        let passkeys = routes.grouped("api", "auth", "passkeys")
+        let passkeys = routes.grouped(RejectPasskeysWhenBypassedMiddleware())
+            .grouped("api", "auth", "passkeys")
         passkeys.get(use: listPasskeys)
         passkeys.delete(":id", use: deletePasskey)
         passkeys.post("register", "begin", use: passkeyRegisterBegin)
@@ -113,6 +116,22 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func login(req: Vapor.Request) async throws -> Response {
+        if AuthBypass.allows(req), await AuthBypass.frontDoorOK(req) {
+            req.authenticatedUser = AuthBypass.syntheticAdmin
+            let token = try await AuthService.signBypassAccessToken(keys: keys)
+            AuditService.log(
+                action: "auth.login", resourceType: "user", resourceId: AuthBypass.syntheticUserId,
+                resourceName: AuthBypass.syntheticUsername, req: req,
+            )
+            return try AppIngressSession.encodeLogin(
+                LoginResponse(
+                    token: token,
+                    refreshToken: "",
+                    role: UserRole.admin.rawValue,
+                ),
+                on: req,
+            )
+        }
         try LoginRequest.validate(content: req)
         let body = try req.content.decode(LoginRequest.self)
 
