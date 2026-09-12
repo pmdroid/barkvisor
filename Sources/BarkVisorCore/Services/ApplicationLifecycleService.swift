@@ -24,6 +24,38 @@ public enum ApplicationLifecycleService {
         "app-update:\(id)"
     }
 
+    public static func taskID(forCreate id: String) -> String {
+        "app-create:\(id)"
+    }
+
+    public static func resumePending(db: DatabasePool, backgroundTasks: BackgroundTaskManager) async {
+        let apps: [VM]
+        do {
+            apps = try await db.read { db in
+                try VM
+                    .filter(Column("kind") == WorkloadSpec.kindApplication)
+                    .filter(Column("state") == "provisioning" || Column("state") == "starting")
+                    .fetchAll(db)
+            }
+        } catch {
+            Log.vm.warning("Application resume list failed: \(error.localizedDescription)")
+            return
+        }
+        for vm in apps {
+            let workloadID = vm.id
+            _ = await backgroundTasks.submit(taskID(forCreate: workloadID), kind: .appCreate) {
+                guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
+                    throw BarkVisorError.notFound("Workload \(workloadID) not found")
+                }
+                if live.state == "deleting" || live.state == "running" {
+                    return workloadID
+                }
+                try await ApplicationLifecycleService.start(vm: &live, db: db)
+                return workloadID
+            }
+        }
+    }
+
     public static func publishedUpdate(
         event: BackgroundTaskManager.TaskEvent?,
     ) -> (taskID: String?, progress: Double?) {
@@ -322,6 +354,12 @@ public enum ApplicationLifecycleService {
         let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
+            if vm.state == "provisioning" {
+                try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
+            }
+            try await refuseDeleting(id: vm.id, db: db)
+            try await setState(&vm, state: "starting", error: nil, db: db)
+            try await refuseDeleting(id: vm.id, db: db)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
             try verifyInspectedBinds(
                 containerNames: render.containerNames,
