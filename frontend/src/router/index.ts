@@ -61,6 +61,7 @@ let setupChecked = false
 let setupRequired = false
 let authDisabled = false
 let cachedAuthMode = 'secure'
+let cachedProxied = false
 
 export async function checkSetupRequired(): Promise<boolean> {
   if (setupChecked) return setupRequired
@@ -71,10 +72,12 @@ export async function checkSetupRequired(): Promise<boolean> {
       setupRequired = !data.complete
       authDisabled = isFrontDoorBypassed(data)
       cachedAuthMode = parseAuthMode(data.authMode)
+      cachedProxied = data.proxied === true
       setupChecked = true
     } else if (res.status === 403 || res.status === 503) {
       setupRequired = true
       authDisabled = false
+      cachedProxied = false
       setupChecked = true
     }
   } catch {
@@ -88,13 +91,14 @@ export function clearSetupCache() {
   setupRequired = false
   authDisabled = false
   cachedAuthMode = 'secure'
+  cachedProxied = false
 }
 
 export async function refreshFrontDoorStatus(): Promise<void> {
   clearSetupCache()
   await checkSetupRequired()
   const auth = useAuthStore()
-  if (authDisabled) auth.applyBypass(parseAuthMode(cachedAuthMode))
+  if (authDisabled) auth.applyBypass(parseAuthMode(cachedAuthMode), cachedProxied)
   else auth.clearBypass()
 }
 
@@ -107,7 +111,7 @@ router.beforeEach(async (to) => {
   }
 
   if (authDisabled) {
-    useAuthStore().applyBypass(parseAuthMode(cachedAuthMode))
+    useAuthStore().applyBypass(parseAuthMode(cachedAuthMode), cachedProxied)
     if (to.name === 'login' || to.name === 'setup') return { name: 'dashboard' }
   } else if (to.name === 'setup') {
     return { name: 'login' }

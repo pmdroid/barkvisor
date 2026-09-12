@@ -59,3 +59,8 @@ export function settingsTabFromQuery(q: SettingsTabQuery): SettingsTab | undefin
   if (!raw) return undefined
   return isSettingsTab(raw) ? raw : undefined
 }
+
+export function settingsTabWhenBypassed(tab: SettingsTab): SettingsTab {
+  if (tab === 'apikeys' || tab === 'passkeys') return 'security'
+  return tab
+}

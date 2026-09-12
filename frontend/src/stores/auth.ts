@@ -66,8 +66,8 @@ export const useAuthStore = defineStore('auth', () => {
     syncIngressCookie('')
   }
 
-  function applyBypass(mode: AuthMode) {
-    applyFrontDoorBypass(mode)
+  function applyBypass(mode: AuthMode, proxied = false) {
+    applyFrontDoorBypass(mode, proxied)
     if (bypassed.value) persistRole('admin')
   }
 

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   authBannerText,
   isFrontDoorBypassed,
+  loopbackProxyWarning,
   parseAuthMode,
 } from './authMode'
 
@@ -33,6 +34,12 @@ describe('front-door auth mode', () => {
     expect(authBannerText('secure')).toBe('')
   })
 
+  test('warns when loopback is reached through a proxy', () => {
+    expect(loopbackProxyWarning('loopback', true)).toContain('reverse proxy')
+    expect(loopbackProxyWarning('loopback', false)).toBe('')
+    expect(loopbackProxyWarning('disabled', true)).toBe('')
+  })
+
   test('router and settings consume the helpers', () => {
     const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
     expect(router).toContain('isFrontDoorBypassed')
@@ -41,6 +48,8 @@ describe('front-door auth mode', () => {
     expect(settings).toContain('Skip sign-in on this computer')
     expect(settings).toContain('Skip sign-in for my whole network')
     expect(settings).toContain('Require sign-in')
+    expect(settings).toContain('loopbackProxyWarning')
+    expect(settings).toContain('settingsTabWhenBypassed')
     const app = readFileSync(join(here, '../App.vue'), 'utf8')
     expect(app).toContain('authBannerText')
   })

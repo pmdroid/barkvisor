@@ -4,6 +4,7 @@ export interface FrontDoorStatus {
   complete?: boolean
   authDisabled?: boolean
   authMode?: string
+  proxied?: boolean
 }
 
 export function parseAuthMode(raw: unknown): AuthMode {
@@ -23,4 +24,9 @@ export function authBannerText(mode: AuthMode): string {
     return 'Sign-in is disabled (everyone on the network). Re-enable in Settings → Security.'
   }
   return ''
+}
+
+export function loopbackProxyWarning(mode: AuthMode, proxied: boolean): string {
+  if (mode !== 'loopback' || !proxied) return ''
+  return 'This request arrived through a reverse proxy. Skip-sign-in on this computer does not apply behind a proxy; remote callers still need a token.'
 }

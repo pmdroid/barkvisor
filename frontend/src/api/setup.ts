@@ -13,6 +13,7 @@ export interface SetupStatus {
   admin?: boolean
   authDisabled?: boolean
   authMode?: string
+  proxied?: boolean
 }
 
 export interface InterfaceInfo {

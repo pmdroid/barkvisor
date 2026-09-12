@@ -41,9 +41,9 @@ import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpac
 import { formatDeviceURL } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { getSecuritySettings, saveSecuritySettings } from '../api/security'
-import { parseAuthMode, type AuthMode } from '../utils/authMode'
+import { loopbackProxyWarning, parseAuthMode, type AuthMode } from '../utils/authMode'
 import { refreshFrontDoorStatus } from '../router'
-import { frontDoorBypassed } from '../utils/frontDoor'
+import { frontDoorBypassed, frontDoorProxied } from '../utils/frontDoor'
 import {
   isCurrentPairingSeq,
   nextPairingLoadSeq,
@@ -53,6 +53,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   isPairingTab,
   settingsTabFromQuery,
+  settingsTabWhenBypassed,
   shouldRunPairingTick,
   type SettingsTab,
 } from '../utils/settingsTabs'
@@ -80,6 +81,9 @@ const securityConfirmOpen = ref(false)
 const securityConfirmName = ref('')
 const deviceConfirmName = ref('')
 
+const proxyWarning = computed(() =>
+  loopbackProxyWarning(securityMode.value, frontDoorProxied.value),
+)
 const homeDeviceName = computed(() =>
   devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : DEVICE_LABEL,
 )
@@ -701,6 +705,7 @@ function actionBadgeClass(action: string) {
 }
 
 function applySettingsTab(next: SettingsTab) {
+  if (frontDoorBypassed.value) next = settingsTabWhenBypassed(next)
   if (isPairingTab(next)) {
     openPairingTab()
     return
@@ -788,8 +793,11 @@ function confirmNetworkDisable() {
 onMounted(() => {
   fetchKeys()
   void loadSecurity()
-  const requested = settingsTabFromQuery(route.query)
-  if (requested) applySettingsTab(requested)
+  applySettingsTab(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
+})
+
+watch(frontDoorBypassed, (bypassed) => {
+  if (bypassed) applySettingsTab(settingsTabWhenBypassed(tab.value))
 })
 
 onUnmounted(() => {
@@ -1024,6 +1032,9 @@ onUnmounted(() => {
     </p>
     <p v-if="securityEnvLocked" style="color:var(--amber);font-size:13px">
       BARKVISOR_AUTH_MODE is set on the process, so Settings cannot change the effective mode.
+    </p>
+    <p v-if="proxyWarning" style="color:var(--amber);font-size:13px">
+      {{ proxyWarning }}
     </p>
     <label class="security-choice">
       <input type="radio" name="auth-mode" :checked="securityMode === 'secure'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('secure')" />
