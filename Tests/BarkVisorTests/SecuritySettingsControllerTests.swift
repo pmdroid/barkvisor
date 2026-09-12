@@ -11,6 +11,7 @@ struct SecuritySettingsControllerTests {
                 raw: "loopback",
                 acknowledged: false,
                 envLocked: true,
+                hasProvisionedAdmin: true,
             )
             Issue.record("expected env-locked conflict")
         } catch let error as BarkVisorError {
@@ -29,6 +30,7 @@ struct SecuritySettingsControllerTests {
                 raw: "disabled",
                 acknowledged: false,
                 envLocked: false,
+                hasProvisionedAdmin: true,
             )
             Issue.record("expected acknowledgement failure")
         } catch let error as BarkVisorError {
@@ -47,6 +49,7 @@ struct SecuritySettingsControllerTests {
                 raw: "secure",
                 acknowledged: false,
                 envLocked: false,
+                hasProvisionedAdmin: true,
             ) == .secure,
         )
         #expect(
@@ -54,6 +57,7 @@ struct SecuritySettingsControllerTests {
                 raw: "loopback",
                 acknowledged: false,
                 envLocked: false,
+                hasProvisionedAdmin: true,
             ) == .loopback,
         )
         #expect(
@@ -61,7 +65,35 @@ struct SecuritySettingsControllerTests {
                 raw: "disabled",
                 acknowledged: true,
                 envLocked: false,
+                hasProvisionedAdmin: true,
             ) == .disabled,
+        )
+    }
+
+    @Test func `secure is refused until an admin exists`() {
+        do {
+            _ = try SecuritySettingsPolicy.validatedMode(
+                raw: "secure",
+                acknowledged: false,
+                envLocked: false,
+                hasProvisionedAdmin: false,
+            )
+            Issue.record("expected missing-admin failure")
+        } catch let error as BarkVisorError {
+            guard case .preconditionFailed = error else {
+                Issue.record("expected preconditionFailed, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("expected BarkVisorError, got \(error)")
+        }
+        #expect(
+            (try? SecuritySettingsPolicy.validatedMode(
+                raw: "loopback",
+                acknowledged: false,
+                envLocked: false,
+                hasProvisionedAdmin: false,
+            )) == .loopback,
         )
     }
 
@@ -71,6 +103,7 @@ struct SecuritySettingsControllerTests {
                 raw: "wide-open",
                 acknowledged: true,
                 envLocked: false,
+                hasProvisionedAdmin: true,
             )
             Issue.record("expected unknown mode failure")
         } catch let error as BarkVisorError {

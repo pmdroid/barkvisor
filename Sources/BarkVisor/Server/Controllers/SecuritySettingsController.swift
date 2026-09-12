@@ -17,6 +17,7 @@ enum SecuritySettingsPolicy {
         raw: String,
         acknowledged: Bool?,
         envLocked: Bool,
+        hasProvisionedAdmin: Bool,
     ) throws -> AuthMode {
         if envLocked {
             throw BarkVisorError.conflict("authMode is locked by \(AuthModeStore.envKey)")
@@ -27,6 +28,11 @@ enum SecuritySettingsPolicy {
         if mode == .disabled, acknowledged != true {
             throw BarkVisorError.badRequest(
                 "Disabling sign-in for the whole network requires acknowledged=true",
+            )
+        }
+        if mode == .secure, !hasProvisionedAdmin {
+            throw BarkVisorError.preconditionFailed(
+                "Create an admin account before requiring sign-in",
             )
         }
         return mode
@@ -50,10 +56,14 @@ struct SecuritySettingsController: RouteCollection {
     func updateSettings(req: Request) async throws -> SecuritySettingsResponse {
         _ = try Self.requireAdmin(req)
         let body = try req.content.decode(SecuritySettingsRequest.self)
+        let hasAdmin = try await req.db.read { db in
+            try User.hasProvisionedAdmin(db)
+        }
         let mode = try SecuritySettingsPolicy.validatedMode(
             raw: body.authMode,
             acknowledged: body.acknowledged,
             envLocked: Config.authModeEnvLocked,
+            hasProvisionedAdmin: hasAdmin,
         )
         let previous = Config.authMode
         Config.persistAuthMode(mode, acknowledged: body.acknowledged == true)
