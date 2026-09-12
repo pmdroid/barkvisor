@@ -382,6 +382,7 @@ cd "$PROJECT_DIR"
 
 # Sync fresh build into the Resources directory used by the Swift bundle
 rm -rf "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist"
+mkdir -p "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend"
 cp -r "$PROJECT_DIR/frontend/dist" "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist"
 
 # =============================================================================
