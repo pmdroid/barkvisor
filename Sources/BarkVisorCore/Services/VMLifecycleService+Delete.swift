@@ -4,6 +4,17 @@ import GRDB
 // MARK: - Delete VM Helpers
 
 extension VMLifecycleService {
+    static func canDelete(_ vm: VM) -> Bool {
+        switch vm.state {
+        case "stopped", "error":
+            return true
+        case "provisioning", "starting":
+            return vm.isApplication
+        default:
+            return false
+        }
+    }
+
     static func markVMAsDeleting(id: String, db: DatabasePool) async throws {
         let marked = try await db.write { db -> Bool in
             guard let current = try VM.fetchOne(db, key: id), canDelete(current) else {

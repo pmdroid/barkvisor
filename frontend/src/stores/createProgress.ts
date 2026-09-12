@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorMessage, isNotFoundError } from '../api/errors'
 import type { DeployTemplateRequest, DeployTemplateResponse, Image, TaskEvent, VM } from '../api/types'
 import {
   deviceImagePath,
@@ -370,15 +370,28 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
   async function waitApp(id: string, vmId: string, device: DeviceApiTarget | undefined) {
     for (let i = 0; i < 600; i++) {
       if (!living(id)) return
-      const { data } = await api.get(vmPath(device, vmId))
-      if (!living(id)) return
-      const vm = data as VM
+      let vm: VM
+      try {
+        const { data } = await api.get(vmPath(device, vmId))
+        if (!living(id)) return
+        vm = data as VM
+      } catch (e: unknown) {
+        if (isNotFoundError(e)) {
+          dropJob(id)
+          return
+        }
+        throw e
+      }
       if (!vm || typeof vm !== 'object' || Array.isArray(vm)) {
         await sleep(intervalMs.value)
         continue
       }
       applyVM(device, vm)
       if (vm.state === 'running') return
+      if (vm.state === 'deleting') {
+        dropJob(id)
+        return
+      }
       if (vm.state === 'error') {
         throw new Error(vm.status?.healthError || vm.description || 'App failed to start')
       }
@@ -463,6 +476,7 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
 
   function mergeInto(rows: HomeWorkloadRow[]): HomeWorkloadRow[] {
     const overlaid = rows.map((row) => {
+      if (row.vm.state === 'deleting') return row
       const fromVM = overlayFromVM(row.vm)
       const job = jobs.value.find((item) => item.vmId === row.vm.id)
       if (job) {

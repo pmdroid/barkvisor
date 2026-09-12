@@ -445,6 +445,145 @@ final class ApplicationLifecycleServiceTests {
         #expect(vm.decodedSharedPaths.isEmpty)
     }
 
+    @Test func `resumePending starts a provisioning app after boot`() async throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        let compose = RecordingStartComposeRunner()
+        ComposeRuntime.runner = compose
+        defer {
+            HostInfoService.lanBindIPv4Provider = nil
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            ComposeTestIsolation.installFailFast()
+        }
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-resume")
+        vm.state = "provisioning"
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "58082:80"
+        """
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let tasks = BackgroundTaskManager()
+        try await DockerInspectTestGate.withStub({ names in
+            let ports: [String: Any] = [
+                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58082"]],
+            ]
+            let objects: [[String: Any]] = names.map { _ in
+                ["NetworkSettings": ["Ports": ports]]
+            }
+            return try JSONSerialization.data(withJSONObject: objects)
+        }) {
+            await ApplicationLifecycleService.resumePending(db: db, backgroundTasks: tasks)
+            try await waitForCreate("whoami-resume", tasks: tasks)
+        }
+
+        let stored = try await db.read { db in try VM.fetchOne(db, key: "whoami-resume") }
+        #expect(stored?.state == "running")
+        #expect(compose.calls.contains { $0.contains("pull") })
+        #expect(compose.calls.contains { $0.contains("up") })
+        await tasks.cancelAll()
+    }
+
+    @Test func `resumePending ignores running and deleting apps`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var running = applicationVM(id: "whoami-live")
+        running.state = "running"
+        var deleting = applicationVM(id: "whoami-gone")
+        deleting.state = "deleting"
+        let runningRow = running
+        let deletingRow = deleting
+        try await db.write { db in
+            try runningRow.insert(db)
+            try deletingRow.insert(db)
+        }
+
+        let tasks = BackgroundTaskManager()
+        await ApplicationLifecycleService.resumePending(db: db, backgroundTasks: tasks)
+        #expect(await tasks.status(ApplicationLifecycleService.taskID(forCreate: "whoami-live")) == nil)
+        #expect(await tasks.status(ApplicationLifecycleService.taskID(forCreate: "whoami-gone")) == nil)
+        let live = try await db.read { db in try VM.fetchOne(db, key: "whoami-live") }
+        let gone = try await db.read { db in try VM.fetchOne(db, key: "whoami-gone") }
+        #expect(live?.state == "running")
+        #expect(gone?.state == "deleting")
+        await tasks.cancelAll()
+    }
+
+    @Test func `start aborts pull when the app is deleted`() async throws {
+        HostInfoService.lanBindIPv4Provider = { "192.168.8.10" }
+        let snap = DockerEngineSnapshot(
+            os: "Linux",
+            dockerPath: "/tmp/bv-test-docker",
+            dockerVersion: "27.0.0",
+            daemonRunning: true,
+            composeVersion: "Docker Compose version v2.29.7",
+            composeOK: true,
+        )
+        DockerEngine.snapshotProvider = { snap }
+        defer {
+            HostInfoService.lanBindIPv4Provider = nil
+            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            ComposeTestIsolation.installFailFast()
+        }
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+
+        var vm = applicationVM(id: "whoami-mid-del")
+        vm.state = "provisioning"
+        vm.composeYaml = """
+        services:
+          whoami:
+            image: traefik/whoami
+            ports:
+              - "58083:80"
+        """
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let compose = DeleteDuringPullComposeRunner(db: db, id: "whoami-mid-del")
+        ComposeRuntime.runner = compose
+
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await ApplicationLifecycleService.start(vm: &vm, db: db, dataDir: tmp)
+        }
+        guard case let .conflict(message) = error else {
+            Issue.record("expected conflict")
+            return
+        }
+        #expect(message == "Workload is deleting")
+        let state = try await db.read { db in try VM.fetchOne(db, key: "whoami-mid-del")?.state }
+        #expect(state == "deleting")
+        #expect(compose.calls.contains { $0.contains("pull") })
+        #expect(!compose.calls.contains { $0.contains("up") })
+    }
+
     @Test func `start refuses a deleting application`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -535,6 +674,22 @@ final class ApplicationLifecycleServiceTests {
     }
 }
 
+private func waitForCreate(_ id: String, tasks: BackgroundTaskManager) async throws {
+    let taskID = ApplicationLifecycleService.taskID(forCreate: id)
+    for _ in 0 ..< 200 {
+        if let event = await tasks.status(taskID) {
+            if event.status == .completed || event.status == .failed || event.status == .cancelled {
+                if event.status == .failed {
+                    throw BarkVisorError.internalError(event.error ?? "app create failed")
+                }
+                return
+            }
+        }
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    throw BarkVisorError.internalError("timed out waiting for app create \(id)")
+}
+
 private func applicationVM(id: String) -> VM {
     VM(
         id: id,
@@ -607,6 +762,41 @@ private struct SucceedingComposeRunner: ComposeCommandRunning {
         projectDirectory _: URL,
         timeout _: TimeInterval,
     ) throws -> CommandResult {
+        if arguments.contains("ps") {
+            return CommandResult(
+                exitCode: 0,
+                stdout: Data(#"[{"State":"running"}]"#.utf8),
+                stderr: Data(),
+            )
+        }
+        return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+    }
+}
+
+private final class DeleteDuringPullComposeRunner: ComposeCommandRunning, @unchecked Sendable {
+    let db: DatabasePool
+    let id: String
+    var calls: [[String]] = []
+
+    init(db: DatabasePool, id: String) {
+        self.db = db
+        self.id = id
+    }
+
+    func run(
+        arguments: [String],
+        projectDirectory _: URL,
+        timeout _: TimeInterval,
+    ) throws -> CommandResult {
+        calls.append(arguments)
+        if arguments.contains("pull") {
+            try db.write { db in
+                try db.execute(
+                    sql: "UPDATE vms SET state = 'deleting', updatedAt = ? WHERE id = ?",
+                    arguments: [iso8601.string(from: Date()), id],
+                )
+            }
+        }
         if arguments.contains("ps") {
             return CommandResult(
                 exitCode: 0,

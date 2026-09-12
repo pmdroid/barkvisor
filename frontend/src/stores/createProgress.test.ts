@@ -295,4 +295,51 @@ describe('createProgress', () => {
     expect(store.mergeInto([])[0]?.createPhase).toBe('error')
     expect(store.mergeInto([])[0]?.vm.id).toBe('app-bad')
   })
+
+  test('app create drops the job when the app is deleted', async () => {
+    api.post = mock(() => Promise.resolve({ data: { op: 'created', id: 'app-gone' } })) as typeof api.post
+    api.get = mock(() => Promise.resolve({
+      data: {
+        ...provisionVm(),
+        id: 'app-gone',
+        name: 'gone',
+        kind: 'Application',
+        state: 'deleting',
+      },
+    })) as typeof api.get
+
+    const store = useCreateProgressStore()
+    await store.followApp({
+      name: 'gone',
+      body: { kind: 'Application' },
+      device: { hostId: 'desk', role: 'self' },
+    })
+    expect(store.jobs).toHaveLength(0)
+    expect(useToastStore().toasts.some((t) => t.type === 'error')).toBe(false)
+    expect(store.mergeInto([{
+      vm: { ...provisionVm(), id: 'app-gone', kind: 'Application', state: 'deleting' },
+      hostId: 'desk',
+      label: 'Desk',
+      role: 'self',
+      reachable: true,
+    }])[0]?.createPhase).toBeUndefined()
+  })
+
+  test('app create drops the job when the app is gone', async () => {
+    api.post = mock(() => Promise.resolve({ data: { op: 'created', id: 'app-404' } })) as typeof api.post
+    api.get = mock(() => Promise.reject({
+      isAxiosError: true,
+      message: 'Request failed with status code 404',
+      response: { status: 404, data: { reason: 'Workload not found' } },
+    })) as typeof api.get
+
+    const store = useCreateProgressStore()
+    await store.followApp({
+      name: 'missing',
+      body: { kind: 'Application' },
+      device: { hostId: 'desk', role: 'self' },
+    })
+    expect(store.jobs).toHaveLength(0)
+    expect(useToastStore().toasts.some((t) => t.type === 'error')).toBe(false)
+  })
 })

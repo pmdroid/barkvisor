@@ -335,4 +335,130 @@ final class VMLifecycleRecoveryTests {
         #expect(updated.decodedOverrides?.macos?.accelerator == "tcg")
         #expect(updated.pendingChanges)
     }
+
+    @Test func `canDelete allows app pull and start`() {
+        #expect(VMLifecycleService.canDelete(recoveryApp(state: "provisioning")))
+        #expect(VMLifecycleService.canDelete(recoveryApp(state: "starting")))
+        #expect(VMLifecycleService.canDelete(recoveryApp(state: "stopped")))
+        #expect(VMLifecycleService.canDelete(recoveryApp(state: "error")))
+        #expect(!VMLifecycleService.canDelete(recoveryApp(state: "running")))
+        #expect(!VMLifecycleService.canDelete(recoveryApp(state: "deleting")))
+        #expect(!VMLifecycleService.canDelete(recoveryVM(state: "provisioning")))
+        #expect(!VMLifecycleService.canDelete(recoveryVM(state: "starting")))
+        #expect(VMLifecycleService.canDelete(recoveryVM(state: "stopped")))
+    }
+
+    @Test func `deleteVM removes a provisioning application and cancels create`() async throws {
+        ComposeTestIsolation.installFailFast()
+        let vm = recoveryApp(id: "whoami-del-pull", state: "provisioning")
+        try await dbPool.write { db in try vm.insert(db) }
+        let tasks = BackgroundTaskManager()
+        await tasks.submit(ApplicationLifecycleService.taskID(forCreate: vm.id), kind: .appCreate) {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            return vm.id
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let result = try await VMLifecycleService.deleteVM(
+            id: vm.id,
+            keepDisk: false,
+            vmManager: VMManager(dbPool: dbPool),
+            backgroundTasks: tasks,
+            db: dbPool,
+        )
+        #expect(result.vmName == vm.name)
+        let create = await tasks.status(ApplicationLifecycleService.taskID(forCreate: vm.id))
+        #expect(create?.status == .cancelled)
+
+        for _ in 0 ..< 200 {
+            if let event = await tasks.status(result.taskID),
+               event.status == .completed || event.status == .failed || event.status == .cancelled {
+                #expect(event.status == .completed)
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: vm.id) }
+        #expect(stored == nil)
+        await tasks.cancelAll()
+    }
+
+    @Test func `deleteVM rejects a running application`() async throws {
+        let vm = recoveryApp(id: "whoami-live-del", state: "running")
+        try await dbPool.write { db in try vm.insert(db) }
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.deleteVM(
+                id: vm.id,
+                keepDisk: false,
+                vmManager: VMManager(dbPool: self.dbPool),
+                backgroundTasks: BackgroundTaskManager(),
+                db: self.dbPool,
+            )
+        }
+        guard case let .conflict(message) = error else {
+            Issue.record("expected conflict")
+            return
+        }
+        #expect(message == "App must be stopped before deleting")
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: vm.id) }
+        #expect(stored?.state == "running")
+    }
+}
+
+private func recoveryApp(id: String = "whoami-app", state: String) -> VM {
+    VM(
+        id: id,
+        name: id,
+        vmType: WorkloadSpec.applicationGuestType,
+        state: state,
+        cpuCount: 1,
+        memoryMb: 256,
+        bootDiskId: nil,
+        kind: WorkloadSpec.kindApplication,
+        composeYaml: "services: {}\n",
+        composeProject: ComposeRuntime.composeProjectName(id: id),
+        networkId: nil,
+        cloudInitPath: nil,
+        description: nil,
+        bootOrder: nil,
+        displayResolution: nil,
+        additionalDiskIds: nil,
+        uefi: false,
+        tpmEnabled: false,
+        macAddress: nil,
+        sharedPaths: nil,
+        portForwards: nil,
+        autoCreated: false,
+        pendingChanges: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+    )
+}
+
+private func recoveryVM(state: String) -> VM {
+    VM(
+        id: "vm-box",
+        name: "box",
+        vmType: "linux-arm64",
+        state: state,
+        cpuCount: 2,
+        memoryMb: 2_048,
+        bootDiskId: "disk-1",
+        isoIds: nil,
+        networkId: nil,
+        cloudInitPath: nil,
+        description: nil,
+        bootOrder: "cd",
+        displayResolution: "1280x800",
+        additionalDiskIds: nil,
+        uefi: true,
+        tpmEnabled: false,
+        macAddress: nil,
+        sharedPaths: nil,
+        portForwards: nil,
+        autoCreated: false,
+        pendingChanges: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+    )
 }
