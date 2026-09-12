@@ -22,10 +22,10 @@ import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } fro
 import { parseComposeMounts, visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
 import {
   addComposeMount,
+  afterRemoveSharedPaths,
   isComposePortRow,
   parseComposePorts,
   removeComposeMount,
-  retainUsedPaths,
   setComposePorts,
   sharedHostKey,
   type ComposeMountDraft,
@@ -1491,7 +1491,11 @@ async function removeAppVolume(mount: ComposeMount) {
       readOnly: mount.readOnly,
     })
     spec.spec.compose = nextCompose
-    spec.spec.sharedPaths = retainUsedPaths(spec.spec.sharedPaths, parseComposeMounts(nextCompose))
+    spec.spec.sharedPaths = afterRemoveSharedPaths(
+      spec.spec.sharedPaths,
+      { source: mount.source, target: mount.target, readOnly: mount.readOnly },
+      parseComposeMounts(nextCompose),
+    )
     await saveAppSpec(spec)
     await refreshWorkload()
     if (vm.value?.state === 'running') {

@@ -291,6 +291,15 @@ export function retainUsedPaths(paths: string[] | null | undefined, mounts: Comp
   return (paths ?? []).filter((path) => used.has(sharedHostKey(path)))
 }
 
+export function afterRemoveSharedPaths(
+  paths: string[] | null | undefined,
+  mount: ComposeMountDraft,
+  remaining: ComposeMount[],
+): string[] {
+  if (remaining.length) return retainUsedPaths(paths, remaining)
+  return (paths ?? []).filter((path) => sharedHostKey(path) !== mount.source)
+}
+
 export function composeMountFromDraft(draft: ComposeMountDraft): ComposeMountDraft | null {
   const source = draft.source.trim()
   const target = draft.target.trim()

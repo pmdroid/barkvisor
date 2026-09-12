@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { parseComposeMounts } from './composeMounts'
 import {
   addComposeMount,
+  afterRemoveSharedPaths,
   applyComposeDocumentDrafts,
   composeBindFromDraft,
   composeMountFromDraft,
@@ -208,6 +209,16 @@ environment:
       .toEqual(['/keep', '/shared:/x', '/keep:/app:ro'])
     expect(retainUsedPaths(null, [])).toEqual([])
     expect(retainUsedPaths(undefined, [])).toEqual([])
+    expect(afterRemoveSharedPaths(
+      ['/keep', '/gone', '/keep:/app'],
+      { source: '/gone', target: '/x', readOnly: false },
+      [],
+    )).toEqual(['/keep', '/keep:/app'])
+    expect(afterRemoveSharedPaths(
+      ['/keep', '/gone'],
+      { source: '/gone', target: '/x', readOnly: false },
+      parseComposeMounts('    volumes:\n      - "/keep:/app"\n'),
+    )).toEqual(['/keep'])
   })
 
   test('composeMountFromDraft normalizes or rejects', () => {
