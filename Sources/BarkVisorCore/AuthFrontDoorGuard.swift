@@ -15,8 +15,6 @@ public enum AuthFrontDoorGuard: Sendable {
         "0:0:0:0:0:0:0:1",
     ]
 
-    public static let mutatingMethods: Set<String> = ["POST", "PUT", "PATCH", "DELETE"]
-
     public static func stripMappedIPv4(_ ip: String) -> String {
         var value = ip
         if value.hasPrefix("::ffff:") {
@@ -69,15 +67,13 @@ public enum AuthFrontDoorGuard: Sendable {
         method: String,
         extras: Set<String>,
     ) -> AuthFrontDoorDecision {
+        _ = method
         guard let host, !host.isEmpty, hostIsAllowed(host, extras: extras) else {
             return .rejectHost
         }
-        let verb = method.uppercased()
-        if mutatingMethods.contains(verb) {
-            if let origin, !origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if !originIsAllowed(origin, extras: extras) {
-                    return .rejectOrigin
-                }
+        if let origin, !origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !originIsAllowed(origin, extras: extras) {
+                return .rejectOrigin
             }
         }
         return .allow
