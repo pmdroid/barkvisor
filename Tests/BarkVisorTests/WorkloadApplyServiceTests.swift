@@ -610,7 +610,7 @@ final class WorkloadApplyServiceTests {
 
     private func waitForAppCreate(_ id: String) async throws {
         let taskID = ApplicationLifecycleService.taskID(forCreate: id)
-        for _ in 0..<200 {
+        for _ in 0 ..< 200 {
             if let event = await backgroundTasks.status(taskID) {
                 if event.status == .completed || event.status == .failed || event.status == .cancelled {
                     return
