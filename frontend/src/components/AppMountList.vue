@@ -101,9 +101,12 @@ function removeMount(mount: ComposeMount) {
       <AppButton size="sm" variant="primary" :disabled="busy || !canAdd" @click="addMount">Add</AppButton>
     </div>
   </template>
-  <div v-if="roots && roots.length" class="volume-root">
-    Volume roots: <span class="mono">{{ roots.join(' · ') }}</span>
-  </div>
+  <details v-if="roots && roots.length" class="volume-root">
+    <summary>Allowed host folders ({{ roots.length }})</summary>
+    <ul>
+      <li v-for="root in roots" :key="root" class="mono" :title="root">{{ root }}</li>
+    </ul>
+  </details>
 </template>
 
 <style scoped>
@@ -187,9 +190,40 @@ function removeMount(mount: ComposeMount) {
   font-size: 12px;
   color: var(--text-dim);
 }
-.volume-root .mono {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+.volume-root summary {
+  width: fit-content;
+  cursor: pointer;
   color: var(--text-secondary);
 }
+.volume-root ul {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.volume-root li {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dim { color: var(--text-dim); font-size: 13px; }
+@media (max-width: 600px) {
+  .draft-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .draft-row input[type="text"]:nth-of-type(2) {
+    grid-column: 1;
+  }
+  .draft-row .ro-toggle {
+    justify-self: start;
+  }
+  .draft-row :deep(.app-btn:last-child) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
 </style>

@@ -439,7 +439,7 @@ const usage = computed(() =>
 .env-count .num { font-size: 26px; font-weight: 700; line-height: 1; }
 .env-count .unit { font-size: 12.5px; color: var(--text-dim); }
 .secrets-note { font-size: 12.5px; color: var(--text-secondary); }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .detail-grid { grid-template-columns: 1fr; }
 }
 .fact-edit {
