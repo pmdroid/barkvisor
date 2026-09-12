@@ -31,14 +31,15 @@ describe('composeEdit', () => {
       { hostPort: 8080, containerPort: 80, proto: 'tcp' },
       { hostPort: 9090, containerPort: 90, proto: 'udp' },
     ])
-    expect(parseComposePorts('    - 8080:80\n  - 443:443/udp')).toEqual([
+    expect(parseComposePorts('ports:\n    - 8080:80\n    - 443:443/udp')).toEqual([
       { hostPort: 8080, containerPort: 80, proto: 'tcp' },
       { hostPort: 443, containerPort: 443, proto: 'udp' },
     ])
-    expect(parseComposePorts('- "80"')).toEqual([
+    expect(parseComposePorts('ports:\n  - "80"')).toEqual([
       { hostPort: 80, containerPort: 80, proto: 'tcp' },
     ])
-    expect(parseComposePorts('- "0:80"\n- "80:0"\n- "80:70000"\n- foo:bar')).toEqual([])
+    expect(parseComposePorts('ports:\n  - "0:80"\n  - "80:0"\n  - "80:70000"\n  - foo:bar')).toEqual([])
+    expect(parseComposePorts('environment:\n  - "9090:90"')).toEqual([])
   })
 
   test('parseComposePorts reads ports blocks and ignores env-like siblings', () => {

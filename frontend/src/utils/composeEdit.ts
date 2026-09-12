@@ -34,11 +34,9 @@ function parsePortEntry(raw: string): ComposePortRow | null {
 export function parseComposePorts(yaml: string): ComposePortRow[] {
   const lines = yaml.split('\n')
   const blocks = findListBlocks(lines, 'ports')
-  const raw = blocks.length
-    ? blocks.flatMap((block) => blockPayloads(lines, block))
-    : lines
+  if (!blocks.length) return []
   const out: ComposePortRow[] = []
-  for (const row of raw) {
+  for (const row of blocks.flatMap((block) => blockPayloads(lines, block))) {
     const parsed = parsePortEntry(row)
     if (parsed) out.push(parsed)
   }
