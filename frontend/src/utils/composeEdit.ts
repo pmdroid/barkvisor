@@ -383,8 +383,8 @@ export function addComposeMount(yaml: string, mount: ComposeMountDraft): string 
   if (!blocks.length) {
     return insertFreshBlock(yaml, 'volumes', [mountEntryText(mount)])
   }
-  const first = blocks[0]
-  return applyBlocks(lines, [first], [[...blockPayloads(lines, first), mountEntryText(mount)]])
+  const last = blocks[blocks.length - 1]
+  return applyBlocks(lines, [last], [[...blockPayloads(lines, last), mountEntryText(mount)]])
 }
 
 export function removeComposeMount(yaml: string, mount: ComposeMountDraft): string {
@@ -620,9 +620,12 @@ export function applyAppVolumeChange(
   if (change.type === 'add') {
     const nextCompose = compose ? addComposeMount(compose, change.mount) : compose
     const paths = sharedPaths ?? []
+    const entry = compose
+      ? change.mount.source
+      : `${change.mount.source}:${change.mount.target}${change.mount.readOnly ? ':ro' : ''}`
     const nextPaths = paths.some((path) => sharedHostKey(path) === change.mount.source)
       ? paths
-      : [...paths, change.mount.source]
+      : [...paths, entry]
     return { compose: nextCompose, sharedPaths: nextPaths }
   }
   let remaining: ComposeMount[] = []

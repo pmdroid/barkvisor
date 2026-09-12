@@ -39,8 +39,13 @@ describe('composeEdit', () => {
       mount: { source: '/media', target: '/media', readOnly: false },
     })
     expect(added.compose).toBeNull()
-    expect(added.sharedPaths).toEqual(['/keep', '/media'])
-    const removed = applyAppVolumeChange(null, ['/keep', '/media'], {
+    expect(added.sharedPaths).toEqual(['/keep', '/media:/media'])
+    const ro = applyAppVolumeChange(null, [], {
+      type: 'add',
+      mount: { source: '/data/host', target: '/container/data', readOnly: true },
+    })
+    expect(ro.sharedPaths).toEqual(['/data/host:/container/data:ro'])
+    const removed = applyAppVolumeChange(null, ['/keep', '/media:/media'], {
       type: 'remove',
       mount: { source: '/media', target: '/media', readOnly: false },
     })
@@ -239,6 +244,22 @@ describe('composeEdit', () => {
     const added = setComposePorts(flow, [{ hostPort: 99, containerPort: 99, proto: 'tcp' }])
     expect(added).toContain('    ports:\n      - "99:99"')
     expect(added).not.toContain('ports: []')
+  })
+
+  test('addComposeMount appends to the last volumes block', () => {
+    const yaml = `services:
+  a:
+    image: img-a
+    volumes:
+      - "/a:/a"
+  b:
+    image: img-b
+    volumes:
+      - "/b:/b"
+`
+    const next = addComposeMount(yaml, { source: '/media', target: '/media', readOnly: false })
+    expect(next).toContain('  a:\n    image: img-a\n    volumes:\n      - "/a:/a"')
+    expect(next).toContain('  b:\n    image: img-b\n    volumes:\n      - "/b:/b"\n      - "/media:/media"')
   })
 
   test('addComposeMount appends to an existing block and dedupes', () => {
