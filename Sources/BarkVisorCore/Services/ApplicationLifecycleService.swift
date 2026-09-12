@@ -356,9 +356,10 @@ public enum ApplicationLifecycleService {
         do {
             if vm.state == "provisioning" {
                 try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
-                try await refuseDeleting(id: vm.id, db: db)
             }
+            try await refuseDeleting(id: vm.id, db: db)
             try await setState(&vm, state: "starting", error: nil, db: db)
+            try await refuseDeleting(id: vm.id, db: db)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
             try verifyInspectedBinds(
                 containerNames: render.containerNames,
