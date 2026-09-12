@@ -22,6 +22,8 @@
     <string>/var/log/barkvisor/server.err</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>BARKVISOR_AUTH_MODE</key>
+        <string>disabled</string>
         <key>PATH</key>
         <string>/usr/local/bin:/opt/homebrew/bin:/Applications/OrbStack.app/Contents/MacOS/xbin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
