@@ -291,5 +291,10 @@ spec:
       mounts: [{ source: 'plex-config', target: '/config', readOnly: false }],
     })
     expect(named).toContain('"plex-config:/config"')
+    const portsOnly = applyComposeDocumentDrafts(document, {
+      ports: [{ hostPort: 9000, containerPort: 80, proto: 'tcp' }],
+    })
+    expect(portsOnly).toContain('- "9000:80"')
+    expect(portsOnly).toContain('"/data/config:/config"')
   })
 })

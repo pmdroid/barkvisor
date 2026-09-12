@@ -88,7 +88,8 @@ const pickerFieldId = ref<string | null>(null)
 const pickerExtraIndex = ref<number | null>(null)
 const yamlVolumes = ref<ComposeMountDraft[]>([])
 const yamlPorts = ref<ComposePortRow[]>([])
-const yamlDraftsDirty = ref(false)
+const yamlVolumeDirty = ref(false)
+const yamlPortDirty = ref(false)
 const pickerYamlIndex = ref<number | null>(null)
 const lanIPv4 = ref('')
 const showErrors = ref(false)
@@ -302,36 +303,39 @@ function seedYamlDrafts() {
     readOnly: mount.readOnly,
   }))
   yamlPorts.value = parseComposePorts(compose)
-  yamlDraftsDirty.value = false
+  yamlVolumeDirty.value = false
+  yamlPortDirty.value = false
 }
 
 watch(yaml, () => {
-  if (customYaml.value && step.value === 'configure' && !yamlDraftsDirty.value) seedYamlDrafts()
+  if (customYaml.value && step.value === 'configure' && !yamlVolumeDirty.value && !yamlPortDirty.value) {
+    seedYamlDrafts()
+  }
 })
 
 function addYamlVolume() {
   yamlVolumes.value = [...yamlVolumes.value, { source: '', target: '/data', readOnly: false }]
-  yamlDraftsDirty.value = true
+  yamlVolumeDirty.value = true
 }
 
 function removeYamlVolume(index: number) {
   yamlVolumes.value = yamlVolumes.value.filter((_, i) => i !== index)
-  yamlDraftsDirty.value = true
+  yamlVolumeDirty.value = true
 }
 
 function setYamlVolumeSource(index: number, value: string) {
   yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, source: value } : row))
-  yamlDraftsDirty.value = true
+  yamlVolumeDirty.value = true
 }
 
 function setYamlVolumeTarget(index: number, value: string) {
   yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, target: value } : row))
-  yamlDraftsDirty.value = true
+  yamlVolumeDirty.value = true
 }
 
 function setYamlVolumeReadOnly(index: number, value: boolean) {
   yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, readOnly: value } : row))
-  yamlDraftsDirty.value = true
+  yamlVolumeDirty.value = true
 }
 
 function onYamlVolumePicked(path: string) {
@@ -342,17 +346,17 @@ function onYamlVolumePicked(path: string) {
 
 function addYamlPort() {
   yamlPorts.value = [...yamlPorts.value, { hostPort: 0, containerPort: 0, proto: 'tcp' }]
-  yamlDraftsDirty.value = true
+  yamlPortDirty.value = true
 }
 
 function removeYamlPort(index: number) {
   yamlPorts.value = yamlPorts.value.filter((_, i) => i !== index)
-  yamlDraftsDirty.value = true
+  yamlPortDirty.value = true
 }
 
 function setYamlPort(index: number, patch: Partial<ComposePortRow>) {
   yamlPorts.value = yamlPorts.value.map((row, i) => (i === index ? { ...row, ...patch } : row))
-  yamlDraftsDirty.value = true
+  yamlPortDirty.value = true
 }
 
 const yamlDraftReady = computed(() => yamlDraftIssues().length === 0)
@@ -387,13 +391,16 @@ function yamlDraftIssues(): string[] {
 }
 
 function applyYamlDrafts(document: string): string | null {
-  if (!yamlDraftsDirty.value) return document
+  if (!yamlVolumeDirty.value && !yamlPortDirty.value) return document
   const mounts = yamlVolumes.value
     .filter((row) => !yamlRowEmpty(row))
     .map((row) => composeMountFromDraft(row))
     .filter((row): row is ComposeMountDraft => row !== null)
   const ports = yamlPorts.value.filter((row) => !yamlRowEmpty(row) && isComposePortRow(row))
-  return applyComposeDocumentDrafts(document, { ports, mounts })
+  return applyComposeDocumentDrafts(document, {
+    ports: yamlPortDirty.value ? ports : undefined,
+    mounts: yamlVolumeDirty.value ? mounts : undefined,
+  })
 }
 
 async function submit() {

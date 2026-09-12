@@ -27,6 +27,7 @@ import {
   removeComposeMount,
   retainUsedPaths,
   setComposePorts,
+  sharedHostKey,
   type ComposeMountDraft,
 } from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
@@ -1456,9 +1457,13 @@ async function addAppVolume(draft: ComposeMountDraft) {
     const spec = await loadAppSpec()
     const compose = appComposeOf(spec)
     if (!compose) throw new Error('This app has no compose document yet')
-    spec.spec.compose = addComposeMount(compose, draft)
+    const nextCompose = addComposeMount(compose, draft)
+    if (nextCompose === compose) return
+    spec.spec.compose = nextCompose
     const paths = spec.spec.sharedPaths ?? []
-    if (!paths.includes(draft.source)) spec.spec.sharedPaths = [...paths, draft.source]
+    if (!paths.some((path) => sharedHostKey(path) === draft.source)) {
+      spec.spec.sharedPaths = [...paths, draft.source]
+    }
     await saveAppSpec(spec)
     await refreshWorkload()
     if (vm.value?.state === 'running') {

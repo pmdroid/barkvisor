@@ -208,8 +208,8 @@ export function applyComposeDrafts(
   drafts: { ports?: ComposePortRow[]; mounts?: ComposeMountDraft[] },
 ): string {
   let next = compose
-  if (drafts.ports) next = setComposePorts(next, drafts.ports)
-  if (drafts.mounts) next = setComposeMounts(next, drafts.mounts)
+  if (drafts.ports !== undefined) next = setComposePorts(next, drafts.ports)
+  if (drafts.mounts !== undefined) next = setComposeMounts(next, drafts.mounts)
   return next
 }
 
@@ -277,7 +277,7 @@ export function replaceComposeBlock(document: string, compose: string): string |
   return [...lines.slice(0, region.start), ...block, ...lines.slice(region.end)].join('\n')
 }
 
-function sharedHostKey(path: string): string {
+export function sharedHostKey(path: string): string {
   let raw = path.trim()
   if (raw.endsWith(':ro')) raw = raw.slice(0, -3)
   else if (raw.endsWith(':rw')) raw = raw.slice(0, -3)
@@ -306,11 +306,11 @@ export function composeBindFromDraft(draft: ComposeMountDraft): ComposeMountDraf
 
 export function applyComposeDocumentDrafts(
   document: string,
-  drafts: { ports: ComposePortRow[]; mounts: ComposeMountDraft[] },
+  drafts: { ports?: ComposePortRow[]; mounts?: ComposeMountDraft[] },
 ): string | null {
   const compose = extractComposeBlock(document)
   if (compose === null) {
-    return drafts.ports.length || drafts.mounts.length ? null : document
+    return (drafts.ports?.length || drafts.mounts?.length) ? null : document
   }
   return replaceComposeBlock(document, applyComposeDrafts(compose, drafts))
 }
