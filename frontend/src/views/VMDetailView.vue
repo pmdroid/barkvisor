@@ -2721,6 +2721,19 @@ const healthBanner = computed(() => {
 }
 .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .app-toolbar h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+@media (max-width: 600px) {
+  .app-toolbar .ops-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+  .app-toolbar .boot-toggle {
+    flex-basis: 100%;
+  }
+  .app-toolbar .ops-actions :deep(.app-btn) {
+    flex: 1 1 76px;
+  }
+}
 .app-kind {
   display: inline-block;
   font-size: 10.5px;
