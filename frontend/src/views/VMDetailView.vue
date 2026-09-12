@@ -2703,7 +2703,11 @@ const healthBanner = computed(() => {
   flex-direction: column;
   gap: 14px;
 }
-.app-detail-head { margin-bottom: 6px; }
+.app-detail-head {
+  margin-bottom: 6px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--border-glass);
+}
 .app-detail-head .crumb {
   font-size: 12px;
   color: var(--text-dim);
@@ -2717,11 +2721,26 @@ const healthBanner = computed(() => {
   height: auto;
   min-height: 0;
   padding: 0;
+  border-bottom: 0;
   margin-bottom: 6px;
 }
+.app-toolbar > div:first-child { min-width: 0; }
 .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .app-toolbar h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 @media (max-width: 600px) {
+  .app-detail-head {
+    padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+  }
+  .app-toolbar .title-row {
+    gap: 8px;
+  }
+  .app-toolbar .title-row h1 {
+    flex-basis: 100%;
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .app-toolbar .ops-actions {
     width: 100%;
     margin-left: 0;
