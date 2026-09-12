@@ -132,6 +132,20 @@ function payloadMatches(payload: string, mount: ComposeMountDraft): boolean {
   return ro === mount.readOnly
 }
 
+function parseMountPayload(payload: string): ComposeMountDraft | null {
+  const text = unquote(payload.trim().replace(/^-\s+/, '').split('\n')[0] ?? '')
+  const m = text.match(/^([^:]+):(\/[^:]+)(?::(ro|rw|z|Z))?$/)
+  if (!m) return null
+  const source = m[1].trim()
+  const target = m[2].trim()
+  if (!source || source.includes(' ') || !target.startsWith('/') || target === '/') return null
+  return { source, target, readOnly: m[3] === 'ro' }
+}
+
+function listEntryLines(indent: string, entry: string): string[] {
+  return entry.split('\n').map((part, i) => (i === 0 ? `${indent}- ${part}` : `${indent}  ${part}`))
+}
+
 type ListItem = {
   span: number[]
 }
@@ -221,7 +235,7 @@ function applyBlocks(
       return
     }
     if (block.flow) keyRewrite.set(block.key, `${block.keyIndent}${block.keyName}:`)
-    insertAfter.set(block.key, entries.map((entry) => `${block.entryIndent}- ${entry}`))
+    insertAfter.set(block.key, entries.flatMap((entry) => listEntryLines(block.entryIndent, entry)))
   })
   const out: string[] = []
   lines.forEach((line, i) => {
@@ -253,7 +267,7 @@ function insertFreshBlock(yaml: string, key: string, entries: string[]): string 
   const anchor = serviceChildAnchor(lines)
   const out = lines.slice(0, anchor.after + 1)
   out.push(`${anchor.indent}${key}:`)
-  entries.forEach((entry) => out.push(`${anchor.indent}  - ${entry}`))
+  entries.forEach((entry) => out.push(...listEntryLines(`${anchor.indent}  `, entry)))
   out.push(...lines.slice(anchor.after + 1))
   return out.join('\n')
 }
@@ -300,7 +314,14 @@ export function setComposeMounts(yaml: string, mounts: ComposeMountDraft[]): str
   const valid = mounts
     .map((mount) => composeMountFromDraft(mount))
     .filter((mount): mount is ComposeMountDraft => mount !== null)
-  return replaceListKey(yaml, 'volumes', valid.map(mountEntryText))
+  const lines = yaml.split('\n')
+  const kept: string[] = []
+  for (const block of findListBlocks(lines, 'volumes')) {
+    for (const payload of blockPayloads(lines, block)) {
+      if (!parseMountPayload(payload)) kept.push(payload)
+    }
+  }
+  return replaceListKey(yaml, 'volumes', [...valid.map(mountEntryText), ...kept])
 }
 
 export function applyComposeDrafts(

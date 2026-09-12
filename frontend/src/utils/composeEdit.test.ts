@@ -305,6 +305,32 @@ environment:
     expect(setComposeMounts(base, [])).not.toContain('volumes:')
   })
 
+  test('setComposeMounts keeps long-form volume objects', () => {
+    const yaml = `services:
+  a:
+    image: img
+    volumes:
+      - "/a:/app"
+      - type: bind
+        source: /secret
+        target: /run/secret
+        read_only: true
+volumes:
+  data:
+`
+    const next = setComposeMounts(yaml, [{ source: '/b', target: '/data', readOnly: false }])
+    expect(next).toContain('"/b:/data"')
+    expect(next).not.toContain('/a:/app')
+    expect(next).toContain('type: bind')
+    expect(next).toContain('source: /secret')
+    expect(next).toContain('target: /run/secret')
+    expect(next).toContain('volumes:\n  data:')
+    const emptied = setComposeMounts(yaml, [])
+    expect(emptied).not.toContain('/a:/app')
+    expect(emptied).toContain('type: bind')
+    expect(emptied).toContain('source: /secret')
+  })
+
   test('extract and replace keep the Application compose block', () => {
     const document = `apiVersion: barkvisor.dev/v1
 kind: Application
