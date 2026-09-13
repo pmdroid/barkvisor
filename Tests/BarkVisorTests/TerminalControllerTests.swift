@@ -48,6 +48,38 @@ struct TerminalControllerTests {
         #expect(TerminalController.Decision(status: .accept).webSocketAbort == nil)
     }
 
+    @Test func `admin resolution honors the auth-disabled bypass principal only where bypass is allowed`() {
+        // Regression: a correctly configured auth-disabled Device mints the owner
+        // as the synthetic bypass principal with NO persisted User row, so the
+        // naive `User.fetchOne` role lookup returned nil and every terminal was
+        // wrongly rejected with 403. It must count as admin when bypass is live.
+        #expect(
+            TerminalController.resolveIsAdmin(
+                userID: AuthBypass.syntheticUserId, persistedIsAdmin: false, bypassAllowed: true,
+            ) == true
+        )
+        // Under `.secure` (bypass not allowed) the synthetic id must not be admin.
+        #expect(
+            TerminalController.resolveIsAdmin(
+                userID: AuthBypass.syntheticUserId, persistedIsAdmin: false, bypassAllowed: false,
+            ) == false
+        )
+    }
+
+    @Test func `admin resolution uses the persisted role for real users, never the bypass flag`() {
+        #expect(
+            TerminalController.resolveIsAdmin(
+                userID: "user-1", persistedIsAdmin: true, bypassAllowed: false,
+            ) == true
+        )
+        // A non-admin real user is not promoted just because sign-in is disabled.
+        #expect(
+            TerminalController.resolveIsAdmin(
+                userID: "user-1", persistedIsAdmin: false, bypassAllowed: true,
+            ) == false
+        )
+    }
+
     @Test func `requestedService reads service query item`() {
         #expect(
             TerminalController.requestedService(inQuery: "ticket=t&service=web&rows=24") == "web",
