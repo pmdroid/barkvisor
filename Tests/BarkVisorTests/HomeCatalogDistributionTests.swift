@@ -93,7 +93,7 @@ struct HomeCatalogDistributionTests {
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.memberImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.memberTemplatesURL })
-        #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.memberAppsURL })
+        #expect(repos.contains { $0.repoType == "apps" && $0.url == BigBearAppCatalog.originURL })
         #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }
@@ -106,7 +106,7 @@ struct HomeCatalogDistributionTests {
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
         #expect(repos.contains { $0.repoType == "images" && $0.url == HomeCatalogOrigin.githubImagesURL })
         #expect(repos.contains { $0.repoType == "templates" && $0.url == HomeCatalogOrigin.githubTemplatesURL })
-        #expect(repos.contains { $0.repoType == "apps" && $0.url == HomeCatalogOrigin.githubAppsURL })
+        #expect(repos.contains { $0.repoType == "apps" && $0.url == BigBearAppCatalog.originURL })
         #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
     }
 
@@ -119,9 +119,14 @@ struct HomeCatalogDistributionTests {
         let repos = try pool.read { try ImageRepository.fetchAll($0) }
         #expect(repos.count == 4)
         #expect(repos.contains { $0.url == LinuxServerAppCatalog.originURL })
+        // The built-in apps identity is membership-independent: Big Bear stays on
+        // barkvisor://builtin/bigbear on Home and members alike.
+        #expect(repos.contains { $0.repoType == "apps" && $0.url == BigBearAppCatalog.originURL })
         #expect(
-            repos.filter { $0.url != LinuxServerAppCatalog.originURL }
-                .allSatisfy { HomeCatalogOrigin.isMemberOrigin($0.url) },
+            repos.filter {
+                $0.url != LinuxServerAppCatalog.originURL && $0.url != BigBearAppCatalog.originURL
+            }
+            .allSatisfy { HomeCatalogOrigin.isMemberOrigin($0.url) },
         )
         #expect(!repos.contains { HomeCatalogOrigin.isGitHubBuiltIn($0.url) })
     }

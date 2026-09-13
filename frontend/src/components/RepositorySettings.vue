@@ -6,6 +6,7 @@ import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
 import {
   catalogDeviceHasError,
+  catalogDisplayUrl,
   catalogHasDeviceError,
   catalogIsSyncing,
   lastSyncedLabel,
@@ -137,7 +138,11 @@ async function addRepo() {
       </td>
       <td><span class="badge badge-gray">{{ r.repoType }}</span></td>
       <td>
-        <span class="mono" style="color:var(--text-secondary);font-size:12px;word-break:break-all">{{ r.url }}</span>
+        <span
+          class="mono"
+          style="color:var(--text-secondary);font-size:12px;word-break:break-all"
+          :title="r.url"
+        >{{ catalogDisplayUrl(r.url) }}</span>
       </td>
       <td>
         <div

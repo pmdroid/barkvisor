@@ -89,9 +89,25 @@ struct RepositoryController: RouteCollection {
         return repos.map { RepositoryResponse(from: $0) }
     }
 
+    /// 400 message for user-supplied URLs that use the reserved `barkvisor://`
+    /// scheme. Built-in catalogs are seeded by the server; users may only add
+    /// http(s) catalogs. `nil` means the URL is not scheme-rejected here.
+    static func reservedSchemeRejection(for url: String) -> String? {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix(BuiltinAppCatalogRegistry.scheme + "://") else {
+            return nil
+        }
+        return "The barkvisor:// URL scheme is reserved for built-in catalogs. "
+            + "Add a catalog URL starting with https:// instead."
+    }
+
     @Sendable
     func create(req: Vapor.Request) async throws -> RepositoryResponse {
         let body = try req.content.decode(CreateRepositoryRequest.self)
+
+        if let reserved = Self.reservedSchemeRejection(for: body.url) {
+            throw Abort(.badRequest, reason: reserved)
+        }
 
         guard let url = URL(string: body.url),
               let scheme = url.scheme?.lowercased(),

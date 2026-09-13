@@ -38,17 +38,39 @@ const githubTemplatesURL =
   'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json'
 const memberImagesURL = 'barkvisor://home/catalog/images'
 const memberTemplatesURL = 'barkvisor://home/catalog/templates'
+const githubAppsURL = 'https://github.com/bigbeartechworld/big-bear-universal-apps'
+const legacyMemberAppsURL = 'barkvisor://home/catalog/apps'
+const builtinBigBearAppsURL = 'barkvisor://builtin/bigbear'
+const builtinLinuxServerURL = 'barkvisor://builtin/linuxserver'
 
 const catalogUrlAliases: Record<string, string> = {
   [githubImagesURL]: memberImagesURL,
   [memberImagesURL]: memberImagesURL,
   [githubTemplatesURL]: memberTemplatesURL,
   [memberTemplatesURL]: memberTemplatesURL,
+  // Built-in app catalogs share one membership-independent identity; legacy
+  // GitHub and member-flipped rows normalize onto the builtin:// URL so
+  // Device sync rows keep matching across Home and members.
+  [githubAppsURL]: builtinBigBearAppsURL,
+  [legacyMemberAppsURL]: builtinBigBearAppsURL,
+  [builtinBigBearAppsURL]: builtinBigBearAppsURL,
+  [builtinLinuxServerURL]: builtinLinuxServerURL,
+}
+
+const builtinCatalogLabels: Record<string, string> = {
+  [builtinBigBearAppsURL]: 'BarkVisor built-in · Big Bear Universal Apps',
+  [builtinLinuxServerURL]: 'BarkVisor built-in · LinuxServer.io',
 }
 
 export function catalogUrlKey(url: string): string {
   const key = url.trim()
   return catalogUrlAliases[key] ?? key
+}
+
+// Friendly label for built-in catalog URLs; raw URL otherwise.
+export function catalogDisplayUrl(url: string): string {
+  const trimmed = url.trim()
+  return builtinCatalogLabels[catalogUrlKey(trimmed)] ?? trimmed
 }
 
 export function matchRepoByUrl(

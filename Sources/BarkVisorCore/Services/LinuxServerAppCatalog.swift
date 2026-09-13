@@ -6,7 +6,7 @@ public enum LinuxServerAppCatalog {
     public static let originURL = "barkvisor://builtin/linuxserver"
 
     public static func isOrigin(_ url: String) -> Bool {
-        url == originURL
+        BuiltinAppCatalogRegistry.parseName(url) == "linuxserver"
     }
 
     public static func load() throws -> AppCatalogDocument {
