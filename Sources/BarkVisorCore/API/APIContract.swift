@@ -195,8 +195,11 @@ public enum APIContract {
         Route(method: "GET", path: "/api/vms/{id}/logs/stream", stability: .outOfBand),
         Route(method: "POST", path: "/api/auth/ws-ticket", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/console", stability: .outOfBand),
+        Route(method: "GET", path: "/api/vms/{id}/terminal", stability: .outOfBand),
+        Route(method: "GET", path: "/api/vms/{id}/containers", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/vnc", stability: .outOfBand),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/console", stability: .outOfBand),
+        Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/terminal", stability: .outOfBand),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/vnc", stability: .outOfBand),
     ]
 

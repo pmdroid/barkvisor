@@ -5,7 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useAuthStore } from '../stores/auth'
 import api from '../api/client'
+import { listWorkloadContainers } from '../api/client'
+import type { WorkloadContainer } from '../api/client'
 import {
   canFetchDeviceWorkloads,
   deviceCapabilitiesPath,
@@ -53,6 +56,7 @@ import type {
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
 import ConsolePanel from '../components/ConsolePanel.vue'
+import TerminalPanel from '../components/TerminalPanel.vue'
 
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
@@ -124,6 +128,7 @@ const router = useRouter()
 const store = useVMStore()
 const devicesStore = useDevicesStore()
 const homeWorkloads = useDeviceWorkloadsStore()
+const auth = useAuthStore()
 const caps = useCapabilitiesStore()
 const diskStore = useDiskStore()
 const networkStore = useNetworkStore()
@@ -187,10 +192,47 @@ const vm = computed(() => {
 const agentCage = computed(() => isAgentWorkload(vm.value))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
 const consoleLabel = 'Console'
+const terminalLabel = 'Terminal'
+
+const terminalContainers = ref<WorkloadContainer[]>([])
+const terminalService = ref('')
+const terminalError = ref('')
+const terminalLoaded = ref(false)
+const terminalLoading = ref(false)
+const terminalContainerOptions = computed(() => terminalContainers.value.map(c => ({
+  value: c.service,
+  label: c.state ? `${c.service} — ${c.state}` : c.service,
+})))
+
+async function loadTerminalContainers() {
+  if (!vm.value) return
+  terminalLoading.value = true
+  terminalError.value = ''
+  try {
+    terminalContainers.value = await listWorkloadContainers(
+      vmId.value,
+      isMemberDetail.value ? memberDevice.value : undefined,
+    )
+    if (!terminalContainers.value.some(c => c.service === terminalService.value)) {
+      terminalService.value = terminalContainers.value[0]?.service ?? ''
+    }
+    terminalLoaded.value = true
+  } catch (e: any) {
+    terminalError.value = apiErrorMessage(e)
+  } finally {
+    terminalLoading.value = false
+  }
+}
+
+watch(tab, (value) => {
+  if (value === 'terminal' && !terminalLoaded.value && !terminalLoading.value) {
+    void loadTerminalContainers()
+  }
+})
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
-  if ((value === 'console' || value === 'vnc') && !showMemberConnect.value) return false
+  if ((value === 'console' || value === 'vnc' || value === 'terminal') && !showMemberConnect.value) return false
   if (!vm.value) return true
   return memberControlTabAllowed(value, vm.value.state)
 }
@@ -201,7 +243,7 @@ watch(isMemberDetail, (remote) => {
 
 watch(showMemberConnect, (ok) => {
   if (!isMemberDetail.value || !memberDevice.value) return
-  if (!ok && (tab.value === 'console' || tab.value === 'vnc')) tab.value = 'overview'
+  if (!ok && (tab.value === 'console' || tab.value === 'vnc' || tab.value === 'terminal')) tab.value = 'overview'
 })
 
 watch(tab, (value) => {
@@ -1876,6 +1918,7 @@ const healthBanner = computed(() => {
     <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
       <div v-if="!isApp" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
+      <div v-if="isApp && auth.isAdmin" class="tab" :class="{ active: tab === 'terminal' }" @click="tab = 'terminal'">{{ terminalLabel }}</div>
       <div v-if="!isApp" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
@@ -1885,6 +1928,7 @@ const healthBanner = computed(() => {
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
       <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
+      <div v-if="isApp && showMemberConnect" class="tab" :class="{ active: tab === 'terminal' }" @click="tab = 'terminal'">{{ terminalLabel }}</div>
       <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
@@ -2324,6 +2368,26 @@ const healthBanner = computed(() => {
       :vm-state="vm.state"
       :device="isMemberDetail ? memberDevice : undefined"
     />
+    <div v-if="tab === 'terminal' && isApp && showMemberConnect" class="sheet terminal-sheet">
+      <div class="terminal-bar">
+        <AppSelect
+          v-model="terminalService"
+          :options="terminalContainerOptions"
+          :disabled="!terminalContainers.length || terminalLoading"
+        />
+        <AppButton size="sm" :loading="terminalLoading" @click="loadTerminalContainers">Refresh</AppButton>
+      </div>
+      <p v-if="terminalError" class="list-error">{{ terminalError }}</p>
+      <p v-else-if="terminalLoaded && !terminalContainers.length" class="dim-text">No containers reported for this app.</p>
+      <TerminalPanel
+        v-if="terminalService"
+        :key="`terminal-${vmId}-${isMemberDetail ? hostId : 'local'}-${terminalService}`"
+        :vm-id="vmId"
+        :vm-state="vm.state"
+        :service="terminalService"
+        :device="isMemberDetail ? memberDevice : undefined"
+      />
+    </div>
     <VNCPanel
       v-if="tab === 'vnc' && showMemberConnect"
       :key="`vnc-${vmId}-${isMemberDetail ? hostId : 'local'}`"
@@ -2885,6 +2949,12 @@ const healthBanner = computed(() => {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
 }
 .sheet-head {
   display: flex;
