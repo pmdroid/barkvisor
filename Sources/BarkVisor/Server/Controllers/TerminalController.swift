@@ -60,6 +60,24 @@ struct TerminalController: RouteCollection {
         return Decision(status: .accept)
     }
 
+    /// Whether the ticket's principal may open an exec terminal. A real user
+    /// needs a persisted admin `User` row; the auth-disabled bypass principal
+    /// (`AuthBypass.syntheticUserId`) is minted without a row but *is* the
+    /// single local owner, so it counts as admin only where bypass is actually
+    /// allowed (`AuthBypass.allows`) — never under `.secure`. Without this the
+    /// `User.fetchOne` lookup of the synthetic id returns nil and a correctly
+    /// configured auth-disabled Device wrongly rejects every terminal as 403.
+    static func resolveIsAdmin(
+        userID: String,
+        persistedIsAdmin: Bool,
+        bypassAllowed: Bool,
+    ) -> Bool {
+        if userID == AuthBypass.syntheticUserId {
+            return bypassAllowed
+        }
+        return persistedIsAdmin
+    }
+
     /// `service=` from the socket query (same item reader the ticket uses).
     static func requestedService(inQuery query: String?) -> String? {
         let items = StreamTicketPolicy.queryItems(from: query)
@@ -142,9 +160,19 @@ struct TerminalController: RouteCollection {
                     ) else {
                         throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
                     }
-                    let isAdmin = try await req.db.read { db in
-                        try User.fetchOne(db, key: identity.userID)?.userRole == .admin
+                    let persistedIsAdmin: Bool = if identity.userID == AuthBypass.syntheticUserId {
+                        // Auth-disabled / loopback owner is minted without a User row.
+                        false
+                    } else {
+                        try await req.db.read { db in
+                            try User.fetchOne(db, key: identity.userID)?.userRole == .admin
+                        }
                     }
+                    let isAdmin = Self.resolveIsAdmin(
+                        userID: identity.userID,
+                        persistedIsAdmin: persistedIsAdmin,
+                        bypassAllowed: AuthBypass.allows(req),
+                    )
                     let service = Self.requestedService(inQuery: req.url.query)
                     let decision = try await Self.precheck(
                         req: req,
