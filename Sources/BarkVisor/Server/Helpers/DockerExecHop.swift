@@ -158,6 +158,10 @@ final class DockerExecHopPeer: WebSocketHopPeer, @unchecked Sendable {
             return was
         }()
         if !already {
+            // Ask the container-side shell to exit before killing the exec client,
+            // then kill + reap (#614). After a typed `exit` the child is already
+            // reaped and this degrades to a no-op write.
+            session.requestShellExit()
             session.terminate()
         }
     }

@@ -56,6 +56,77 @@ struct TerminalControllerTests {
         #expect(TerminalController.requestedService(inQuery: nil) == nil)
     }
 
+    // MARK: - Agent tunnel ticket gate (#614)
+
+    @Test func `terminal tunnel check passes the one-use ticket through unspent`() async throws {
+        // The member `.terminal` hop continues to the host API's TerminalController,
+        // which must be the one to spend the ticket. The agent spending it too was
+        // the instant-close/401 reconnect loop on member devices (#614).
+        let store = WebSocketTicketStore.shared
+        let minted = await store.createTicket(
+            forUserID: "u1", username: "admin", targetVMID: "vm-9",
+        )
+        try await AgentLocalProxyController.requireTunnelTicket(
+            kind: .terminal, vmID: "vm-9", ticket: minted,
+        )
+        try await AgentLocalProxyController.requireTunnelTicket(
+            kind: .terminal, vmID: "vm-9", ticket: minted,
+        )
+        let spent = await store.validateTicket(minted, forVMID: "vm-9")
+        #expect(spent?.userID == "u1", "host API must still find the ticket spendable")
+        // Deliberately: the agent gate is shape-only for `.terminal` (it cannot
+        // check spend without consuming). A stale-but-shaped ticket sails past the
+        // agent and dies at the host API's one-use validation — the fixed client
+        // shows the reason instead of looping (#614).
+    }
+
+    @Test func `agent-terminated tunnels spend the ticket exactly once`() async throws {
+        // VNC and serial terminate on this agent (QEMU socket / ConsoleBufferManager),
+        // so their ticket stays spend-on-arrival and replays die at the door.
+        let store = WebSocketTicketStore.shared
+        let minted = await store.createTicket(
+            forUserID: "u2", username: "admin", targetVMID: "vm-9",
+        )
+        try await AgentLocalProxyController.requireTunnelTicket(
+            kind: .vnc, vmID: "vm-9", ticket: minted,
+        )
+        await #expect(throws: Error.self) {
+            try await AgentLocalProxyController.requireTunnelTicket(
+                kind: .vnc, vmID: "vm-9", ticket: minted,
+            )
+        }
+        await #expect(throws: Error.self) {
+            try await AgentLocalProxyController.requireTunnelTicket(
+                kind: .console, vmID: "vm-9", ticket: minted,
+            )
+        }
+    }
+
+    @Test(arguments: [nil, "", "not-a-uuid"])
+    func `tunnel ticket gate requires presence plus uuid shape for every kind`(
+        _ ticket: String?,
+    ) async throws {
+        for kind in [HomeConsoleKind.vnc, .console, .terminal] {
+            await #expect(throws: Error.self) {
+                try await AgentLocalProxyController.requireTunnelTicket(
+                    kind: kind, vmID: "vm-9", ticket: ticket,
+                )
+            }
+        }
+    }
+
+    @Test func `tunnel ticket gate binds the ticket to the workload for agent-terminated kinds`() async throws {
+        let store = WebSocketTicketStore.shared
+        let minted = await store.createTicket(
+            forUserID: "u3", username: "admin", targetVMID: "vm-other",
+        )
+        await #expect(throws: Error.self) {
+            try await AgentLocalProxyController.requireTunnelTicket(
+                kind: .console, vmID: "vm-9", ticket: minted,
+            )
+        }
+    }
+
     // MARK: - Resize control frames
 
     @Test func `resize control frame parsing`() {
@@ -73,6 +144,41 @@ struct TerminalControllerTests {
         #expect(DockerExecControl.decodeResize(#"{"type":"ping"}"#) == nil)
         #expect(DockerExecControl.decodeResize("not json") == nil)
         #expect(DockerExecControl.decodeResize("") == nil)
+    }
+
+    // MARK: - Initial window size query (#614)
+
+    @Test func `requested window size parses the connect query`() throws {
+        let size = try #require(
+            TerminalController.requestedWindowSize(inQuery: "ticket=t&service=web&cols=120&rows=32"),
+        )
+        #expect(size.cols == 120 && size.rows == 32)
+        // Absent size → nil, so serve() falls back to the PTY default geometry.
+        #expect(TerminalController.requestedWindowSize(inQuery: "ticket=t&service=web") == nil)
+        #expect(TerminalController.requestedWindowSize(inQuery: nil) == nil)
+        // One dimension alone is not a usable grid.
+        #expect(TerminalController.requestedWindowSize(inQuery: "cols=120") == nil)
+        #expect(TerminalController.requestedWindowSize(inQuery: "rows=32") == nil)
+    }
+
+    @Test(arguments: ["cols=abc&rows=30", "cols=0&rows=30", "cols=-5&rows=30", "cols=&rows=", "cols=1e9&rows=2"])
+    func `requested window size rejects hostile values`(_ query: String) {
+        #expect(TerminalController.requestedWindowSize(inQuery: query) == nil, "\(query)")
+    }
+
+    @Test func `requested window size clamps oversized dimensions`() throws {
+        // Oversized-but-valid numbers clamp to the ceiling instead of 99999×12.
+        let size = try #require(
+            TerminalController.requestedWindowSize(inQuery: "cols=99999&rows=12"),
+        )
+        #expect(size.cols == TerminalController.maxWindowDimension && size.rows == 12)
+    }
+
+    @Test func `exec request defaults carry the documented fallback grid`() {
+        let request = DockerExecRequest(container: "bv-web-1")
+        #expect(request.cols == DockerExecRequest.defaultCols)
+        #expect(request.rows == DockerExecRequest.defaultRows)
+        #expect(request.cols == 80 && request.rows == 24)
     }
 
     // MARK: - Compose ps decoding + project-scoped resolution
@@ -291,6 +397,41 @@ struct TerminalControllerTests {
             )
         }
         #expect(child.launchArguments.isEmpty)
+    }
+
+    @Test func `closing the hop asks the container shell to exit before reaping`() throws {
+        // #614: `docker exec` strands the attached `sh` in the container when
+        // only its local client is SIGKILLed. Peer close must knock `exit` into
+        // stdin first, then kill + reap.
+        let child = FakeExecChild()
+        let session = try DockerExecSession(launcher: FakeLauncher(child: child), dockerExecutable: "/usr/bin/docker")
+        try session.start(
+            DockerExecRequest(container: "bv-web-1", shell: "sh", cols: 100, rows: 30),
+            onData: { _ in },
+            onExit: { _ in },
+        )
+        let peer = DockerExecHopPeer(session: session)
+        peer.close()
+        #expect(child.writes.last == Array(DockerExecSession.shellExitInput.utf8), "exit typed into the PTY")
+        #expect(child.terminated)
+        peer.close() // idempotent: no second write burst, no crash
+        #expect(child.writes.count == 1)
+    }
+
+    @Test func `shell exit after child death is a no-op`() throws {
+        let child = FakeExecChild()
+        let session = try DockerExecSession(launcher: FakeLauncher(child: child), dockerExecutable: "/usr/bin/docker")
+        let box = PTYTestBox()
+        try session.start(
+            DockerExecRequest(container: "bv-web-1"),
+            onData: { box.appendData($0) },
+            onExit: { box.setExit($0) },
+        )
+        child.emitExit(0)
+        session.requestShellExit() // typed `exit` raced ahead of the WS close
+        #expect(child.writes.isEmpty, "no writes into a reaped PTY")
+        session.terminate()
+        #expect(child.terminated)
     }
 
     // MARK: - Real PTY round-trip (skips where /bin/sh is absent)
