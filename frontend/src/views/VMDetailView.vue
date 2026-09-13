@@ -199,6 +199,13 @@ const terminalService = ref('')
 const terminalError = ref('')
 const terminalLoaded = ref(false)
 const terminalLoading = ref(false)
+type TerminalSession = {
+  id: number
+  service: string
+}
+const terminalSessions = ref<TerminalSession[]>([])
+const activeTerminalSessionID = ref<number | null>(null)
+let nextTerminalSessionID = 1
 // Scrollback keeper (#614): the terminal sheet is v-show, not v-if, once the
 // tab has ever been opened — a plain `v-if` remounted the panel on every tab
 // switch and destroyed the only wterm buffer (plus its socket) mid-session.
@@ -209,6 +216,31 @@ const terminalContainerOptions = computed(() => terminalContainers.value.map(c =
   value: c.service,
   label: c.state ? `${c.service} — ${c.state}` : c.service,
 })))
+const activeTerminalSession = computed(() => (
+  terminalSessions.value.find(session => session.id === activeTerminalSessionID.value) ?? null
+))
+
+function openTerminalSession() {
+  if (!terminalService.value) return
+  const session = {
+    id: nextTerminalSessionID++,
+    service: terminalService.value,
+  }
+  terminalSessions.value.push(session)
+  activeTerminalSessionID.value = session.id
+}
+
+function closeTerminalSession(id: number) {
+  const index = terminalSessions.value.findIndex(session => session.id === id)
+  if (index < 0) return
+  const wasActive = activeTerminalSessionID.value === id
+  terminalSessions.value.splice(index, 1)
+  if (wasActive) {
+    activeTerminalSessionID.value = terminalSessions.value[index]?.id
+      ?? terminalSessions.value[index - 1]?.id
+      ?? null
+  }
+}
 
 async function loadTerminalContainers() {
   if (!vm.value) return
@@ -222,6 +254,7 @@ async function loadTerminalContainers() {
     if (!terminalContainers.value.some(c => c.service === terminalService.value)) {
       terminalService.value = terminalContainers.value[0]?.service ?? ''
     }
+    if (!terminalSessions.value.length && terminalService.value) openTerminalSession()
     terminalLoaded.value = true
   } catch (e: any) {
     terminalError.value = apiErrorMessage(e)
@@ -2388,18 +2421,45 @@ const healthBanner = computed(() => {
           :options="terminalContainerOptions"
           :disabled="!terminalContainers.length || terminalLoading"
         />
+        <AppButton size="sm" variant="primary" :disabled="!terminalService" @click="openTerminalSession">New terminal</AppButton>
         <AppButton size="sm" :loading="terminalLoading" @click="loadTerminalContainers">Refresh</AppButton>
       </div>
       <p v-if="terminalError" class="list-error">{{ terminalError }}</p>
       <p v-else-if="terminalLoaded && !terminalContainers.length" class="dim-text">No containers reported for this app.</p>
-      <TerminalPanel
-        v-if="terminalService"
-        :key="`terminal-${vmId}-${isMemberDetail ? hostId : 'local'}-${terminalService}`"
-        :vm-id="vmId"
-        :vm-state="vm.state"
-        :service="terminalService"
-        :device="isMemberDetail ? memberDevice : undefined"
-      />
+      <template v-else-if="terminalSessions.length">
+        <div class="terminal-sessions" role="tablist" aria-label="Terminal sessions">
+          <div
+            v-for="(session, index) in terminalSessions"
+            :key="session.id"
+            class="terminal-session"
+            :class="{ active: session.id === activeTerminalSessionID }"
+          >
+            <button
+              class="terminal-session-tab"
+              type="button"
+              role="tab"
+              :aria-selected="session.id === activeTerminalSessionID"
+              @click="activeTerminalSessionID = session.id"
+            >{{ session.service }} {{ index + 1 }}</button>
+            <button
+              class="terminal-session-close"
+              aria-label="Close terminal"
+              type="button"
+              @click="closeTerminalSession(session.id)"
+            >×</button>
+          </div>
+        </div>
+        <TerminalPanel
+          v-for="session in terminalSessions"
+          :key="`terminal-${vmId}-${isMemberDetail ? hostId : 'local'}-${session.id}`"
+          v-show="session.id === activeTerminalSessionID"
+          :vm-id="vmId"
+          :vm-state="vm.state"
+          :service="session.service"
+          :device="isMemberDetail ? memberDevice : undefined"
+        />
+      </template>
+      <p v-else-if="activeTerminalSession === null" class="dim-text">Choose a container, then open a terminal.</p>
     </div>
     <VNCPanel
       v-if="tab === 'vnc' && showMemberConnect"
@@ -2966,8 +3026,55 @@ const healthBanner = computed(() => {
 .terminal-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  margin: 0 0 10px;
+  margin: 0;
+}
+.terminal-sheet {
+  padding: 12px;
+  overflow: hidden;
+}
+.terminal-sessions {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 12px -12px 12px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.terminal-session {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-dim);
+}
+.terminal-session.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.terminal-session-tab,
+.terminal-session-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.terminal-session-tab {
+  padding: 6px 4px 6px 10px;
+}
+.terminal-session-close {
+  padding: 5px 9px;
+  font-size: 16px;
+  line-height: 1;
+}
+.terminal-session-close:hover {
+  color: #dc2626;
 }
 .sheet-head {
   display: flex;
