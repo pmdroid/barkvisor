@@ -106,6 +106,7 @@ Common overrides in `/etc/barkvisor/barkvisor.env`:
 | `BARKVISOR_DATA_DIR` | `/var/lib/barkvisor` | Data directory |
 | `BARKVISOR_FRONTEND_DIR` | (share path) | Override SPA location if needed |
 | `BARKVISOR_JOIN_CODE` | (unset) | Pairing offer on **first boot** only |
+| `BARKVISOR_AUTH_MODE` | `secure` | Front-door auth: `secure`, `loopback`, or `disabled`. Wins over Settings. `loopback` trusts direct local connections only — never put a reverse proxy in front of a `loopback` instance; use `secure` there. |
 | `LD_LIBRARY_PATH` | set by package | Swift runtime + optional compat shims |
 
 After edits: `sudo systemctl restart barkvisor.service`.

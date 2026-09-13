@@ -151,6 +151,9 @@ struct PairingController: RouteCollection {
 
     @Sendable
     func join(req: Vapor.Request) async throws -> PairingJoinResponse {
+        guard AuthBypass.pairingJoinAllowed(req) else {
+            throw Abort(.forbidden, reason: "Pairing join is only allowed from this computer when sign-in is disabled")
+        }
         let body: PairingJoinRequest
         do {
             body = try req.content.decode(PairingJoinRequest.self)
