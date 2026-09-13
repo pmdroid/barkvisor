@@ -16,6 +16,11 @@ public enum StreamTicketPolicy {
     /// App terminal exec target (`?service=<compose service>`). Must survive
     /// Home/agent hop rewrites — `hopQuery` keeps it alongside `ticket=`.
     public static let serviceQueryName = "service"
+    /// Initial PTY window size for the app terminal (`?cols=`/`?rows=`, issue
+    /// #614). The server's pre-spawn checks block past the client's first
+    /// resize, so the grid size rides the connect URL into `DockerExecRequest`.
+    public static let colsQueryName = "cols"
+    public static let rowsQueryName = "rows"
     public static let mintPath = "/api/auth/ws-ticket"
     public static let missingTicketReason =
         "Missing ticket. Use POST /api/auth/ws-ticket to obtain one."
@@ -150,15 +155,18 @@ public enum StreamTicketPolicy {
         encodedQuery(clientQueryItems(ticket: ticket, session: session)) ?? ""
     }
 
-    /// Hop rewrite: Device ticket + exec `service=` (app terminal), names
-    /// preserved. Drop Home `session=` so it is never forwarded to a member.
-    /// Losing `service=` here would silently break member terminal tunnels.
+    /// Hop rewrite: Device ticket + exec `service=` and initial `cols`/`rows`
+    /// (app terminal), names preserved. Drop Home `session=` so it is never
+    /// forwarded to a member. Losing `service=` or the window size here would
+    /// silently break member terminal tunnels (#609, #614).
     public static func hopQuery(from query: String?) -> String? {
         let items = queryItems(from: query)
         guard let ticket = deviceTicket(in: items) else { return nil }
         var forwarded = [URLQueryItem(name: ticketQueryName, value: ticket)]
-        if let service = firstValue(items, name: serviceQueryName) {
-            forwarded.append(URLQueryItem(name: serviceQueryName, value: service))
+        for name in [serviceQueryName, colsQueryName, rowsQueryName] {
+            if let value = firstValue(items, name: name), !value.isEmpty {
+                forwarded.append(URLQueryItem(name: name, value: value))
+            }
         }
         return encodedQuery(forwarded)
     }

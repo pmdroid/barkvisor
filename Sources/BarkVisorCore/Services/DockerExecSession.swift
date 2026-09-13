@@ -48,7 +48,16 @@
         public var cols: Int
         public var rows: Int
 
-        public init(container: String, shell: String = "sh", cols: Int = 80, rows: Int = 24) {
+        /// PTY fallback geometry when the client rode no `?cols=&rows=` (#614).
+        public static let defaultCols = 80
+        public static let defaultRows = 24
+
+        public init(
+            container: String,
+            shell: String = "sh",
+            cols: Int = DockerExecRequest.defaultCols,
+            rows: Int = DockerExecRequest.defaultRows,
+        ) {
             self.container = container
             self.shell = shell
             self.cols = cols
@@ -187,6 +196,16 @@
             lock.unlock()
             guard live else { return }
             child?.resize(cols: max(1, cols), rows: max(1, rows))
+        }
+
+        /// Ask the in-container shell to exit (`exit` on stdin) before the exec
+        /// client is killed. `docker exec` can leave the attached `sh` stranded
+        /// in the container when its local client dies without the shell seeing
+        /// EOF (#614). No-op once the child is gone (`write` gates on running).
+        public static let shellExitInput = "exit\r\n"
+
+        public func requestShellExit() {
+            write(Array(Self.shellExitInput.utf8))
         }
 
         /// Kill + reap. Idempotent; safe to call after exit (WebSocket close).

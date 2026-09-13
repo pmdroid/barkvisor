@@ -199,6 +199,12 @@ const terminalService = ref('')
 const terminalError = ref('')
 const terminalLoaded = ref(false)
 const terminalLoading = ref(false)
+// Scrollback keeper (#614): the terminal sheet is v-show, not v-if, once the
+// tab has ever been opened — a plain `v-if` remounted the panel on every tab
+// switch and destroyed the only wterm buffer (plus its socket) mid-session.
+// The latch still keeps cold page loads from dialing `docker exec` for a tab
+// nobody opened.
+const terminalOpenedOnce = ref(false)
 const terminalContainerOptions = computed(() => terminalContainers.value.map(c => ({
   value: c.service,
   label: c.state ? `${c.service} — ${c.state}` : c.service,
@@ -225,10 +231,11 @@ async function loadTerminalContainers() {
 }
 
 watch(tab, (value) => {
-  if (value === 'terminal' && !terminalLoaded.value && !terminalLoading.value) {
-    void loadTerminalContainers()
+  if (value === 'terminal') {
+    terminalOpenedOnce.value = true
+    if (!terminalLoaded.value && !terminalLoading.value) void loadTerminalContainers()
   }
-})
+}, { immediate: true })
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -2368,7 +2375,13 @@ const healthBanner = computed(() => {
       :vm-state="vm.state"
       :device="isMemberDetail ? memberDevice : undefined"
     />
-    <div v-if="tab === 'terminal' && isApp && showMemberConnect" class="sheet terminal-sheet">
+    <!-- v-show after first open (#614): hiding the sheet must not unmount the
+         panel — the socket and the wterm scrollback live inside it. -->
+    <div
+      v-if="terminalOpenedOnce && isApp && showMemberConnect"
+      v-show="tab === 'terminal'"
+      class="sheet terminal-sheet"
+    >
       <div class="terminal-bar">
         <AppSelect
           v-model="terminalService"

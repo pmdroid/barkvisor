@@ -124,6 +124,22 @@ struct StreamTicketPolicyTests {
         #expect(StreamTicketPolicy.hopQuery(from: "session=home") == nil)
     }
 
+    @Test func `hop query preserves initial window size for terminal tunnels`() {
+        // #614: the PTY is born from ?cols/?rows because the pre-spawn
+        // `docker compose ps` blocks past the client's first resize frame. If the
+        // agent/Home hop dropped these, member sessions would still land 80×24.
+        let forwarded = StreamTicketPolicy.hopQuery(
+            from: "ticket=abc&session=home&service=web&cols=120&rows=32",
+        )
+        #expect(forwarded?.contains("ticket=abc") == true)
+        #expect(forwarded?.contains("service=web") == true)
+        #expect(forwarded?.contains("cols=120") == true)
+        #expect(forwarded?.contains("rows=32") == true)
+        #expect(forwarded?.contains("session=") == false, "Home session never leaves Home")
+        // Absent size stays absent (server falls back to the PTY default).
+        #expect(StreamTicketPolicy.hopQuery(from: "ticket=abc") == "ticket=abc")
+    }
+
     @Test func `home pass-through checks uuid shape and does not spend`() async throws {
         try StreamTicketPolicy.requirePassThroughDeviceTicket(Self.ticket)
         #expect(throws: BarkVisorError.self) {

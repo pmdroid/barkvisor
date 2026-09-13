@@ -1,6 +1,7 @@
 import BarkVisorCore
 import Foundation
 import GRDB
+import NIOCore
 import Vapor
 
 /// App-workload terminal (issue #609): `WS /api/vms/:id/terminal?service=…`
@@ -64,6 +65,34 @@ struct TerminalController: RouteCollection {
         let items = StreamTicketPolicy.queryItems(from: query)
         return StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.serviceQueryName)
     }
+
+    /// Initial grid size from the connect query (`?cols=&rows=`, issue #614).
+    /// The server's pre-spawn checks (`docker compose ps`) block past the
+    /// client's first resize frame, so the SPA rides its measured size on the
+    /// URL and the PTY is born with the right winsize instead of 80×24.
+    /// Absent/garbage values fall back to the request defaults; values are
+    /// clamped so a hostile query can not size the PTY absurdly.
+    static func requestedWindowSize(
+        inQuery query: String?,
+    ) -> (cols: Int, rows: Int)? {
+        let items = StreamTicketPolicy.queryItems(from: query)
+        guard let cols = clampedDimension(
+            StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.colsQueryName),
+        ),
+            let rows = clampedDimension(
+                StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.rowsQueryName),
+            )
+        else { return nil }
+        return (cols, rows)
+    }
+
+    private static func clampedDimension(_ raw: String?) -> Int? {
+        guard let raw, let value = Int(raw.trimmingCharacters(in: .whitespaces)) else { return nil }
+        guard value > 0 else { return nil }
+        return min(value, Self.maxWindowDimension)
+    }
+
+    static let maxWindowDimension = 9_999
 
     // MARK: - REST (service picker)
 
@@ -135,8 +164,9 @@ struct TerminalController: RouteCollection {
                 },
                 onUpgrade: { req, ws in
                     let vmID = (try? req.parameters.require("id")) ?? ""
+                    let query = req.url.query
                     Task {
-                        await self.serve(req: req, ws: ws, vmID: vmID)
+                        await self.serve(req: req, ws: ws, vmID: vmID, query: query)
                     }
                 },
             )
@@ -187,8 +217,17 @@ struct TerminalController: RouteCollection {
             }
         }
 
-        private func serve(req: Vapor.Request, ws inbound: WebSocket, vmID: String) async {
+        private func serve(
+            req: Vapor.Request,
+            ws inbound: WebSocket,
+            vmID: String,
+            query: String?,
+        ) async {
             let eventLoop = req.eventLoop
+            // Keepalive (#614): idle exec sessions sat past NAT/LB socket timeouts and
+            // dropped mid-think. Server pings every 20 s; an unanswered pong closes
+            // the socket so the client's reconnect machine takes over.
+            inbound.pingInterval = .seconds(20)
             let session = req.storage[TerminalSessionKey.self]
             let service = session?.service ?? ""
 
@@ -245,9 +284,16 @@ struct TerminalController: RouteCollection {
                 db: req.db,
             )
 
+            // Spawn at the client-measured grid (`?cols=&rows=`) so the shell is
+            // born with the right winsize; the earlier live resize frames that
+            // raced past the blocking `docker compose ps` precheck no longer
+            // matter for the initial size (#614).
+            let size = Self.requestedWindowSize(inQuery: query)
             let request = DockerExecRequest(
                 container: plan.container,
                 shell: DockerExecSession.defaultShell,
+                cols: size?.cols ?? DockerExecRequest.defaultCols,
+                rows: size?.rows ?? DockerExecRequest.defaultRows,
             )
             await WebSocketHop.run(
                 inbound: VaporWebSocketPeer(inbound),

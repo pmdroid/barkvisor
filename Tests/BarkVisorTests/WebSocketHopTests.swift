@@ -303,6 +303,44 @@ struct WebSocketHopTests {
         #expect(remote.sentTexts() == ["frame"])
     }
 
+    @Test func `agent terminal hop dials the host API even when vmState is set`() async throws {
+        // Regression #614: `.terminal` used to map to a nil socket and close the
+        // inbound instantly (and the agent spent the one-use ticket on arrival), so
+        // member devices could never open an exec shell. `docker exec` lives on the
+        // host API — the hop must dial it over loopback, keeping ticket + service
+        // and the initial grid on the URL and dropping the Home session.
+        let inbound = FakeHopPeer()
+        let remote = FakeHopPeer()
+        let dialer = RecordingHomeWebSocketDialer(peer: remote)
+        let proxy = AgentLocalProxyController(
+            localPort: 7_777,
+            dialer: dialer,
+            vmState: FakeVMState(vncPath: "/var/empty.sock", serialPath: "/var/empty-serial.sock"),
+        )
+        await proxy.tunnel(
+            inbound: inbound,
+            vmID: "vm-9",
+            kind: .terminal,
+            query: "ticket=\(Self.ticket)&service=web&session=home&cols=120&rows=32",
+        )
+        #expect(dialer.urls.count == 1)
+        let url = try #require(dialer.urls.first)
+        #expect(url.scheme == "ws")
+        #expect(url.host == "127.0.0.1")
+        #expect(url.port == 7_777)
+        #expect(url.path == "/api/vms/vm-9/terminal")
+        #expect(url.query?.contains("ticket=\(Self.ticket)") == true)
+        #expect(url.query?.contains("service=web") == true)
+        #expect(url.query?.contains("cols=120") == true)
+        #expect(url.query?.contains("rows=32") == true)
+        #expect(url.query?.contains("session=") == false, "Home session never reaches the Device")
+        #expect(!inbound.isClosed, "terminal tunnels must not be closed on arrival")
+        // Bytes still flow both ways through the pipe.
+        inbound.inject(.binary(byteBuffer("ls\r\n")))
+        try await waitUntil { remote.sentBinaryStrings() == ["ls\r\n"] }
+        #expect(remote.sentBinaryStrings() == ["ls\r\n"])
+    }
+
     @Test func `this Device console hop uses injected dialer`() async throws {
         let inbound = FakeHopPeer()
         let remote = FakeHopPeer()
