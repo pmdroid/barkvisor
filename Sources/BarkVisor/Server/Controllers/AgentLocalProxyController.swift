@@ -41,6 +41,7 @@ struct AgentLocalProxyController: RouteCollection {
     func registerConsoleTunnels(app: Vapor.Application) {
         registerConsoleTunnel(app: app, kind: .vnc)
         registerConsoleTunnel(app: app, kind: .console)
+        registerConsoleTunnel(app: app, kind: .terminal)
     }
 
     private func registerConsoleTunnel(app: Vapor.Application, kind: HomeConsoleKind) {
@@ -111,6 +112,9 @@ struct AgentLocalProxyController: RouteCollection {
             let path: String? = switch kind {
             case .vnc: await vmState.vncSocketPath(for: vmID)
             case .console: await vmState.serialSocketPath(for: vmID)
+            // App exec has no QEMU socket; it always runs through the host API
+            // TerminalController below (`docker exec` lives there, issue #609).
+            case .terminal: nil
             }
             guard let path else {
                 Log.server.error("Agent console hop: no \(kind.rawValue) socket for \(vmID)")
