@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarkVisor — Create App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e14;
+  --bg-surface: rgba(0,144,248,0.03);
+  --bg-card: rgba(0,144,248,0.05);
+  --sidebar-bg: rgba(8,12,18,0.92);
+  --border: rgba(184,184,180,0.08);
+  --text: #e4e4e2;
+  --text-secondary: #b8b8b4;
+  --text-dim: #6e6e6c;
+  --accent: #0090f8;
+  --green: #34d399;
+  --red: #f87171;
+  --amber: #fbbf24;
+  --radius: 2px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.app { display: flex; height: 100vh; width: 1280px; margin: 0 auto; }
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+}
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-mark {
+  width: 24px; height: 24px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; color: #fff;
+}
+.logo-name { font-weight: 600; font-size: 14px; letter-spacing: 0.01em; }
+.logo-name span { color: var(--text-dim); font-weight: 400; }
+.nav-section { padding: 14px 8px 0; }
+.nav-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-dim); padding: 0 8px 6px; font-weight: 600;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 1px;
+}
+.nav-item:hover { background: var(--bg-card); color: var(--text); }
+.nav-item.active { background: var(--bg-card); color: var(--text); }
+.nav-item.active .nav-dot { background: var(--accent); }
+.nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.nav-dot.off { background: var(--text-dim); }
+.nav-item .count { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+.nav-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+
+/* ---------- Main / overlay ---------- */
+.main { flex: 1; position: relative; background: var(--bg); }
+.main-dim {
+  position: absolute; inset: 0;
+  padding: 24px;
+  filter: brightness(0.4);
+  pointer-events: none;
+}
+.main-dim h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+.main-dim p { color: var(--text-dim); font-size: 12px; }
+
+.overlay {
+  position: absolute; inset: 0;
+  background: rgba(4,6,10,0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---------- Magazine ---------- */
+.magazine {
+  width: 720px;
+  max-height: calc(100vh - 64px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,144,248,0.06);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.mag-head {
+  display: flex; align-items: center;
+  padding: 16px 20px 0;
+}
+.mag-title { font-size: 15px; font-weight: 600; }
+.mag-close {
+  margin-left: auto;
+  width: 26px; height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit;
+}
+.mag-close:hover { color: var(--text); background: var(--bg-card); }
+
+.steps {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.step { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-dim); }
+.step-num {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600;
+}
+.step.current { color: var(--text); }
+.step.current .step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step-arrow { color: var(--text-dim); font-size: 11px; opacity: 0.5; }
+
+.mag-body { flex: 1; overflow-y: auto; padding: 16px 20px 8px; }
+.mag-body::-webkit-scrollbar { width: 8px; }
+.mag-body::-webkit-scrollbar-thumb { background: rgba(184,184,180,0.12); border-radius: 4px; }
+
+/* ---------- Search ---------- */
+.search-wrap { position: relative; margin-bottom: 12px; }
+.search-wrap svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 13px; height: 13px; color: var(--text-dim); pointer-events: none;
+}
+.search {
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px 8px 30px;
+  outline: none;
+}
+.search::placeholder { color: var(--text-dim); }
+.search:focus { border-color: rgba(0,144,248,0.4); }
+
+/* ---------- Category chips ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip:hover { background: var(--bg-card); color: var(--text); }
+.chip.selected {
+  background: rgba(0,144,248,0.12);
+  border-color: rgba(0,144,248,0.45);
+  color: var(--accent);
+  font-weight: 500;
+}
+.chip .n { font-size: 10px; color: var(--text-dim); }
+.chip.selected .n { color: rgba(0,144,248,0.7); }
+
+/* ---------- Card grid ---------- */
+.mag-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.card {
+  display: flex; gap: 11px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.card:hover { border-color: rgba(0,144,248,0.35); }
+.card.disabled { opacity: 0.55; cursor: not-allowed; }
+.card.disabled:hover { border-color: var(--border); }
+.card-icon {
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px;
+  color: #fff;
+}
+.card-body { min-width: 0; flex: 1; }
+.card-name { font-weight: 600; font-size: 13px; margin-bottom: 1px; }
+.card-tag {
+  color: var(--text-dim); font-size: 11.5px; line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.card-meta { display: flex; align-items: center; gap: 6px; }
+.src-chip {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  letter-spacing: 0.02em;
+}
+.src-linuxserver { background: rgba(52,211,153,0.1); color: var(--green); }
+.src-bigbear { background: rgba(251,191,36,0.1); color: var(--amber); }
+.arch { font-size: 10px; color: var(--text-dim); }
+.card-note {
+  font-size: 10.5px; color: var(--red);
+  display: flex; align-items: center; gap: 4px;
+}
+.empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 12.5px;
+}
+
+/* ---------- Footer ---------- */
+.mag-foot {
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  display: flex; align-items: center;
+}
+.mag-foot .dot-sep { margin: 0 6px; opacity: 0.5; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">B</div>
+      <div class="logo-name">Bark<span>Visor</span></div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Devices</div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M5 13h6"/></svg>
+        All Devices
+        <span class="count">3</span>
+      </div>
+      <div class="nav-item"><span class="nav-dot"></span>Basement Linux</div>
+      <div class="nav-item"><span class="nav-dot"></span>Studio Mac</div>
+      <div class="nav-item"><span class="nav-dot off"></span>Attic Pi</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Manage</div>
+      <div class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+        Workloads
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>
+        Settings
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main with overlay -->
+  <main class="main">
+    <div class="main-dim">
+      <h1>Workloads</h1>
+      <p>3 devices · 14 running containers</p>
+    </div>
+
+    <div class="overlay">
+      <div class="magazine">
+        <div class="mag-head">
+          <div class="mag-title">Create App</div>
+          <button class="mag-close" title="Close">✕</button>
+        </div>
+
+        <div class="steps">
+          <div class="step current"><span class="step-num">1</span>Gallery</div>
+          <span class="step-arrow">→</span>
+          <div class="step"><span class="step-num">2</span>Configure</div>
+          <span class="step-arrow">→</span>
+          <div class="step"><span class="step-num">3</span>Review</div>
+        </div>
+
+        <div class="mag-body">
+          <div class="search-wrap">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+            <input class="search" id="search" type="text" placeholder="Search apps" autocomplete="off">
+          </div>
+
+          <div class="chips" id="chips"></div>
+
+          <div class="mag-grid" id="grid"></div>
+        </div>
+
+        <div class="mag-foot">
+          <span id="shown">24</span>&nbsp;of&nbsp;<span id="total">257</span>&nbsp;apps
+          <span class="dot-sep">·</span>
+          <span id="filterDesc">filtered</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const APPS = [
+  { name: "Jellyfin",    tag: "Media server for movies, TV and music",        cat: "Media",        src: "LinuxServer", arch: "amd64 · arm64", color: "#7c3aed" },
+  { name: "Plex",        tag: "Stream your personal media anywhere",          cat: "Media",        src: "LinuxServer", arch: "amd64 · arm64", color: "#b45309" },
+  { name: "Navidrome",   tag: "Lightweight music streaming server",           cat: "Media",        src: "Big Bear",    arch: "amd64 · arm64", color: "#0e7490" },
+  { name: "Immich",      tag: "Self-hosted photo and video backup",           cat: "Media",        src: "Big Bear",    arch: "amd64 · arm64", color: "#4338ca" },
+  { name: "Audiobookshelf", tag: "Podcast and audiobook server",              cat: "Media",        src: "Big Bear",    arch: "amd64 · arm64", color: "#9f1239" },
+  { name: "Radarr",      tag: "Movie collection manager for usenet & torrents", cat: "Arr",        src: "LinuxServer", arch: "amd64 · arm64", color: "#b91c1c" },
+  { name: "Sonarr",      tag: "TV series manager and automation",             cat: "Arr",          src: "LinuxServer", arch: "amd64 · arm64", color: "#0369a1" },
+  { name: "Lidarr",      tag: "Music collection manager",                     cat: "Arr",          src: "LinuxServer", arch: "amd64 · arm64", color: "#15803d" },
+  { name: "Prowlarr",    tag: "Indexer manager for the Arr stack",            cat: "Arr",          src: "LinuxServer", arch: "amd64 · arm64", color: "#6d28d9" },
+  { name: "Bazarr",      tag: "Subtitle downloads for Sonarr and Radarr",     cat: "Arr",          src: "LinuxServer", arch: "amd64 · arm64", color: "#a16207" },
+  { name: "qBittorrent", tag: "Torrent client with web UI",                   cat: "Downloads",    src: "LinuxServer", arch: "amd64 · arm64", color: "#1d4ed8" },
+  { name: "SABnzbd",     tag: "Usenet downloader with web interface",         cat: "Downloads",    src: "LinuxServer", arch: "amd64 · arm64", color: "#b45309" },
+  { name: "NZBGet",      tag: "Efficient usenet downloader",                  cat: "Downloads",    src: "LinuxServer", arch: "amd64 · arm64", color: "#047857" },
+  { name: "JDownloader", tag: "Download manager for one-click hosters",       cat: "Downloads",    src: "Big Bear",    arch: "amd64",         color: "#be185d" },
+  { name: "Duplicati",   tag: "Encrypted backups to cloud storage",           cat: "Backup",       src: "LinuxServer", arch: "amd64 · arm64", color: "#0f766e" },
+  { name: "Kopia",       tag: "Fast encrypted deduplicated backups",          cat: "Backup",       src: "Big Bear",    arch: "amd64 · arm64", color: "#334155" },
+  { name: "Syncthing",   tag: "Continuous file synchronization",              cat: "Backup",       src: "LinuxServer", arch: "amd64 · arm64", color: "#2563eb" },
+  { name: "Nginx Proxy Manager", tag: "Reverse proxy with free SSL",          cat: "Networking",   src: "Big Bear",    arch: "amd64 · arm64", color: "#15803d" },
+  { name: "AdGuard Home", tag: "Network-wide ad and tracker blocking",        cat: "Networking",   src: "Big Bear",    arch: "amd64 · arm64", color: "#7c2d12" },
+  { name: "WireGuard Easy", tag: "Simple WireGuard VPN management",           cat: "Networking",   src: "Big Bear",    arch: "amd64 · arm64", color: "#991b1b",
+    disabled: true, note: "Install disabled · needs NET_ADMIN" },
+  { name: "Nextcloud",   tag: "Files, calendar and collaboration suite",      cat: "Productivity", src: "LinuxServer", arch: "amd64 · arm64", color: "#1e40af" },
+  { name: "Paperless-ngx", tag: "Document management and OCR",                cat: "Productivity", src: "Big Bear",    arch: "amd64 · arm64", color: "#065f46" },
+  { name: "Vaultwarden", tag: "Bitwarden-compatible password manager",        cat: "Productivity", src: "Big Bear",    arch: "amd64 · arm64", color: "#374151" },
+  { name: "Home Assistant", tag: "Open source home automation",               cat: "Home",         src: "Big Bear",    arch: "amd64 · arm64", color: "#0369a1" },
+  { name: "Ollama",      tag: "Run local LLMs with a simple API",             cat: "AI",           src: "Big Bear",    arch: "amd64 · arm64", color: "#111827" },
+];
+
+const CATEGORIES = ["All", "Media", "Arr", "Downloads", "Backup", "Networking", "Productivity", "Home", "AI"];
+const TOTAL_APPS = 257;
+
+let activeCat = "All";
+let query = "";
+
+const chipsEl = document.getElementById("chips");
+const gridEl = document.getElementById("grid");
+const searchEl = document.getElementById("search");
+const shownEl = document.getElementById("shown");
+const filterDescEl = document.getElementById("filterDesc");
+document.getElementById("total").textContent = TOTAL_APPS;
+
+function countFor(cat) {
+  if (cat === "All") return APPS.length;
+  return APPS.filter(a => a.cat === cat).length;
+}
+
+function renderChips() {
+  chipsEl.innerHTML = "";
+  for (const cat of CATEGORIES) {
+    const b = document.createElement("button");
+    b.className = "chip" + (cat === activeCat ? " selected" : "");
+    b.innerHTML = cat + ' <span class="n">' + countFor(cat) + "</span>";
+    b.onclick = () => { activeCat = cat; renderChips(); renderGrid(); };
+    chipsEl.appendChild(b);
+  }
+}
+
+function filtered() {
+  const q = query.trim().toLowerCase();
+  return APPS.filter(a => {
+    if (activeCat !== "All" && a.cat !== activeCat) return false;
+    if (q && !(a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function renderGrid() {
+  const list = filtered();
+  gridEl.innerHTML = "";
+  if (list.length === 0) {
+    gridEl.innerHTML = '<div class="empty">No apps match your filters.</div>';
+  }
+  for (const a of list) {
+    const card = document.createElement("div");
+    card.className = "card" + (a.disabled ? " disabled" : "");
+    const srcClass = a.src === "LinuxServer" ? "src-linuxserver" : "src-bigbear";
+    card.innerHTML =
+      '<div class="card-icon" style="background:' + a.color + '">' + a.name.charAt(0) + "</div>" +
+      '<div class="card-body">' +
+        '<div class="card-name">' + a.name + "</div>" +
+        '<div class="card-tag">' + a.tag + "</div>" +
+        '<div class="card-meta">' +
+          (a.disabled
+            ? '<span class="card-note">⚠ ' + a.note + "</span>"
+            : '<span class="src-chip ' + srcClass + '">' + a.src + "</span>" +
+              '<span class="arch">' + a.arch + "</span>") +
+        "</div>" +
+      "</div>";
+    gridEl.appendChild(card);
+  }
+  shownEl.textContent = list.length;
+  const parts = [];
+  if (activeCat !== "All") parts.push(activeCat);
+  if (query.trim()) parts.push('"' + query.trim() + '"');
+  filterDescEl.textContent = parts.length ? "filtered · " + parts.join(" + ") : "no filters";
+}
+
+searchEl.addEventListener("input", e => { query = e.target.value; renderGrid(); });
+
+renderChips();
+renderGrid();
+</script>
+</body>
+</html>
