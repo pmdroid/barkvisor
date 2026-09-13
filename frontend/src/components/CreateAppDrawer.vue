@@ -3,9 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type { AppTemplateField, HostGPUShareDevice, SystemCapabilities } from '../api/types'
+import { useCreateProgressStore } from '../stores/createProgress'
 import { useDevicesStore } from '../stores/devices'
 import { useHomeLibraryStore, type HomeApp } from '../stores/homeLibrary'
-import { useToastStore } from '../stores/toast'
 import { useFeature } from '../composables/useFeature'
 import { deviceGpuSharePath, devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { defaultGPUShareIds, gpuShareOccupancy, gpuShareVisible } from '../utils/gpuShare'
@@ -34,7 +34,19 @@ import {
   type AppTemplateExtraFolder,
   type AppTemplateValues,
 } from '../utils/appTemplate'
+import {
+  applyComposeDocumentDrafts,
+  composeMountFromDraft,
+  ensureApplicationSharedPaths,
+  extractComposeBlock,
+  isComposePortRow,
+  parseComposeMountSlots,
+  parseComposePortSlots,
+  type ComposeMountDraft,
+  type ComposePortRow,
+} from '../utils/composeEdit'
 import AppButton from './ui/AppButton.vue'
+import AppSelect from './ui/AppSelect.vue'
 import FolderPicker from './FolderPicker.vue'
 
 const props = defineProps<{ initialHostId?: string }>()
@@ -42,7 +54,7 @@ const emit = defineEmits(['close', 'created'])
 
 const devices = useDevicesStore()
 const homeLibrary = useHomeLibraryStore()
-const toast = useToastStore()
+const createProgress = useCreateProgressStore()
 const docker = useFeature('dockerEngine')
 
 const step = ref<'gallery' | 'configure'>('gallery')
@@ -75,6 +87,11 @@ const portOverride = ref('')
 const advancedOpen = ref(false)
 const pickerFieldId = ref<string | null>(null)
 const pickerExtraIndex = ref<number | null>(null)
+const yamlVolumes = ref<ComposeMountDraft[]>([])
+const yamlPorts = ref<ComposePortRow[]>([])
+const yamlVolumeDirty = ref(false)
+const yamlPortDirty = ref(false)
+const pickerYamlIndex = ref<number | null>(null)
 const lanIPv4 = ref('')
 const showErrors = ref(false)
 const gpuShare = ref<HostGPUShareDevice[]>([])
@@ -201,6 +218,9 @@ function pickApp(app: HomeApp) {
   showErrors.value = false
   extraFolders.value = []
   extraEnv.value = []
+  yamlVolumes.value = []
+  yamlPorts.value = []
+  pickerYamlIndex.value = null
   openThrough.value = true
   modeOverride.value = ''
   portOverride.value = ''
@@ -272,7 +292,117 @@ function extraEnvRecord(): Record<string, string> {
 function pickYaml() {
   selected.value = null
   customYaml.value = true
+  seedYamlDrafts()
   step.value = 'configure'
+}
+
+function seedYamlDrafts() {
+  const compose = extractComposeBlock(yaml.value) ?? ''
+  yamlVolumes.value = parseComposeMountSlots(compose)
+  yamlPorts.value = parseComposePortSlots(compose)
+  yamlVolumeDirty.value = false
+  yamlPortDirty.value = false
+}
+
+watch(yaml, () => {
+  if (customYaml.value && step.value === 'configure' && !yamlVolumeDirty.value && !yamlPortDirty.value) {
+    seedYamlDrafts()
+  }
+})
+
+function addYamlVolume() {
+  yamlVolumes.value = [...yamlVolumes.value, { source: '', target: '/data', readOnly: false }]
+  yamlVolumeDirty.value = true
+}
+
+function removeYamlVolume(index: number) {
+  yamlVolumes.value = yamlVolumes.value.filter((_, i) => i !== index)
+  yamlVolumeDirty.value = true
+}
+
+function setYamlVolumeSource(index: number, value: string) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, source: value } : row))
+  yamlVolumeDirty.value = true
+}
+
+function setYamlVolumeTarget(index: number, value: string) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, target: value } : row))
+  yamlVolumeDirty.value = true
+}
+
+function setYamlVolumeReadOnly(index: number, value: boolean) {
+  yamlVolumes.value = yamlVolumes.value.map((row, i) => (i === index ? { ...row, readOnly: value } : row))
+  yamlVolumeDirty.value = true
+}
+
+function onYamlVolumePicked(path: string) {
+  if (pickerYamlIndex.value === null) return
+  setYamlVolumeSource(pickerYamlIndex.value, path)
+  pickerYamlIndex.value = null
+}
+
+function addYamlPort() {
+  yamlPorts.value = [...yamlPorts.value, { hostPort: 0, containerPort: 0, proto: 'tcp' }]
+  yamlPortDirty.value = true
+}
+
+function removeYamlPort(index: number) {
+  yamlPorts.value = yamlPorts.value.filter((_, i) => i !== index)
+  yamlPortDirty.value = true
+}
+
+function setYamlPort(index: number, patch: Partial<ComposePortRow>) {
+  yamlPorts.value = yamlPorts.value.map((row, i) => (i === index ? { ...row, ...patch } : row))
+  yamlPortDirty.value = true
+}
+
+const yamlDraftReady = computed(() => yamlDraftIssues().length === 0)
+
+function yamlRowEmpty(row: ComposeMountDraft | ComposePortRow): boolean {
+  if ('hostPort' in row) return !row.hostPort && !row.containerPort
+  return !row.source.trim() && !row.target.trim()
+}
+
+function yamlDraftIssues(): string[] {
+  const issues: string[] = []
+  for (const row of yamlVolumes.value) {
+    if (yamlRowEmpty(row)) continue
+    if (!composeMountFromDraft(row)) {
+      issues.push('Volumes need a host path or volume name and an absolute container path.')
+      break
+    }
+  }
+  for (const row of yamlPorts.value) {
+    if (yamlRowEmpty(row)) continue
+    if (!isComposePortRow(row)) {
+      issues.push('Ports need a host and container port between 1 and 65535.')
+      break
+    }
+  }
+  if (!issues.length && (yamlVolumes.value.length || yamlPorts.value.length)) {
+    if (extractComposeBlock(yaml.value) === null) {
+      issues.push('Add a compose block to the YAML before adding volumes or ports.')
+    }
+  }
+  return issues
+}
+
+function applyYamlDrafts(document: string): string | null {
+  const mounts = yamlVolumes.value
+    .filter((row) => !yamlRowEmpty(row))
+    .map((row) => composeMountFromDraft(row))
+    .filter((row): row is ComposeMountDraft => row !== null)
+  const ports = yamlPorts.value.filter((row) => !yamlRowEmpty(row) && isComposePortRow(row))
+  if (!yamlVolumeDirty.value && !yamlPortDirty.value) {
+    return ensureApplicationSharedPaths(document)
+  }
+  const rewritten = applyComposeDocumentDrafts(document, {
+    ports: yamlPortDirty.value ? ports : undefined,
+    mounts: yamlVolumeDirty.value ? mounts : undefined,
+  })
+  if (rewritten === null) return null
+  if (yamlVolumeDirty.value) return rewritten
+  return ensureApplicationSharedPaths(rewritten)
 }
 
 async function submit() {
@@ -294,15 +424,26 @@ async function submit() {
       return
     }
   }
+  if (customYaml.value && !yamlDraftReady.value) {
+    error.value = yamlDraftIssues()[0] ?? 'Fix the volume or port rows first.'
+    return
+  }
   submitting.value = true
   try {
+    let body: unknown
+    let headers: Record<string, string> | undefined
     if (customYaml.value) {
-      await api.post(devicePath(device, '/workloads/apply'), yaml.value, {
-        headers: { 'Content-Type': 'application/yaml' },
-      })
+      const rewritten = applyYamlDrafts(yaml.value)
+      if (rewritten === null) {
+        error.value = 'Could not apply the volume or port rows — edit the compose block directly.'
+        submitting.value = false
+        return
+      }
+      body = rewritten
+      headers = { 'Content-Type': 'application/yaml' }
     } else if (selected.value) {
       const hostPort = Number(portOverride.value)
-      const body = applicationDocument(
+      body = applicationDocument(
         selected.value,
         name.value.trim() || selected.value.id,
         values.value,
@@ -315,13 +456,17 @@ async function submit() {
           hostPort: Number.isFinite(hostPort) && hostPort > 0 ? hostPort : null,
         },
       )
-      await api.post(devicePath(device, '/workloads/apply'), body)
     } else {
       error.value = 'Pick an app.'
       submitting.value = false
       return
     }
-    toast.success('App applied')
+    void createProgress.followApp({
+      name: name.value.trim() || selected.value?.id || 'App',
+      body,
+      headers,
+      device,
+    })
     emit('created')
   } catch (e: unknown) {
     error.value = apiErrorMessage(e)
@@ -392,6 +537,72 @@ async function submit() {
             <span>Workload spec</span>
             <textarea v-model="yaml" spellcheck="false" />
           </label>
+          <template v-if="customYaml">
+            <div class="section-label">Volumes</div>
+            <div v-for="(row, index) in yamlVolumes" :key="'yaml-vol-' + index" class="yaml-row">
+              <input
+                class="mono"
+                aria-label="Host folder"
+                :value="row.source"
+                placeholder="Host folder"
+                @input="setYamlVolumeSource(index, ($event.target as HTMLInputElement).value)"
+              />
+              <AppButton size="sm" @click="pickerYamlIndex = index">Choose</AppButton>
+              <input
+                class="mono"
+                aria-label="Container path"
+                :value="row.target"
+                placeholder="/data"
+                @input="setYamlVolumeTarget(index, ($event.target as HTMLInputElement).value)"
+              />
+              <label class="ro-cell">
+                <input
+                  type="checkbox"
+                  aria-label="Read only"
+                  :checked="row.readOnly"
+                  @change="setYamlVolumeReadOnly(index, ($event.target as HTMLInputElement).checked)"
+                />
+                <span>ro</span>
+              </label>
+              <AppButton size="sm" @click="removeYamlVolume(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addYamlVolume">Add volume</button>
+            <div class="section-label">Ports</div>
+            <div v-for="(row, index) in yamlPorts" :key="'yaml-port-' + index" class="yaml-row">
+              <AppSelect
+                :modelValue="row.proto"
+                style="width:80px"
+                @update:modelValue="setYamlPort(index, { proto: String($event) })"
+              >
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+              </AppSelect>
+              <input
+                class="mono"
+                type="number"
+                aria-label="Host port"
+                :value="row.hostPort || ''"
+                placeholder="Host port"
+                min="1"
+                max="65535"
+                @input="setYamlPort(index, { hostPort: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <span class="port-arrow">→</span>
+              <input
+                class="mono"
+                type="number"
+                aria-label="Container port"
+                :value="row.containerPort || ''"
+                placeholder="Container port"
+                min="1"
+                max="65535"
+                @input="setYamlPort(index, { containerPort: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <AppButton size="sm" @click="removeYamlPort(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addYamlPort">Add port</button>
+            <p v-if="!yamlDraftReady" class="warn">{{ yamlDraftIssues()[0] }}</p>
+          </template>
           <template v-else>
             <div v-if="folderFields.length" class="section-label">Folders</div>
             <label
@@ -487,6 +698,24 @@ async function submit() {
               />
               <span v-if="field.description" class="help">{{ field.description }}</span>
             </label>
+            <div class="section-label">Extra binds</div>
+            <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
+              <input
+                class="mono"
+                :value="row.hostPath"
+                placeholder="Host folder"
+                @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
+              />
+              <input
+                class="mono"
+                :value="row.containerPath"
+                placeholder="/media"
+                @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
+              />
+              <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
+              <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
+            </div>
+            <button class="add-row" type="button" @click="addFolder">Add bind</button>
             <div class="section-label">
               <button class="add-row" type="button" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? 'Hide advanced' : 'Advanced' }}</button>
             </div>
@@ -517,24 +746,6 @@ async function submit() {
                 <AppButton size="sm" @click="removeEnv(index)">Remove</AppButton>
               </div>
               <button class="add-row" type="button" @click="addEnv">Add env</button>
-              <div class="section-label">Extra binds</div>
-              <div v-for="(row, index) in extraFolders" :key="'extra-' + index" class="extra-folder">
-                <input
-                  class="mono"
-                  :value="row.hostPath"
-                  placeholder="Host folder"
-                  @input="setExtraHost(index, ($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  class="mono"
-                  :value="row.containerPath"
-                  placeholder="/media"
-                  @input="setExtraContainer(index, ($event.target as HTMLInputElement).value)"
-                />
-                <AppButton size="sm" @click="pickerExtraIndex = index">Choose</AppButton>
-                <AppButton size="sm" @click="removeFolder(index)">Remove</AppButton>
-              </div>
-              <button class="add-row" type="button" @click="addFolder">Add bind</button>
               <div v-if="managedKeys.length" class="section-label">Managed env</div>
               <p v-for="key in managedKeys" :key="key" class="managed">{{ key }}</p>
             </template>
@@ -569,6 +780,13 @@ async function submit() {
       :device="selectedDevice"
       @update:modelValue="onExtraPicked($event)"
       @close="pickerExtraIndex = null"
+    />
+    <FolderPicker
+      v-if="pickerYamlIndex !== null"
+      :modelValue="yamlVolumes[pickerYamlIndex]?.source || ''"
+      :device="selectedDevice"
+      @update:modelValue="onYamlVolumePicked($event)"
+      @close="pickerYamlIndex = null"
     />
   </div>
 </template>
@@ -728,6 +946,41 @@ async function submit() {
   border: 1px solid var(--border);
   border-radius: 2px;
   padding: 8px 10px;
+}
+.yaml-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.yaml-row input.mono {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+  flex: 1;
+}
+.yaml-row select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 6px;
+}
+.yaml-row .port-arrow {
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+.yaml-row .ro-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 .callout {
   background: rgba(251, 191, 36, 0.08);

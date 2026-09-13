@@ -22,6 +22,38 @@ export function parseComposeMounts(yaml: string): ComposeMount[] {
   return out
 }
 
+function mountKey(mount: ComposeMount): string {
+  return `${mount.source}\0${mount.target}`
+}
+
+export function visibleAppMounts(input: {
+  compose?: string | null
+  sharedPaths?: string[] | null
+}): ComposeMount[] {
+  const fromCompose = parseComposeMounts(input.compose ?? '')
+  const fromShared = mountsFromSharedPaths(input.sharedPaths)
+  if (!fromCompose.length) return fromShared
+  const seen = new Set(fromCompose.map(mountKey))
+  return [...fromCompose, ...fromShared.filter((mount) => !seen.has(mountKey(mount)))]
+}
+
+export function stripTrailingSlash(path: string): string {
+  if (path.length > 1 && path.endsWith('/')) return path.slice(0, -1)
+  return path
+}
+
+export function isUnderManagedRoot(source: string, root: string): boolean {
+  const src = stripTrailingSlash(source)
+  const base = stripTrailingSlash(root)
+  if (!src || !base) return false
+  return src === base || src.startsWith(`${base}/`)
+}
+
+export function isManagedAppMount(mount: ComposeMount, roots: string[] | undefined): boolean {
+  if (mount.kind === 'volume') return true
+  return (roots ?? []).filter(Boolean).some((root) => isUnderManagedRoot(mount.source, root))
+}
+
 export function mountsFromSharedPaths(paths: string[] | null | undefined): ComposeMount[] {
   if (!paths?.length) return []
   const out: ComposeMount[] = []

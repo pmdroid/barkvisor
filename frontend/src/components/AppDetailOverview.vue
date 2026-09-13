@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import type { MetricSample, VM } from '../api/types'
 import { firstOpenUrl } from '../utils/workloadKind'
 import { shortDigest } from '../utils/composeLogs'
-import { parseComposeMounts, mountsFromSharedPaths } from '../utils/composeMounts'
+import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
+import type { ComposeMountDraft } from '../utils/composeEdit'
 import AppMountList from './AppMountList.vue'
 import {
   appCatalogSource,
@@ -23,19 +24,26 @@ const props = defineProps<{
   openUrl?: string | null
   savingIngress?: boolean
   metrics?: MetricSample[]
+  editable?: boolean
+  savingVolumes?: boolean
+  savingPorts?: boolean
+  pickedHost?: string
 }>()
 
 const emit = defineEmits<{
   'update-ingress': [{ enabled: boolean; mode: 'prefix' | 'direct' }]
+  'add-mount': [ComposeMountDraft]
+  'remove-mount': [ComposeMount]
+  'pick-host': []
+  'edit-ports': []
 }>()
 
 const published = computed(() => props.openUrl || firstOpenUrl(props.vm))
 const catalog = computed(() => appCatalogSource(props.vm))
-const mounts = computed(() => {
-  const fromShared = mountsFromSharedPaths(props.vm.sharedPaths)
-  if (fromShared.length) return fromShared
-  return parseComposeMounts(props.vm.spec?.spec?.compose ?? '')
-})
+const mounts = computed(() => visibleAppMounts({
+  compose: props.vm.spec?.spec?.compose,
+  sharedPaths: props.vm.sharedPaths,
+}))
 const env = computed(() => appEnvSummary(props.vm))
 const ingress = computed(() => appIngressState(props.vm))
 
@@ -95,11 +103,29 @@ const usage = computed(() =>
 
       <section class="panel">
         <h2>Volumes</h2>
-        <AppMountList :mounts="mounts" />
+        <AppMountList
+          :mounts="mounts"
+          :roots="(vm.volumeRoots ?? []).filter(Boolean)"
+          :editable="editable === true"
+          :busy="savingVolumes === true"
+          :pickedHost="pickedHost"
+          @add-mount="emit('add-mount', $event)"
+          @remove-mount="emit('remove-mount', $event)"
+          @pick-host="emit('pick-host')"
+        />
       </section>
 
       <section class="panel">
-        <h2>Access</h2>
+        <h2>
+          Access
+          <button
+            v-if="editable"
+            type="button"
+            class="fact-edit"
+            :disabled="savingPorts"
+            @click="emit('edit-ports')"
+          >Edit</button>
+        </h2>
         <table v-if="ports.length" class="ports-table">
           <thead>
             <tr>
@@ -120,7 +146,8 @@ const usage = computed(() =>
             </tr>
           </tbody>
         </table>
-        <p v-if="ports.length" class="ports-note">Port bindings are informational — reach the app via the published address above.</p>
+        <p v-if="ports.length && !editable" class="ports-note">Port bindings are informational — reach the app via the published address above.</p>
+        <p v-else-if="editable" class="ports-note">Use Edit to change which host ports the app publishes.</p>
         <div class="kv">
           <span class="k">Ingress</span>
           <span class="v">
@@ -412,7 +439,20 @@ const usage = computed(() =>
 .env-count .num { font-size: 26px; font-weight: 700; line-height: 1; }
 .env-count .unit { font-size: 12.5px; color: var(--text-dim); }
 .secrets-note { font-size: 12.5px; color: var(--text-secondary); }
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
   .detail-grid { grid-template-columns: 1fr; }
 }
+.fact-edit {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.fact-edit:disabled { opacity: 0.35; cursor: default; }
 </style>

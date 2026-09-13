@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage, isNotFoundError } from '../api/errors'
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
@@ -19,7 +19,16 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { appEnvSummary, appToolbarSub, buildEnvSavePayload, isSecretEnvKey } from '../utils/appDetail'
-import { mountsFromSharedPaths, parseComposeMounts } from '../utils/composeMounts'
+import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
+import {
+  applyAppVolumeChange,
+  appPortEditorRows,
+  isComposePortRow,
+  parseComposePortSlots,
+  setComposePorts,
+  type ComposeMountDraft,
+  type ComposePortRow,
+} from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -39,6 +48,7 @@ import type {
   HostUSBDevice,
   GPUPassthroughDevice,
   USBPassthroughDevice,
+  WorkloadSpec,
 } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
@@ -1322,11 +1332,10 @@ const openUi = computed(() => {
   return appOpenUrl(vm.value, device)
 })
 const appEnv = computed(() => (vm.value ? appEnvSummary(vm.value) : { count: 0, secrets: 0 }))
-const appMounts = computed(() => {
-  const fromShared = mountsFromSharedPaths(vm.value?.sharedPaths)
-  if (fromShared.length) return fromShared
-  return parseComposeMounts(vm.value?.spec?.spec?.compose ?? '')
-})
+const appMounts = computed(() => visibleAppMounts({
+  compose: vm.value?.spec?.spec?.compose,
+  sharedPaths: vm.value?.sharedPaths,
+}))
 const appEnvKeys = computed(() => Object.keys(vm.value?.spec?.spec?.env ?? {}))
 const envEditing = ref(false)
 const envDraft = ref<{ key: string; value: string }[]>([])
@@ -1399,6 +1408,169 @@ async function saveEnv() {
     toast.error(apiErrorMessage(e))
   } finally {
     envSaving.value = false
+  }
+}
+
+const appVolumeSaving = ref(false)
+const appPortSaving = ref(false)
+const appVolumePickerOpen = ref(false)
+const appPickedHost = ref('')
+const showAppPortsEditor = ref(false)
+type AppPortDraft = PortForwardRule & { hostIP?: string; block?: number }
+
+const appPortsDraft = ref<AppPortDraft[]>([])
+
+function appPortDraftFromRow(row: ComposePortRow): AppPortDraft {
+  return {
+    protocol: (row.proto === 'udp' ? 'udp' : 'tcp') as PortForwardRule['protocol'],
+    hostPort: row.hostPort,
+    guestPort: row.containerPort,
+    hostIP: row.hostIP,
+    block: row.block,
+  }
+}
+const canEditWorkload = computed(() =>
+  isApp.value && (!isMemberDetail.value || memberReachable.value === true),
+)
+
+async function loadAppSpec(): Promise<WorkloadSpec> {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) {
+      throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+    }
+    return await homeWorkloads.fetchSpec(device, vmId.value)
+  }
+  return await store.fetchSpec(vmId.value)
+}
+
+async function saveAppSpec(spec: WorkloadSpec) {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) {
+      throw new Error(`${device ? deviceDisplayLabel(device) : 'Device'} did not answer`)
+    }
+    await homeWorkloads.putSpec(device, vmId.value, spec)
+  } else {
+    await store.putSpec(vmId.value, spec)
+  }
+}
+
+function appComposeOf(spec: WorkloadSpec | null): string | null {
+  const compose = spec?.spec?.compose
+  return typeof compose === 'string' && compose.trim() ? compose : null
+}
+
+async function addAppVolume(draft: ComposeMountDraft) {
+  if (appVolumeSaving.value) return
+  appVolumeSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const next = applyAppVolumeChange(appComposeOf(spec), spec.spec.sharedPaths, {
+      type: 'add',
+      mount: draft,
+    })
+    if (next.compose === appComposeOf(spec) && next.sharedPaths === spec.spec.sharedPaths) return
+    if (next.compose !== null) spec.spec.compose = next.compose
+    spec.spec.sharedPaths = next.sharedPaths
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply volume changes.')
+    } else {
+      toast.success('Volume added')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appVolumeSaving.value = false
+  }
+}
+
+async function removeAppVolume(mount: ComposeMount) {
+  if (appVolumeSaving.value) return
+  appVolumeSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const next = applyAppVolumeChange(appComposeOf(spec), spec.spec.sharedPaths, {
+      type: 'remove',
+      mount: { source: mount.source, target: mount.target, readOnly: mount.readOnly },
+    })
+    if (next.compose !== null) spec.spec.compose = next.compose
+    spec.spec.sharedPaths = next.sharedPaths
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply volume changes.')
+    } else {
+      toast.success('Volume removed')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appVolumeSaving.value = false
+  }
+}
+
+function openAppVolumePicker() {
+  appVolumePickerOpen.value = true
+}
+
+function onAppHostPicked(path: string) {
+  appPickedHost.value = ''
+  void nextTick(() => {
+    appPickedHost.value = path
+  })
+  appVolumePickerOpen.value = false
+}
+
+function openAppPortsEditor() {
+  const compose = vm.value?.spec?.spec?.compose ?? ''
+  if (!compose.trim()) {
+    toast.error('This app has no compose document yet')
+    return
+  }
+  const parsed = parseComposePortSlots(compose)
+  const live = vm.value?.publishedPorts ?? []
+  appPortsDraft.value = appPortEditorRows(parsed, live).map(appPortDraftFromRow)
+  showAppPortsEditor.value = true
+}
+
+const appPortsDraftValid = computed(() =>
+  appPortsDraft.value.every((row) =>
+    isComposePortRow({ hostPort: row.hostPort, containerPort: row.guestPort, proto: row.protocol }),
+  ),
+)
+
+async function saveAppPorts() {
+  if (appPortSaving.value || !appPortsDraftValid.value) return
+  appPortSaving.value = true
+  try {
+    const spec = await loadAppSpec()
+    const compose = appComposeOf(spec)
+    if (!compose) throw new Error('This app has no compose document yet')
+    spec.spec.compose = setComposePorts(
+      compose,
+      appPortsDraft.value.map((row) => ({
+        hostPort: row.hostPort,
+        containerPort: row.guestPort,
+        proto: row.protocol === 'udp' ? 'udp' : 'tcp',
+        hostIP: row.hostIP,
+        block: row.block,
+      })),
+    )
+    await saveAppSpec(spec)
+    await refreshWorkload()
+    showAppPortsEditor.value = false
+    if (vm.value?.state === 'running') {
+      toast.info('Restart the app to apply port changes.')
+    } else {
+      toast.success('Ports saved')
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    appPortSaving.value = false
   }
 }
 const { poll: pollAppUpdate, stop: stopAppUpdatePoll } = useTaskPoller()
@@ -1734,7 +1906,15 @@ const healthBanner = computed(() => {
         :open-url="openUi"
         :saving-ingress="savingIngress"
         :metrics="appMetrics"
+        :editable="canEditWorkload"
+        :saving-volumes="appVolumeSaving"
+        :saving-ports="appPortSaving"
+        :picked-host="appPickedHost"
         @update-ingress="saveIngress"
+        @add-mount="addAppVolume"
+        @remove-mount="removeAppVolume"
+        @pick-host="openAppVolumePicker"
+        @edit-ports="openAppPortsEditor"
       />
     </div>
 
@@ -2195,7 +2375,16 @@ const healthBanner = computed(() => {
     </div>
     <div v-if="tab === 'volumes' && isApp" class="app-panel">
       <h2>Volumes</h2>
-      <AppMountList :mounts="appMounts" :roots="(vm.volumeRoots ?? []).filter(Boolean)" />
+      <AppMountList
+        :mounts="appMounts"
+        :roots="(vm.volumeRoots ?? []).filter(Boolean)"
+        :editable="canEditWorkload"
+        :busy="appVolumeSaving"
+        :picked-host="appPickedHost"
+        @add-mount="addAppVolume"
+        @remove-mount="removeAppVolume"
+        @pick-host="openAppVolumePicker"
+      />
     </div>
     <ComposeLogsPanel
       v-if="tab === 'logs' && isApp"
@@ -2353,6 +2542,37 @@ const healthBanner = computed(() => {
     @close="showFolderPicker = false"
   />
 
+  <FolderPicker
+    v-if="appVolumePickerOpen"
+    :modelValue="''"
+    :device="isMemberDetail ? memberDevice : undefined"
+    @update:modelValue="onAppHostPicked($event)"
+    @close="appVolumePickerOpen = false"
+  />
+
+  <AppModal
+    v-if="showAppPortsEditor"
+    title="Bound ports"
+    subtitle="Host ports this app publishes on the Device."
+    max-width="520px"
+    @close="!appPortSaving && (showAppPortsEditor = false)"
+  >
+    <PortForwardEditor v-model="appPortsDraft" />
+    <p v-if="!appPortsDraftValid" style="color:var(--red);font-size:12px;margin-top:8px">
+      Every binding needs a host port and a container port between 1 and 65535.
+    </p>
+    <template #actions>
+      <AppButton :disabled="appPortSaving" @click="showAppPortsEditor = false">Cancel</AppButton>
+      <AppButton
+        variant="primary"
+        :loading="appPortSaving"
+        :disabled="!appPortsDraftValid"
+        loading-text="Saving..."
+        @click="saveAppPorts"
+      >Save</AppButton>
+    </template>
+  </AppModal>
+
   <ConfirmDialog
     v-if="stopConfirm"
     :title="stopConfirm.method === 'force' ? 'Force Stop VM' : 'Shutdown VM'"
@@ -2483,7 +2703,11 @@ const healthBanner = computed(() => {
   flex-direction: column;
   gap: 14px;
 }
-.app-detail-head { margin-bottom: 6px; }
+.app-detail-head {
+  margin-bottom: 6px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--border-glass);
+}
 .app-detail-head .crumb {
   font-size: 12px;
   color: var(--text-dim);
@@ -2497,10 +2721,38 @@ const healthBanner = computed(() => {
   height: auto;
   min-height: 0;
   padding: 0;
+  border-bottom: 0;
   margin-bottom: 6px;
 }
+.app-toolbar > div:first-child { min-width: 0; }
 .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .app-toolbar h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+@media (max-width: 600px) {
+  .app-detail-head {
+    padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+  }
+  .app-toolbar .title-row {
+    gap: 8px;
+  }
+  .app-toolbar .title-row h1 {
+    flex-basis: 100%;
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .app-toolbar .ops-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+  .app-toolbar .boot-toggle {
+    flex-basis: 100%;
+  }
+  .app-toolbar .ops-actions :deep(.app-btn) {
+    flex: 1 1 76px;
+  }
+}
 .app-kind {
   display: inline-block;
   font-size: 10.5px;
