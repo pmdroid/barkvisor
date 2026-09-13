@@ -328,7 +328,7 @@ enum Seeder {
                 Log.server.info("Seeded built-in templates repository")
             }
 
-            try seedBuiltInAppsRepos(database: database, isMember: isMember)
+            try seedBuiltInAppsRepos(database: database)
 
             if isMember {
                 try HomeCatalogOrigin.flipGitHubBuiltIns(database)
@@ -336,7 +336,7 @@ enum Seeder {
         }
     }
 
-    private static func seedBuiltInAppsRepos(database: Database, isMember: Bool) throws {
+    private static func seedBuiltInAppsRepos(database: Database) throws {
         let appsRepoCount =
             try ImageRepository
                 .filter(Column("isBuiltIn") == true)
@@ -348,7 +348,7 @@ enum Seeder {
             let repo = ImageRepository(
                 id: UUID().uuidString,
                 name: BigBearAppCatalog.catalogName,
-                url: HomeCatalogOrigin.seedURL(repoType: "apps", isMember: isMember),
+                url: BigBearAppCatalog.originURL,
                 isBuiltIn: true,
                 repoType: "apps",
                 lastSyncedAt: nil,

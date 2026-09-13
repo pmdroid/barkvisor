@@ -445,4 +445,53 @@ struct DatabaseMigrationTests {
         }
         #expect(role == UserRole.admin.rawValue)
     }
+
+    // MARK: - M021 Built-in Apps Origin
+
+    @Test func `m021 rewrites only unflipped built-in github apps rows`() throws {
+        let queue = try migratedQueue()
+        let now = iso8601.string(from: Date())
+        func repo(id: String, url: String, isBuiltIn: Bool, repoType: String) -> ImageRepository {
+            ImageRepository(
+                id: id, name: "repo-\(id)", url: url,
+                isBuiltIn: isBuiltIn, repoType: repoType, lastSyncedAt: nil, lastError: nil,
+                syncStatus: "idle", createdAt: now, updatedAt: now,
+            )
+        }
+        // image_repositories.url is UNIQUE, so the user-row case runs after the
+        // built-in GitHub row has been moved off that URL.
+        try queue.write { db in
+            try repo(id: "bb-github", url: HomeCatalogOrigin.githubAppsURL, isBuiltIn: true, repoType: "apps").insert(db)
+            try repo(id: "bb-member", url: "barkvisor://home/catalog/apps", isBuiltIn: true, repoType: "apps").insert(db)
+            try repo(id: "img-official", url: HomeCatalogOrigin.githubImagesURL, isBuiltIn: true, repoType: "images").insert(db)
+        }
+        try queue.write { db in
+            try M021_BuiltinAppsOrigin.migrate(db)
+        }
+        func url(for id: String) throws -> String? {
+            try queue.read { db in
+                try ImageRepository.fetchOne(db, key: id)?.url
+            }
+        }
+        #expect(try url(for: "bb-github") == BigBearAppCatalog.originURL)
+        #expect(try url(for: "bb-member") == "barkvisor://home/catalog/apps")
+        #expect(try url(for: "img-official") == HomeCatalogOrigin.githubImagesURL)
+
+        // Idempotent: re-running the statement is a no-op.
+        try queue.write { db in
+            try M021_BuiltinAppsOrigin.migrate(db)
+        }
+        #expect(try url(for: "bb-github") == BigBearAppCatalog.originURL)
+        #expect(try url(for: "bb-member") == "barkvisor://home/catalog/apps")
+
+        // User-added rows keep their URL even when it matches the legacy GitHub origin.
+        try queue.write { db in
+            try ImageRepository.filter(Column("id") == "bb-github").deleteAll(db)
+            try repo(id: "bb-user", url: HomeCatalogOrigin.githubAppsURL, isBuiltIn: false, repoType: "apps").insert(db)
+        }
+        try queue.write { db in
+            try M021_BuiltinAppsOrigin.migrate(db)
+        }
+        #expect(try url(for: "bb-user") == HomeCatalogOrigin.githubAppsURL)
+    }
 }

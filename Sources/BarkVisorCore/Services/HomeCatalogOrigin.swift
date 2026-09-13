@@ -9,7 +9,6 @@ public enum HomeCatalogOrigin {
     public static let githubAppsURL = BigBearAppCatalog.githubRepoURL
     public static let memberImagesURL = "barkvisor://home/catalog/images"
     public static let memberTemplatesURL = "barkvisor://home/catalog/templates"
-    public static let memberAppsURL = "barkvisor://home/catalog/apps"
     public static let repoTypes = ["images", "templates", "apps"]
 
     public static func seedURL(repoType: String, isMember: Bool) -> String {
@@ -19,7 +18,9 @@ public enum HomeCatalogOrigin {
         case "templates":
             isMember ? memberTemplatesURL : githubTemplatesURL
         case "apps":
-            isMember ? memberAppsURL : githubAppsURL
+            // The built-in apps catalog has one membership-independent identity;
+            // the registry decides how it is materialised (bundled or fetched).
+            BigBearAppCatalog.originURL
         default:
             isMember ? memberImagesURL : githubImagesURL
         }
@@ -30,7 +31,7 @@ public enum HomeCatalogOrigin {
     }
 
     public static func isMemberOrigin(_ url: String) -> Bool {
-        url == memberImagesURL || url == memberTemplatesURL || url == memberAppsURL
+        url == memberImagesURL || url == memberTemplatesURL
     }
 
     public static func shouldFetchRemote(url: String, memberCatalogFetchDisabled: Bool) -> Bool {
@@ -61,13 +62,6 @@ public enum HomeCatalogOrigin {
             WHERE isBuiltIn = 1 AND repoType = 'templates' AND url = ?
             """,
             arguments: [memberTemplatesURL, now, githubTemplatesURL],
-        )
-        try db.execute(
-            sql: """
-            UPDATE image_repositories SET url = ?, updatedAt = ?
-            WHERE isBuiltIn = 1 AND repoType = 'apps' AND url = ?
-            """,
-            arguments: [memberAppsURL, now, githubAppsURL],
         )
     }
 }
