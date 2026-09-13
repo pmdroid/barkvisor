@@ -201,12 +201,8 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
-            if LinuxServerAppCatalog.isOrigin(repo.url) {
-                let data = try LinuxServerAppCatalog.encodedDocument()
-                try await ingestCatalog(
-                    data, repositoryID: repositoryID, repoName: repo.name, repoType: repo.repoType,
-                    persistLastGood: false, distribute: false,
-                )
+            if let builtin = BuiltinAppCatalogRegistry.resolve(repo.url) {
+                try await syncBuiltInCatalogEntry(builtin, repo: repo)
                 return
             }
             if HomeCatalogOrigin.shouldFetchRemote(
@@ -230,6 +226,46 @@ public actor RepositorySyncService {
         } catch {
             await rememberFailure(error, repositoryID: repositoryID)
             throw error
+        }
+    }
+
+    /// Materialises a `barkvisor://builtin/<name>` catalog through its registry
+    /// backing. Bundled entries never touch the network. Fetched entries use the
+    /// registry zipball URL and honour `memberCatalogFetchDisabled` by falling
+    /// back to the last-good snapshot instead of reaching GitHub.
+    private func syncBuiltInCatalogEntry(
+        _ entry: BuiltinAppCatalogRegistry.Entry,
+        repo: ImageRepository,
+    ) async throws {
+        switch entry.backing {
+        case let .bundled(load):
+            let data = try load()
+            try await ingestCatalog(
+                data, repositoryID: repo.id, repoName: repo.name, repoType: repo.repoType,
+                persistLastGood: false, distribute: false,
+            )
+        case let .fetch(zipballURL):
+            if memberCatalogFetchDisabled {
+                guard let lastGood, let data = lastGood.load(repoType: repo.repoType), !data.isEmpty
+                else {
+                    throw BarkVisorError.repositorySyncFailed("No applied catalog")
+                }
+                try await ingestCatalog(
+                    data, repositoryID: repo.id, repoName: repo.name, repoType: repo.repoType,
+                    persistLastGood: false, distribute: false,
+                )
+                return
+            }
+            guard let url = URL(string: zipballURL) else {
+                throw BarkVisorError.repositorySyncFailed(
+                    "Invalid built-in catalog fetch URL: \(zipballURL)",
+                )
+            }
+            let data = try await fetcher.fetch(url: url)
+            try await ingestCatalog(
+                data, repositoryID: repo.id, repoName: repo.name, repoType: repo.repoType,
+                persistLastGood: true, distribute: true,
+            )
         }
     }
 

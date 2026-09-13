@@ -4,6 +4,7 @@ import Yams
 public enum BigBearAppCatalog {
     public static let source = AppCatalogEntryDTO.bigBearSource
     public static let catalogName = "Big Bear Universal Apps"
+    public static let originURL = "barkvisor://builtin/bigbear"
     public static let githubRepoURL = "https://github.com/bigbeartechworld/big-bear-universal-apps"
     public static let zipballURL =
         "https://codeload.github.com/bigbeartechworld/big-bear-universal-apps/zip/refs/heads/main"

@@ -20,7 +20,7 @@ struct AppCatalogSyncTests {
         let originalCompose = "services:\n  whoami:\n    image: traefik/whoami:old\n"
         try await pool.write { db in
             try ImageRepository(
-                id: repoId, name: "Apps", url: HomeCatalogOrigin.githubAppsURL,
+                id: repoId, name: "Apps", url: BigBearAppCatalog.originURL,
                 isBuiltIn: true, repoType: "apps", lastSyncedAt: nil, lastError: nil,
                 syncStatus: "idle", createdAt: now, updatedAt: now,
             ).insert(db)
@@ -102,7 +102,7 @@ struct AppCatalogSyncTests {
         let repoId = UUID().uuidString
         try await pool.write { db in
             try ImageRepository(
-                id: repoId, name: "Apps", url: HomeCatalogOrigin.githubAppsURL,
+                id: repoId, name: "Apps", url: BigBearAppCatalog.originURL,
                 isBuiltIn: true, repoType: "apps", lastSyncedAt: nil, lastError: nil,
                 syncStatus: "idle", createdAt: now, updatedAt: now,
             ).insert(db)

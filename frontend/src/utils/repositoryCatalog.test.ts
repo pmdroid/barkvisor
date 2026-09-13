@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ImageRepository } from '../api/types'
 import {
   attachDeviceSyncs,
+  catalogDisplayUrl,
   catalogHasDeviceError,
   catalogIsSyncing,
   catalogUrlKey,
@@ -239,5 +240,60 @@ describe('repositoryCatalog helpers', () => {
       ],
     )
     expect(catalogIsSyncing(attached[0]!)).toBe(true)
+  })
+
+  const githubApps = 'https://github.com/bigbeartechworld/big-bear-universal-apps'
+  const legacyMemberApps = 'barkvisor://home/catalog/apps'
+  const builtinBigBear = 'barkvisor://builtin/bigbear'
+  const builtinLinuxServer = 'barkvisor://builtin/linuxserver'
+
+  test('legacy Big Bear app URLs alias onto the membership-independent builtin identity', () => {
+    expect(catalogUrlKey(githubApps)).toBe(builtinBigBear)
+    expect(catalogUrlKey(legacyMemberApps)).toBe(builtinBigBear)
+    expect(catalogUrlKey(builtinBigBear)).toBe(builtinBigBear)
+    expect(catalogUrlKey(builtinLinuxServer)).toBe(builtinLinuxServer)
+    expect(catalogUrlKey(builtinLinuxServer)).not.toBe(catalogUrlKey(builtinBigBear))
+  })
+
+  test('matchRepoByUrl resolves built-in app rows across URL generations', () => {
+    const rows = [
+      repo({ id: 'bb', url: builtinBigBear, repoType: 'apps' }),
+      repo({ id: 'ls', url: builtinLinuxServer, repoType: 'apps' }),
+    ]
+    expect(matchRepoByUrl(rows, githubApps)?.id).toBe('bb')
+    expect(matchRepoByUrl(rows, legacyMemberApps)?.id).toBe('bb')
+    expect(matchRepoByUrl(rows, builtinBigBear)?.id).toBe('bb')
+    expect(matchRepoByUrl(rows, builtinLinuxServer)?.id).toBe('ls')
+    expect(matchRepoByUrl(rows, 'barkvisor://builtin/nosuch')).toBeUndefined()
+  })
+
+  test('member apps rows on legacy URLs still match the home builtin row', () => {
+    const home = repo({ id: 'home-bb', url: builtinBigBear, repoType: 'apps' })
+    const attached = attachDeviceSyncs(
+      [home],
+      { hostId: 'desk', role: 'self', displayName: 'Desk' },
+      [
+        {
+          device: { hostId: 'box', role: 'member', displayName: 'Box' },
+          reachable: true,
+          repos: [repo({ id: 'box-bb', url: legacyMemberApps, repoType: 'apps' })],
+        },
+      ],
+    )
+    expect(attached[0]?.deviceSyncs.map((d) => d.hostId)).toEqual(['desk', 'box'])
+    expect(attached[0]?.deviceSyncs[1]?.repoId).toBe('box-bb')
+  })
+
+  test('catalogDisplayUrl labels built-in catalogs and passes custom URLs through', () => {
+    expect(catalogDisplayUrl(builtinBigBear)).toContain('Big Bear')
+    expect(catalogDisplayUrl(githubApps)).toContain('Big Bear')
+    expect(catalogDisplayUrl(legacyMemberApps)).toContain('Big Bear')
+    expect(catalogDisplayUrl(builtinLinuxServer)).toContain('LinuxServer')
+    expect(catalogDisplayUrl(' https://example.com/catalog.json ')).toBe(
+      'https://example.com/catalog.json',
+    )
+    expect(catalogDisplayUrl('barkvisor://home/catalog/images')).toBe(
+      'barkvisor://home/catalog/images',
+    )
   })
 })
