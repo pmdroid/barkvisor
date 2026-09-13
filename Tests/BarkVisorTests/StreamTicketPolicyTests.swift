@@ -89,6 +89,57 @@ struct StreamTicketPolicyTests {
         #expect(StreamTicketPolicy.deviceTicket(fromQuery: "session=only") == nil)
     }
 
+    @Test func `app terminal paths are stream sites on both ends`() {
+        // Owner Device: one-use ticket spend (issue #609).
+        let local = "/api/vms/vm-1/terminal"
+        #expect(StreamTicketPolicy.site(path: local) == .ownerDevice)
+        #expect(StreamTicketPolicy.spendsDeviceTicket(path: local))
+        #expect(StreamTicketPolicy.ownerDeviceWorkloadID(local) == "vm-1")
+        #expect(StreamTicketPolicy.isOwnerDeviceStream(local))
+        // REST picker is a normal JWT route, not a ticket stream.
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/containers") == .other)
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/containers"))
+        // Home member tunnel: pass-through ticket, Home spends session=.
+        let tunneled = "/api/home/devices/peer-1/v1/vms/vm-1/terminal"
+        #expect(StreamTicketPolicy.site(path: tunneled) == .homeTunnel)
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: tunneled))
+        #expect(StreamTicketPolicy.isHomeConsoleTunnel(tunneled))
+    }
+
+    @Test func `hop query preserves service for terminal tunnels`() {
+        // Losing service= would silently break member exec tunnels (wrong/no
+        // container); ticket= alone is not enough for /terminal.
+        let forwarded = StreamTicketPolicy.hopQuery(
+            from: "ticket=abc&session=home&service=web",
+        )
+        #expect(forwarded?.contains("ticket=abc") == true)
+        #expect(forwarded?.contains("service=web") == true)
+        #expect(forwarded?.contains("session=") == false, "Home session never leaves Home")
+        // Console/VNC hops keep the old ticket-only contract...
+        #expect(StreamTicketPolicy.hopQuery(from: "ticket=abc&session=home") == "ticket=abc")
+        // ...and token= (noVNC rewrite) still normalizes with service kept.
+        let rewritten = StreamTicketPolicy.hopQuery(from: "token=t&service=db-2")
+        #expect(rewritten?.contains("ticket=t") == true)
+        #expect(rewritten?.contains("service=db-2") == true)
+        #expect(StreamTicketPolicy.hopQuery(from: "session=home") == nil)
+    }
+
+    @Test func `hop query preserves initial window size for terminal tunnels`() {
+        // #614: the PTY is born from ?cols/?rows because the pre-spawn
+        // `docker compose ps` blocks past the client's first resize frame. If the
+        // agent/Home hop dropped these, member sessions would still land 80×24.
+        let forwarded = StreamTicketPolicy.hopQuery(
+            from: "ticket=abc&session=home&service=web&cols=120&rows=32",
+        )
+        #expect(forwarded?.contains("ticket=abc") == true)
+        #expect(forwarded?.contains("service=web") == true)
+        #expect(forwarded?.contains("cols=120") == true)
+        #expect(forwarded?.contains("rows=32") == true)
+        #expect(forwarded?.contains("session=") == false, "Home session never leaves Home")
+        // Absent size stays absent (server falls back to the PTY default).
+        #expect(StreamTicketPolicy.hopQuery(from: "ticket=abc") == "ticket=abc")
+    }
+
     @Test func `home pass-through checks uuid shape and does not spend`() async throws {
         try StreamTicketPolicy.requirePassThroughDeviceTicket(Self.ticket)
         #expect(throws: BarkVisorError.self) {

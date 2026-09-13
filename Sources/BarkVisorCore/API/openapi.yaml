@@ -2114,6 +2114,54 @@ paths:
         "101":
           description: Switching Protocols
 
+  /api/vms/{id}/terminal:
+    get:
+      tags: [out-of-band]
+      operationId: vmTerminal
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Admin workload exec terminal WebSocket (`?service=` + `?ticket=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - name: service
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: ticket
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/vms/{id}/containers:
+    get:
+      tags: [vms]
+      operationId: listWorkloadContainers
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    service:
+                      type: string
+                    name:
+                      type: string
+                    state:
+                      type: string
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/home/devices/{id}/v1/vms/{vmId}/console:
     get:
       tags: [out-of-band]
@@ -2135,6 +2183,20 @@ paths:
       x-barkvisor-stability: out-of-band
       x-barkvisor-transport: websocket
       summary: Home tunnel VNC (`?ticket=` + `?session=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - $ref: "#/components/parameters/vmId"
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/home/devices/{id}/v1/vms/{vmId}/terminal:
+    get:
+      tags: [out-of-band]
+      operationId: homeDeviceVmTerminal
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Home tunnel workload exec terminal (`?service=` + `?ticket=` + `?session=`)
       parameters:
         - $ref: "#/components/parameters/id"
         - $ref: "#/components/parameters/vmId"

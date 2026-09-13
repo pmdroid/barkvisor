@@ -278,3 +278,11 @@ export function deviceVmVncPath(device: DeviceApiTarget, vmId: string): string {
 export function deviceVmConsolePath(device: DeviceApiTarget, vmId: string): string {
   return `${deviceVmPath(device, vmId)}/console`
 }
+
+export function deviceVmTerminalPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/terminal`
+}
+
+export function deviceVmContainersPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/containers`
+}

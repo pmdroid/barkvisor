@@ -150,6 +150,10 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
+    // App terminal (issue #609): WS self-authenticates via one-use ticket on
+    // `app`; the /containers picker rides JWT auth on `protected`.
+    TerminalController().register(app: app)
+    try protected.register(collection: TerminalController())
     // StreamTicketPolicy: Home tunnel spends session=, not Device ticket=.
     HomeConsoleProxyController().register(app: protected)
 }

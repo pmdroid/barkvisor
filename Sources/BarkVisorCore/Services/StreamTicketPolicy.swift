@@ -13,6 +13,14 @@ public enum StreamTicketPolicy {
     public static let ticketQueryName = "ticket"
     public static let tokenRewriteQueryName = "token"
     public static let sessionQueryName = "session"
+    /// App terminal exec target (`?service=<compose service>`). Must survive
+    /// Home/agent hop rewrites — `hopQuery` keeps it alongside `ticket=`.
+    public static let serviceQueryName = "service"
+    /// Initial PTY window size for the app terminal (`?cols=`/`?rows=`, issue
+    /// #614). The server's pre-spawn checks block past the client's first
+    /// resize, so the grid size rides the connect URL into `DockerExecRequest`.
+    public static let colsQueryName = "cols"
+    public static let rowsQueryName = "rows"
     public static let mintPath = "/api/auth/ws-ticket"
     public static let missingTicketReason =
         "Missing ticket. Use POST /api/auth/ws-ticket to obtain one."
@@ -48,19 +56,20 @@ public enum StreamTicketPolicy {
         }
     }
 
-    /// `/api/home/devices/{id}/v1/vms/{vmId}/vnc|console`
+    /// `/api/home/devices/{id}/v1/vms/{vmId}/vnc|console|terminal`
     public static func isHomeConsoleTunnel(_ path: String) -> Bool {
         guard path.contains("/api/home/devices/") else { return false }
-        return path.hasSuffix("/vnc") || path.hasSuffix("/console")
+        return path.hasSuffix("/vnc") || path.hasSuffix("/console") || path.hasSuffix("/terminal")
     }
 
-    /// `/api/vms/{id}/vnc|console|state` and `/api/vms/{id}/metrics/stream`.
+    /// `/api/vms/{id}/vnc|console|terminal|state` and `/api/vms/{id}/metrics/stream`.
     public static func isOwnerDeviceStream(_ path: String) -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard parts.count >= 4, parts[0] == "api", parts[1] == "vms" else { return false }
         switch parts.count {
         case 4:
             return parts[3] == "vnc" || parts[3] == "console" || parts[3] == "state"
+                || parts[3] == "terminal"
         case 5:
             if parts[3] == "metrics", parts[4] == "stream" { return true }
             if parts[3] == "logs", parts[4] == "stream" { return true }
@@ -146,10 +155,20 @@ public enum StreamTicketPolicy {
         encodedQuery(clientQueryItems(ticket: ticket, session: session)) ?? ""
     }
 
-    /// Hop rewrite: Device ticket only, name `ticket=`. Drop Home `session=`.
+    /// Hop rewrite: Device ticket + exec `service=` and initial `cols`/`rows`
+    /// (app terminal), names preserved. Drop Home `session=` so it is never
+    /// forwarded to a member. Losing `service=` or the window size here would
+    /// silently break member terminal tunnels (#609, #614).
     public static func hopQuery(from query: String?) -> String? {
-        guard let ticket = deviceTicket(fromQuery: query) else { return nil }
-        return encodedQuery([URLQueryItem(name: ticketQueryName, value: ticket)])
+        let items = queryItems(from: query)
+        guard let ticket = deviceTicket(in: items) else { return nil }
+        var forwarded = [URLQueryItem(name: ticketQueryName, value: ticket)]
+        for name in [serviceQueryName, colsQueryName, rowsQueryName] {
+            if let value = firstValue(items, name: name), !value.isEmpty {
+                forwarded.append(URLQueryItem(name: name, value: value))
+            }
+        }
+        return encodedQuery(forwarded)
     }
 
     public static func mintBody(workloadID: String) -> [String: String] {

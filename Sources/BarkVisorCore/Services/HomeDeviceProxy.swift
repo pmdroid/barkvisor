@@ -119,13 +119,14 @@ public enum HomeDeviceProxy {
             || path == "/api/pairing/join" || path.hasPrefix("/api/pairing/join/")
     }
 
-    /// VNC / serial console on a Device. Home tunnels these as WebSocket;
-    /// the HTTP proxy must not wrap them (it strips `Upgrade`).
+    /// VNC / serial console / app terminal on a Device. Home tunnels these as
+    /// WebSocket; the HTTP proxy must not wrap them (it strips `Upgrade`).
     public static func consoleKind(components: [String]) -> HomeConsoleKind? {
         guard components.count == 3, components[0] == "vms" else { return nil }
         switch components[2] {
         case "vnc": return .vnc
         case "console": return .console
+        case "terminal": return .terminal
         default: return nil
         }
     }
@@ -190,6 +191,8 @@ public enum HomeDeviceProxy {
 public enum HomeConsoleKind: String, Sendable {
     case vnc
     case console
+    /// App workload `docker exec` terminal (issue #609). Raw value is the API path tail.
+    case terminal
 }
 
 /// Where Home (or the agent hop) should open the console WebSocket.

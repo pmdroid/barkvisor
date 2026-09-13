@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { wsTicketPath } from '../utils/consoleHome'
 import { needsHomeSession } from '../utils/streamTicket'
-import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import { deviceVmContainersPath, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 export const HOME_MEMBER_PROXY_TIMEOUT_MS = 4000
 
@@ -119,6 +119,23 @@ export async function mintStreamTickets(
     return { ticket, session: await getWSTicket(vmID) }
   }
   return { ticket }
+}
+
+/** One compose container row from `GET /vms/:id/containers` (#609). */
+export interface WorkloadContainer {
+  service: string
+  name: string
+  state: string
+}
+
+/** Admin picker data for the exec terminal: the app's compose containers. */
+export async function listWorkloadContainers(
+  vmID: string,
+  device?: DeviceApiTarget | null,
+): Promise<WorkloadContainer[]> {
+  const target = device ?? { hostId: 'self', role: 'self' }
+  const { data } = await api.get<WorkloadContainer[]>(deviceVmContainersPath(target, vmID))
+  return data
 }
 
 export default api

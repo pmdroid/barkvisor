@@ -18,6 +18,11 @@ import {
   appSupportsDeviceArch,
 } from '../utils/appCatalog'
 import {
+  APP_GALLERY_ALL_CATEGORY,
+  appGalleryFilterSummary,
+  filterAppGallery,
+} from '../utils/appGalleryFilter'
+import {
   applicationDocument,
   applyDevicePrefill,
   catalogFields,
@@ -47,6 +52,7 @@ import {
 } from '../utils/composeEdit'
 import AppButton from './ui/AppButton.vue'
 import AppSelect from './ui/AppSelect.vue'
+import AppGalleryToolbar from './AppGalleryToolbar.vue'
 import FolderPicker from './FolderPicker.vue'
 
 const props = defineProps<{ initialHostId?: string }>()
@@ -58,6 +64,14 @@ const createProgress = useCreateProgressStore()
 const docker = useFeature('dockerEngine')
 
 const step = ref<'gallery' | 'configure'>('gallery')
+const galleryQuery = ref('')
+const galleryCategory = ref(APP_GALLERY_ALL_CATEGORY)
+const visibleApps = computed(() =>
+  filterAppGallery(homeLibrary.apps, { query: galleryQuery.value, category: galleryCategory.value }),
+)
+const galleryFilterSummary = computed(() =>
+  appGalleryFilterSummary({ query: galleryQuery.value, category: galleryCategory.value }),
+)
 const selected = ref<HomeApp | null>(null)
 const customYaml = ref(false)
 const yaml = ref(`apiVersion: barkvisor.dev/v1
@@ -486,21 +500,26 @@ async function submit() {
       <div class="mag-body">
         <template v-if="step === 'gallery'">
           <p v-if="homeLibrary.appsError && homeLibrary.apps.length === 0" class="err">{{ homeLibrary.appsError }}</p>
-          <div v-else class="mag-shelf">
-            <div
-              v-for="app in homeLibrary.apps"
-              :key="appCatalogKey(app)"
-              class="mag-card"
-              @click="pickApp(app)"
-            >
-              <img v-if="app.iconUrl" class="mag-icon-img" :src="app.iconUrl" :alt="app.name" />
-              <span v-else class="mag-ic">{{ app.name.slice(0, 1) }}</span>
-              <b>{{ app.name }}</b>
-              <span>{{ app.tagline || app.description || 'Application' }}</span>
-              <span class="mag-meta">{{ appArchLabel(app.arches) }} · {{ appSourceLabel(app.source) }}</span>
-              <span v-if="app.unsupportedReasons.length" class="mag-block">{{ app.unsupportedReasons.join(', ') }}</span>
+          <template v-else>
+            <AppGalleryToolbar v-model:query="galleryQuery" v-model:category="galleryCategory" :apps="homeLibrary.apps" />
+            <p class="mag-count">{{ visibleApps.length }} of {{ homeLibrary.apps.length }} apps · {{ galleryFilterSummary }}</p>
+            <div v-if="visibleApps.length === 0" class="mag-empty">No apps match your filters.</div>
+            <div v-else class="mag-shelf">
+              <div
+                v-for="app in visibleApps"
+                :key="appCatalogKey(app)"
+                class="mag-card"
+                @click="pickApp(app)"
+              >
+                <img v-if="app.iconUrl" class="mag-icon-img" :src="app.iconUrl" :alt="app.name" />
+                <span v-else class="mag-ic">{{ app.name.slice(0, 1) }}</span>
+                <b>{{ app.name }}</b>
+                <span>{{ app.tagline || app.description || 'Application' }}</span>
+                <span class="mag-meta">{{ appArchLabel(app.arches) }} · {{ appSourceLabel(app.source) }}</span>
+                <span v-if="app.unsupportedReasons.length" class="mag-block">{{ app.unsupportedReasons.join(', ') }}</span>
+              </div>
             </div>
-          </div>
+          </template>
           <div class="mag-custom" @click="pickYaml">
             Use YAML
             <span class="mag-custom-hint">Hand-written Application spec</span>
@@ -836,6 +855,18 @@ async function submit() {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
+}
+.mag-count {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.mag-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 12.5px;
 }
 .mag-card {
   border: 1px solid var(--mag-line, var(--border));

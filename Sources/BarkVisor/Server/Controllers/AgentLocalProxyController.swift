@@ -41,6 +41,7 @@ struct AgentLocalProxyController: RouteCollection {
     func registerConsoleTunnels(app: Vapor.Application) {
         registerConsoleTunnel(app: app, kind: .vnc)
         registerConsoleTunnel(app: app, kind: .console)
+        registerConsoleTunnel(app: app, kind: .terminal)
     }
 
     private func registerConsoleTunnel(app: Vapor.Application, kind: HomeConsoleKind) {
@@ -48,16 +49,7 @@ struct AgentLocalProxyController: RouteCollection {
             "api", "vms", ":id", .constant(kind.rawValue),
             shouldUpgrade: { req in
                 // Client cert is required by the agent-plane mTLS listener.
-                try HomeConsoleProxy.requireTicket(req)
-                let vmID = try req.parameters.require("id")
-                let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
-                    ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
-                    ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
-                guard let ticket,
-                      await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil
-                else {
-                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
-                }
+                try await Self.requireTunnelTicket(kind: kind, req: req)
                 return [:]
             },
             onUpgrade: { req, inbound in
@@ -66,6 +58,42 @@ struct AgentLocalProxyController: RouteCollection {
                 }
             },
         )
+    }
+
+    /// Tunnel ticket gate on the agent plane (issue #614).
+    ///
+    /// VNC and serial terminate *here* (QEMU / `ConsoleBufferManager`), so the
+    /// one-use Device ticket is spent on this agent. The app terminal does not:
+    /// its hop dials the host API's `TerminalController`, which must spend the
+    /// ticket there — spending it twice was the instant-close/401 reconnect
+    /// loop. For `.terminal` we therefore only require presence + UUID shape
+    /// (pass-through, same contract as Home's `requireTicket`).
+    static func requireTunnelTicket(kind: HomeConsoleKind, req: Vapor.Request) async throws {
+        let vmID = try req.parameters.require("id")
+        let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+            ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+            ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
+        try await requireTunnelTicket(kind: kind, vmID: vmID, ticket: ticket)
+    }
+
+    /// Split out from the Vapor request so the table is testable without a
+    /// routing context. Shape-checks for every kind; spends only when the
+    /// tunnel terminates on this agent (see `requireTunnelTicket(kind:req:)`).
+    static func requireTunnelTicket(
+        kind: HomeConsoleKind,
+        vmID: String,
+        ticket: String?,
+    ) async throws {
+        do {
+            try StreamTicketPolicy.requirePassThroughDeviceTicket(ticket)
+        } catch let error as BarkVisorError {
+            throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
+        }
+        guard let ticket, kind != .terminal else { return }
+        guard await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil
+        else {
+            throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
+        }
     }
 
     private func tunnelToLocal(
@@ -107,10 +135,15 @@ struct AgentLocalProxyController: RouteCollection {
             )
             return
         }
-        if let vmState {
+        // The app terminal has no QEMU/serial socket: `docker exec` lives on the
+        // host API, so `.terminal` always takes the URL hop to `TerminalController`
+        // below — even when `vmState` is configured (issue #614; mapping it to a
+        // nil socket closed member tunnels instantly).
+        if kind != .terminal, let vmState {
             let path: String? = switch kind {
             case .vnc: await vmState.vncSocketPath(for: vmID)
             case .console: await vmState.serialSocketPath(for: vmID)
+            case .terminal: nil
             }
             guard let path else {
                 Log.server.error("Agent console hop: no \(kind.rawValue) socket for \(vmID)")

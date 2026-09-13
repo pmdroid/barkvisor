@@ -30,6 +30,7 @@ struct HomeConsoleProxyController {
     func register(app: any RoutesBuilder) {
         register(app: app, kind: .vnc)
         register(app: app, kind: .console)
+        register(app: app, kind: .terminal)
     }
 
     private func register(app: any RoutesBuilder, kind: HomeConsoleKind) {

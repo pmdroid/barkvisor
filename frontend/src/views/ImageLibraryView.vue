@@ -36,6 +36,12 @@ import {
   type ImageArch,
 } from '../utils/imageArch'
 import { appArchLabel, appCatalogKey, appSourceLabel } from '../utils/appCatalog'
+import {
+  APP_GALLERY_ALL_CATEGORY,
+  appGalleryFilterSummary,
+  filterAppGallery,
+} from '../utils/appGalleryFilter'
+import AppGalleryToolbar from '../components/AppGalleryToolbar.vue'
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
@@ -155,6 +161,14 @@ async function fetchLibrarySpace() {
 }
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 const libraryTab = ref<'images' | 'apps'>('images')
+const libraryAppsQuery = ref('')
+const libraryAppsCategory = ref(APP_GALLERY_ALL_CATEGORY)
+const visibleLibraryApps = computed(() =>
+  filterAppGallery(homeLibrary.apps, { query: libraryAppsQuery.value, category: libraryAppsCategory.value }),
+)
+const libraryAppsSummary = computed(() =>
+  appGalleryFilterSummary({ query: libraryAppsQuery.value, category: libraryAppsCategory.value }),
+)
 
 const showDownload = ref(false)
 const dlName = ref('')
@@ -592,19 +606,29 @@ async function doDeleteImage() {
       title="No apps yet"
       subtitle="Sync an apps catalog from Settings → Repositories."
     />
-    <div v-else class="app-grid">
-      <article v-for="app in homeLibrary.apps" :key="appCatalogKey(app)" class="app-card">
-        <img v-if="app.iconUrl" class="app-icon" :src="app.iconUrl" :alt="app.name" />
-        <div v-else class="app-icon app-icon-fallback">{{ app.name.slice(0, 1) }}</div>
-        <b>{{ app.name }}</b>
-        <span class="app-tagline">{{ app.tagline || app.description || 'Application' }}</span>
-        <div class="app-meta">
-          <span class="arch">{{ appArchLabel(app.arches) }}</span>
-          <span class="src">{{ appSourceLabel(app.source) }}</span>
-        </div>
-        <span v-if="app.unsupportedReasons.length" class="app-block">{{ app.unsupportedReasons.join(', ') }}</span>
-      </article>
-    </div>
+    <template v-else>
+      <AppGalleryToolbar v-model:query="libraryAppsQuery" v-model:category="libraryAppsCategory" :apps="homeLibrary.apps" />
+      <p class="lib-apps-count">{{ visibleLibraryApps.length }} of {{ homeLibrary.apps.length }} apps · {{ libraryAppsSummary }}</p>
+      <EmptyState
+        v-if="visibleLibraryApps.length === 0"
+        icon="image"
+        title="No apps match your filters"
+        subtitle="Clear the search or pick another category."
+      />
+      <div v-else class="app-grid">
+        <article v-for="app in visibleLibraryApps" :key="appCatalogKey(app)" class="app-card">
+          <img v-if="app.iconUrl" class="app-icon" :src="app.iconUrl" :alt="app.name" />
+          <div v-else class="app-icon app-icon-fallback">{{ app.name.slice(0, 1) }}</div>
+          <b>{{ app.name }}</b>
+          <span class="app-tagline">{{ app.tagline || app.description || 'Application' }}</span>
+          <div class="app-meta">
+            <span class="arch">{{ appArchLabel(app.arches) }}</span>
+            <span class="src">{{ appSourceLabel(app.source) }}</span>
+          </div>
+          <span v-if="app.unsupportedReasons.length" class="app-block">{{ app.unsupportedReasons.join(', ') }}</span>
+        </article>
+      </div>
+    </template>
   </template>
 
   <template v-else-if="libraryFolderReady">
@@ -826,6 +850,11 @@ async function doDeleteImage() {
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.35;
+}
+.lib-apps-count {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--text-dim);
 }
 .app-grid {
   display: grid;
