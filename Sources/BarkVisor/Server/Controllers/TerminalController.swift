@@ -76,10 +76,9 @@ struct TerminalController: RouteCollection {
         inQuery query: String?,
     ) -> (cols: Int, rows: Int)? {
         let items = StreamTicketPolicy.queryItems(from: query)
-        guard
-            let cols = clampedDimension(
-                StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.colsQueryName),
-            ),
+        guard let cols = clampedDimension(
+            StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.colsQueryName),
+        ),
             let rows = clampedDimension(
                 StreamTicketPolicy.firstValue(items, name: StreamTicketPolicy.rowsQueryName),
             )
@@ -93,7 +92,7 @@ struct TerminalController: RouteCollection {
         return min(value, Self.maxWindowDimension)
     }
 
-    static let maxWindowDimension = 9999
+    static let maxWindowDimension = 9_999
 
     // MARK: - REST (service picker)
 
