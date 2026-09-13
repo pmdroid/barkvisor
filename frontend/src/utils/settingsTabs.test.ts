@@ -9,6 +9,7 @@ import {
   SETTINGS_TABS,
   settingsQueryTab,
   settingsTabFromQuery,
+  settingsTabWhenBypassed,
   shouldRunPairingTick,
   SSH_KEYS_SETTINGS_HREF,
   REPOSITORIES_SETTINGS_HREF,
@@ -40,6 +41,11 @@ describe('settings tab query', () => {
     expect(settingsTabFromQuery('audit')).toBe('audit')
     expect(settingsTabFromQuery('updates')).toBe('updates')
     expect(SETTINGS_TABS).toContain('updates')
+    expect(SETTINGS_TABS).toContain('security')
+    expect(settingsTabFromQuery('security')).toBe('security')
+    expect(settingsTabWhenBypassed('apikeys')).toBe('security')
+    expect(settingsTabWhenBypassed('passkeys')).toBe('security')
+    expect(settingsTabWhenBypassed('home')).toBe('home')
 
     expect(settingsTabFromQuery({ tab: 'pairing' })).toBe('pairing')
     expect(settingsTabFromQuery({ tab: 'home' })).toBe('home')

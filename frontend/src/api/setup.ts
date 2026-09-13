@@ -11,6 +11,9 @@ export interface SetupStatus {
   /** Shared identity landed after a pairing join (admin exists). Not receipt-only. */
   joined?: boolean
   admin?: boolean
+  authDisabled?: boolean
+  authMode?: string
+  proxied?: boolean
 }
 
 export interface InterfaceInfo {

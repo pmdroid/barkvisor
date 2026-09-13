@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { isFrontDoorBypassed, parseAuthMode } from '../utils/authMode'
 import {
   isLegacyDisksSettingsTab,
   REPOSITORIES_SETTINGS_HREF,
@@ -58,6 +59,9 @@ function isTokenExpired(token: string): boolean {
 // Track setup state (checked once, then cached for the session)
 let setupChecked = false
 let setupRequired = false
+let authDisabled = false
+let cachedAuthMode = 'secure'
+let cachedProxied = false
 
 export async function checkSetupRequired(): Promise<boolean> {
   if (setupChecked) return setupRequired
@@ -66,9 +70,14 @@ export async function checkSetupRequired(): Promise<boolean> {
     if (res.ok) {
       const data = await res.json()
       setupRequired = !data.complete
+      authDisabled = isFrontDoorBypassed(data)
+      cachedAuthMode = parseAuthMode(data.authMode)
+      cachedProxied = data.proxied === true
       setupChecked = true
     } else if (res.status === 403 || res.status === 503) {
       setupRequired = true
+      authDisabled = false
+      cachedProxied = false
       setupChecked = true
     }
   } catch {
@@ -77,27 +86,48 @@ export async function checkSetupRequired(): Promise<boolean> {
   return setupRequired
 }
 
-/** Call after setup completes to clear the cached state */
 export function clearSetupCache() {
   setupChecked = false
   setupRequired = false
+  authDisabled = false
+  cachedAuthMode = 'secure'
+  cachedProxied = false
+}
+
+export async function refreshFrontDoorStatus(): Promise<void> {
+  clearSetupCache()
+  await checkSetupRequired()
+  const auth = useAuthStore()
+  if (authDisabled) auth.applyBypass(parseAuthMode(cachedAuthMode), cachedProxied)
+  else auth.clearBypass()
 }
 
 router.beforeEach(async (to) => {
-  // Check if setup is required (first navigation only, then cached)
   const needsSetup = await checkSetupRequired()
 
   if (needsSetup) {
-    // Only allow the setup page
     if (to.name !== 'setup') return { name: 'setup' }
     return
   }
 
-  // Setup done — don't allow navigating to setup page
-  if (to.name === 'setup') return { name: 'login' }
+  if (authDisabled) {
+    useAuthStore().applyBypass(parseAuthMode(cachedAuthMode), cachedProxied)
+    if (to.name === 'login' || to.name === 'setup') return { name: 'dashboard' }
+  } else if (to.name === 'setup') {
+    return { name: 'login' }
+  }
 
-  // Normal auth guard
   if (to.name === 'login') return
+  if (authDisabled) {
+    const auth = useAuthStore()
+    if (auth.role === 'inference' && to.name !== 'models') {
+      return { name: 'models' }
+    }
+    if (to.name === 'settings' && isLegacyDisksSettingsTab(settingsQueryTab({ tab: to.query.tab }))) {
+      return { name: 'devices' }
+    }
+    return
+  }
   const token = localStorage.getItem('token')
   if (!token || isTokenExpired(token)) {
     void useAuthStore().logout()

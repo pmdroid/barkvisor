@@ -4,6 +4,7 @@ export const SETTINGS_TABS = [
   'pairing',
   'library',
   'repositories',
+  'security',
   'apikeys',
   'sshkeys',
   'passkeys',
@@ -57,4 +58,9 @@ export function settingsTabFromQuery(q: SettingsTabQuery): SettingsTab | undefin
   const raw = settingsQueryTab(q)
   if (!raw) return undefined
   return isSettingsTab(raw) ? raw : undefined
+}
+
+export function settingsTabWhenBypassed(tab: SettingsTab): SettingsTab {
+  if (tab === 'apikeys' || tab === 'passkeys') return 'security'
+  return tab
 }

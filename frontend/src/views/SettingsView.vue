@@ -40,6 +40,10 @@ import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
 import { formatDeviceURL } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { getSecuritySettings, saveSecuritySettings } from '../api/security'
+import { loopbackProxyWarning, parseAuthMode, type AuthMode } from '../utils/authMode'
+import { refreshFrontDoorStatus } from '../router'
+import { frontDoorBypassed, frontDoorProxied } from '../utils/frontDoor'
 import {
   isCurrentPairingSeq,
   nextPairingLoadSeq,
@@ -49,6 +53,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   isPairingTab,
   settingsTabFromQuery,
+  settingsTabWhenBypassed,
   shouldRunPairingTick,
   type SettingsTab,
 } from '../utils/settingsTabs'
@@ -69,7 +74,16 @@ const passkeyStore = usePasskeyStore()
 const passkeysAvailable = isPasskeyAvailable()
 const passkeyBlocked = passkeyBlock()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
+const securityMode = ref<AuthMode>('secure')
+const securityEnvLocked = ref(false)
+const securitySaving = ref(false)
+const securityConfirmOpen = ref(false)
+const securityConfirmName = ref('')
+const deviceConfirmName = ref('')
 
+const proxyWarning = computed(() =>
+  loopbackProxyWarning(securityMode.value, frontDoorProxied.value),
+)
 const homeDeviceName = computed(() =>
   devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : DEVICE_LABEL,
 )
@@ -691,6 +705,7 @@ function actionBadgeClass(action: string) {
 }
 
 function applySettingsTab(next: SettingsTab) {
+  if (frontDoorBypassed.value) next = settingsTabWhenBypassed(next)
   if (isPairingTab(next)) {
     openPairingTab()
     return
@@ -722,13 +737,67 @@ function applySettingsTab(next: SettingsTab) {
     fetchAudit()
     return
   }
+  if (next === 'security') {
+    tab.value = 'security'
+    void loadSecurity()
+    return
+  }
   tab.value = next
+}
+
+async function loadSecurity() {
+  try {
+    const settings = await getSecuritySettings()
+    securityMode.value = parseAuthMode(settings.authMode)
+    securityEnvLocked.value = settings.envLocked
+    await devicesStore.fetchHealth()
+    deviceConfirmName.value = homeDeviceName.value
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  }
+}
+
+function chooseSecurityMode(next: AuthMode) {
+  if (securityEnvLocked.value) return
+  if (next === 'disabled') {
+    securityConfirmName.value = ''
+    securityConfirmOpen.value = true
+    return
+  }
+  void persistSecurity(next, false)
+}
+
+async function persistSecurity(next: AuthMode, acknowledged: boolean) {
+  securitySaving.value = true
+  try {
+    const settings = await saveSecuritySettings(next, acknowledged)
+    securityMode.value = parseAuthMode(settings.authMode)
+    securityEnvLocked.value = settings.envLocked
+    await refreshFrontDoorStatus()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    securitySaving.value = false
+    securityConfirmOpen.value = false
+  }
+}
+
+function confirmNetworkDisable() {
+  if (securityConfirmName.value.trim() !== deviceConfirmName.value.trim()) {
+    toast.error(`Type ${deviceConfirmName.value} to confirm`)
+    return
+  }
+  void persistSecurity('disabled', true)
 }
 
 onMounted(() => {
   fetchKeys()
-  const requested = settingsTabFromQuery(route.query)
-  if (requested) applySettingsTab(requested)
+  void loadSecurity()
+  applySettingsTab(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
+})
+
+watch(frontDoorBypassed, (bypassed) => {
+  if (bypassed) applySettingsTab(settingsTabWhenBypassed(tab.value))
 })
 
 onUnmounted(() => {
@@ -758,9 +827,10 @@ onUnmounted(() => {
     <button :class="{ active: isPairingTab(tab) }" @click="openPairingTab">Pairing</button>
     <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
     <button :class="{ active: tab === 'repositories' }" @click="openRepositoriesTab">Repositories</button>
-    <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
+    <button :class="{ active: tab === 'security' }" @click="applySettingsTab('security')">Security</button>
+    <button v-if="!frontDoorBypassed" :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
-    <button :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
+    <button v-if="!frontDoorBypassed" :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
     <button :class="{ active: tab === 'updates' }" @click="tab = 'updates'">Updates</button>
   </div>
@@ -950,6 +1020,64 @@ onUnmounted(() => {
         >
           Re-pair this {{ DEVICE_LABEL }}
         </AppButton>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="tab === 'security'">
+    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">
+      Sign-in is required by default. Skipping it on this computer is the simple option.
+      Turning it off for the whole network gives anyone who can reach this Device full VM control.
+      A passkey is the low-friction secure alternative.
+    </p>
+    <p v-if="securityEnvLocked" style="color:var(--amber);font-size:13px">
+      BARKVISOR_AUTH_MODE is set on the process, so Settings cannot change the effective mode.
+    </p>
+    <p v-if="proxyWarning" style="color:var(--amber);font-size:13px">
+      {{ proxyWarning }}
+    </p>
+    <div class="security-options" role="radiogroup" aria-label="Sign-in requirement">
+      <label class="security-choice" :class="{ selected: securityMode === 'secure' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'secure'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('secure')" />
+        <span>
+          <b>Require sign-in</b>
+          <small>Recommended. Protect this Device with an account or passkey.</small>
+        </span>
+      </label>
+      <label class="security-choice" :class="{ selected: securityMode === 'loopback' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'loopback'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('loopback')" />
+        <span>
+          <b>Skip sign-in on this computer</b>
+          <small>Local browser access only. Network requests still require sign-in.</small>
+        </span>
+      </label>
+      <label class="security-choice" :class="{ selected: securityMode === 'disabled' }">
+        <input type="radio" name="auth-mode" :checked="securityMode === 'disabled'" :disabled="securityEnvLocked || securitySaving" @change="chooseSecurityMode('disabled')" />
+        <span>
+          <b>Skip sign-in for my whole network</b>
+          <small>Anyone who can reach this Device gets full control.</small>
+        </span>
+      </label>
+    </div>
+    <p v-if="frontDoorBypassed" style="color:var(--text-secondary);font-size:13px;margin-top:16px">
+      Passkeys and API keys are hidden while sign-in is skipped. They come back when you require sign-in again.
+    </p>
+    <div v-if="securityConfirmOpen" class="modal-overlay stack" @click.self="securityConfirmOpen = false">
+      <div class="split-frame split-narrow">
+        <section class="split-stage">
+          <div class="split-head"><h2>Disable sign-in on the network</h2></div>
+          <div class="split-body">
+            <p class="split-warn">
+              Anyone on the network can start, stop, and wipe VMs. Type the Device name
+              <b>{{ deviceConfirmName }}</b> to confirm. Prefer a passkey if you just want faster sign-in.
+            </p>
+            <input v-model="securityConfirmName" type="text" autocomplete="off" spellcheck="false" :placeholder="deviceConfirmName" aria-label="Type the Device name to confirm" />
+          </div>
+          <div class="split-foot">
+            <button class="btn-ghost" @click="securityConfirmOpen = false">Cancel</button>
+            <button class="btn-danger" :disabled="securitySaving" @click="confirmNetworkDisable">Disable sign-in</button>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -1343,6 +1471,60 @@ onUnmounted(() => {
 }
 .tabs button:hover:not(.active) {
   color: var(--text-secondary);
+}
+.security-choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  font-size: 14px;
+  cursor: pointer;
+}
+.security-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 960px;
+}
+.security-choice.selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.security-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.security-choice input {
+  margin-top: 2px;
+}
+.security-choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.security-choice b {
+  font-weight: 600;
+}
+.security-choice small {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.split-warn {
+  color: var(--amber);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 0;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .security-options {
+    grid-template-columns: 1fr;
+  }
 }
 .badge-yellow { background: var(--yellow-muted, rgba(234,179,8,0.15)); color: var(--yellow, #eab308); }
 
