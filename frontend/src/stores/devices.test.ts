@@ -6,6 +6,7 @@ import { useDevicesStore } from './devices'
 import { canCallMember } from '../utils/memberReachability'
 
 const originalGet = api.get
+const originalDelete = api.delete
 
 const report: HomeDeviceHealthReport = {
   devices: [
@@ -48,6 +49,7 @@ describe('devices store (PAS-52)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.delete = originalDelete
   })
 
   test('keeps unreachable members in the Home list', async () => {
@@ -122,5 +124,20 @@ describe('devices store (PAS-52)', () => {
     store.markTransportUnavailable('peer-1')
     expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
     expect(store.selfDevice?.reachability).toBe('ok')
+  })
+
+  test('removes a member from shared state immediately after the API succeeds', async () => {
+    api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
+    api.delete = mock(() => Promise.resolve({})) as typeof api.delete
+    const store = useDevicesStore()
+    await store.fetchHealth()
+
+    await store.removeDevice('peer-1')
+
+    expect(api.delete).toHaveBeenCalledWith('/home/devices/peer-1')
+    expect(store.deviceByHostId('peer-1')).toBeNull()
+    expect(store.totals?.devices).toBe(1)
+    expect(store.totals?.unreachable).toBe(0)
+    expect(store.totals?.workloadCount).toBe(2)
   })
 })

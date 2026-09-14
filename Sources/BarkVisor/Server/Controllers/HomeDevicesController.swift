@@ -46,6 +46,7 @@ struct HomeDevicesController: RouteCollection {
         home.get("devices", "health", use: health)
         home.post("placement", "score", use: scorePlacement)
         home.get("devices", use: list)
+        home.delete("devices", ":id", use: remove)
         for method in [HTTPMethod.GET, .POST, .PUT, .PATCH, .DELETE] {
             home.on(method, "devices", ":id", "v1", "**", use: proxy)
         }
@@ -55,6 +56,28 @@ struct HomeDevicesController: RouteCollection {
     func list(req: Vapor.Request) async throws -> HomeDeviceList {
         _ = try req.requireUser
         return try await listedDevices(db: req.db)
+    }
+
+    /// Remove a member from this Home without calling it. This remains safe
+    /// when the member is powered off or has left the network.
+    @Sendable
+    func remove(req: Vapor.Request) async throws -> HTTPStatus {
+        _ = try req.requireUser
+        let id = try req.parameters.require("id")
+        do {
+            try HomeDeviceMembership.remove(
+                hostId: id,
+                localHostId: hostId,
+                dataDir: dataDir,
+                devices: devices,
+            )
+            AuditService.log(action: "home.device.remove", resourceType: "device", resourceId: id, req: req)
+            return .noContent
+        } catch let error as BarkVisorError {
+            throw error
+        } catch {
+            throw Abort(.serviceUnavailable, reason: "Unable to update Home membership: \(error.localizedDescription)")
+        }
     }
 
     @Sendable

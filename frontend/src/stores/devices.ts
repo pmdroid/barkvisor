@@ -74,6 +74,34 @@ export const useDevicesStore = defineStore('devices', () => {
     updateMemberReachability(devices)
   }
 
+  async function removeDevice(hostId: string): Promise<void> {
+    await api.delete(`/home/devices/${encodeURIComponent(hostId)}`)
+    if (!report.value) return
+    const remaining = report.value.devices.filter((row) => row.hostId !== hostId)
+    const healthCounts: Record<string, number> = {}
+    let workloadCount = 0
+    let hasWorkloadCount = false
+    for (const row of remaining) {
+      for (const [name, count] of Object.entries(row.healthCounts ?? {})) {
+        healthCounts[name] = (healthCounts[name] ?? 0) + count
+      }
+      if (row.workloadCount != null) {
+        workloadCount += row.workloadCount
+        hasWorkloadCount = true
+      }
+    }
+    report.value = {
+      devices: remaining,
+      totals: {
+        devices: remaining.length,
+        reachable: remaining.filter((row) => row.reachability === 'ok').length,
+        unreachable: remaining.filter((row) => row.reachability !== 'ok').length,
+        workloadCount: hasWorkloadCount ? workloadCount : null,
+        healthCounts,
+      },
+    }
+  }
+
   function deviceLabel(row: HomeDeviceHealthSnapshot): string {
     if (row.displayName && row.displayName.trim()) return row.displayName
     return row.hostId
@@ -91,6 +119,7 @@ export const useDevicesStore = defineStore('devices', () => {
     startReachabilityPolling,
     stopReachabilityPolling,
     markTransportUnavailable,
+    removeDevice,
     deviceLabel,
   }
 })

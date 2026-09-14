@@ -1830,6 +1830,25 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/home/devices/{id}:
+    delete:
+      tags: [evolving]
+      operationId: removeHomeDevice
+      x-barkvisor-stability: evolving
+      summary: Remove a paired member from this Home
+      description: |
+        JWT. Removes the member directory entry and its pairing pin locally.
+        The member is not contacted, so this succeeds when it is offline.
+        This Device cannot remove itself. Repeating a successful removal is
+        safe and returns no content.
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "204":
+          description: Device removed
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/home/devices/health:
     get:
       tags: [evolving]
