@@ -390,7 +390,12 @@ struct TerminalControllerTests {
             onExit: { seen.setExit($0) },
         )
         #expect(child.launchExecutable == "/usr/bin/docker")
-        #expect(child.launchArguments == ["exec", "-it", "bv-web-1", "sh"])
+        #expect(child.launchArguments == [
+            "exec", "-it",
+            "-e", "TERM=xterm-256color",
+            "-e", "COLORTERM=truecolor",
+            "bv-web-1", "sh",
+        ])
         #expect(child.resizes.first?.cols == 100)
         #expect(child.resizes.first?.rows == 30)
         #expect(session.currentState == .running)
