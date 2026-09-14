@@ -53,7 +53,7 @@
 
         /// Fork the child onto a new PTY and `execv` the given program.
         @discardableResult
-        public func start(executable: String, arguments: [String]) throws -> pid_t {
+        public func start(executable: String, arguments: [String], cols: Int = 80, rows: Int = 24) throws -> pid_t {
             lock.lock()
             guard !started else {
                 lock.unlock()
@@ -67,7 +67,7 @@
                 free(ptr)
             } }
 
-            guard let forked = try PTYProcess.forkAttached(cargs: cargs) else {
+            guard let forked = try PTYProcess.forkAttached(cargs: cargs, cols: cols, rows: rows) else {
                 let reason = String(cString: strerror(errno))
                 throw BarkVisorError.internalError("pty spawn failed: \(reason)")
             }
@@ -142,11 +142,16 @@
         /// Returns `(pid, masterFd)` in the parent; the child only makes
         /// async-signal-safe syscalls before `execv` and never returns.
         private static func forkAttached(
-            cargs: [UnsafeMutablePointer<CChar>?],
+            cargs: [UnsafeMutablePointer<CChar>?], cols: Int, rows: Int,
         ) -> (pid: pid_t, master: Int32)? {
+            var ws = winsize(
+                ws_row: UInt16(max(1, min(rows, 9_999))),
+                ws_col: UInt16(max(1, min(cols, 9_999))),
+                ws_xpixel: 0, ws_ypixel: 0,
+            )
             #if os(macOS)
                 var master: Int32 = 0
-                let pid: pid_t = forkpty(&master, nil, nil, nil)
+                let pid: pid_t = forkpty(&master, nil, nil, &ws)
                 if pid == 0 {
                     let path = UnsafePointer(cargs[0]!)
                     cargs.withUnsafeBytes { raw in
@@ -162,7 +167,6 @@
             #elseif os(Linux)
                 var master: Int32 = -1
                 var slave: Int32 = -1
-                var ws = winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
                 guard openpty(&master, &slave, nil, nil, &ws) == 0 else { return nil }
                 let pid = Glibc.fork()
                 if pid == 0 {

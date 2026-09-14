@@ -182,6 +182,18 @@ describe('terminalSocket (#614): reconnect machine contracts', () => {
     expect(onData).toContain('terminalPasteChunks(data)')
   })
 
+  test('active terminal follows live output without resizing its PTY per frame', () => {
+    expect(panel).toContain('function followLiveOutput()')
+    const messageHandler = panel.slice(
+      panel.indexOf('socket.onmessage'),
+      panel.indexOf('socket.onclose'),
+    )
+    expect(messageHandler.match(/followLiveOutput\(\)/g)?.length).toBe(2)
+    const follow = panel.slice(panel.indexOf('function followLiveOutput()'), panel.indexOf('function onTermError'))
+    expect(follow).toContain('wt.element.scrollTop = wt.element.scrollHeight')
+    expect(follow).not.toContain('wt.resize(')
+  })
+
   test('isAlive drops stopping so a shutting-down app cannot spawn shell storms', () => {
     expect(panel).toContain('const isAlive = () => props.vmState ===')
     expect(panel).not.toContain("vmState === 'stopping'")
