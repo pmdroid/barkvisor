@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, nextTick, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
-import { Terminal, type WTerm } from '@wterm/vue'
+import { ref, shallowRef, nextTick, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
+import { Terminal, type TerminalCore, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
+import { GhosttyCore } from '@wterm/ghostty'
 import { mintStreamTickets } from '../api/client'
 import {
   TERMINAL_CLEAN_CLOSE_CODES,
@@ -28,6 +29,7 @@ const isAlive = () => props.vmState === 'running'
 
 const term = useTemplateRef('term')
 const status = ref('')
+const terminalCore = shallowRef<TerminalCore | null>(null)
 let wt: WTerm | null = null
 let ws: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -49,6 +51,7 @@ function onReady(instance: WTerm) {
   // had no grid to measure yet, so push the initial size from this side too.
   // Resize rides both `onReady` and `onopen` so the race cannot lose it (#614).
   if (ws?.readyState === WebSocket.OPEN) sendResize(instance.cols, instance.rows)
+  else if (!disposed) void connect()
 }
 
 function sendResize(cols: number, rows: number) {
@@ -199,7 +202,16 @@ async function connect() {
   }
 }
 
-onMounted(() => void connect())
+onMounted(async () => {
+  try {
+    terminalCore.value = await GhosttyCore.load({
+      foregroundColor: '#e8e8e8',
+      backgroundColor: '#0d0d0d',
+    })
+  } catch (error) {
+    status.value = `Terminal failed to initialize: ${error instanceof Error ? error.message : String(error)}`
+  }
+})
 
 watch(() => props.vmState, () => {
   if (disposed || connecting) return
@@ -243,8 +255,10 @@ onUnmounted(() => {
       {{ status }}
     </div>
     <Terminal
+      v-if="terminalCore"
       ref="term"
       class="terminal-term"
+      :core="terminalCore"
       cursor-blink
       auto-resize
       @ready="onReady"
