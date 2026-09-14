@@ -236,17 +236,19 @@ describe('settings tab query', () => {
     expect(detail).not.toContain("if (loadDisk) await fetchDiskSettings(row)")
   })
 
-  test('Updates tab is Settings → Updates and polls /api/health after apply', () => {
+  test('Updates tab is Settings → Updates and routes through the selected Device', () => {
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
     const tab = readFileSync(join(here, '../components/SettingsUpdatesTab.vue'), 'utf8')
     expect(SETTINGS_TABS).toContain('updates')
     expect(settings).toContain("tab === 'updates'")
     expect(settings).toContain('SettingsUpdatesTab')
     expect(settings).toContain('>Updates</button>')
-    expect(tab).toContain('/system/updates/check')
-    expect(tab).toContain('/system/updates/install')
+    expect(tab).toContain('deviceUpdateCheckPath')
+    expect(tab).toContain('deviceUpdateInstallPath')
+    expect(tab).toContain('deviceUpdateSettingsPath')
+    expect(tab).toContain('deviceHealthPath')
     expect(tab).toContain('pollUntilHealthy')
-    expect(tab).toContain("api.get('/health')")
+    expect(tab).toContain('canCallDeviceAPI')
     expect(tab).not.toContain('brew upgrade')
     expect(tab).not.toContain('HelperXPC')
     expect(tab).not.toContain('cluster')

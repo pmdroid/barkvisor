@@ -50,7 +50,7 @@ const selectedDeviceReachable = computed(() =>
 )
 const deviceOptions = computed(() => devices.devices.map((device) => ({
   value: device.hostId,
-  label: device.role === 'self' ? `${deviceDisplayLabel(device)} (This Device)` : deviceDisplayLabel(device),
+  label: device.role === 'self' ? `${deviceDisplayLabel(device)} (Local Device)` : deviceDisplayLabel(device),
   disabled: !canCallDeviceAPI(device),
 })))
 
@@ -222,7 +222,7 @@ void devices.fetchHealth()
         @update:model-value="selectedHostId = $event"
       />
       <p v-if="selectedDevice && !selectedDeviceReachable" class="update-target-error">
-        This Device is unreachable. Updates are unavailable until it reconnects.
+        Selected Device is unreachable. Updates are unavailable until it reconnects.
       </p>
     </div>
 
