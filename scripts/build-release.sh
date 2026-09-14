@@ -12,6 +12,7 @@ set -euo pipefail
 #   ./scripts/build-release.sh                  # Full build
 #   ./scripts/build-release.sh --skip-deps      # Skip dep builds (use cached)
 #   ./scripts/build-release.sh --no-sign        # Skip code signing
+#   ./scripts/build-release.sh --skip-notarize  # Sign, but do not notarize
 #   ./scripts/build-release.sh --no-pkg         # Skip installer pkg creation
 #   ./scripts/build-release.sh --require-notarize  # Fail if notarization credentials missing
 #
@@ -85,6 +86,7 @@ SKIP_DEPS=false
 NO_SIGN=false
 NO_PKG=false
 REQUIRE_NOTARIZE=false
+SKIP_NOTARIZE=false
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"    # e.g. "Developer ID Application: Your Name (TEAMID)"
 INSTALLER_IDENTITY="${INSTALLER_IDENTITY:-}"  # e.g. "Developer ID Installer: Your Name (TEAMID)"
 
@@ -92,10 +94,26 @@ for arg in "$@"; do
     case "$arg" in
         --skip-deps)          SKIP_DEPS=true ;;
         --no-sign)            NO_SIGN=true ;;
+        --skip-notarize)      SKIP_NOTARIZE=true ;;
         --no-pkg)             NO_PKG=true ;;
         --require-notarize)   REQUIRE_NOTARIZE=true ;;
     esac
 done
+
+if [ "$REQUIRE_NOTARIZE" = true ] && [ "$SKIP_NOTARIZE" = true ]; then
+    echo "ERROR: --require-notarize cannot be combined with --skip-notarize."
+    exit 1
+fi
+
+if [ "$REQUIRE_NOTARIZE" = true ] && { [ -z "$SIGNING_IDENTITY" ] || [ -z "$INSTALLER_IDENTITY" ]; }; then
+    echo "ERROR: --require-notarize requires SIGNING_IDENTITY and INSTALLER_IDENTITY."
+    exit 1
+fi
+
+if [ "$REQUIRE_NOTARIZE" = true ] && ! xcrun notarytool history --keychain-profile barkvisor-notarize >/dev/null 2>&1; then
+    echo "ERROR: --require-notarize requires the barkvisor-notarize Keychain profile."
+    exit 1
+fi
 
 log() { echo "==> $1"; }
 log_sub() { echo "    $1"; }
@@ -730,7 +748,7 @@ HTML
     fi
 
     # Notarize the pkg
-    if [ "$NO_SIGN" = false ] && [ -n "$SIGNING_IDENTITY" ]; then
+    if [ "$NO_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ] && [ -n "$SIGNING_IDENTITY" ]; then
         log_sub "Notarizing pkg..."
         xcrun notarytool submit "$PKG_PATH" \
             --keychain-profile "barkvisor-notarize" \
