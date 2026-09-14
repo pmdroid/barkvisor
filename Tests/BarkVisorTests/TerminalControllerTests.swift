@@ -366,6 +366,8 @@ struct TerminalControllerTests {
         func launch(
             executable: String,
             arguments: [String],
+            cols: Int,
+            rows: Int,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling {

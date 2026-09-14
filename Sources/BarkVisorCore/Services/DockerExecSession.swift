@@ -16,6 +16,8 @@
         func launch(
             executable: String,
             arguments: [String],
+            cols: Int,
+            rows: Int,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling
@@ -29,12 +31,14 @@
         public func launch(
             executable: String,
             arguments: [String],
+            cols: Int,
+            rows: Int,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling {
             let pty = PTYProcess()
             pty.configure(onData: onData, onExit: onExit)
-            try pty.start(executable: executable, arguments: arguments)
+            try pty.start(executable: executable, arguments: arguments, cols: cols, rows: rows)
             return pty
         }
     }
@@ -164,6 +168,8 @@
                 let child = try launcher.launch(
                     executable: dockerExecutable,
                     arguments: arguments,
+                    cols: request.cols,
+                    rows: request.rows,
                     onData: onData,
                     onExit: { [weak self] code in self?.deliverExit(code) },
                 )
