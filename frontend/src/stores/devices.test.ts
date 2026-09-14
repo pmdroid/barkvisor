@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
 import type { HomeDeviceHealthReport } from '../api/types'
 import { useDevicesStore } from './devices'
+import { canCallMember } from '../utils/memberReachability'
 
 const originalGet = api.get
 
@@ -52,7 +53,7 @@ describe('devices store (PAS-52)', () => {
   test('keeps unreachable members in the Home list', async () => {
     api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
     const store = useDevicesStore()
-    await store.fetchHealth()
+    await store.fetchHealth({ force: true })
     expect(store.devices).toHaveLength(2)
     expect(store.selfDevice?.hostId).toBe('self-1')
     expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
@@ -69,7 +70,7 @@ describe('devices store (PAS-52)', () => {
     api.get = get as typeof api.get
     const store = useDevicesStore()
     await store.fetchHealth()
-    await store.fetchHealth()
+    await store.fetchHealth({ force: true })
     expect(store.devices).toHaveLength(2)
     expect(store.error).toBeTruthy()
   })
@@ -93,5 +94,33 @@ describe('devices store (PAS-52)', () => {
     expect(store.devices).toHaveLength(2)
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
+  })
+
+  test('suppresses offline member hops and resumes them after health recovers', async () => {
+    const get = mock()
+      .mockResolvedValueOnce({ data: report })
+      .mockResolvedValueOnce({
+        data: {
+          ...report,
+          devices: report.devices.map((row) => (
+            row.hostId === 'peer-1' ? { ...row, reachability: 'ok', reachabilityError: null } : row
+          )),
+        },
+      })
+    api.get = get as typeof api.get
+    const store = useDevicesStore()
+    await store.fetchHealth()
+    expect(canCallMember('peer-1')).toBe(false)
+    await store.fetchHealth({ force: true })
+    expect(canCallMember('peer-1')).toBe(true)
+  })
+
+  test('transport failure marks only the member offline', async () => {
+    api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
+    const store = useDevicesStore()
+    await store.fetchHealth()
+    store.markTransportUnavailable('peer-1')
+    expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
+    expect(store.selfDevice?.reachability).toBe('ok')
   })
 })

@@ -2,8 +2,20 @@ import axios from 'axios'
 import { wsTicketPath } from '../utils/consoleHome'
 import { needsHomeSession } from '../utils/streamTicket'
 import { deviceVmContainersPath, type DeviceApiTarget } from '../utils/homeDeviceApi'
+import {
+  canCallMember,
+  markMemberTransportUnavailable,
+  memberHostIdFromProxyPath,
+} from '../utils/memberReachability'
 
 export const HOME_MEMBER_PROXY_TIMEOUT_MS = 4000
+
+export class MemberDeviceOfflineError extends Error {
+  constructor() {
+    super('This Device is unreachable')
+    this.name = 'MemberDeviceOfflineError'
+  }
+}
 
 const api = axios.create({
   baseURL: '/api',
@@ -16,6 +28,10 @@ api.interceptors.request.use((config) => {
   }
   if (isHomeMemberProxyRequest(config) && !config.timeout) {
     config.timeout = HOME_MEMBER_PROXY_TIMEOUT_MS
+  }
+  const memberHostId = memberHostIdFromProxyPath(config.url)
+  if (memberHostId && !canCallMember(memberHostId)) {
+    throw new MemberDeviceOfflineError()
   }
   return config
 })
@@ -52,6 +68,16 @@ export function isHomeMemberProxyRequest(config?: { url?: string } | null): bool
   return path.includes('/home/devices/')
 }
 
+/** A member application response proves the hop worked, including HTTP 5xx. */
+export function isMemberProxyTransportFailure(error: {
+  response?: { status?: number, data?: { reason?: unknown } }
+}): boolean {
+  if (!error.response) return true
+  if (error.response.status !== 502) return false
+  const reason = error.response.data?.reason
+  return typeof reason === 'string' && reason.startsWith('Home cannot hop to the Device:')
+}
+
 /** Login/refresh/logout/redeem 401s must not revoke a still-valid session. */
 export function isAuthBootstrapRequest(config?: { url?: string } | null): boolean {
   const path = requestPath(config?.url)
@@ -77,6 +103,14 @@ function revokeRefreshOnUnauthorized() {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const memberHostId = memberHostIdFromProxyPath(error.config?.url)
+    if (memberHostId && isMemberProxyTransportFailure(error)) {
+      markMemberTransportUnavailable(memberHostId)
+      // Import lazily to avoid a client/store initialization cycle.
+      void import('../stores/devices').then(({ useDevicesStore }) => {
+        useDevicesStore().markTransportUnavailable(memberHostId)
+      })
+    }
     if (error.response?.status === 401 && !isAuthBootstrapRequest(error.config)) {
       revokeRefreshOnUnauthorized()
       if (onUnauthorized) {
