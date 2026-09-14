@@ -18,6 +18,7 @@ struct HomeDevicesController: RouteCollection {
     var vmManager: VMManager?
     var healthProbes: HealthProbeService?
     var localFacts: (@Sendable () async -> HomeDeviceLiveFacts)?
+    var reachability: HomeDeviceReachabilityMonitor
 
     init(
         dataDir: URL = Config.dataDir,
@@ -29,6 +30,7 @@ struct HomeDevicesController: RouteCollection {
         vmManager: VMManager? = nil,
         healthProbes: HealthProbeService? = nil,
         localFacts: (@Sendable () async -> HomeDeviceLiveFacts)? = nil,
+        reachability: HomeDeviceReachabilityMonitor = HomeDeviceReachabilityMonitor(),
     ) {
         self.dataDir = dataDir
         self.hostId = hostId
@@ -39,6 +41,7 @@ struct HomeDevicesController: RouteCollection {
         self.vmManager = vmManager
         self.healthProbes = healthProbes
         self.localFacts = localFacts
+        self.reachability = reachability
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -71,6 +74,7 @@ struct HomeDevicesController: RouteCollection {
                 dataDir: dataDir,
                 devices: devices,
             )
+            await reachability.remove(id)
             AuditService.log(action: "home.device.remove", resourceType: "device", resourceId: id, req: req)
             return .noContent
         } catch let error as BarkVisorError {
@@ -84,11 +88,13 @@ struct HomeDevicesController: RouteCollection {
     func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
         _ = try req.requireUser
         let listed = try await listedDevices(db: req.db)
-        return await healthReport(
+        let report = await healthReport(
             listed: listed,
             local: resolvedLocalFacts(db: req.db),
             bearer: req.headers.bearerAuthorization?.token,
         )
+        await reachability.replace(report.devices)
+        return report
     }
 
     @Sendable
@@ -132,6 +138,31 @@ struct HomeDevicesController: RouteCollection {
             budgetNanoseconds: probeBudgetNanoseconds,
         )
         return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
+    }
+
+    /// Server-side liveness refresh. It uses the mTLS-only whoami endpoint so
+    /// it can run independently of a browser session or user JWT.
+    func refreshReachability() async {
+        let listed = HomeDeviceDirectory.list(
+            dataDir: dataDir,
+            hostId: hostId,
+            displayName: "",
+            devices: devices,
+        )
+        let members = listed.devices.filter { $0.role != "self" }
+        var statuses: [String: String] = [:]
+        await withTaskGroup(of: (String, String).self) { group in
+            for member in members {
+                group.addTask {
+                    let status = await self.probeMemberLiveness(member)
+                    return (member.hostId, status)
+                }
+            }
+            for await (hostId, status) in group {
+                statuses[hostId] = status
+            }
+        }
+        await reachability.replace(statuses)
     }
 
     func collectMemberProbes(
@@ -199,6 +230,10 @@ struct HomeDevicesController: RouteCollection {
             return try await forward(req: req, url: url, client: localClient)
         }
 
+        guard await reachability.permitsHop(to: id) else {
+            throw Abort(.serviceUnavailable, reason: "Device is currently unreachable")
+        }
+
         let store = devices ?? DeviceRegistry(dataDir: dataDir)
         let record: DeviceRecord
         do {
@@ -236,7 +271,12 @@ struct HomeDevicesController: RouteCollection {
                 )
             }
         }
-        return try await forward(req: req, url: url, client: client)
+        do {
+            return try await forward(req: req, url: url, client: client)
+        } catch let error as Abort where error.status == .badGateway {
+            await reachability.markUnavailable(id)
+            throw error
+        }
     }
 
     private func forward(
@@ -444,6 +484,33 @@ struct HomeDevicesController: RouteCollection {
             ))
         } catch {
             return .failed(HomeDeviceProxyError.classify(error))
+        }
+    }
+
+    private func probeMemberLiveness(_ device: HomeDevice) async -> String {
+        guard let agentHost = device.agentHost, !agentHost.isEmpty else {
+            return HomeDeviceHealthAggregator.unreachable
+        }
+        let client: any HomeDeviceProxyClient
+        if let mtlsClient {
+            client = mtlsClient
+        } else {
+            do {
+                client = try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
+            } catch {
+                return HomeDeviceHealthAggregator.unreachable
+            }
+        }
+        do {
+            let url = try HomeDeviceProxy.memberURL(
+                host: agentHost, port: device.agentPort, path: "/api/agent/whoami",
+            )
+            _ = try await client.send(HomeDeviceProxyRequest(method: "GET", url: url))
+            // Any HTTP response proves the mTLS hop worked. Only transport
+            // failures make a Device unavailable.
+            return HomeDeviceHealthAggregator.ok
+        } catch {
+            return HomeDeviceProxyError.classify(error).reachability
         }
     }
 

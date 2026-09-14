@@ -3,7 +3,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
 import type { HomeDeviceHealthReport } from '../api/types'
 import { useDevicesStore } from './devices'
-import { canCallMember } from '../utils/memberReachability'
 
 const originalGet = api.get
 const originalDelete = api.delete
@@ -98,7 +97,7 @@ describe('devices store (PAS-52)', () => {
     expect(store.error).toBeNull()
   })
 
-  test('suppresses offline member hops and resumes them after health recovers', async () => {
+  test('replaces displayed reachability when Home reports a recovery', async () => {
     const get = mock()
       .mockResolvedValueOnce({ data: report })
       .mockResolvedValueOnce({
@@ -112,18 +111,8 @@ describe('devices store (PAS-52)', () => {
     api.get = get as typeof api.get
     const store = useDevicesStore()
     await store.fetchHealth()
-    expect(canCallMember('peer-1')).toBe(false)
     await store.fetchHealth({ force: true })
-    expect(canCallMember('peer-1')).toBe(true)
-  })
-
-  test('transport failure marks only the member offline', async () => {
-    api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
-    const store = useDevicesStore()
-    await store.fetchHealth()
-    store.markTransportUnavailable('peer-1')
-    expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
-    expect(store.selfDevice?.reachability).toBe('ok')
+    expect(store.deviceByHostId('peer-1')?.reachability).toBe('ok')
   })
 
   test('removes a member from shared state immediately after the API succeeds', async () => {

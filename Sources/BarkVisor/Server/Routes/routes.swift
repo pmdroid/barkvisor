@@ -99,11 +99,19 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     )
     try protected.register(collection: WorkloadApplyController(backgroundTasks: deps.backgroundTasks))
     try protected.register(collection: AgentInventoryController())
-    try protected.register(
-        collection: HomeDevicesController(
-            vmManager: deps.vmManager, healthProbes: deps.healthProbes,
-        ),
+    let homeDevices = HomeDevicesController(
+        vmManager: deps.vmManager, healthProbes: deps.healthProbes,
     )
+    try protected.register(collection: homeDevices)
+    Task {
+        await homeDevices.refreshReachability()
+        await deps.backgroundTasks.schedulePeriodicTask(
+            id: "home-device-reachability",
+            interval: HomeDeviceReachabilityMonitor.refreshIntervalNanoseconds,
+        ) {
+            await homeDevices.refreshReachability()
+        }
+    }
     try protected.register(collection: AppIngressController())
     let ollama = OllamaController(backgroundTasks: deps.backgroundTasks)
     try protected.register(collection: ollama)

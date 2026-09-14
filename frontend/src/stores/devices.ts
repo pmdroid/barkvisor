@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '../api/client'
 import type { HomeDeviceHealthReport, HomeDeviceHealthSnapshot } from '../api/types'
-import { updateMemberReachability } from '../utils/memberReachability'
 
 export const HOME_REACHABILITY_REFRESH_MS = 5_000
 
@@ -35,7 +34,6 @@ export const useDevicesStore = defineStore('devices', () => {
         const { data } = await api.get<HomeDeviceHealthReport>('/home/devices/health')
         if (seq !== fetchSeq) return
         report.value = data
-        updateMemberReachability(data.devices)
         lastSuccessfulFetchAt = Date.now()
         error.value = null
       } catch (err) {
@@ -59,19 +57,6 @@ export const useDevicesStore = defineStore('devices', () => {
     if (!pollTimer) return
     clearInterval(pollTimer)
     pollTimer = null
-  }
-
-  /** A failed Home proxy hop is transport evidence, unlike a member HTTP 5xx. */
-  function markTransportUnavailable(hostId: string): void {
-    const current = report.value
-    if (!current) return
-    const devices = current.devices.map((row) => (
-      row.hostId === hostId && row.role !== 'self'
-        ? { ...row, reachability: 'unreachable', reachabilityError: 'Device is unreachable' }
-        : row
-    ))
-    report.value = { ...current, devices }
-    updateMemberReachability(devices)
   }
 
   async function removeDevice(hostId: string): Promise<void> {
@@ -118,7 +103,6 @@ export const useDevicesStore = defineStore('devices', () => {
     fetchHealth,
     startReachabilityPolling,
     stopReachabilityPolling,
-    markTransportUnavailable,
     removeDevice,
     deviceLabel,
   }
