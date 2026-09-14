@@ -283,10 +283,10 @@ struct TerminalControllerTests {
         #expect(!DockerExecRequest.isSafeExecutableName(name))
     }
 
-    @Test func `exec arguments pin exec -it container shell`() {
+    @Test func `exec arguments pin a color terminal identity`() {
         #expect(
             DockerExecSession.execArguments(container: "bv-web-1", shell: "sh")
-                == ["exec", "-it", "bv-web-1", "sh"],
+                == ["exec", "-it", "-e", "TERM=xterm-256color", "-e", "COLORTERM=truecolor", "bv-web-1", "sh"],
         )
         #expect(DockerExecSession.execArguments(container: "-v /:/host", shell: "sh") == nil)
         #expect(DockerExecSession.execArguments(container: "c", shell: "sh; rm -rf /") == nil)

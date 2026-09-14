@@ -125,13 +125,16 @@
             return exitCode
         }
 
-        /// Compose the docker argv. `execv`-ed directly — no host shell, so no
+        /// Compose the docker argv. Set the terminal identity explicitly: app
+        /// images often omit TERM or inherit `dumb`, which makes full-screen
+        /// TUIs disable cursor, color, and alternate-screen behavior despite
+        /// running on a real PTY. `execv`-ed directly — no host shell, so no
         /// quoting hazard — but the charset gate still rejects flag smuggling.
         public static func execArguments(container: String, shell: String) -> [String]? {
             guard DockerExecRequest.isSafeExecutableName(container),
                   DockerExecRequest.isSafeExecutableName(shell)
             else { return nil }
-            return ["exec", "-it", container, shell]
+            return ["exec", "-it", "-e", "TERM=xterm-256color", "-e", "COLORTERM=truecolor", container, shell]
         }
 
         /// Spawn the child. `onData` fires from the PTY read loop; `onExit`
