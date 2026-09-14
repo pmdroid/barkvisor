@@ -48,14 +48,16 @@ const tickerCounts = computed(() => {
 onMounted(() => {
   if (auth.isAuthenticated) {
     void auth.fetchMe()
-    void devices.fetchHealth()
+    devices.startReachabilityPolling()
   }
 })
 watch(
   () => auth.isAuthenticated,
   (ok) => {
     if (ok) {
-      void devices.fetchHealth()
+      devices.startReachabilityPolling()
+    } else {
+      devices.stopReachabilityPolling()
     }
   },
 )

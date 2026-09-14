@@ -5,6 +5,7 @@ import type { HomeDeviceHealthReport } from '../api/types'
 import { useDevicesStore } from './devices'
 
 const originalGet = api.get
+const originalDelete = api.delete
 
 const report: HomeDeviceHealthReport = {
   devices: [
@@ -47,12 +48,13 @@ describe('devices store (PAS-52)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.delete = originalDelete
   })
 
   test('keeps unreachable members in the Home list', async () => {
     api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
     const store = useDevicesStore()
-    await store.fetchHealth()
+    await store.fetchHealth({ force: true })
     expect(store.devices).toHaveLength(2)
     expect(store.selfDevice?.hostId).toBe('self-1')
     expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
@@ -69,7 +71,7 @@ describe('devices store (PAS-52)', () => {
     api.get = get as typeof api.get
     const store = useDevicesStore()
     await store.fetchHealth()
-    await store.fetchHealth()
+    await store.fetchHealth({ force: true })
     expect(store.devices).toHaveLength(2)
     expect(store.error).toBeTruthy()
   })
@@ -93,5 +95,38 @@ describe('devices store (PAS-52)', () => {
     expect(store.devices).toHaveLength(2)
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
+  })
+
+  test('replaces displayed reachability when Home reports a recovery', async () => {
+    const get = mock()
+      .mockResolvedValueOnce({ data: report })
+      .mockResolvedValueOnce({
+        data: {
+          ...report,
+          devices: report.devices.map((row) => (
+            row.hostId === 'peer-1' ? { ...row, reachability: 'ok', reachabilityError: null } : row
+          )),
+        },
+      })
+    api.get = get as typeof api.get
+    const store = useDevicesStore()
+    await store.fetchHealth()
+    await store.fetchHealth({ force: true })
+    expect(store.deviceByHostId('peer-1')?.reachability).toBe('ok')
+  })
+
+  test('removes a member from shared state immediately after the API succeeds', async () => {
+    api.get = mock(() => Promise.resolve({ data: report })) as typeof api.get
+    api.delete = mock(() => Promise.resolve({})) as typeof api.delete
+    const store = useDevicesStore()
+    await store.fetchHealth()
+
+    await store.removeDevice('peer-1')
+
+    expect(api.delete).toHaveBeenCalledWith('/home/devices/peer-1')
+    expect(store.deviceByHostId('peer-1')).toBeNull()
+    expect(store.totals?.devices).toBe(1)
+    expect(store.totals?.unreachable).toBe(0)
+    expect(store.totals?.workloadCount).toBe(2)
   })
 })

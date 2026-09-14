@@ -130,6 +130,23 @@ export function deviceAboutPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/about')
 }
 
+/** Software updates run on the selected Device, through Home for members. */
+export function deviceUpdateSettingsPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/updates/settings')
+}
+
+export function deviceUpdateCheckPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/updates/check')
+}
+
+export function deviceUpdateInstallPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/updates/install')
+}
+
+export function deviceHealthPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/health')
+}
+
 export function deviceHostBridgeReadinessPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/host-bridge-readiness')
 }

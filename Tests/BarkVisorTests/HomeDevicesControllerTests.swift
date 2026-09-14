@@ -91,6 +91,19 @@ struct HomeDevicesControllerTests {
         )
     }
 
+    @Test func `home-owned reachability permits application failures but suppresses transport failures`() async {
+        let monitor = HomeDeviceReachabilityMonitor()
+        await monitor.replace([
+            "application-error": HomeDeviceHealthAggregator.memberHTTP,
+            "timed-out": HomeDeviceHealthAggregator.connectTimeout,
+        ])
+
+        #expect(await monitor.permitsHop(to: "application-error"))
+        let timedOutPermitted = await monitor.permitsHop(to: "timed-out")
+        #expect(!timedOutPermitted)
+        #expect(await monitor.permitsHop(to: "unknown-member"))
+    }
+
     @Test func `probeMember builds member URLs, forwards bearer, and maps health`() async throws {
         let dir = try isolatedDir("probe-ok")
         defer { try? FileManager.default.removeItem(at: dir) }

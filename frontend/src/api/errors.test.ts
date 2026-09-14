@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { apiErrorCode, apiErrorMessage, isNotFoundError, isOccupiedBridgeConflict } from './errors'
+import { isMemberProxyTransportFailure } from './client'
 
 function axiosResponse(status: number, reason?: string, code?: string) {
   return {
@@ -62,5 +63,13 @@ describe('isOccupiedBridgeConflict', () => {
     )).toBe(false)
     expect(isOccupiedBridgeConflict(axiosResponse(409, 'other', 'conflict'), 'br0')).toBe(false)
     expect(isOccupiedBridgeConflict(axiosResponse(500, 'Interface \'br0\' is already used'), 'br0')).toBe(false)
+  })
+})
+
+describe('member proxy transport classification', () => {
+  test('does not treat a member application 5xx as offline', () => {
+    expect(isMemberProxyTransportFailure(axiosResponse(503, 'application failed'))).toBe(false)
+    expect(isMemberProxyTransportFailure(axiosResponse(502, 'Home cannot hop to the Device: connection timed out'))).toBe(true)
+    expect(isMemberProxyTransportFailure({ isAxiosError: true, message: 'Network Error' })).toBe(true)
   })
 })

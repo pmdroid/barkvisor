@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
 import type { TaskAcceptedResponse, UpdateCheckResponse, UpdateInfo, UpdateSettings } from '../api/types'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useFeature } from '../composables/useFeature'
 import { useToastStore } from '../stores/toast'
+import { useDevicesStore } from '../stores/devices'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import {
+  canCallDeviceAPI,
+  deviceAboutPath,
+  deviceHealthPath,
+  deviceTaskPath,
+  deviceUpdateCheckPath,
+  deviceUpdateInstallPath,
+  deviceUpdateSettingsPath,
+  resolveSelectedDevice,
+} from '../utils/homeDeviceApi'
 import { pollUntilHealthy } from '../utils/updateHealthPoll'
 import AppButton from './ui/AppButton.vue'
 import AppSelect from './ui/AppSelect.vue'
@@ -13,7 +25,9 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import UnsupportedHint from './ui/UnsupportedHint.vue'
 
 const toast = useToastStore()
+const devices = useDevicesStore()
 const inAppUpdate = useFeature('inAppUpdate')
+const selectedHostId = ref('')
 const currentVersion = ref('')
 const availableUpdate = ref<UpdateInfo | null>(null)
 const updateSettings = ref<UpdateSettings>({
@@ -28,41 +42,85 @@ const updatePhase = ref<'idle' | 'installing' | 'restarting' | 'success' | 'erro
 const updateError = ref('')
 const { task: updateTask, poll: pollTask, stop: stopPoll } = useTaskPoller()
 
+const selectedDevice = computed(() =>
+  resolveSelectedDevice(selectedHostId.value, devices.deviceByHostId, devices.selfDevice),
+)
+const selectedDeviceReachable = computed(() =>
+  selectedDevice.value != null && canCallDeviceAPI(selectedDevice.value),
+)
+const deviceOptions = computed(() => devices.devices.map((device) => ({
+  value: device.hostId,
+  label: device.role === 'self' ? `${deviceDisplayLabel(device)} (Local Device)` : deviceDisplayLabel(device),
+  disabled: !canCallDeviceAPI(device),
+})))
+
+function resetForDevice() {
+  stopPoll()
+  currentVersion.value = ''
+  availableUpdate.value = null
+  updateSettings.value = {
+    channel: 'stable', autoCheck: false, isDevBuild: false, updateURL: null,
+  }
+  checkingUpdate.value = false
+  installConfirm.value = false
+  updatePhase.value = 'idle'
+  updateError.value = ''
+  updateTask.value = null
+}
+
+function selectedTarget() {
+  const device = selectedDevice.value
+  return device && canCallDeviceAPI(device) ? device : null
+}
+
+function isCurrentDevice(device: { hostId: string }): boolean {
+  return selectedDevice.value?.hostId === device.hostId
+}
+
 async function fetchUpdateSettings() {
+  const device = selectedTarget()
+  if (!device) return
   try {
-    const { data } = await api.get<UpdateSettings>('/system/updates/settings')
-    updateSettings.value = data
+    const { data } = await api.get<UpdateSettings>(deviceUpdateSettingsPath(device))
+    if (isCurrentDevice(device)) updateSettings.value = data
   } catch {
     // Fail closed on a non-appliance Device.
   }
 }
 
 async function saveUpdateSettings() {
+  const device = selectedTarget()
+  if (!device) return
   try {
-    const { data } = await api.put<UpdateSettings>('/system/updates/settings', updateSettings.value)
-    updateSettings.value = data
-    toast.success('Update settings saved')
+    const { data } = await api.put<UpdateSettings>(deviceUpdateSettingsPath(device), updateSettings.value)
+    if (isCurrentDevice(device)) {
+      updateSettings.value = data
+      toast.success('Update settings saved')
+    }
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   }
 }
 
 async function checkForUpdates() {
+  const device = selectedTarget()
+  if (!device) return
   checkingUpdate.value = true
   try {
-    const { data } = await api.get<UpdateCheckResponse>('/system/updates/check')
+    const { data } = await api.get<UpdateCheckResponse>(deviceUpdateCheckPath(device))
+    if (!isCurrentDevice(device)) return
     currentVersion.value = data.currentVersion
     availableUpdate.value = data.update
     if (!data.update) toast.success('Already on the latest version')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
-    checkingUpdate.value = false
+    if (isCurrentDevice(device)) checkingUpdate.value = false
   }
 }
 
 async function loadUpdates() {
-  if (inAppUpdate.available) {
+  if (inAppUpdate.available && selectedTarget()) {
     await fetchUpdateSettings()
     await checkForUpdates()
   }
@@ -70,51 +128,58 @@ async function loadUpdates() {
 
 async function doInstallUpdate() {
   installConfirm.value = false
+  const device = selectedTarget()
   const update = availableUpdate.value
-  if (!update) return
+  if (!device || !update) return
   updatePhase.value = 'installing'
   updateError.value = ''
   try {
-    const { data } = await api.post<TaskAcceptedResponse>('/system/updates/install', {
+    const { data } = await api.post<TaskAcceptedResponse>(deviceUpdateInstallPath(device), {
       version: update.version,
     })
     await pollTask(data.taskID, {
       interval: 1500,
+      path: deviceTaskPath(device, data.taskID),
       onComplete: () => {
-        void startHealthPoll()
+        if (isCurrentDevice(device)) void startHealthPoll(device)
       },
       onFailed: (event) => {
+        if (!isCurrentDevice(device)) return
         updatePhase.value = 'error'
         updateError.value = event.error || 'Update failed'
       },
     })
   } catch {
-    void startHealthPoll()
+    if (isCurrentDevice(device)) void startHealthPoll(device)
   }
 }
 
-async function startHealthPoll() {
+async function startHealthPoll(device: NonNullable<typeof selectedDevice.value>) {
+  if (!isCurrentDevice(device)) return
   updatePhase.value = 'restarting'
   const result = await pollUntilHealthy({
     health: async () => {
-      const { status } = await api.get('/health')
+      const { status } = await api.get(deviceHealthPath(device))
       return status === 200
     },
   })
   if (result === 'timeout') {
+    if (!isCurrentDevice(device)) return
     updatePhase.value = 'error'
     updateError.value =
       'Timed out waiting for /api/health. Refresh in a minute.'
     return
   }
   try {
-    const { data } = await api.get<{ version?: string }>('/system/about')
-    if (data.version) currentVersion.value = data.version
+    const { data } = await api.get<{ version?: string }>(deviceAboutPath(device))
+    if (isCurrentDevice(device) && data.version) currentVersion.value = data.version
   } catch {
     // Health already passed.
   }
-  availableUpdate.value = null
-  updatePhase.value = 'success'
+  if (isCurrentDevice(device)) {
+    availableUpdate.value = null
+    updatePhase.value = 'success'
+  }
 }
 
 function resetUpdateState() {
@@ -126,11 +191,20 @@ function reloadPage() {
   window.location.reload()
 }
 
+watch(() => devices.selfDevice?.hostId, (hostId) => {
+  if (!selectedHostId.value && hostId) selectedHostId.value = hostId
+}, { immediate: true })
+
+watch(selectedHostId, () => {
+  resetForDevice()
+  void loadUpdates()
+})
+
 onUnmounted(() => {
   stopPoll()
 })
 
-void loadUpdates()
+void devices.fetchHealth()
 </script>
 
 <template>
@@ -139,6 +213,19 @@ void loadUpdates()
     <UnsupportedHint :text="inAppUpdate.explanation" />
   </div>
   <div v-else>
+    <div class="update-target">
+      <label for="update-device">Device</label>
+      <AppSelect
+        id="update-device"
+        :model-value="selectedHostId"
+        :options="deviceOptions"
+        @update:model-value="selectedHostId = $event"
+      />
+      <p v-if="selectedDevice && !selectedDeviceReachable" class="update-target-error">
+        Selected Device is unreachable. Updates are unavailable until it reconnects.
+      </p>
+    </div>
+
     <div v-if="updatePhase === 'success'" class="update-status-card update-success">
       <div class="update-title">Updated successfully</div>
       <p class="update-copy">Now running v{{ currentVersion }}.</p>
@@ -176,6 +263,7 @@ void loadUpdates()
           variant="primary"
           :loading="checkingUpdate"
           loading-text="Checking…"
+          :disabled="!selectedDeviceReachable"
           @click="checkForUpdates"
         >Check for updates</AppButton>
       </div>
@@ -190,7 +278,7 @@ void loadUpdates()
             </span>
             <span v-if="availableUpdate.isPrerelease" class="badge badge-yellow">Pre-release</span>
           </div>
-          <AppButton variant="primary" @click="installConfirm = true">Install update</AppButton>
+          <AppButton variant="primary" :disabled="!selectedDeviceReachable" @click="installConfirm = true">Install update</AppButton>
         </div>
         <div v-if="availableUpdate.changelog" class="changelog">
           <p class="changelog-label">Changelog</p>
@@ -204,6 +292,7 @@ void loadUpdates()
           <label>Channel</label>
           <AppSelect
             :model-value="updateSettings.channel"
+            :disabled="!selectedDeviceReachable"
             @update:model-value="updateSettings.channel = $event as 'stable' | 'beta'; saveUpdateSettings()"
           >
             <option value="stable">Stable</option>
@@ -214,6 +303,7 @@ void loadUpdates()
           <label>Test update URL</label>
           <input
             :value="updateSettings.updateURL ?? ''"
+            :disabled="!selectedDeviceReachable"
             placeholder="https://api.github.com/repos/owner/repo/releases"
             @change="updateSettings.updateURL = ($event.target as HTMLInputElement).value || null; saveUpdateSettings()"
           />
@@ -239,6 +329,22 @@ void loadUpdates()
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
+}
+.update-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.update-target label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.update-target-error {
+  color: var(--red, #ef4444);
+  font-size: 13px;
+  margin: 0;
 }
 .update-card,
 .update-status-card {

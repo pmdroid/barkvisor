@@ -52,6 +52,16 @@ export function isHomeMemberProxyRequest(config?: { url?: string } | null): bool
   return path.includes('/home/devices/')
 }
 
+/** A member application response proves the hop worked, including HTTP 5xx. */
+export function isMemberProxyTransportFailure(error: {
+  response?: { status?: number, data?: { reason?: unknown } }
+}): boolean {
+  if (!error.response) return true
+  if (error.response.status !== 502) return false
+  const reason = error.response.data?.reason
+  return typeof reason === 'string' && reason.startsWith('Home cannot hop to the Device:')
+}
+
 /** Login/refresh/logout/redeem 401s must not revoke a still-valid session. */
 export function isAuthBootstrapRequest(config?: { url?: string } | null): boolean {
   const path = requestPath(config?.url)

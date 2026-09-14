@@ -144,6 +144,7 @@ public enum APIContract {
         Route(method: "POST", path: "/api/pairing/redeem", stability: .evolving),
         Route(method: "POST", path: "/api/pairing/join", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices", stability: .evolving),
+        Route(method: "DELETE", path: "/api/home/devices/{id}", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices/health", stability: .evolving),
         Route(method: "POST", path: "/api/home/placement/score", stability: .evolving),
         Route(method: "GET", path: "/api/ollama/status", stability: .evolving),
