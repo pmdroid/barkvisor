@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
 import { Terminal, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
 import { mintStreamTickets } from '../api/client'
@@ -19,6 +19,7 @@ const props = defineProps<{
   vmState: string
   service: string
   device?: DeviceApiTarget | null
+  active?: boolean
 }>()
 
 // 'stopping' dropped (#614): a Workload on its way out spawns fresh root shells
@@ -63,6 +64,15 @@ function onData(data: string) {
 
 function onResize(cols: number, rows: number) {
   sendResize(cols, rows)
+}
+
+// A session is kept alive behind v-show when another terminal tab is active.
+// ResizeObserver does not reliably fire when its ancestor becomes visible, so
+// explicitly reflow and follow the prompt when the user returns to the pane.
+function refreshVisibleTerminal() {
+  if (!wt) return
+  wt.resize(wt.cols, wt.rows)
+  wt.element.scrollTop = wt.element.scrollHeight
 }
 
 function onTermError(err: unknown) {
@@ -166,9 +176,11 @@ async function connect() {
       // used to be dropped on the floor — the pane looked dead with no reason
       // (#614). Render it.
       target.write(new TextEncoder().encode(e.data))
+      if (props.active) refreshVisibleTerminal()
       return
     }
     target.write(new Uint8Array(e.data as ArrayBuffer))
+    if (props.active) refreshVisibleTerminal()
   }
 
   socket.onclose = (e) => {
@@ -196,6 +208,12 @@ watch(() => props.vmState, () => {
     reconnectDelay = 1000
     void connect()
   }
+})
+
+watch(() => props.active, async (active) => {
+  if (!active) return
+  await nextTick()
+  requestAnimationFrame(refreshVisibleTerminal)
 })
 
 onUnmounted(() => {
