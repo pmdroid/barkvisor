@@ -44,6 +44,7 @@ let reconnectAttempts = 0
 let disposed = false
 let connecting = false
 let everOpened = false
+let outputFollowFrame: number | null = null
 
 function onReady(instance: WTerm) {
   wt = instance
@@ -76,6 +77,19 @@ function refreshVisibleTerminal() {
   if (!wt) return
   wt.resize(wt.cols, wt.rows)
   wt.element.scrollTop = wt.element.scrollHeight
+}
+
+// wterm preserves its DOM scroll position while it writes output. That is
+// useful for reviewing history, but left an active terminal stranded above a
+// running TUI after the first redraw. Follow only the visible session and
+// coalesce a burst of frames into one browser paint; importantly, this never
+// resizes the PTY (resizing per frame disrupts full-screen TUIs).
+function followLiveOutput() {
+  if (!props.active || !wt || outputFollowFrame !== null) return
+  outputFollowFrame = requestAnimationFrame(() => {
+    outputFollowFrame = null
+    if (props.active && wt) wt.element.scrollTop = wt.element.scrollHeight
+  })
 }
 
 function onTermError(err: unknown) {
@@ -179,9 +193,11 @@ async function connect() {
       // used to be dropped on the floor — the pane looked dead with no reason
       // (#614). Render it.
       target.write(new TextEncoder().encode(e.data))
+      followLiveOutput()
       return
     }
     target.write(new Uint8Array(e.data as ArrayBuffer))
+    followLiveOutput()
   }
 
   socket.onclose = (e) => {
@@ -229,6 +245,10 @@ watch(() => props.active, async (active) => {
 onUnmounted(() => {
   disposed = true
   clearReconnectTimer()
+  if (outputFollowFrame !== null) {
+    cancelAnimationFrame(outputFollowFrame)
+    outputFollowFrame = null
+  }
   const socket = ws
   ws = null
   if (socket) {
