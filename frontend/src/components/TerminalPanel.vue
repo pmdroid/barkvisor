@@ -179,11 +179,9 @@ async function connect() {
       // used to be dropped on the floor — the pane looked dead with no reason
       // (#614). Render it.
       target.write(new TextEncoder().encode(e.data))
-      if (props.active) refreshVisibleTerminal()
       return
     }
     target.write(new Uint8Array(e.data as ArrayBuffer))
-    if (props.active) refreshVisibleTerminal()
   }
 
   socket.onclose = (e) => {
