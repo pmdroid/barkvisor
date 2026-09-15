@@ -45,6 +45,9 @@ public struct HomeDeviceList: Codable, Sendable, Equatable {
 public struct DeviceRecord: Codable, Sendable, Equatable {
     public var hostId: String
     public var fingerprint: String
+    /// Last display name reported while this member was reachable. Keeping it
+    /// locally lets Home identify a Device that is currently offline.
+    public var displayName: String?
     public var agentHost: String?
     public var agentPort: Int
     public var pairedAt: String
@@ -52,25 +55,28 @@ public struct DeviceRecord: Codable, Sendable, Equatable {
     public init(
         hostId: String,
         fingerprint: String,
+        displayName: String? = nil,
         agentHost: String? = nil,
         agentPort: Int = Config.agentPort,
         pairedAt: String,
     ) {
         self.hostId = hostId
         self.fingerprint = fingerprint.lowercased()
+        self.displayName = displayName
         self.agentHost = agentHost
         self.agentPort = agentPort
         self.pairedAt = pairedAt
     }
 
     enum CodingKeys: String, CodingKey {
-        case hostId, fingerprint, agentHost, agentPort, pairedAt
+        case hostId, fingerprint, displayName, agentHost, agentPort, pairedAt
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.hostId = try container.decode(String.self, forKey: .hostId)
         self.fingerprint = try container.decode(String.self, forKey: .fingerprint).lowercased()
+        self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         self.agentHost = try container.decodeIfPresent(String.self, forKey: .agentHost)
         self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
         self.pairedAt = try container.decode(String.self, forKey: .pairedAt)

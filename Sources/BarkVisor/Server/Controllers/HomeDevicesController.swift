@@ -137,7 +137,18 @@ struct HomeDevicesController: RouteCollection {
             bearer: bearer,
             budgetNanoseconds: probeBudgetNanoseconds,
         )
+        rememberMemberDisplayNames(probed)
         return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
+    }
+
+    /// A member's name must outlive a successful probe. If it later goes down,
+    /// the dashboard can still identify it without showing a host ID.
+    private func rememberMemberDisplayNames(_ probes: [String: HomeDeviceProbeOutcome]) {
+        let store = devices ?? DeviceRegistry(dataDir: dataDir)
+        for (hostId, outcome) in probes {
+            guard case let .ok(facts) = outcome else { continue }
+            try? store.updateDisplayName(hostId: hostId, displayName: facts.displayName)
+        }
     }
 
     /// Server-side liveness refresh. It uses the mTLS-only whoami endpoint so
