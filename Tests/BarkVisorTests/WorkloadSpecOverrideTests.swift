@@ -339,7 +339,6 @@ struct WorkloadSpecOverrideTests {
             portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.memoryMB == 1_024)

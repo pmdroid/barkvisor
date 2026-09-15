@@ -235,18 +235,10 @@ public actor VMManager: VMStateQuerying {
 
             logLaunchCommand(launch: launch, network: loaded.network, vmName: loaded.vm.name, vmID: vmID)
 
-            let (process, stdoutPipe, stderrPipe, droppedUser) = configureQEMUProcess(launch: launch, vmID: vmID)
+            let (process, stdoutPipe, stderrPipe, _) = configureQEMUProcess(launch: launch, vmID: vmID)
             qemuProc = process
             try process.run()
             let pid = process.processIdentifier
-            if (try? WorkloadClass.parse(loaded.vm.workloadClass)) == .agent {
-                do {
-                    try AgentNetworkCage.applyLinuxFilter(vmID: vmID, pid: pid, launchUser: droppedUser)
-                } catch {
-                    process.terminate()
-                    throw error
-                }
-            }
 
             try await waitForQMPSocket(
                 process: process,

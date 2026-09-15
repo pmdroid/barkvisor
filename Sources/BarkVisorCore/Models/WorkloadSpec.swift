@@ -73,7 +73,6 @@ public struct WorkloadSpecBody: Equatable, Sendable {
     public var sharedPaths: [String]?
     /// Optional HTTP/TCP guest probes (PAS-65). Omitted = process-state health only.
     public var health: WorkloadHealthSpec?
-    public var workloadClass: String?
     public var runtime: String?
     public var compose: String?
     public var env: [String: String]?
@@ -97,7 +96,6 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         display: WorkloadDisplay? = nil,
         sharedPaths: [String]? = nil,
         health: WorkloadHealthSpec? = nil,
-        workloadClass: String? = nil,
         runtime: String? = nil,
         compose: String? = nil,
         env: [String: String]? = nil,
@@ -120,7 +118,6 @@ public struct WorkloadSpecBody: Equatable, Sendable {
         self.display = display
         self.sharedPaths = sharedPaths
         self.health = health
-        self.workloadClass = workloadClass
         self.runtime = runtime
         self.compose = compose
         self.env = env
@@ -132,7 +129,7 @@ public struct WorkloadSpecBody: Equatable, Sendable {
 extension WorkloadSpecBody: Codable {
     enum CodingKeys: String, CodingKey {
         case resources, arch, guestType, osFamily, machine, firmware, bootOrder
-        case disks, networks, cloudInit, usb, gpu, gpuShare, display, sharedPaths, health, workloadClass
+        case disks, networks, cloudInit, usb, gpu, gpuShare, display, sharedPaths, health
         case runtime, compose, env, runtimeWorkloadId, ingress
     }
 
@@ -155,7 +152,6 @@ extension WorkloadSpecBody: Codable {
         display = try c.decodeIfPresent(WorkloadDisplay.self, forKey: .display)
         sharedPaths = try c.decodeIfPresent([String].self, forKey: .sharedPaths)
         health = try c.decodeIfPresent(WorkloadHealthSpec.self, forKey: .health)
-        workloadClass = try c.decodeIfPresent(String.self, forKey: .workloadClass)
         runtime = try c.decodeIfPresent(String.self, forKey: .runtime)
         compose = try c.decodeIfPresent(String.self, forKey: .compose)
         env = try c.decodeIfPresent([String: String].self, forKey: .env)
@@ -183,7 +179,6 @@ extension WorkloadSpecBody: Codable {
         try c.encodeIfPresent(display, forKey: .display)
         try c.encodeIfPresent(sharedPaths, forKey: .sharedPaths)
         try c.encodeIfPresent(health, forKey: .health)
-        try c.encodeIfPresent(workloadClass, forKey: .workloadClass)
         try c.encodeIfPresent(runtime, forKey: .runtime)
         try c.encodeIfPresent(compose, forKey: .compose)
         try c.encodeIfPresent(env, forKey: .env)

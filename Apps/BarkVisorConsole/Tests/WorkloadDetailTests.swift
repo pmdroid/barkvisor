@@ -435,18 +435,17 @@ struct WorkloadDetailTests {
         }
         """.utf8))
         #expect(!omitted.startsOnDeviceBoot)
-        #expect(omitted.startOnBootFooter.contains("House appliances stay stopped"))
+        #expect(omitted.startOnBootFooter.contains("Workloads stay stopped"))
 
         let on = try decoder.decode(Workload.self, from: Data("""
         {
           "id": "vm-2",
-          "name": "agent",
+          "name": "vm-2",
           "vmType": "linux-arm64",
           "state": "stopped",
           "cpuCount": 2,
           "memoryMB": 2048,
           "bootDiskId": "disk-1",
-          "workloadClass": "agent",
           "startOnBoot": true,
           "status": { "startOnBoot": true },
           "createdAt": "2026-01-01T00:00:00Z",
@@ -454,7 +453,7 @@ struct WorkloadDetailTests {
         }
         """.utf8))
         #expect(on.startsOnDeviceBoot)
-        #expect(on.startOnBootFooter.contains("Agent cage stays on"))
+        #expect(on.startOnBootFooter.contains("Workloads stay stopped"))
         #expect(WorkloadStartOnBoot.label.contains("Device"))
 
         let data = try JSONEncoder().encode(WorkloadStartOnBootBody(startOnBoot: true))

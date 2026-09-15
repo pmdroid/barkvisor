@@ -3203,10 +3203,7 @@ components:
         startOnBoot:
           type: boolean
           description: >
-            Start this Workload after the Device boots. Default false so House
-            appliances stay stopped. Daemon restart on the same boot does not start it.
-        workloadClass:
-          type: string
+            Start this Workload after the Device boots. Default false. Daemon restart on the same boot does not start it.
         createdAt:
           type: string
         updatedAt:
@@ -3560,9 +3557,6 @@ components:
                 type: string
               nullable: true
         runtimeWorkloadId:
-          type: string
-          nullable: true
-        workloadClass:
           type: string
           nullable: true
         resources:

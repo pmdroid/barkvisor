@@ -115,9 +115,6 @@ struct CreateWorkloadTests {
         #expect(linuxBody.cloudImageId == "img-l")
         #expect(linuxBody.isoId == nil)
         #expect(linuxBody.cloudInit == nil)
-        let linuxJSON = try json(linuxBody)
-        #expect(linuxJSON["workloadClass"] == nil)
-
         let clamped = try CreateWorkload.body(name: "tiny", image: linux, hostCPUCount: 1)
         #expect(clamped.cpuCount == 1)
 

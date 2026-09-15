@@ -30,7 +30,6 @@ import Foundation
 /// | spec.gpu | gpuDevices |
 /// | spec.sharedPaths | sharedPaths |
 /// | spec.health | healthJson |
-/// | spec.workloadClass | workloadClass |
 /// | overrides | overridesJson |
 ///
 /// Host-only (status, not required on spec): state, pendingChanges, autoCreated,
@@ -89,8 +88,6 @@ public enum WorkloadSpecProjector {
                 display: WorkloadDisplay(resolution: vm.displayResolution),
                 sharedPaths: shared.isEmpty ? nil : shared,
                 health: vm.decodedHealth,
-                workloadClass: (try? WorkloadClass.parse(vm.workloadClass).rawValue)
-                    ?? WorkloadClass.house.rawValue,
             ),
             overrides: vm.decodedOverrides,
         )
@@ -184,7 +181,6 @@ public enum WorkloadSpecProjector {
             try WorkloadHealthSpec.validate(health)
         }
         vm.setHealth(spec.spec.health)
-        vm.workloadClass = try WorkloadClass.parse(spec.spec.workloadClass).rawValue
     }
 
     public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {
@@ -249,8 +245,6 @@ public enum WorkloadSpecProjector {
         if let health = spec.spec.health {
             try WorkloadHealthSpec.validate(health)
         }
-        _ = try WorkloadClass.parse(spec.spec.workloadClass)
-        try AgentWorkloadPolicy.validate(spec: spec, network: nil)
     }
 
     /// PAS-284: `-machine` is a comma-sensitive QEMU arg; builder only attaches networks[0].
@@ -333,7 +327,6 @@ public enum WorkloadSpecProjector {
         vm.cpuCount = spec.spec.resources.cpu
         vm.memoryMb = spec.spec.resources.memoryMb
         vm.bootDiskId = nil
-        vm.workloadClass = WorkloadClass.house.rawValue
         if let health = spec.spec.health {
             try WorkloadHealthSpec.validate(health)
         }
@@ -356,9 +349,6 @@ public enum WorkloadSpecProjector {
         }
         if let existingID, let specID = spec.metadata.id, specID != existingID {
             throw BarkVisorError.badRequest("metadata.id does not match VM \(existingID)")
-        }
-        if let klass = spec.spec.workloadClass, !klass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw BarkVisorError.badRequest("workloadClass is not supported on Application")
         }
         let runtime = spec.spec.runtime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if runtime.isEmpty {

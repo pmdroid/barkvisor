@@ -60,7 +60,6 @@
           }
         },
         "runtimeWorkloadId": { "type": ["string", "null"] },
-        "workloadClass": { "type": ["string", "null"] },
         "resources": {
           "type": "object",
           "additionalProperties": false,

@@ -298,7 +298,6 @@ struct Workload: Decodable, Identifiable, Hashable {
     var pendingChanges: Bool?
     var createdAt: String
     var updatedAt: String
-    var workloadClass: String?
     var status: WorkloadRuntimeStatus?
     var portForwards: [GuestPortForward]?
     var startOnBoot: Bool? = nil
@@ -347,13 +346,6 @@ struct Workload: Decodable, Identifiable, Hashable {
         vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
     }
 
-    var isAgentClass: Bool {
-        workloadClass == "agent"
-    }
-
-    var grantCopy: String {
-        isAgentClass ? "WAN yes, house no." : "House: LAN and USB allowed."
-    }
 
     /// Missing JSON is off so House appliances are not surprised.
     var startsOnDeviceBoot: Bool {
@@ -361,18 +353,15 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
 
     var startOnBootFooter: String {
-        WorkloadStartOnBoot.footer(isAgent: isAgentClass)
+        WorkloadStartOnBoot.footer()
     }
 }
 
 enum WorkloadStartOnBoot {
     static let label = "Start when this Device boots"
 
-    static func footer(isAgent: Bool) -> String {
-        if isAgent {
-            return "Starts after a Device reboot. The Agent cage stays on. A BarkVisor restart does not start it."
-        }
-        return "Off unless you turn it on. House appliances stay stopped after a Device reboot until you start them."
+    static func footer() -> String {
+        return "Off unless you turn it on. Workloads stay stopped after a Device reboot until you start them."
     }
 }
 

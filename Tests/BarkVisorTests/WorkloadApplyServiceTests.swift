@@ -289,22 +289,7 @@ final class WorkloadApplyServiceTests {
             let spec = WorkloadSpecProjector.fromVM(vm)
             #expect(spec.kind == WorkloadSpec.kindApplication)
             #expect(spec.spec.runtime == WorkloadSpec.runtimeDevice)
-            #expect(spec.spec.workloadClass == nil)
         }
-    }
-
-    @Test func `application with workloadClass is 400`() async throws {
-        var doc = whoamiDocument(name: "classed")
-        var spec = doc["spec"] as? [String: Any] ?? [:]
-        spec["workloadClass"] = "house"
-        doc["spec"] = spec
-        let error = await #expect(throws: BarkVisorError.self) {
-            _ = try await WorkloadApplyService.apply(
-                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
-            )
-        }
-        #expect(error?.httpStatus == 400)
-        #expect(error?.errorDescription?.contains("workloadClass") == true)
     }
 
     @Test func `unknown gpu share is 400`() async throws {

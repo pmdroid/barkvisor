@@ -271,16 +271,9 @@ public enum QEMUBuilder {
         )
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
-        let klass = try WorkloadClass.parse(spec.spec.workloadClass)
-        let allowHostOllama = klass == .agent
-            && spec.spec.gpu.isEmpty
-            && AgentNetworkCage.allowHostOllama(
-                userData: CloudInitService.storedUserData(vmID: vmID),
-            )
         let (netArgs, needsSocketVmnetWrap) = try networkArgs(
             spec: spec,
             network: ctx.network,
-            allowHostOllama: allowHostOllama,
         )
         args += netArgs
         args += socketArgs(
@@ -315,12 +308,9 @@ public enum QEMUBuilder {
             #endif
         }
 
-        let launch = QEMULaunchConfig(
+        return QEMULaunchConfig(
             executable: qemuBinary, arguments: args,
             swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
-        )
-        return try AgentNetworkCage.wrapLaunch(
-            launch, workloadClass: klass, allowHostOllama: allowHostOllama,
         )
     }
 
@@ -475,7 +465,6 @@ public enum QEMUBuilder {
     static func networkArgs(
         spec: WorkloadSpec,
         network: Network?,
-        allowHostOllama: Bool = false,
     ) throws -> (args: [String], needsSocketVmnetWrap: Bool) {
         guard spec.spec.networks.count <= 1 else {
             throw BarkVisorError.badRequest(
@@ -530,12 +519,6 @@ public enum QEMUBuilder {
             }
         case .nat:
             netdevArgs = "user,id=net0"
-            let klass = try WorkloadClass.parse(spec.spec.workloadClass)
-            if klass == .agent {
-                netdevArgs += AgentNetworkCage.slirpExtras(
-                    mode: .nat, allowHostOllama: allowHostOllama,
-                )
-            }
             if let dns = network?.dnsServer, !dns.isEmpty {
                 try validateIPv4(dns)
                 netdevArgs += ",dns=\(dns)"
@@ -640,7 +623,6 @@ public enum QEMUBuilder {
 
     private static func usbPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
         guard !spec.spec.usb.isEmpty else { return [] }
-        try AgentWorkloadPolicy.assertUSBAllowed(spec.spec.workloadClass)
         let hostDevices = try USBDeviceService.listDevices()
         return try usbHostArgs(usb: spec.spec.usb, hostDevices: hostDevices)
     }

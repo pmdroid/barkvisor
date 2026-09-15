@@ -11,7 +11,6 @@ public enum VMLifecycleService {
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> CreateVMResult {
-        let params = params.droppingAgentClass()
         try await validateCreateVMInputs(params: params, db: db)
 
         let now = iso8601.string(from: Date())
@@ -90,7 +89,6 @@ public enum VMLifecycleService {
             sharedPaths: params.sharedPaths,
             uefi: params.uefi,
             tpmEnabled: params.tpmEnabled,
-            workloadClass: params.workloadClass,
             startOnBoot: params.startOnBoot,
         )
         try validateUpdateVMInputs(params: normalized)
@@ -442,8 +440,6 @@ extension VMLifecycleService {
             ),
             autoCreated: false,
             pendingChanges: false,
-            workloadClass: (try? WorkloadClass.parse(params.workloadClass).rawValue)
-                ?? WorkloadClass.house.rawValue,
             createdAt: now, updatedAt: now,
         )
         vm.setOverrides(params.overrides)
@@ -685,7 +681,6 @@ extension VMLifecycleService {
         )
         try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
         try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: vm.id, db: db)
-        try AgentWorkloadPolicy.validate(spec: spec, network: appliedNetwork)
     }
 
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
@@ -762,13 +757,5 @@ extension VMLifecycleService {
                 throw BarkVisorError.badRequest("Disk(s) not found: \(missing.joined(separator: ", "))")
             }
         }
-        let klass = try WorkloadClass.parse(params.workloadClass ?? vm.workloadClass)
-        try AgentWorkloadPolicy.validate(
-            workloadClass: klass,
-            usbCount: (params.usbDevices ?? vm.decodedUSBDevices).count,
-            sharedPathCount: (params.sharedPaths ?? vm.decodedSharedPaths).count,
-            portForwardCount: (params.portForwards ?? vm.decodedPortForwards).count,
-            networkMode: NetworkCapability.effectiveMode(of: network),
-        )
     }
 }

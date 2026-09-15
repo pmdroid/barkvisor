@@ -51,13 +51,6 @@ export function appToolbarSub(vm: VM, now = Date.now()): string {
   return bits.join(' · ')
 }
 
-export function appClassLabel(vm: VM): string | null {
-  const raw = (vm.workloadClass || '').toLowerCase()
-  if (raw === 'house') return 'House'
-  if (raw === 'agent') return 'Agent'
-  return raw ? raw : null
-}
-
 export function appCatalogSource(vm: VM): string | null {
   const labels = vm.spec?.metadata?.labels
   const raw = labels?.['catalog-source'] || labels?.catalog || labels?.source

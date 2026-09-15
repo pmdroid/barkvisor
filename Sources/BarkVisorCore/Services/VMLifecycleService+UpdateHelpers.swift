@@ -56,7 +56,6 @@ extension VMLifecycleService {
         if params.usbDevices != nil { return true }
         if params.gpuDevices != nil { return true }
         if params.portForwards != nil, encoded.portForwardsJSON != vm.portForwards { return true }
-        if params.workloadClass != nil, params.workloadClass != vm.workloadClass { return true }
         return false
     }
 
@@ -83,7 +82,6 @@ extension VMLifecycleService {
         if before.macAddress != after.macAddress { return true }
         if before.cloudInitPath != after.cloudInitPath { return true }
         if before.decodedOverrides != after.decodedOverrides { return true }
-        if before.workloadClass != after.workloadClass { return true }
         return false
     }
 
@@ -106,9 +104,6 @@ extension VMLifecycleService {
         if params.usbDevices != nil { vm.usbDevices = encoded.usbDevicesJSON }
         if params.gpuDevices != nil { vm.gpuDevices = encoded.gpuDevicesJSON }
         if params.portForwards != nil { vm.portForwards = encoded.portForwardsJSON }
-        if let klass = params.workloadClass {
-            vm.workloadClass = (try? WorkloadClass.parse(klass).rawValue) ?? vm.workloadClass
-        }
         if let startOnBoot = params.startOnBoot { vm.startOnBoot = startOnBoot }
     }
 }

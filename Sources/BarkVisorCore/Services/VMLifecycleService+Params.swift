@@ -26,7 +26,6 @@ public struct CreateVMParams: Sendable {
     public let tpmEnabled: Bool?
     public let overrides: WorkloadOverrides?
     public let health: WorkloadHealthSpec?
-    public let workloadClass: String?
     public let allowCatalogIdentityKeys: Bool
 
     public init(
@@ -52,7 +51,6 @@ public struct CreateVMParams: Sendable {
         tpmEnabled: Bool? = nil,
         overrides: WorkloadOverrides? = nil,
         health: WorkloadHealthSpec? = nil,
-        workloadClass: String? = nil,
         allowCatalogIdentityKeys: Bool = false,
     ) {
         self.id = id
@@ -77,38 +75,7 @@ public struct CreateVMParams: Sendable {
         self.tpmEnabled = tpmEnabled
         self.overrides = overrides
         self.health = health
-        self.workloadClass = workloadClass
         self.allowCatalogIdentityKeys = allowCatalogIdentityKeys
-    }
-
-    func droppingAgentClass() -> CreateVMParams {
-        guard (try? WorkloadClass.parse(workloadClass)) == .agent else { return self }
-        return CreateVMParams(
-            id: id,
-            name: name,
-            vmType: vmType,
-            cpuCount: cpuCount,
-            memoryMB: memoryMB,
-            diskSizeGB: diskSizeGB,
-            isoId: isoId,
-            cloudImageId: cloudImageId,
-            cloudInit: cloudInit,
-            networkId: networkId,
-            existingDiskId: existingDiskId,
-            sharedPaths: sharedPaths,
-            portForwards: portForwards,
-            usbDevices: usbDevices,
-            gpuDevices: gpuDevices,
-            description: description,
-            bootOrder: bootOrder,
-            displayResolution: displayResolution,
-            uefi: uefi,
-            tpmEnabled: tpmEnabled,
-            overrides: overrides,
-            health: health,
-            workloadClass: nil,
-            allowCatalogIdentityKeys: allowCatalogIdentityKeys,
-        )
     }
 }
 
@@ -127,7 +94,6 @@ public struct UpdateVMParams: Sendable {
     public let sharedPaths: [String]?
     public let uefi: Bool?
     public let tpmEnabled: Bool?
-    public let workloadClass: String?
     public let startOnBoot: Bool?
 
     public init(
@@ -145,7 +111,6 @@ public struct UpdateVMParams: Sendable {
         sharedPaths: [String]? = nil,
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
-        workloadClass: String? = nil,
         startOnBoot: Bool? = nil,
     ) {
         self.name = name
@@ -162,7 +127,6 @@ public struct UpdateVMParams: Sendable {
         self.sharedPaths = sharedPaths
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
-        self.workloadClass = workloadClass
         self.startOnBoot = startOnBoot
     }
 }
