@@ -80,8 +80,8 @@ const usage = computed(() =>
 <template>
   <div class="detail-grid">
     <div class="col">
-      <section class="panel">
-        <h2>
+      <section class="panel" aria-labelledby="app-section-application">
+        <h2 id="app-section-application">
           Application
           <span v-if="vm.updateAvailable" class="update-badge">Update available</span>
         </h2>
@@ -101,8 +101,8 @@ const usage = computed(() =>
         <div class="kv"><span class="k">Restart policy</span><span class="v">{{ restart }}</span></div>
       </section>
 
-      <section class="panel">
-        <h2>Volumes</h2>
+      <section class="panel" aria-labelledby="app-section-volumes">
+        <h2 id="app-section-volumes">Volumes</h2>
         <AppMountList
           :mounts="mounts"
           :roots="(vm.volumeRoots ?? []).filter(Boolean)"
@@ -115,8 +115,8 @@ const usage = computed(() =>
         />
       </section>
 
-      <section class="panel">
-        <h2>
+      <section class="panel" aria-labelledby="app-section-access">
+        <h2 id="app-section-access">
           Access
           <button
             v-if="editable"
@@ -173,6 +173,7 @@ const usage = computed(() =>
                 type="button"
                 class="seg-btn"
                 :class="{ on: ingress.mode === 'prefix' }"
+                :aria-pressed="ingress.mode === 'prefix'"
                 :disabled="savingIngress || !ingress.enabled"
                 @click="setIngressMode('prefix')"
               >Prefix</button>
@@ -180,6 +181,7 @@ const usage = computed(() =>
                 type="button"
                 class="seg-btn"
                 :class="{ on: ingress.mode === 'direct' }"
+                :aria-pressed="ingress.mode === 'direct'"
                 :disabled="savingIngress || !ingress.enabled"
                 @click="setIngressMode('direct')"
               >Direct</button>
@@ -195,16 +197,16 @@ const usage = computed(() =>
     </div>
 
     <div class="col">
-      <section class="panel">
-        <h2>Runtime</h2>
+      <section class="panel" aria-labelledby="app-section-runtime">
+        <h2 id="app-section-runtime">Runtime</h2>
         <div class="kv"><span class="k">Device</span><span class="v">{{ deviceLabel || '—' }}</span></div>
         <div class="kv"><span class="k">Runtime</span><span class="v">{{ runtimeLabel }}</span></div>
         <div class="kv"><span class="k">Container</span><span class="v mono">{{ container }}</span></div>
         <div class="kv"><span class="k">Uptime</span><span class="v">{{ uptime }}</span></div>
       </section>
 
-      <section class="panel">
-        <h2>Usage</h2>
+      <section class="panel" aria-labelledby="app-section-usage">
+        <h2 id="app-section-usage">Usage</h2>
         <div class="stat">
           <span class="sk">CPU</span>
           <span class="sv">{{ usage?.cpuLabel ?? '—' }}</span>
@@ -227,8 +229,8 @@ const usage = computed(() =>
         <p v-else-if="!usage" class="ports-note">Waiting for container stats…</p>
       </section>
 
-      <section class="panel">
-        <h2>Environment</h2>
+      <section class="panel" aria-labelledby="app-section-environment">
+        <h2 id="app-section-environment">Environment</h2>
         <div class="env-summary">
           <div class="env-count">
             <span class="num">{{ env.count }}</span>
@@ -248,21 +250,21 @@ const usage = computed(() =>
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
   width: 100%;
   align-items: start;
 }
 .col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 .panel {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
+  padding: 16px;
 }
 .panel h2 {
   font-size: 12px;
@@ -270,7 +272,7 @@ const usage = computed(() =>
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-dim);
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -293,6 +295,7 @@ const usage = computed(() =>
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .v.mono, .mono {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
