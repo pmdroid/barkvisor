@@ -4,6 +4,11 @@ Product notes for operators. Words: **Home**, **Device**, **Workload**, **Librar
 
 Unreleased items live on stacked draft PRs and may change before they land on `main`.
 
+## 1.0.0-alpha.7 — 2026-09-15
+
+- Linux **Settings → Updates** can apply a `.deb` on a Device whose unit uses `ProtectSystem=strict`. VFIO udev rules ship under `/usr/local` and are copied into udev when the unit starts. Alpha.6 `.deb` unpack failed on `/usr/lib/udev/rules.d`.
+- Workload class (House / Agent) is gone from Create VM and the API.
+
 ## 1.0.0-alpha.6 — 2026-09-15
 
 - Built-in App Catalogs use `barkvisor://builtin/bigbear` and `barkvisor://builtin/linuxserver`. Settings → Repositories shows those URLs. You cannot add `barkvisor://` by hand. Existing Big Bear rows on the GitHub URL move over on upgrade.
