@@ -4,6 +4,16 @@ Product notes for operators. Words: **Home**, **Device**, **Workload**, **Librar
 
 Unreleased items live on stacked draft PRs and may change before they land on `main`.
 
+## 1.0.0-alpha.6 — 2026-09-15
+
+- Built-in App Catalogs use `barkvisor://builtin/bigbear` and `barkvisor://builtin/linuxserver`. Settings → Repositories shows those URLs. You cannot add `barkvisor://` by hand. Existing Big Bear rows on the GitHub URL move over on upgrade.
+- App Workloads have an admin exec terminal. Member hops stay connected, live output follows the active session, and docker exec gets a PTY size before the shell starts.
+- Apps gallery has search and category filters. Volume and published-port editors match the Device page. App detail keeps its tab across reloads.
+- Home Devices stay on the list when offline, keep their names, and can be removed.
+- Sign-in can be secure, loopback-only, or disabled. The SPA boots without a login wall when auth is off. Security settings live under Settings.
+- Linux packages build amd64 and arm64. The binary finds its bundled Swift runtime without `LD_LIBRARY_PATH` and ships the SwiftPM resource bundle next to it.
+- macOS `.pkg` is Developer ID signed and notarized. `--skip-notarize` is for local signed builds only.
+
 ## 1.0.0-alpha.5 — 2026-09-10
 
 - Application Workload Overview is two columns (Application / Volumes / Access | Runtime / Usage / Environment). Title row has an APP badge, Open UI, and ingress On/Off plus Prefix/Direct (`/go/<id>/`).
