@@ -82,6 +82,8 @@ const showLoadingWorkloads = computed(() =>
 
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
+const removeConfirm = ref(false)
+const removeLoading = ref(false)
 const showCreate = ref(false)
 const deviceAbout = ref<SystemAbout | null>(null)
 const deviceDoctor = ref<DoctorReport | null>(null)
@@ -548,6 +550,27 @@ async function doStop() {
     toast.error(apiErrorMessage(e))
   }
 }
+
+function requestRemove() {
+  if (!device.value || device.value.role === 'self') return
+  removeConfirm.value = true
+}
+
+async function removeDevice() {
+  const row = device.value
+  if (!row || row.role === 'self' || removeLoading.value) return
+  removeLoading.value = true
+  try {
+    await devices.removeDevice(row.hostId)
+    removeConfirm.value = false
+    toast.success('Device removed from this Home')
+    await router.replace('/devices')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not remove Device from this Home'))
+  } finally {
+    removeLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -599,6 +622,13 @@ async function doStop() {
           @click="showCreate = true"
         >
           Create VM
+        </AppButton>
+        <AppButton
+          v-if="device.role !== 'self'"
+          variant="danger"
+          @click="requestRemove"
+        >
+          Remove Device
         </AppButton>
       </div>
     </div>
@@ -888,6 +918,16 @@ async function doStop() {
       :loading="workloads.isActing(hostId, stopConfirm.id)"
       @confirm="doStop"
       @cancel="stopConfirm = null"
+    />
+    <ConfirmDialog
+      v-if="removeConfirm && device"
+      title="Remove Device from Home"
+      :message="`Remove ${title} from this Home? Its local workloads and data will remain on that Device, but this Home will no longer list or proxy to it.`"
+      confirm-label="Remove Device"
+      danger
+      :loading="removeLoading"
+      @confirm="removeDevice"
+      @cancel="removeConfirm = false"
     />
   </div>
 </template>

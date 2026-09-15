@@ -35,26 +35,42 @@ public final class DeviceRegistry: @unchecked Sendable {
     public func upsert(
         hostId: String,
         fingerprint: String,
+        displayName: String? = nil,
         agentHost: String? = nil,
         agentPort: Int = Config.agentPort,
         now: Date = Date(),
     ) throws -> DeviceRecord {
         let port = (1 ... 65_535).contains(agentPort) ? agentPort : Config.agentPort
         let host = agentHost.flatMap(PairingPayload.sanitizeProxyHost)
+        lock.lock()
+        defer { lock.unlock() }
+        var rows = try loadLocked()
+        let existing = rows.first { $0.hostId == hostId || $0.fingerprint == fingerprint.lowercased() }
         let entry = DeviceRecord(
             hostId: hostId,
             fingerprint: fingerprint,
+            displayName: normalizedDisplayName(displayName) ?? existing?.displayName,
             agentHost: host,
             agentPort: port,
             pairedAt: iso8601.string(from: now),
         )
-        lock.lock()
-        defer { lock.unlock() }
-        var rows = try loadLocked()
         rows.removeAll { $0.hostId == hostId || $0.fingerprint == entry.fingerprint }
         rows.append(entry)
         try persistLocked(rows)
         return entry
+    }
+
+    /// Record a member's last known name without changing its connection or
+    /// pairing material. The health probe calls this after a successful read.
+    public func updateDisplayName(hostId: String, displayName: String?) throws {
+        guard let displayName = normalizedDisplayName(displayName) else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        var rows = try loadLocked()
+        guard let index = rows.firstIndex(where: { $0.hostId == hostId }) else { return }
+        guard rows[index].displayName != displayName else { return }
+        rows[index].displayName = displayName
+        try persistLocked(rows)
     }
 
     public func remove(hostId: String) throws {
@@ -95,6 +111,17 @@ public final class DeviceRegistry: @unchecked Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path,
         )
+    }
+
+    private func normalizedDisplayName(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.rangeOfCharacter(from: .controlCharacters) == nil
+        else {
+            return nil
+        }
+        return trimmed
     }
 }
 
@@ -138,7 +165,7 @@ public enum HomeDeviceDirectory {
                         hostId: row.hostId,
                         role: "member",
                         fingerprint: row.fingerprint,
-                        displayName: nil,
+                        displayName: row.displayName,
                         agentHost: row.agentHost,
                         agentPort: row.agentPort,
                         pairedAt: row.pairedAt,

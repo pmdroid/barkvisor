@@ -60,6 +60,18 @@ struct DeviceRegistryTests {
         #expect(try store.record(forHostId: "peer-c")?.agentHost == nil)
     }
 
+    @Test func `last reachable display name is retained for offline device rows`() throws {
+        let dir = try isolatedDir("display-name")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: "peer-a", fingerprint: "aa", agentHost: "192.168.10.4")
+        try store.updateDisplayName(hostId: "peer-a", displayName: "Garage Mac")
+
+        let listed = HomeDeviceDirectory.list(dataDir: dir, hostId: "self", devices: store)
+        #expect(listed.devices.first { $0.hostId == "peer-a" }?.displayName == "Garage Mac")
+        #expect(try store.record(forHostId: "peer-a")?.displayName == "Garage Mac")
+    }
+
     @Test func `list always includes self without network or sqlite`() throws {
         let dir = try isolatedDir("list")
         defer { try? FileManager.default.removeItem(at: dir) }

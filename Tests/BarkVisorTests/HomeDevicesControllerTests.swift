@@ -91,6 +91,19 @@ struct HomeDevicesControllerTests {
         )
     }
 
+    @Test func `home-owned reachability permits application failures but suppresses transport failures`() async {
+        let monitor = HomeDeviceReachabilityMonitor()
+        await monitor.replace([
+            "application-error": HomeDeviceHealthAggregator.memberHTTP,
+            "timed-out": HomeDeviceHealthAggregator.connectTimeout,
+        ])
+
+        #expect(await monitor.permitsHop(to: "application-error"))
+        let timedOutPermitted = await monitor.permitsHop(to: "timed-out")
+        #expect(!timedOutPermitted)
+        #expect(await monitor.permitsHop(to: "unknown-member"))
+    }
+
     @Test func `probeMember builds member URLs, forwards bearer, and maps health`() async throws {
         let dir = try isolatedDir("probe-ok")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -263,6 +276,7 @@ struct HomeDevicesControllerTests {
         #expect(okRow.reachability == HomeDeviceHealthAggregator.ok)
         #expect(okRow.displayName == "ok-desk")
         #expect(okRow.workloadCount == 2)
+        #expect(try store.record(forHostId: okId)?.displayName == "ok-desk")
 
         let downRow = try #require(report.devices.first { $0.hostId == downId })
         #expect(downRow.reachability == HomeDeviceHealthAggregator.unreachable)
@@ -271,6 +285,16 @@ struct HomeDevicesControllerTests {
         #expect(report.totals.reachable == 2)
         #expect(report.totals.unreachable == 1)
         #expect(report.totals.workloadCount == 3)
+
+        let laterListed = HomeDeviceDirectory.list(
+            dataDir: dir, hostId: selfId, displayName: "this-device", devices: store,
+        )
+        let laterReport = HomeDeviceHealthAggregator.report(
+            listed: laterListed,
+            local: localFacts(running: 1),
+            members: [okId: .unreachable("peer down"), downId: .unreachable("peer down")],
+        )
+        #expect(laterReport.devices.first { $0.hostId == okId }?.displayName == "ok-desk")
 
         let hosts = Set(client.calls.compactMap(\.url.host))
         #expect(hosts == ["10.0.0.2", "10.0.0.3"])

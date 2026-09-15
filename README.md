@@ -175,6 +175,7 @@ Options:
 |------|--------|
 | `--skip-deps` | Reuse cached dependency builds |
 | `--no-sign` | Skip code signing |
+| `--skip-notarize` | Create a signed package without submitting it to Apple |
 | `--no-pkg` | Skip installer .pkg creation |
 | `--require-notarize` | Fail if notarization credentials are missing |
 

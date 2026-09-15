@@ -2492,6 +2492,7 @@ const healthBanner = computed(() => {
           :service="session.service"
           :device="isMemberDetail ? memberDevice : undefined"
           :id="`terminal-panel-${vmId}-${session.id}`"
+          :active="tab === 'terminal' && session.id === activeTerminalSessionID"
         />
       </template>
       <p v-else-if="activeTerminalSession === null" class="dim-text">Choose a container, then open a terminal.</p>

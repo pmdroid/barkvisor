@@ -283,10 +283,10 @@ struct TerminalControllerTests {
         #expect(!DockerExecRequest.isSafeExecutableName(name))
     }
 
-    @Test func `exec arguments pin exec -it container shell`() {
+    @Test func `exec arguments pin a color terminal identity`() {
         #expect(
             DockerExecSession.execArguments(container: "bv-web-1", shell: "sh")
-                == ["exec", "-it", "bv-web-1", "sh"],
+                == ["exec", "-it", "-e", "TERM=xterm-256color", "-e", "COLORTERM=truecolor", "bv-web-1", "sh"],
         )
         #expect(DockerExecSession.execArguments(container: "-v /:/host", shell: "sh") == nil)
         #expect(DockerExecSession.execArguments(container: "c", shell: "sh; rm -rf /") == nil)
@@ -366,6 +366,8 @@ struct TerminalControllerTests {
         func launch(
             executable: String,
             arguments: [String],
+            cols: Int,
+            rows: Int,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling {
@@ -388,7 +390,12 @@ struct TerminalControllerTests {
             onExit: { seen.setExit($0) },
         )
         #expect(child.launchExecutable == "/usr/bin/docker")
-        #expect(child.launchArguments == ["exec", "-it", "bv-web-1", "sh"])
+        #expect(child.launchArguments == [
+            "exec", "-it",
+            "-e", "TERM=xterm-256color",
+            "-e", "COLORTERM=truecolor",
+            "bv-web-1", "sh",
+        ])
         #expect(child.resizes.first?.cols == 100)
         #expect(child.resizes.first?.rows == 30)
         #expect(session.currentState == .running)

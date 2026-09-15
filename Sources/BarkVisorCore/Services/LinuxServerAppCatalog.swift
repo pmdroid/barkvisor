@@ -36,12 +36,12 @@ public enum LinuxServerAppCatalog {
     }
 
     static func manifestDirectory() -> URL? {
-        if let bundled = Bundle.module.url(forResource: "linuxserver", withExtension: nil, subdirectory: "app-catalog")
-            ?? Bundle.module.url(forResource: "linuxserver", withExtension: nil, subdirectory: "Resources/app-catalog")
-            ?? Bundle.module.resourceURL?.appendingPathComponent("app-catalog/linuxserver", isDirectory: true) {
-            if FileManager.default.fileExists(atPath: bundled.path) {
-                return bundled
-            }
+        if let module = ModuleResources.resolved,
+           let bundled = module.url(forResource: "linuxserver", withExtension: nil, subdirectory: "app-catalog")
+           ?? module.url(forResource: "linuxserver", withExtension: nil, subdirectory: "Resources/app-catalog")
+           ?? module.resourceURL?.appendingPathComponent("app-catalog/linuxserver", isDirectory: true),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
         }
         let here = URL(fileURLWithPath: #filePath)
         let checkout = here

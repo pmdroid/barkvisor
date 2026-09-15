@@ -3,6 +3,10 @@ import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
   deviceAboutPath,
+  deviceHealthPath,
+  deviceUpdateCheckPath,
+  deviceUpdateInstallPath,
+  deviceUpdateSettingsPath,
   deviceDoctorPath,
   deviceBridgesNextPath,
   deviceBridgesPath,
@@ -193,6 +197,25 @@ describe('homeDeviceApi (device about)', () => {
     expect(deviceAboutPath(member)).toBe('/home/devices/peer%2F1/v1/system/about')
     expect(deviceAboutPath(member)).not.toContain('targetHostId')
     expect(canFetchDeviceWorkloads(down)).toBe(false)
+  })
+})
+
+describe('homeDeviceApi (GH-619 updates)', () => {
+  test('update settings, checks, installs, task polling, and health use the selected Device', () => {
+    expect(deviceUpdateSettingsPath(self)).toBe('/system/updates/settings')
+    expect(deviceUpdateCheckPath(self)).toBe('/system/updates/check')
+    expect(deviceUpdateInstallPath(self)).toBe('/system/updates/install')
+    expect(deviceHealthPath(self)).toBe('/health')
+
+    expect(deviceUpdateSettingsPath(member)).toBe('/home/devices/peer%2F1/v1/system/updates/settings')
+    expect(deviceUpdateCheckPath(member)).toBe('/home/devices/peer%2F1/v1/system/updates/check')
+    expect(deviceUpdateInstallPath(member)).toBe('/home/devices/peer%2F1/v1/system/updates/install')
+    expect(deviceTaskPath(member, 'task-9')).toBe('/home/devices/peer%2F1/v1/tasks/task-9')
+    expect(deviceHealthPath(member)).toBe('/home/devices/peer%2F1/v1/health')
+  })
+
+  test('offline members are not eligible for any update request', () => {
+    expect(canCallDeviceAPI(down)).toBe(false)
   })
 })
 

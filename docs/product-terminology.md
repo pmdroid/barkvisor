@@ -1,6 +1,6 @@
 # Product terminology
 
-Shared words for BarkVisor in the UI and getting-started docs. **Home** is the tenancy. **Device** is the machine. Do not invent a second glossary.
+Shared words for BarkVisor in the UI and getting-started docs. The domain glossary is [CONTEXT.md](../CONTEXT.md). This file is the UI and API mapping. Do not invent a third glossary.
 
 A single-device install is a **Home of one**. More Devices join that Home later; they are not a cluster.
 
@@ -11,7 +11,9 @@ A single-device install is a **Home of one**. More Devices join that Home later;
 | **Home** | A person’s set of Devices (one or more) | `/api/home/devices` registry + `/api/home/devices/health` + member proxy |
 | **Device** | The Mac, PC, or board running this BarkVisor daemon | Inventory JSON keeps `hostId`, `hostname`, and host metrics |
 | **Agent** | The daemon role on a Device | `/api/agent/*`, `barkvisor` or `barkvisor-agent` |
-| **Workload** | A VM (later: app) running on a Device | `VM`, `WorkloadSpec` |
+| **Agent Workload** | WAN-only Workload class, not the daemon | `workloadClass: agent` |
+| **House Workload** | Workload class with house LAN and USB | `workloadClass: house` |
+| **Workload** | A Virtual Machine or an App on a Device | `VM`, `WorkloadSpec` |
 | **Library** | Images and templates you can deploy | Image / template repositories |
 | **Node** | **Do not use** in product copy | — |
 | **Cluster** | **Do not use** in product copy | — |

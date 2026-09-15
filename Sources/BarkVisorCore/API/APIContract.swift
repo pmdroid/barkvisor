@@ -144,6 +144,7 @@ public enum APIContract {
         Route(method: "POST", path: "/api/pairing/redeem", stability: .evolving),
         Route(method: "POST", path: "/api/pairing/join", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices", stability: .evolving),
+        Route(method: "DELETE", path: "/api/home/devices/{id}", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices/health", stability: .evolving),
         Route(method: "POST", path: "/api/home/placement/score", stability: .evolving),
         Route(method: "GET", path: "/api/ollama/status", stability: .evolving),
@@ -213,11 +214,12 @@ public enum APIContract {
     }
 
     public static func specURL() -> URL? {
-        if let bundled = Bundle.module.url(
-            forResource: "openapi",
-            withExtension: "yaml",
-            subdirectory: "API",
-        ) ?? Bundle.module.url(forResource: "openapi", withExtension: "yaml") {
+        if let module = ModuleResources.resolved,
+           let bundled = module.url(
+               forResource: "openapi",
+               withExtension: "yaml",
+               subdirectory: "API",
+           ) ?? module.url(forResource: "openapi", withExtension: "yaml") {
             return bundled
         }
         return nil
@@ -231,11 +233,12 @@ public enum APIContract {
     }
 
     public static func workloadSpecSchemaURL() -> URL? {
-        if let bundled = Bundle.module.url(
-            forResource: "workloadspec.schema",
-            withExtension: "json",
-            subdirectory: "API",
-        ) ?? Bundle.module.url(forResource: "workloadspec.schema", withExtension: "json") {
+        if let module = ModuleResources.resolved,
+           let bundled = module.url(
+               forResource: "workloadspec.schema",
+               withExtension: "json",
+               subdirectory: "API",
+           ) ?? module.url(forResource: "workloadspec.schema", withExtension: "json") {
             return bundled
         }
         return nil

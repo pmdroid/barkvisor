@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
-import { Terminal, type WTerm } from '@wterm/vue'
+import { ref, shallowRef, nextTick, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
+import { Terminal, type TerminalCore, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
+import { GhosttyCore } from '@wterm/ghostty'
 import { mintStreamTickets } from '../api/client'
 import {
   TERMINAL_CLEAN_CLOSE_CODES,
@@ -19,6 +20,7 @@ const props = defineProps<{
   vmState: string
   service: string
   device?: DeviceApiTarget | null
+  active?: boolean
 }>()
 
 // 'stopping' dropped (#614): a Workload on its way out spawns fresh root shells
@@ -27,6 +29,7 @@ const isAlive = () => props.vmState === 'running'
 
 const term = useTemplateRef('term')
 const status = ref('')
+const terminalCore = shallowRef<TerminalCore | null>(null)
 let wt: WTerm | null = null
 let ws: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -41,6 +44,7 @@ let reconnectAttempts = 0
 let disposed = false
 let connecting = false
 let everOpened = false
+let outputFollowFrame: number | null = null
 
 function onReady(instance: WTerm) {
   wt = instance
@@ -48,6 +52,7 @@ function onReady(instance: WTerm) {
   // had no grid to measure yet, so push the initial size from this side too.
   // Resize rides both `onReady` and `onopen` so the race cannot lose it (#614).
   if (ws?.readyState === WebSocket.OPEN) sendResize(instance.cols, instance.rows)
+  else if (!disposed) void connect()
 }
 
 function sendResize(cols: number, rows: number) {
@@ -63,6 +68,28 @@ function onData(data: string) {
 
 function onResize(cols: number, rows: number) {
   sendResize(cols, rows)
+}
+
+// A session is kept alive behind v-show when another terminal tab is active.
+// ResizeObserver does not reliably fire when its ancestor becomes visible, so
+// explicitly reflow and follow the prompt when the user returns to the pane.
+function refreshVisibleTerminal() {
+  if (!wt) return
+  wt.resize(wt.cols, wt.rows)
+  wt.element.scrollTop = wt.element.scrollHeight
+}
+
+// wterm preserves its DOM scroll position while it writes output. That is
+// useful for reviewing history, but left an active terminal stranded above a
+// running TUI after the first redraw. Follow only the visible session and
+// coalesce a burst of frames into one browser paint; importantly, this never
+// resizes the PTY (resizing per frame disrupts full-screen TUIs).
+function followLiveOutput() {
+  if (!props.active || !wt || outputFollowFrame !== null) return
+  outputFollowFrame = requestAnimationFrame(() => {
+    outputFollowFrame = null
+    if (props.active && wt) wt.element.scrollTop = wt.element.scrollHeight
+  })
 }
 
 function onTermError(err: unknown) {
@@ -166,9 +193,11 @@ async function connect() {
       // used to be dropped on the floor — the pane looked dead with no reason
       // (#614). Render it.
       target.write(new TextEncoder().encode(e.data))
+      followLiveOutput()
       return
     }
     target.write(new Uint8Array(e.data as ArrayBuffer))
+    followLiveOutput()
   }
 
   socket.onclose = (e) => {
@@ -187,7 +216,16 @@ async function connect() {
   }
 }
 
-onMounted(() => void connect())
+onMounted(async () => {
+  try {
+    terminalCore.value = await GhosttyCore.load({
+      foregroundColor: '#e8e8e8',
+      backgroundColor: '#0d0d0d',
+    })
+  } catch (error) {
+    status.value = `Terminal failed to initialize: ${error instanceof Error ? error.message : String(error)}`
+  }
+})
 
 watch(() => props.vmState, () => {
   if (disposed || connecting) return
@@ -198,9 +236,19 @@ watch(() => props.vmState, () => {
   }
 })
 
+watch(() => props.active, async (active) => {
+  if (!active) return
+  await nextTick()
+  requestAnimationFrame(refreshVisibleTerminal)
+})
+
 onUnmounted(() => {
   disposed = true
   clearReconnectTimer()
+  if (outputFollowFrame !== null) {
+    cancelAnimationFrame(outputFollowFrame)
+    outputFollowFrame = null
+  }
   const socket = ws
   ws = null
   if (socket) {
@@ -225,8 +273,10 @@ onUnmounted(() => {
       {{ status }}
     </div>
     <Terminal
+      v-if="terminalCore"
       ref="term"
       class="terminal-term"
+      :core="terminalCore"
       cursor-blink
       auto-resize
       @ready="onReady"
