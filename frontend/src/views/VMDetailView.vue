@@ -34,6 +34,7 @@ import {
 } from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppMountList from '../components/AppMountList.vue'
+import { adjacentDetailTabKey, detailTabs } from '../utils/appDetailTabs'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
@@ -191,8 +192,6 @@ const vm = computed(() => {
 
 const agentCage = computed(() => isAgentWorkload(vm.value))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
-const consoleLabel = 'Console'
-const terminalLabel = 'Terminal'
 
 const terminalContainers = ref<WorkloadContainer[]>([])
 const terminalService = ref('')
@@ -1408,6 +1407,25 @@ const guestMacCopy = computed(() =>
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
+const detailTabsList = computed(() => detailTabs({
+  isApp: isApp.value,
+  isAdmin: auth.isAdmin,
+  isMemberDetail: isMemberDetail.value,
+  showMemberConnect: showMemberConnect.value,
+  running: vm.value?.state === 'running',
+}))
+
+function onDetailTabKeydown(event: KeyboardEvent) {
+  const keys = detailTabsList.value.map((item) => item.key)
+  const current = tab.value
+  const next = adjacentDetailTabKey(keys, current, event.key)
+  if (!next) return
+  event.preventDefault()
+  tab.value = next
+  void nextTick(() => {
+    document.getElementById(`detail-tab-${next}`)?.focus()
+  })
+}
 const openUi = computed(() => {
   if (!vm.value) return null
   const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
@@ -1847,11 +1865,11 @@ const healthBanner = computed(() => {
     </div>
   </template>
   <template v-else>
-    <div v-if="isApp" class="app-detail-head">
-      <div class="crumb">
+    <header v-if="isApp" class="app-detail-head">
+      <nav class="crumb" aria-label="Breadcrumb">
         <router-link to="/vms">{{ WORKLOADS_NAV_LABEL }}</router-link>
         / {{ vm.name }}
-      </div>
+      </nav>
       <div class="ops-toolbar app-toolbar">
         <div>
           <div class="title-row">
@@ -1866,7 +1884,7 @@ const healthBanner = computed(() => {
           </div>
           <div v-if="appSub" class="ops-sub app-sub">{{ appSub }}</div>
         </div>
-        <div class="ops-actions">
+        <div class="ops-actions" role="group" aria-label="App actions">
           <label
             class="boot-toggle"
             :class="{ disabled: controlDisabled }"
@@ -1885,6 +1903,7 @@ const healthBanner = computed(() => {
           <AppButton
             variant="primary"
             :disabled="!(openUi && vm.state === 'running')"
+            :title="openUi && vm.state === 'running' ? undefined : 'Start the app to open its UI'"
             @click="openAppUi"
           >Open UI ↗</AppButton>
           <AppButton
@@ -1910,7 +1929,7 @@ const healthBanner = computed(() => {
           >Delete</AppButton>
         </div>
       </div>
-    </div>
+    </header>
     <div v-else class="ops-toolbar vm-toolbar">
       <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
         <AppIcon name="chevron-left" :size="16" />
@@ -1955,28 +1974,30 @@ const healthBanner = computed(() => {
     </div>
     <div class="ops-body">
 
-    <div v-if="!isMemberDetail" class="tabs">
-      <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="!isApp" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
-      <div v-if="isApp && auth.isAdmin" class="tab" :class="{ active: tab === 'terminal' }" @click="tab = 'terminal'">{{ terminalLabel }}</div>
-      <div v-if="!isApp" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
-      <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
-      <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
-      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
-      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
-    </div>
-    <div v-else class="tabs">
-      <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
-      <div v-if="isApp && showMemberConnect" class="tab" :class="{ active: tab === 'terminal' }" @click="tab = 'terminal'">{{ terminalLabel }}</div>
-      <div v-if="!isApp && showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
-      <div v-if="!isApp && vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
-      <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
-      <div v-if="isApp" class="tab" :class="{ active: tab === 'environment' }" @click="tab = 'environment'">Environment</div>
-      <div v-if="isApp" class="tab" :class="{ active: tab === 'volumes' }" @click="tab = 'volumes'">Volumes</div>
+    <div class="tabs" role="tablist" aria-label="Workload sections">
+      <button
+        v-for="item in detailTabsList"
+        :key="item.key"
+        :id="`detail-tab-${item.key}`"
+        type="button"
+        class="tab"
+        :class="{ active: tab === item.key }"
+        role="tab"
+        :aria-selected="tab === item.key"
+        :aria-controls="`workload-panel-${item.key}`"
+        :tabindex="tab === item.key ? 0 : -1"
+        @click="tab = item.key"
+        @keydown="onDetailTabKeydown"
+      >{{ item.label }}</button>
     </div>
 
-    <div v-if="tab === 'overview' && isApp" class="app-overview-wrap">
+    <div
+      v-if="tab === 'overview' && isApp"
+      class="app-overview-wrap"
+      role="tabpanel"
+      id="workload-panel-overview"
+      aria-labelledby="detail-tab-overview"
+    >
       <div v-if="healthBanner" class="ops-banner">
         <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
         <div>
@@ -2002,7 +2023,13 @@ const healthBanner = computed(() => {
       />
     </div>
 
-    <div v-else-if="tab === 'overview'" class="twins">
+    <div
+      v-else-if="tab === 'overview'"
+      class="twins"
+      role="tabpanel"
+      id="workload-panel-overview"
+      aria-labelledby="detail-tab-overview"
+    >
       <div class="col-stack">
         <div v-if="healthBanner" class="ops-banner">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
@@ -2407,6 +2434,9 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :vm-state="vm.state"
       :device="isMemberDetail ? memberDevice : undefined"
+      role="tabpanel"
+      id="workload-panel-console"
+      aria-labelledby="detail-tab-console"
     />
     <!-- v-show after first open (#614): hiding the sheet must not unmount the
          panel — the socket and the wterm scrollback live inside it. -->
@@ -2414,6 +2444,9 @@ const healthBanner = computed(() => {
       v-if="terminalOpenedOnce && isApp && showMemberConnect"
       v-show="tab === 'terminal'"
       class="sheet terminal-sheet"
+      role="tabpanel"
+      id="workload-panel-terminal"
+      aria-labelledby="detail-tab-terminal"
     >
       <div class="terminal-bar">
         <AppSelect
@@ -2439,6 +2472,7 @@ const healthBanner = computed(() => {
               type="button"
               role="tab"
               :aria-selected="session.id === activeTerminalSessionID"
+              :aria-controls="`terminal-panel-${vmId}-${session.id}`"
               @click="activeTerminalSessionID = session.id"
             >{{ session.service }} {{ index + 1 }}</button>
             <button
@@ -2457,6 +2491,7 @@ const healthBanner = computed(() => {
           :vm-state="vm.state"
           :service="session.service"
           :device="isMemberDetail ? memberDevice : undefined"
+          :id="`terminal-panel-${vmId}-${session.id}`"
           :active="tab === 'terminal' && session.id === activeTerminalSessionID"
         />
       </template>
@@ -2468,14 +2503,26 @@ const healthBanner = computed(() => {
       :vm-id="vmId"
       :vm-state="vm.state"
       :device="isMemberDetail ? memberDevice : undefined"
+      role="tabpanel"
+      id="workload-panel-vnc"
+      aria-labelledby="detail-tab-vnc"
     />
     <MetricsPanel
       v-if="tab === 'metrics' && vm.state === 'running'"
       :key="`metrics-${vmId}-${isMemberDetail ? hostId : 'local'}`"
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
+      role="tabpanel"
+      id="workload-panel-metrics"
+      aria-labelledby="detail-tab-metrics"
     />
-    <div v-if="tab === 'environment' && isApp" class="app-panel">
+    <div
+      v-if="tab === 'environment' && isApp"
+      class="app-panel"
+      role="tabpanel"
+      id="workload-panel-environment"
+      aria-labelledby="detail-tab-environment"
+    >
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <h2 style="margin:0">Environment</h2>
         <AppButton v-if="!envEditing" size="sm" :disabled="isMemberDetail && !memberReachable" @click="startEnvEdit">Edit</AppButton>
@@ -2483,9 +2530,11 @@ const healthBanner = computed(() => {
       <p class="app-panel-sub">{{ appEnv.count }} variables · {{ appEnv.secrets }} secrets hidden</p>
       <template v-if="!envEditing">
         <div v-if="appEnvKeys.length === 0" class="dim-text">No environment variables recorded.</div>
-        <div v-for="key in appEnvKeys" :key="key" class="app-kv">
-          <span class="k">{{ key }}</span>
-          <span class="v mono">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+        <div v-else role="list">
+          <div v-for="key in appEnvKeys" :key="key" class="app-kv" role="listitem">
+            <span class="k">{{ key }}</span>
+            <span class="v mono">{{ isSecretEnvKey(key) ? '••••••••' : (vm.spec?.spec?.env?.[key] || '') }}</span>
+          </div>
         </div>
       </template>
       <template v-else>
@@ -2511,7 +2560,13 @@ const healthBanner = computed(() => {
         </div>
       </template>
     </div>
-    <div v-if="tab === 'volumes' && isApp" class="app-panel">
+    <div
+      v-if="tab === 'volumes' && isApp"
+      class="app-panel"
+      role="tabpanel"
+      id="workload-panel-volumes"
+      aria-labelledby="detail-tab-volumes"
+    >
       <h2>Volumes</h2>
       <AppMountList
         :mounts="appMounts"
@@ -2529,12 +2584,18 @@ const healthBanner = computed(() => {
       :key="`compose-logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
+      role="tabpanel"
+      id="workload-panel-logs"
+      aria-labelledby="detail-tab-logs"
     />
     <LogsPanel
       v-else-if="tab === 'logs'"
       :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
       :vm-id="vmId"
       :device="isMemberDetail ? memberDevice : undefined"
+      role="tabpanel"
+      id="workload-panel-logs"
+      aria-labelledby="detail-tab-logs"
     />
 
     <!-- Attach USB Device Modal -->
@@ -2841,6 +2902,10 @@ const healthBanner = computed(() => {
   flex-direction: column;
   gap: 14px;
 }
+.tabs .tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .app-detail-head {
   margin-bottom: 6px;
   padding: 10px 16px 8px;
@@ -2920,7 +2985,7 @@ const healthBanner = computed(() => {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
+  padding: 16px;
   max-width: 720px;
 }
 .app-panel h2 {
@@ -2929,7 +2994,7 @@ const healthBanner = computed(() => {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-dim);
-  margin: 0 0 14px;
+  margin: 0 0 12px;
 }
 .app-panel-sub { font-size: 13px; color: var(--text-dim); margin: 0 0 12px; }
 .app-kv {
