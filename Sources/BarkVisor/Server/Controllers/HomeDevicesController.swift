@@ -92,14 +92,16 @@ struct HomeDevicesController: RouteCollection {
     func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
         let user = try req.requireUser
         let listed = try await listedDevices(db: req.db)
+        let facts = await resolvedLocalFacts(db: req.db)
+        let bearer = try await hopAuthorization(
+            user: user,
+            db: req.db,
+            incoming: req.headers.bearerAuthorization?.token,
+        )
         let report = await healthReport(
             listed: listed,
-            local: resolvedLocalFacts(db: req.db),
-            bearer: try await hopAuthorization(
-                user: user,
-                db: req.db,
-                incoming: req.headers.bearerAuthorization?.token,
-            ),
+            local: facts,
+            bearer: bearer,
         )
         await reachability.replace(report.devices)
         return report
@@ -110,15 +112,17 @@ struct HomeDevicesController: RouteCollection {
         let user = try req.requireUser
         let body = try req.content.decode(HomePlacementScoreRequest.self)
         let listed = try await listedDevices(db: req.db)
+        let facts = await resolvedLocalFacts(db: req.db)
+        let bearer = try await hopAuthorization(
+            user: user,
+            db: req.db,
+            incoming: req.headers.bearerAuthorization?.token,
+        )
         return await scorePlacement(
             request: body,
             listed: listed,
-            local: resolvedLocalFacts(db: req.db),
-            bearer: try await hopAuthorization(
-                user: user,
-                db: req.db,
-                incoming: req.headers.bearerAuthorization?.token,
-            ),
+            local: facts,
+            bearer: bearer,
         )
     }
 
