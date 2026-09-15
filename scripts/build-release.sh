@@ -416,6 +416,19 @@ mkdir -p "$STAGE_BIN" "$STAGE_LIBEXEC" "$STAGE_LIB" "$STAGE_QEMU" "$STAGE_FRONTE
 # Main server daemon binary
 cp "$EXECUTABLE" "$STAGE_BIN/barkvisor"
 
+# SwiftPM module resource bundle (openapi, workloadspec schema, built-in app
+# catalogs). Must ship next to the binary: the generated Bundle.module accessor
+# resolves <Bundle.main>/<BarkVisor_BarkVisorCore.bundle> first and the
+# baked-in build-tree path (a temp dir on packaging machines) is gone at
+# install time. Without it the daemon traps during built-in catalog sync.
+RES_BUNDLE="$(dirname "$EXECUTABLE")/BarkVisor_BarkVisorCore.bundle"
+if [[ -d "$RES_BUNDLE" ]]; then
+    cp -R "$RES_BUNDLE" "$STAGE_BIN/"
+else
+    echo "ERROR: $RES_BUNDLE not found after release build" >&2
+    exit 1
+fi
+
 # LaunchDaemon plist (daemon only — no privileged helper)
 cp "$PROJECT_DIR/Resources/dev.barkvisor.plist" "$STAGE_LAUNCHD/dev.barkvisor.plist"
 
