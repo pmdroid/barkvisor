@@ -405,4 +405,56 @@ struct AuthBypassTests {
             throw error
         }
     }
+
+    @Test func `hop user keeps a real session and remaps bypass to the provisioned admin`() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hop-user-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        try await pool.write { db in
+            try User(
+                id: "admin-1",
+                username: "pascal",
+                password: "hashed:unused-password",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
+        }
+        let session = AuthenticatedUser(
+            userId: "reader-1",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        let kept = try await AuthBypass.hopUser(from: session, db: pool)
+        #expect(kept.userId == "reader-1")
+        #expect(kept.role == UserRole.inference.rawValue)
+
+        let remapped = try await AuthBypass.hopUser(from: AuthBypass.syntheticAdmin, db: pool)
+        #expect(remapped.userId == "admin-1")
+        #expect(remapped.username == "pascal")
+        #expect(remapped.authMethod == "jwt")
+        #expect(remapped.role == UserRole.admin.rawValue)
+        #expect(remapped.userId != AuthBypass.syntheticUserId)
+    }
+
+    @Test func `hop user refuses bypass when Home has no provisioned admin`() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "hop-user-empty-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        do {
+            _ = try await AuthBypass.hopUser(from: AuthBypass.syntheticAdmin, db: pool)
+            Issue.record("expected unauthorized without a provisioned admin")
+        } catch let error as AbortError {
+            #expect(error.status == .unauthorized)
+        }
+    }
 }

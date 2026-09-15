@@ -1,5 +1,6 @@
 import BarkVisorCore
 import Foundation
+import GRDB
 import Vapor
 
 enum AuthBypass {
@@ -63,6 +64,25 @@ enum AuthBypass {
         guard allows(request) else {
             throw Abort(.unauthorized, reason: "Bypass session is only valid where sign-in is skipped")
         }
+    }
+
+    static func isSynthetic(_ user: AuthenticatedUser) -> Bool {
+        user.userId == syntheticUserId || user.authMethod == syntheticAuthMethod
+    }
+
+    static func hopUser(from user: AuthenticatedUser, db: DatabasePool) async throws -> AuthenticatedUser {
+        guard isSynthetic(user) else { return user }
+        let admin = try await db.read { try User.fetchProvisionedAdmin($0) }
+        guard let admin else {
+            throw Abort(.unauthorized, reason: "Home has no User to hop with")
+        }
+        return AuthenticatedUser(
+            userId: admin.id,
+            username: admin.username,
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: admin.userRole.rawValue,
+        )
     }
 
     static func attachIfAllowed(_ request: Request) async throws -> Bool {
