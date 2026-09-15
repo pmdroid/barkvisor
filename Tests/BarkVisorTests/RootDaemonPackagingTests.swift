@@ -74,6 +74,7 @@ struct RootDaemonPackagingTests {
             let unit = try read(relative)
             #expect(unit.contains("ProtectSystem=strict"), "\(relative)")
             #expect(unit.contains("/usr/local"), "\(relative) must allow dpkg to write the payload")
+            #expect(unit.contains("-/usr/lib/udev/rules.d"), "\(relative) must allow VFIO udev copy after unpack")
             #expect(unit.contains("/var/lib/dpkg"), "\(relative) must allow the dpkg database")
             #expect(unit.contains("/var/cache/apt"), "\(relative) must allow apt-get -f")
             #expect(
@@ -105,7 +106,14 @@ struct RootDaemonPackagingTests {
         #expect(rules == "SUBSYSTEM==\"vfio\", GROUP=\"kvm\", MODE=\"0660\"\n")
 
         let stage = try read("scripts/lib/linux-package-stage.sh")
-        #expect(stage.contains("/usr/lib/udev/rules.d/99-barkvisor-vfio.rules"))
+        #expect(stage.contains("/usr/local/share/barkvisor/udev/99-barkvisor-vfio.rules"))
+        #expect(!stage.contains("/usr/lib/udev/rules.d/99-barkvisor-vfio.rules"))
+        #expect(stage.contains("install-vfio-udev.sh"))
+
+        let unit = try read("packaging/linux/barkvisor.service")
+        #expect(unit.contains("ExecStartPre=/usr/local/libexec/barkvisor/install-vfio-udev.sh"))
+        #expect(unit.contains("-/usr/lib/udev/rules.d"))
+        #expect(unit.contains("-/run/needrestart"))
 
         let postinst = try read("packaging/linux/debian/postinst")
         #expect(postinst.contains("usermod -aG vfio barkvisor"))

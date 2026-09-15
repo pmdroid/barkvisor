@@ -39,7 +39,7 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 /usr/local/lib/barkvisor
 /usr/lib/systemd/system/barkvisor.service
 /usr/lib/systemd/system/barkvisor-agent.service
-/usr/lib/udev/rules.d/99-barkvisor-vfio.rules
+/usr/local/libexec/barkvisor/install-vfio-udev.sh
 %config(noreplace) /etc/barkvisor/barkvisor.env
 %dir /etc/qemu
 

@@ -112,7 +112,8 @@ barkvisor_stage_install_tree() {
     "$stage/usr/local/lib/barkvisor/swift" \
     "$stage/usr/local/lib/barkvisor/compat" \
     "$stage/usr/lib/systemd/system" \
-    "$stage/usr/lib/udev/rules.d" \
+    "$stage/usr/local/share/barkvisor/udev" \
+    "$stage/usr/local/libexec/barkvisor" \
     "$stage/etc/barkvisor" \
     "$stage/etc/qemu" \
     "$stage/var/lib/barkvisor" \
@@ -150,7 +151,8 @@ barkvisor_stage_install_tree() {
 
   install -m 0644 "$pkg_root/barkvisor.service" "$stage/usr/lib/systemd/system/barkvisor.service"
   install -m 0644 "$pkg_root/barkvisor-agent.service" "$stage/usr/lib/systemd/system/barkvisor-agent.service"
-  install -m 0644 "$pkg_root/udev/99-barkvisor-vfio.rules" "$stage/usr/lib/udev/rules.d/99-barkvisor-vfio.rules"
+  install -m 0644 "$pkg_root/udev/99-barkvisor-vfio.rules" "$stage/usr/local/share/barkvisor/udev/99-barkvisor-vfio.rules"
+  install -m 0755 "$pkg_root/install-vfio-udev.sh" "$stage/usr/local/libexec/barkvisor/install-vfio-udev.sh"
   install -m 0644 "$pkg_root/barkvisor.env" "$stage/etc/barkvisor/barkvisor.env"
 
   # Bundle Swift runtime (required for dynamically linked release binary).
