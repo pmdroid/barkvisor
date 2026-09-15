@@ -21,6 +21,7 @@ Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/compat
 EnvironmentFile=-/etc/barkvisor/barkvisor.env
 # Binary under /usr/local/bin so Config.prefix=/usr/local and SPA is
 # /usr/local/share/barkvisor/frontend/dist (see install-linux.sh).
+ExecStartPre=/usr/local/libexec/barkvisor/install-vfio-udev.sh
 ExecStart=/usr/local/bin/barkvisor
 Restart=on-failure
 RestartSec=3
@@ -53,7 +54,7 @@ ProtectHome=true
 ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu -/etc/systemd/network -/usr/lib/qemu/qemu-bridge-helper -/usr/libexec/qemu-bridge-helper -/usr/local/libexec/qemu/qemu-bridge-helper
 # In-app `dpkg -i` + `apt-get -f` from UpdateService (#387). The .deb writes
 # /usr/local/{bin,share,lib} and the systemd unit. Do not mark those ReadOnly.
-ReadWritePaths=/usr/local /var/lib/dpkg /var/cache/apt /var/lib/apt /var/cache/debconf /var/log/apt -/var/log/dpkg.log /usr/lib/systemd/system /etc/barkvisor -/etc/systemd/system
+ReadWritePaths=/usr/local /var/lib/dpkg /var/cache/apt /var/lib/apt /var/cache/debconf /var/log/apt -/var/log/dpkg.log /usr/lib/systemd/system /etc/barkvisor -/etc/systemd/system -/usr/lib/udev/rules.d -/etc/udev/rules.d -/run/needrestart
 LimitNOFILE=65536
 LimitMEMLOCK=infinity
 
