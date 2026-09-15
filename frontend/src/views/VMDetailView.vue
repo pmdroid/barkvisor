@@ -1886,7 +1886,7 @@ const healthBanner = computed(() => {
           <label
             class="boot-toggle"
             :class="{ disabled: controlDisabled }"
-            :title="startOnBootFooterFromWorkload(vm)"
+            :title="startOnBootFooterFromWorkload()"
           >
             <span>{{ startOnBootLabel() }}</span>
             <input
@@ -1944,7 +1944,7 @@ const healthBanner = computed(() => {
         <label
           class="boot-toggle"
           :class="{ disabled: controlDisabled }"
-          :title="startOnBootFooterFromWorkload(vm)"
+          :title="startOnBootFooterFromWorkload()"
         >
           <span>{{ startOnBootLabel() }}</span>
           <input
