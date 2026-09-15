@@ -9,7 +9,10 @@ import Foundation
 /// traps — which crash-looped the daemon via built-in catalog sync.
 /// All probes here are nil-safe: `Bundle(path:)` + `resourceURL` never trap.
 enum ModuleResources {
-    private static let bundleName = "BarkVisor_BarkVisorCore.bundle"
+    private static let bundleNames = [
+        "BarkVisor_BarkVisorCore.bundle",
+        "BarkVisor_BarkVisorCore.resources",
+    ]
 
     private final class BundleFinder {}
 
@@ -39,9 +42,9 @@ enum ModuleResources {
         // Probe the active configuration first so a stale sibling config's
         // bundle cannot shadow the fresh one in developer trees.
         #if DEBUG
-        let layouts = ["debug", "release"]
+            let layouts = ["debug", "release"]
         #else
-        let layouts = ["release", "debug"]
+            let layouts = ["release", "debug"]
         #endif
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -67,8 +70,10 @@ enum ModuleResources {
     /// rather than trapping.
     nonisolated static let resolved: Bundle? = {
         for dir in candidateDirectories() {
-            if let bundle = probe(dir.appendingPathComponent(bundleName, isDirectory: true)) {
-                return bundle
+            for name in bundleNames {
+                if let bundle = probe(dir.appendingPathComponent(name, isDirectory: true)) {
+                    return bundle
+                }
             }
         }
         return nil
