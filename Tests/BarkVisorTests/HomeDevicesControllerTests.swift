@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import JWTKit
 import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
@@ -21,6 +22,7 @@ struct HomeDevicesControllerTests {
         mtlsClient: (any HomeDeviceProxyClient)? = nil,
         vmManager: VMManager? = nil,
         localFacts: (@Sendable () async -> HomeDeviceLiveFacts)? = nil,
+        keys: JWTKeyCollection? = nil,
     ) -> HomeDevicesController {
         HomeDevicesController(
             dataDir: dir,
@@ -29,6 +31,7 @@ struct HomeDevicesControllerTests {
             mtlsClient: mtlsClient,
             vmManager: vmManager,
             localFacts: localFacts,
+            keys: keys,
         )
     }
 
@@ -648,6 +651,96 @@ struct HomeDevicesControllerTests {
         let down = try #require(scored.candidates.first { $0.hostId == downId })
         #expect(!down.eligible)
         #expect(down.reasons.contains { $0.code == HomePlacementScorer.offlineCode })
+    }
+
+    @Test func `bypass hop authorization mints the provisioned admin JWT`() async throws {
+        let dir = try isolatedDir("bypass-hop")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        try await pool.write { db in
+            try User(
+                id: "admin-1",
+                username: "pascal",
+                password: "hashed:unused-password",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
+        }
+        let keys = JWTKeyCollection()
+        await keys.add(hmac: .init(from: "home-hop-test-secret"), digestAlgorithm: .sha256)
+        let ctl = controller(dir: dir, hostId: "self", keys: keys)
+        let token = try await ctl.hopAuthorization(
+            user: AuthBypass.syntheticAdmin,
+            db: pool,
+            incoming: nil,
+        )
+        let hop = try #require(token)
+        #expect(!hop.hasPrefix("barkvisor_"))
+        let payload = try await keys.verify(hop, as: UserPayload.self)
+        #expect(payload.sub.value == "admin-1")
+        #expect(payload.username == "pascal")
+        #expect(payload.role == UserRole.admin.rawValue)
+        #expect(payload.sub.value != AuthBypass.syntheticUserId)
+    }
+
+    @Test func `health probe with keys sends hop JWT when the caller has no bearer`() async throws {
+        let dir = try isolatedDir("health-hop")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        try await pool.write { db in
+            try User(
+                id: "admin-1",
+                username: "pascal",
+                password: "hashed:unused-password",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
+        }
+        let peerId = "agentbox"
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: peerId, fingerprint: "aa", agentHost: "10.0.0.8", agentPort: 7_778)
+        let client = RecordingProxyClient()
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "agentbox")),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 1)),
+        )
+        let keys = JWTKeyCollection()
+        await keys.add(hmac: .init(from: "home-hop-test-secret"), digestAlgorithm: .sha256)
+        let ctl = controller(dir: dir, hostId: "self", devices: store, mtlsClient: client, keys: keys)
+        let bearer = try await ctl.hopAuthorization(
+            user: AuthBypass.syntheticAdmin,
+            db: pool,
+            incoming: nil,
+        )
+        let listed = HomeDeviceDirectory.list(
+            dataDir: dir, hostId: "self", displayName: "this-device", devices: store,
+        )
+        let report = await ctl.healthReport(
+            listed: listed,
+            local: localFacts(running: 1),
+            bearer: bearer,
+        )
+        let peer = try #require(report.devices.first { $0.hostId == peerId })
+        #expect(peer.reachability == HomeDeviceHealthAggregator.ok)
+        #expect(peer.displayName == "agentbox")
+        let auth = try #require(header("Authorization", in: client.calls[0].headers))
+        #expect(auth.hasPrefix("Bearer "))
+        let token = String(auth.dropFirst("Bearer ".count))
+        let payload = try await keys.verify(token, as: UserPayload.self)
+        #expect(payload.sub.value == "admin-1")
+        #expect(payload.sub.value != AuthBypass.syntheticUserId)
     }
 }
 

@@ -1,6 +1,7 @@
 import BarkVisorCore
 import Foundation
 import GRDB
+import JWTKit
 import Vapor
 
 /// Home device registry + member proxy (PAS-34), aggregated health (PAS-52),
@@ -19,6 +20,7 @@ struct HomeDevicesController: RouteCollection {
     var healthProbes: HealthProbeService?
     var localFacts: (@Sendable () async -> HomeDeviceLiveFacts)?
     var reachability: HomeDeviceReachabilityMonitor
+    var keys: JWTKeyCollection?
 
     init(
         dataDir: URL = Config.dataDir,
@@ -31,6 +33,7 @@ struct HomeDevicesController: RouteCollection {
         healthProbes: HealthProbeService? = nil,
         localFacts: (@Sendable () async -> HomeDeviceLiveFacts)? = nil,
         reachability: HomeDeviceReachabilityMonitor = HomeDeviceReachabilityMonitor(),
+        keys: JWTKeyCollection? = nil,
     ) {
         self.dataDir = dataDir
         self.hostId = hostId
@@ -42,6 +45,7 @@ struct HomeDevicesController: RouteCollection {
         self.healthProbes = healthProbes
         self.localFacts = localFacts
         self.reachability = reachability
+        self.keys = keys
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -86,12 +90,16 @@ struct HomeDevicesController: RouteCollection {
 
     @Sendable
     func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let listed = try await listedDevices(db: req.db)
         let report = await healthReport(
             listed: listed,
             local: resolvedLocalFacts(db: req.db),
-            bearer: req.headers.bearerAuthorization?.token,
+            bearer: try await hopAuthorization(
+                user: user,
+                db: req.db,
+                incoming: req.headers.bearerAuthorization?.token,
+            ),
         )
         await reachability.replace(report.devices)
         return report
@@ -99,14 +107,18 @@ struct HomeDevicesController: RouteCollection {
 
     @Sendable
     func scorePlacement(req: Vapor.Request) async throws -> HomePlacementScoreResponse {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let body = try req.content.decode(HomePlacementScoreRequest.self)
         let listed = try await listedDevices(db: req.db)
         return await scorePlacement(
             request: body,
             listed: listed,
             local: resolvedLocalFacts(db: req.db),
-            bearer: req.headers.bearerAuthorization?.token,
+            bearer: try await hopAuthorization(
+                user: user,
+                db: req.db,
+                incoming: req.headers.bearerAuthorization?.token,
+            ),
         )
     }
 
@@ -229,16 +241,23 @@ struct HomeDevicesController: RouteCollection {
 
     @Sendable
     func proxy(req: Vapor.Request) async throws -> Response {
-        _ = try req.requireUser
+        let user = try req.requireUser
         try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let id = try req.parameters.require("id")
         let remainder = req.parameters.getCatchall()
         let path = try HomeDeviceProxy.memberAPIPath(components: remainder)
         let query = req.url.query
+        let authorization = try await hopAuthorization(
+            user: user,
+            db: req.db,
+            incoming: req.headers.bearerAuthorization?.token,
+        )
 
         if id == hostId {
             let url = try HomeDeviceProxy.localURL(port: localPort, path: path, query: query)
-            return try await forward(req: req, url: url, client: localClient)
+            return try await forward(
+                req: req, url: url, client: localClient, authorization: authorization,
+            )
         }
 
         guard await reachability.permitsHop(to: id) else {
@@ -283,22 +302,44 @@ struct HomeDevicesController: RouteCollection {
             }
         }
         do {
-            return try await forward(req: req, url: url, client: client)
+            return try await forward(
+                req: req, url: url, client: client, authorization: authorization,
+            )
         } catch let error as Abort where error.status == .badGateway {
             await reachability.markUnavailable(id)
             throw error
         }
     }
 
+    func hopAuthorization(
+        user: AuthenticatedUser,
+        db: DatabasePool,
+        incoming: String?,
+    ) async throws -> String? {
+        guard let keys else { return incoming }
+        let hopUser = try await AuthBypass.hopUser(from: user, db: db)
+        return try await AuthService.signMemberHopToken(
+            userId: hopUser.userId,
+            username: hopUser.username,
+            role: AuthService.memberHopRole(
+                userRole: hopUser.role,
+                authMethod: hopUser.authMethod,
+                apiKeyKind: hopUser.apiKeyKind,
+            ),
+            keys: keys,
+        )
+    }
+
     private func forward(
         req: Vapor.Request,
         url: URL,
         client: any HomeDeviceProxyClient,
+        authorization: String?,
     ) async throws -> Response {
         let body = try await Self.collectedBody(req)
         var headers: [(String, String)] = []
-        if let auth = req.headers.bearerAuthorization {
-            headers.append(("Authorization", "Bearer \(auth.token)"))
+        if let authorization, !authorization.isEmpty {
+            headers.append(("Authorization", "Bearer \(authorization)"))
         }
         if let type = req.headers.contentType {
             headers.append(("Content-Type", type.serialize()))
