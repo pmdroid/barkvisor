@@ -35,6 +35,18 @@ struct LinuxServerAppCatalogTests {
         }
     }
 
+    @Test func `manifest directory resolves without the fatal bundle accessor`() throws {
+        // Regression: installs that ship the binary without
+        // BarkVisor_BarkVisorCore.bundle crash-looped the daemon ~15s after
+        // boot — the generated Bundle.module accessor traps with fatalError.
+        // Lookup must stay nil-safe (ModuleResources) and fall back to the
+        // source checkout.
+        let dir = try #require(LinuxServerAppCatalog.manifestDirectory())
+        #expect(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("nextcloud.json").path,
+        ))
+    }
+
     @Test func `jellyfin is the proof app with optional discovery and hidden server url`() throws {
         let jellyfin = try #require(try LinuxServerAppCatalog.load().apps.first { $0.id == "jellyfin" })
         #expect(jellyfin.ports.contains { $0.container == 8_096 && $0.ui })

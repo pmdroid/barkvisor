@@ -214,11 +214,12 @@ public enum APIContract {
     }
 
     public static func specURL() -> URL? {
-        if let bundled = Bundle.module.url(
-            forResource: "openapi",
-            withExtension: "yaml",
-            subdirectory: "API",
-        ) ?? Bundle.module.url(forResource: "openapi", withExtension: "yaml") {
+        if let module = ModuleResources.resolved,
+           let bundled = module.url(
+               forResource: "openapi",
+               withExtension: "yaml",
+               subdirectory: "API",
+           ) ?? module.url(forResource: "openapi", withExtension: "yaml") {
             return bundled
         }
         return nil
@@ -232,11 +233,12 @@ public enum APIContract {
     }
 
     public static func workloadSpecSchemaURL() -> URL? {
-        if let bundled = Bundle.module.url(
-            forResource: "workloadspec.schema",
-            withExtension: "json",
-            subdirectory: "API",
-        ) ?? Bundle.module.url(forResource: "workloadspec.schema", withExtension: "json") {
+        if let module = ModuleResources.resolved,
+           let bundled = module.url(
+               forResource: "workloadspec.schema",
+               withExtension: "json",
+               subdirectory: "API",
+           ) ?? module.url(forResource: "workloadspec.schema", withExtension: "json") {
             return bundled
         }
         return nil
