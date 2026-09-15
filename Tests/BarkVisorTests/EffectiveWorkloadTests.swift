@@ -104,7 +104,6 @@ struct EffectiveWorkloadTests {
             portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
-            workloadClass: nil,
         )
         let viaController = try VMController.createParams(from: body)
         #expect(viaController.health == health)

@@ -67,7 +67,6 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.spec.usb.first?.vendorId == "0x1234")
         #expect(spec.spec.display?.resolution == "1280x800")
         #expect(spec.spec.sharedPaths == ["/Users/test/share"])
-        #expect(spec.spec.workloadClass == "house")
         #expect(spec.spec.health == nil)
         #expect(WorkloadSpecProjector.status(from: makeVM()).startOnBoot == false)
     }
@@ -254,7 +253,6 @@ struct WorkloadSpecProjectorTests {
             uefi: nil,
             tpmEnabled: nil,
             spec: nil,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.name == "flat")
@@ -286,7 +284,6 @@ struct WorkloadSpecProjectorTests {
             uefi: nil,
             tpmEnabled: nil,
             spec: nil,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.vmType == GuestProfiles.defaultLinuxID(
@@ -317,7 +314,6 @@ struct WorkloadSpecProjectorTests {
             uefi: nil,
             tpmEnabled: nil,
             spec: nil,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         let expected = try GuestProfiles.defaultID(osFamily: "windows")
@@ -348,7 +344,6 @@ struct WorkloadSpecProjectorTests {
             uefi: nil,
             tpmEnabled: nil,
             spec: nil,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.vmType == hostLinux)
@@ -370,7 +365,6 @@ struct WorkloadSpecProjectorTests {
             portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.name == "from-spec")
@@ -493,7 +487,6 @@ struct WorkloadSpecProjectorTests {
             portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.cloudInit?.userData == "packages:\n  - vim\n")
@@ -516,7 +509,6 @@ struct WorkloadSpecProjectorTests {
             portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
-            workloadClass: nil,
         )
         let params = try VMController.createParams(from: body)
         #expect(params.cloudInit?.userData == "runcmd:\n  - echo hi\n")

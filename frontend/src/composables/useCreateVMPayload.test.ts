@@ -42,17 +42,15 @@ describe('useCreateVMPayload (PAS-240)', () => {
     expect(req.displayResolution).toBeUndefined()
     expect(req.networkId).toBeUndefined()
     expect(req.usbDevices).toBeUndefined()
-    expect(req.workloadClass).toBeUndefined()
   })
 
-  test('create payload omits workloadClass', () => {
+  test('cloud payload includes cloud-init data', () => {
     const req = buildCreateVMPayload({
       ...base,
       mode: 'cloud',
       imageId: 'img-cloud',
       userData: 'packages:\n  - git\n',
     })
-    expect(req.workloadClass).toBeUndefined()
     expect(req.cloudImageId).toBe('img-cloud')
     expect(req.cloudInit?.userData).toContain('git')
   })

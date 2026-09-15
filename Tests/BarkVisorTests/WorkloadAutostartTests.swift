@@ -15,7 +15,6 @@ struct WorkloadAutostartTests {
         id: String,
         startOnBoot: Bool,
         state: String = "stopped",
-        workloadClass: String = "house",
     ) throws {
         try Disk(
             id: "disk-\(id)",
@@ -49,7 +48,6 @@ struct WorkloadAutostartTests {
             portForwards: nil,
             autoCreated: false,
             pendingChanges: false,
-            workloadClass: workloadClass,
             startOnBoot: startOnBoot,
             createdAt: "2026-01-01T00:00:00Z",
             updatedAt: "2026-01-01T00:00:00Z",
@@ -63,25 +61,23 @@ struct WorkloadAutostartTests {
         }
         let fetched = try queue.read { db in try VM.fetchOne(db, key: "house-1") }
         #expect(fetched?.startOnBoot == false)
-        #expect(fetched?.workloadClass == "house")
     }
 
     @Test func `startOnBoot round trip`() throws {
         let queue = try migratedQueue()
         try queue.write { db in
-            try insertVM(db, id: "agent-1", startOnBoot: true, workloadClass: "agent")
+            try insertVM(db, id: "agent-1", startOnBoot: true)
         }
         let fetched = try queue.read { db in try VM.fetchOne(db, key: "agent-1") }
         #expect(fetched?.startOnBoot == true)
-        #expect(fetched?.workloadClass == "agent")
     }
 
     @Test func `new Device boot starts opted-in stopped Workloads only`() throws {
         let queue = try migratedQueue()
         try queue.write { db in
-            try insertVM(db, id: "off-house", startOnBoot: false, workloadClass: "house")
-            try insertVM(db, id: "on-house", startOnBoot: true, workloadClass: "house")
-            try insertVM(db, id: "on-agent", startOnBoot: true, workloadClass: "agent")
+            try insertVM(db, id: "off-house", startOnBoot: false)
+            try insertVM(db, id: "on-house", startOnBoot: true)
+            try insertVM(db, id: "on-agent", startOnBoot: true)
             try insertVM(db, id: "on-running", startOnBoot: true, state: "running")
             try insertVM(db, id: "on-error", startOnBoot: true, state: "error")
         }
@@ -98,10 +94,10 @@ struct WorkloadAutostartTests {
         #expect(!plan.vmIDs.contains("on-running"))
     }
 
-    @Test func `same boot does not start stopped House appliances`() throws {
+    @Test func `same boot does not start stopped Workloads`() throws {
         let queue = try migratedQueue()
         try queue.write { db in
-            try insertVM(db, id: "haos", startOnBoot: true, workloadClass: "house")
+            try insertVM(db, id: "haos", startOnBoot: true)
             try WorkloadAutostart.recordBootID("boot-1", db: db)
         }
         let plan = try queue.read { db in
@@ -136,9 +132,7 @@ struct WorkloadAutostartTests {
         #expect(!(id ?? "").isEmpty)
     }
 
-    @Test func `autostart uses VMManager start so Agent cage stays on the launch path`() {
-        // WorkloadAutostart.startEligible calls VMManager.start, which goes through
-        // QEMUBuilder → AgentNetworkCage.wrapLaunch. There is no bypass launch.
+    @Test func `autostart uses VMManager start`() {
         let source = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()

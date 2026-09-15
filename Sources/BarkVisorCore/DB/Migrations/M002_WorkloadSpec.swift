@@ -37,7 +37,7 @@ public struct M002_WorkloadSpec: DatabaseMigration {
     }
 
     private static func backfillSpecJSON(_ db: GRDB.Database) throws {
-        // Do not VM.fetchAll: later columns (workloadClass, startOnBoot) are missing here.
+        // Do not VM.fetchAll: later columns (startOnBoot) are missing here.
         let columns = try Set(db.columns(in: "vms").map(\.name))
         let rows = try Row.fetchAll(db, sql: "SELECT * FROM vms")
         for row in rows {
@@ -67,7 +67,6 @@ public struct M002_WorkloadSpec: DatabaseMigration {
                 specJson: columns.contains("specJson") ? row["specJson"] : nil,
                 overridesJson: columns.contains("overridesJson") ? row["overridesJson"] : nil,
                 healthJson: columns.contains("healthJson") ? row["healthJson"] : nil,
-                workloadClass: columns.contains("workloadClass") ? row["workloadClass"] : WorkloadClass.house.rawValue,
                 specGeneration: columns.contains("specGeneration") ? (row["specGeneration"] ?? 1) : 1,
                 startOnBoot: columns.contains("startOnBoot") ? (row["startOnBoot"] ?? false) : false,
                 createdAt: row["createdAt"],

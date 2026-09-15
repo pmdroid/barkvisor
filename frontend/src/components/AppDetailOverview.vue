@@ -8,7 +8,6 @@ import type { ComposeMountDraft } from '../utils/composeEdit'
 import AppMountList from './AppMountList.vue'
 import {
   appCatalogSource,
-  appClassLabel,
   appEnvSummary,
   appIngressState,
   composeProjectName,
@@ -60,7 +59,6 @@ const image = computed(() => {
   const m = (props.vm.spec?.spec?.compose ?? '').match(/image:\s*(\S+)/)
   return m?.[1] ?? '—'
 })
-const klass = computed(() => appClassLabel(props.vm))
 const restart = computed(() => parseRestartPolicy(props.vm.spec?.spec?.compose))
 const runtimeLabel = computed(() => {
   const r = (props.vm.runtime || props.vm.spec?.spec?.runtime || '').toLowerCase()
@@ -93,10 +91,6 @@ const usage = computed(() =>
             <a v-if="published" :href="published" target="_blank" rel="noopener">{{ published }}</a>
             <span v-else class="dim">Start the app to open the UI</span>
           </span>
-        </div>
-        <div v-if="klass" class="kv">
-          <span class="k">Class</span>
-          <span class="v"><span class="tag">{{ klass }}</span></span>
         </div>
         <div class="kv"><span class="k">Restart policy</span><span class="v">{{ restart }}</span></div>
       </section>

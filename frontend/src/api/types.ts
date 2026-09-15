@@ -170,7 +170,6 @@ export interface WorkloadSpecBody {
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
-  workloadClass?: 'house' | 'agent' | string | null
   runtime?: 'device' | 'workload' | string | null
   compose?: string | null
   env?: Record<string, string> | null
@@ -283,7 +282,6 @@ export interface VM {
   usbDevices: USBPassthroughDevice[] | null
   gpuDevices?: GPUPassthroughDevice[] | null
   pendingChanges: boolean
-  workloadClass?: 'house' | 'agent' | string | null
   /** PAS-258. Omitted / false: do not start after Device boot. */
   startOnBoot?: boolean | null
   createdAt: string
@@ -466,8 +464,6 @@ export interface CreateVMRequest {
   uefi?: boolean
   tpmEnabled?: boolean
   spec?: WorkloadSpec
-  /** `house` | `agent`. Omitted = house (PAS-268). */
-  workloadClass?: 'house' | 'agent' | string
 }
 
 export interface DownloadImageRequest {

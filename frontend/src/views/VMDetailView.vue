@@ -112,7 +112,6 @@ import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GPU_PASSTHROUGH_DOCS_HREF, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
-import { isAgentWorkload } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
   startOnBootFooterFromWorkload,
@@ -190,7 +189,6 @@ const vm = computed(() => {
   return store.vms.find(v => v.id === vmId.value)
 })
 
-const agentCage = computed(() => isAgentWorkload(vm.value))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
 
 const terminalContainers = ref<WorkloadContainer[]>([])
@@ -2334,7 +2332,7 @@ const healthBanner = computed(() => {
           </div>
         </div>
 
-        <div v-if="!isMemberDetail && !agentCage" class="sheet">
+        <div v-if="!isMemberDetail" class="sheet">
           <div class="sheet-head">
             <h3>Shared folders</h3>
             <AppButton size="sm" icon="plus" @click="showFolderPicker = true">Add</AppButton>
@@ -2347,7 +2345,7 @@ const healthBanner = computed(() => {
           </div>
         </div>
 
-        <div v-if="!agentCage" class="sheet">
+        <div class="sheet">
           <div class="sheet-head">
             <h3>USB</h3>
             <AppButton

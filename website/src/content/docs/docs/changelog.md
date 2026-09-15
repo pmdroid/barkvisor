@@ -127,7 +127,6 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ## 1.0.0-alpha.4 — 2026-09-09
 
 - Windows Device: zip (arm64 and amd64), optional MSI and Windows Service, WHPX, live browser VNC. Windows guests run on a Windows Device. Apple Silicon can start Windows ARM64 guests on QEMU 11 / HVF.
-- Create VM no longer offers Coding Agent or a House/Agent class picker. New Workloads omit `workloadClass`. Existing agent Workloads keep their cage until deleted.
 - Images lists every Device in the Home, including skipped members (HTTP error, unreachable). Empty state only when every queried Device returned no images. Delete runs on the owning Device.
 - Doctor checks qemu-img, ISO tooling, and QEMU device modules. 4m firmware pairing is fixed.
 - Cloned boot disks must have a partition table. qcow2 clones no longer run sgdisk.

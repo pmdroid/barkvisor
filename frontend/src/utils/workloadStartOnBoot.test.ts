@@ -21,14 +21,10 @@ describe('workloadStartOnBoot (PAS-258)', () => {
     expect(parseStartOnBoot({ status: { startOnBoot: true } })).toBe(true)
   })
 
-  test('House copy is opt-in; Agent copy keeps the cage', () => {
+  test('start-on-boot copy is opt-in', () => {
     expect(startOnBootLabel()).toBe('Start when this Device boots')
-    expect(startOnBootFooter('house')).toContain('House appliances stay stopped')
-    expect(startOnBootFooter('agent')).toContain('Agent cage stays on')
-    expect(startOnBootFooterFromWorkload({ workloadClass: 'house' })).toContain('House appliances')
-    expect(startOnBootFooterFromWorkload({ spec: { spec: { workloadClass: 'agent' } } })).toContain(
-      'Agent cage',
-    )
+    expect(startOnBootFooter()).toContain('Workloads stay stopped')
+    expect(startOnBootFooterFromWorkload()).toContain('Workloads stay stopped')
   })
 
   test('PATCH body keeps startOnBoot and drops targetHostId', () => {

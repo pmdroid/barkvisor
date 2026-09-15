@@ -11,8 +11,6 @@ A single-device install is a **Home of one**. More Devices join that Home later;
 | **Home** | A person’s set of Devices (one or more) | `/api/home/devices` registry + `/api/home/devices/health` + member proxy |
 | **Device** | The Mac, PC, or board running this BarkVisor daemon | Inventory JSON keeps `hostId`, `hostname`, and host metrics |
 | **Agent** | The daemon role on a Device | `/api/agent/*`, `barkvisor` or `barkvisor-agent` |
-| **Agent Workload** | WAN-only Workload class, not the daemon | `workloadClass: agent` |
-| **House Workload** | Workload class with house LAN and USB | `workloadClass: house` |
 | **Workload** | A Virtual Machine or an App on a Device | `VM`, `WorkloadSpec` |
 | **Library** | Images and templates you can deploy | Image / template repositories |
 | **Node** | **Do not use** in product copy | — |
