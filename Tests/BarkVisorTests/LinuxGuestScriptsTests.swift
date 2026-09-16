@@ -307,7 +307,7 @@ struct LinuxGuestScriptsTests {
 
         // Default prepush must stay lint + test + frontend-test (no guest boot).
         let prepushDeps = defaultPrepushDepends(mise)
-        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        #expect(prepushDeps == ["lint", "test", "linux-ci", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
         #expect(!prepushTable.contains("host-network-extra-ip"))
@@ -412,7 +412,7 @@ struct LinuxGuestScriptsTests {
         #expect(mise.contains("[tasks.cross-device-smoke]"))
         #expect(mise.contains("cross-device-smoke.sh"))
         let prepushDeps = defaultPrepushDepends(mise)
-        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        #expect(prepushDeps == ["lint", "test", "linux-ci", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("cross-device-smoke"))
 
@@ -596,7 +596,7 @@ struct LinuxGuestScriptsTests {
             encoding: .utf8,
         )
         let prepushDeps = defaultPrepushDepends(mise)
-        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        #expect(prepushDeps == ["lint", "test", "linux-ci", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
         #expect(!prepushTable.contains("host-network-extra-ip"))
