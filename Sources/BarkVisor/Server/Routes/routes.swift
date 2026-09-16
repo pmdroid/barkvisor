@@ -100,7 +100,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try protected.register(collection: WorkloadApplyController(backgroundTasks: deps.backgroundTasks))
     try protected.register(collection: AgentInventoryController())
     let homeDevices = HomeDevicesController(
-        vmManager: deps.vmManager, healthProbes: deps.healthProbes,
+        vmManager: deps.vmManager, healthProbes: deps.healthProbes, keys: deps.keys,
     )
     try protected.register(collection: homeDevices)
     Task {
