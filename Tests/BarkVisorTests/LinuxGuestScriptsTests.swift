@@ -510,7 +510,7 @@ struct LinuxGuestScriptsTests {
             "CI_FORCE_NO_KVM",
             "/dev/kvm",
             "SKIP: /dev/kvm",
-            "docs/ci-kvm-runner.md",
+            "mise run guest-smoke",
             "Workload",
         ] {
             #expect(body.contains(needle), "CI helper should reference \(needle)")
@@ -553,10 +553,10 @@ struct LinuxGuestScriptsTests {
             "REQUIRE_KVM": "1",
         ])
         #expect(required.0 != 0, "REQUIRE_KVM probe should fail without kvm: \(required.1)")
-        #expect(required.1.contains("docs/ci-kvm-runner.md"))
+        #expect(required.1.contains("mise run guest-smoke"))
     }
 
-    @Test func `guest-boot is not a required CI gate`() throws {
+    @Test func `guest-boot stays an opt-in local check`() throws {
         let ci = try String(
             contentsOf: repoRoot.appendingPathComponent(".github/workflows/ci.yml"),
             encoding: .utf8,
@@ -570,23 +570,18 @@ struct LinuxGuestScriptsTests {
         #expect(!ci.contains("linux-guest-smoke"))
 
         let docs = try String(
-            contentsOf: repoRoot.appendingPathComponent("docs/ci-kvm-runner.md"),
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
             encoding: .utf8,
         )
         for needle in [
-            "KVM_RUNNER_ENABLED",
-            "self-hosted",
-            "linux",
-            "kvm",
-            "/dev/kvm",
-            "run-guest-boot",
-            "never a required",
+            "mise run guest-smoke",
+            "mise run guest-smoke-real",
+            "mise run prepush",
             "Device",
             "Workload",
             "Home",
-            "install-swift-linux.sh",
         ] {
-            #expect(docs.contains(needle), "ci-kvm-runner.md should mention \(needle)")
+            #expect(docs.contains(needle), "development docs should mention \(needle)")
         }
         #expect(!docs.localizedCaseInsensitiveContains("cluster"))
         #expect(!docs.localizedCaseInsensitiveContains("quorum"))
@@ -679,21 +674,7 @@ struct LinuxGuestScriptsTests {
         #expect(skipped.1.contains("SKIP:"))
     }
 
-    @Test func `starlight changelog and terminology keep Roadmap links`() throws {
-        let changelog = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "website/src/content/docs/docs/changelog.md",
-            ),
-            encoding: .utf8,
-        )
-        #expect(changelog.contains("/docs/roadmap/"))
-        let terms = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "website/src/content/docs/docs/concepts/terminology.md",
-            ),
-            encoding: .utf8,
-        )
-        #expect(terms.contains("/docs/roadmap/"))
+    @Test func `docs changelog and terminology keep Roadmap links`() throws {
         let srcChange = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/changelog.md"),
             encoding: .utf8,

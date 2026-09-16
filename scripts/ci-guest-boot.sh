@@ -51,21 +51,21 @@ emit_probe() {
     echo "note: /dev/kvm is absent"
   fi
   if [[ "${REQUIRE_KVM:-0}" == "1" ]]; then
-    die "/dev/kvm is required (REQUIRE_KVM=1). See docs/ci-kvm-runner.md"
+    die "/dev/kvm is required (REQUIRE_KVM=1). Run mise run guest-smoke on a KVM host."
   fi
   return 0
 }
 
 skip_no_kvm() {
   echo "SKIP: /dev/kvm is not usable; not running guest-boot on TCG in CI."
-  echo "Install KVM or register a self-hosted linux/kvm runner (docs/ci-kvm-runner.md)."
+  echo "Install KVM to run the local guest-boot smoke."
 }
 
 run_scenario() {
   local scenario="$1"
   if ! kvm_usable; then
     if [[ "${REQUIRE_KVM:-0}" == "1" ]]; then
-      die "/dev/kvm is required (REQUIRE_KVM=1). See docs/ci-kvm-runner.md"
+      die "/dev/kvm is required (REQUIRE_KVM=1). Run mise run guest-smoke on a KVM host."
     fi
     skip_no_kvm
     return 0
@@ -87,7 +87,6 @@ dry_run() {
     "CI_FORCE_NO_KVM" \
     "/dev/kvm" \
     "SKIP: /dev/kvm" \
-    "docs/ci-kvm-runner.md" \
     "Workload"; do
     grep -qF "$needle" "$0" || die "helper missing reference to $needle"
   done
