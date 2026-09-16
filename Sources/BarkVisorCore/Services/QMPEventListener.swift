@@ -11,7 +11,14 @@ import GRDB
 /// - DEVICE_TRAY_MOVED: Media ejected
 /// - RESET: VM reset
 public actor QMPEventListener {
-    private var tasks: [String: Task<Void, Never>] = [:]
+    private struct Run {
+        let generation: UInt64
+        let task: Task<Void, Never>
+        let client: QMPClient
+    }
+
+    private var runs: [String: Run] = [:]
+    private var nextGeneration: UInt64 = 0
     private weak var vmManager: VMManager?
     private var stateStreamService: VMStateStreamService?
     private let dbPool: DatabasePool
@@ -31,33 +38,29 @@ public actor QMPEventListener {
     // MARK: - Lifecycle
 
     public func start(vmID: String, eventSocketPath: String) {
-        guard tasks[vmID] == nil else { return }
+        stop(vmID: vmID)
 
-        tasks[vmID] = Task {
-            // Wait for QEMU to create the event socket
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-
-            while !Task.isCancelled {
-                await self.listenLoop(vmID: vmID, socketPath: eventSocketPath)
-
-                // If we get here, the connection dropped — reconnect after a short delay
-                // (unless the task was cancelled, meaning the VM was stopped)
-                if Task.isCancelled { break }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
+        let generation = nextGeneration
+        nextGeneration &+= 1
+        let client = QMPClient(socketPath: eventSocketPath, timeoutSeconds: 30)
+        let task = Task {
+            await self.run(vmID: vmID, generation: generation, socketPath: eventSocketPath, client: client)
         }
+        runs[vmID] = Run(generation: generation, task: task, client: client)
     }
 
     public func stop(vmID: String) {
-        tasks[vmID]?.cancel()
-        tasks.removeValue(forKey: vmID)
+        guard let run = runs.removeValue(forKey: vmID) else { return }
+        run.task.cancel()
+        run.client.disconnect()
     }
 
     public func stopAll() {
-        for (_, task) in tasks {
-            task.cancel()
+        for (_, run) in runs {
+            run.task.cancel()
+            run.client.disconnect()
         }
-        tasks.removeAll()
+        runs.removeAll()
     }
 
     // MARK: - Event Loop
@@ -65,48 +68,81 @@ public actor QMPEventListener {
     /// Thread-safe wrapper for transferring non-Sendable QMP event data across isolation boundaries.
     private struct QMPEventBox: @unchecked Sendable {
         let events: [[String: Any]]
+        let closed: Bool
     }
 
-    private func listenLoop(vmID: String, socketPath: String) async {
-        // Run blocking QMP I/O off the cooperative thread pool.
-        let box = await Task.detached(priority: .utility) { () -> QMPEventBox in
-            let client = QMPClient(socketPath: socketPath, timeoutSeconds: 30)
-            do {
-                try client.connect()
-            } catch {
-                return QMPEventBox(events: [])
-            }
-            defer { client.disconnect() }
+    private func isCurrent(vmID: String, generation: UInt64) -> Bool {
+        runs[vmID]?.generation == generation
+    }
 
-            var collected: [[String: Any]] = []
-
-            // Sit on the socket and read events until disconnected or timeout
-            // The 30s socket timeout means we'll cycle through here periodically,
-            // which lets us check for cancellation
-            while !Task.isCancelled {
-                do {
-                    let msg = try client.readMessagePublic()
-                    if msg["event"] != nil {
-                        collected.append(msg)
-                    }
-                    // Responses are unexpected on the event socket — ignore them
-                } catch {
-                    // Timeout or disconnect — break and let outer loop reconnect
-                    break
+    private func run(vmID: String, generation: UInt64, socketPath: String, client: QMPClient) async {
+        while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
+            if await waitForSocket(path: socketPath) {
+                if await connect(client: client), isCurrent(vmID: vmID, generation: generation) {
+                    await readEvents(vmID: vmID, generation: generation, client: client)
                 }
             }
-            return QMPEventBox(events: collected)
-        }.value
+            client.disconnect()
+            if Task.isCancelled || !isCurrent(vmID: vmID, generation: generation) {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        client.disconnect()
+    }
 
-        for event in box.events {
-            await handleEvent(vmID: vmID, event: event)
+    private func waitForSocket(path: String) async -> Bool {
+        var waitedNanos: UInt64 = 0
+        while !Task.isCancelled {
+            if FileManager.default.fileExists(atPath: path) {
+                return true
+            }
+            if waitedNanos >= 2_000_000_000 {
+                return false
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            waitedNanos &+= 10_000_000
+        }
+        return false
+    }
+
+    private func connect(client: QMPClient) async -> Bool {
+        await Task.detached(priority: .utility) { () -> Bool in
+            do {
+                try client.connect()
+                return true
+            } catch {
+                client.disconnect()
+                return false
+            }
+        }.value
+    }
+
+    private func readEvents(vmID: String, generation: UInt64, client: QMPClient) async {
+        while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
+            let box = await Task.detached(priority: .utility) { () -> QMPEventBox in
+                guard let message = try? client.readMessagePublic() else {
+                    return QMPEventBox(events: [], closed: true)
+                }
+                return QMPEventBox(
+                    events: message["event"] == nil ? [] : [message],
+                    closed: false,
+                )
+            }.value
+            guard !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) else { return }
+            if box.closed { return }
+            for event in box.events {
+                await handleEvent(vmID: vmID, generation: generation, event: event)
+                guard !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) else { return }
+            }
         }
     }
 
     // MARK: - Event Handlers
 
-    private func handleEvent(vmID: String, event: [String: Any]) async {
+    private func handleEvent(vmID: String, generation: UInt64, event: [String: Any]) async {
         guard let eventType = event["event"] as? String else { return }
+        guard isCurrent(vmID: vmID, generation: generation) else { return }
         let data = event["data"] as? [String: Any]
 
         switch eventType {
@@ -119,6 +155,7 @@ public actor QMPEventListener {
             // tell VMManager to ensure QEMU exits — it can linger on macOS HVF.
             // User-initiated shutdowns (ACPI powerdown) are handled by VMManager.stop().
             if guest {
+                guard isCurrent(vmID: vmID, generation: generation) else { return }
                 await vmManager?.handleGuestShutdown(vmID: vmID)
             }
 
@@ -128,12 +165,14 @@ public actor QMPEventListener {
 
             // Update DB state to error — the QEMU process may still be running
             do {
+                guard isCurrent(vmID: vmID, generation: generation) else { return }
                 try await dbPool.write { db in
                     try db.execute(
                         sql: "UPDATE vms SET state = 'error', updatedAt = ? WHERE id = ?",
                         arguments: [iso8601.string(from: Date()), vmID],
                     )
                 }
+                guard isCurrent(vmID: vmID, generation: generation) else { return }
                 let event = VMStateEvent(id: vmID, state: "error", error: "Kernel panic")
                 await AuditService.logVMEvent(
                     action: VMLifecycleAction.crashed,
@@ -141,6 +180,7 @@ public actor QMPEventListener {
                     detail: "{\"reason\":\"kernel panic (\(action))\"}",
                     db: dbPool,
                 )
+                guard isCurrent(vmID: vmID, generation: generation) else { return }
                 await vmManager?.recordHealthError("Kernel panic", for: vmID)
                 await stateStreamService?.broadcast(event: event)
             } catch {
