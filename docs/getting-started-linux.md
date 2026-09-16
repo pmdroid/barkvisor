@@ -161,7 +161,11 @@ loginctl enable-linger "$USER"
 
 With the service running, use `~/.local/bin/barkvisor-agent doctor` to check the runtime, then [join your Home](home-and-pairing.md). Your user needs access to `/dev/kvm` for acceleration. Use NAT; bridge management and VFIO passthrough require root.
 
-To update, extract a new release into a new versioned folder, repoint the `~/.local/opt/barkvisor` symlink, and restart the user service. Keep the data directory.
+### Update a user installation
+
+Before updating, check the existing user service file. It must set both `BARKVISOR_DATA_DIR` and `BARKVISOR_SOCKET_DIR`, as shown above, using your existing data and socket folders. Older instructions removed the bundled frontend to avoid system paths; current tarballs keep it, so these explicit settings are required for a non-root installation.
+
+Extract the new release into a new versioned folder and repoint the `~/.local/opt/barkvisor` symlink. If you changed the service file, run `systemctl --user daemon-reload`. Then restart with `systemctl --user restart barkvisor-agent.service`. Keep the existing data directory.
 
 ## Uninstalling
 
