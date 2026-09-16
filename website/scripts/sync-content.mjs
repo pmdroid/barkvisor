@@ -34,7 +34,7 @@ const map = {
   'getting-started-first-launch.md': {
     out: 'getting-started/first-launch.md',
     title: 'First launch and setup',
-    description: 'Web-based setup wizard, admin account, and platform-specific bridge helpers.',
+    description: 'Name your Device, add a passkey, and choose an image folder.',
   },
   'getting-started-quickstart.md': {
     out: 'getting-started/quickstart.md',
@@ -59,12 +59,12 @@ const map = {
   'product-terminology.md': {
     out: 'concepts/terminology.md',
     title: 'Product terminology',
-    description: 'Home and Device — words for the tenancy and the machine running BarkVisor.',
+    description: 'Home, Device, Workload, and the other words used in BarkVisor.',
   },
   'home-and-pairing.md': {
     out: 'guides/home-and-pairing.md',
     title: 'Home and pairing',
-    description: 'Add a Device to a Home, join from setup or the CLI, and what pairing does not do.',
+    description: 'Pair another Device and manage your computers from one console.',
   },
   'ollama.md': {
     out: 'guides/ollama.md',
@@ -91,7 +91,7 @@ const map = {
   'using-dashboard.md': {
     out: 'using/dashboard.md',
     title: 'Dashboard',
-    description: 'The triage inbox for your Home — incidents, feed columns, and vitals.',
+    description: 'Running workloads, Device status, and problems that need attention.',
   },
   'using-devices.md': {
     out: 'using/devices.md',
@@ -100,13 +100,13 @@ const map = {
   },
   'using-vms.md': {
     out: 'using/vms.md',
-    title: 'Virtual Machines',
+    title: 'Workloads',
     description: 'All Workloads in the Home with health filters and quick actions.',
   },
   'using-apps.md': {
     out: 'using/apps.md',
     title: 'Apps',
-    description: 'Create Docker apps from the catalog, then Overview, Logs, Environment, and Volumes.',
+    description: 'Install Docker Compose apps and manage their logs, terminals, settings, and volumes.',
   },
   'using-vm-details.md': {
     out: 'using/vm-details.md',
@@ -158,6 +158,11 @@ const map = {
     title: 'Settings: Home',
     description: 'Device facts and Device URL.',
   },
+  'settings-security.md': {
+    out: 'using/settings/security.md',
+    title: 'Settings: Security',
+    description: 'Choose when this Device requires sign-in.',
+  },
   'settings-pairing.md': {
     out: 'using/settings/pairing.md',
     title: 'Settings: Pairing',
@@ -196,7 +201,7 @@ const map = {
   'roadmap.md': {
     out: 'roadmap.md',
     title: 'Roadmap',
-    description: 'Product ideas ahead: Home HA, quorum, Ceph, live migration, apps, and backups.',
+    description: 'Ideas for workload migration, shared storage, backups, and networking.',
   },
 };
 
@@ -235,6 +240,7 @@ function fixLinks(body) {
     .replace(/\]\(using-logs\.md(#[^)]*)?\)/g, '](/docs/using/logs/$1)')
     .replace(/\]\(using-settings\.md(#[^)]*)?\)/g, '](/docs/using/settings/$1)')
     .replace(/\]\(settings-home\.md(#[^)]*)?\)/g, '](/docs/using/settings/home/$1)')
+    .replace(/\]\(settings-security\.md(#[^)]*)?\)/g, '](/docs/using/settings/security/$1)')
     .replace(/\]\(settings-pairing\.md(#[^)]*)?\)/g, '](/docs/using/settings/pairing/$1)')
     .replace(/\]\(settings-library\.md(#[^)]*)?\)/g, '](/docs/using/settings/library/$1)')
     .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/devices/$1)')
@@ -246,6 +252,7 @@ function fixLinks(body) {
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
+    .replace(/\]\(archive\/([^)]*)\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/archive/$1)')
     .replace(/\]\(\.\.\/CONTEXT\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/CONTEXT.md$1)')
     .replace(/\]\(\.\.\/\.github\/([^)]+)\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/.github/$1)')
     .replace(/\]\(\.\.\/packaging\/linux\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/linux)')

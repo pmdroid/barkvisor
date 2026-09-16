@@ -1,52 +1,33 @@
 # Settings: Repositories
 
-The **Repositories** tab lists catalog URLs each Device in this Home syncs. Templates and images from those catalogs show up in [Create VM](create-workload.md). Member catalog errors show on this page, not only when Create VM fails.
+Repositories are the catalogs BarkVisor uses to list available images, VM templates, and Apps.
 
-![Settings Repositories tab: catalog URLs and sync](img/settings-repositories.png)
+![Settings Repositories tab](img/settings-repositories.png)
 
-## Catalog URLs
+## Sync catalogs
 
-Each row is a source:
+Click **Sync** to refresh a catalog on this Device and reachable paired Devices. The page shows each Device's status, last sync time, and any errors.
 
-- Name, type (`images`, `templates`, or `apps`), and the catalog URL
-- Sync status per Device on built-in catalogs — idle, syncing, synced, or error, including `lastError`
-- Last synced timestamp under each status badge (or `never` if the catalog has not synced)
-- **Sync** pulls the catalog on Home and fans out to reachable members
-- **Remove** on sources you added (built-in catalogs stay)
+Built-in catalogs also sync at startup. Syncing a catalog downloads its list of items; it does not download every OS image or container image.
 
-**Add repository** asks for the type and a catalog URL. That still lives on Home Settings, not on a member UI.
+## Add a repository
 
-Built-in catalogs sync on startup. Use **Sync** when a catalog changed and you want it now.
+Click **Add repository**, choose the catalog type, and enter its HTTP or HTTPS URL. Images and templates appear in **Create VM**; app catalogs appear in **Create App**.
 
-## Built-in catalog URLs
+You can remove repositories you added. Built-in catalogs cannot be removed.
 
-Shipped catalogs have one membership-independent identity that never changes
-between Home and members:
+## Built-in App catalogs
 
-| Catalog | URL | Fetch backing |
-|---|---|---|
-| Big Bear Universal Apps | `barkvisor://builtin/bigbear` | GitHub zipball (https) |
-| LinuxServer.io | `barkvisor://builtin/linuxserver` | manifests bundled in the binary |
+The App gallery includes **Big Bear Universal Apps** and **LinuxServer.io**. Settings displays their internal catalog addresses as `barkvisor://builtin/bigbear` and `barkvisor://builtin/linuxserver`.
 
-The `barkvisor://` scheme is reserved: the server seeds these rows itself and
-the API rejects them when you try to add them (**Add repository** only accepts
-`http://` or `https://` URLs). The name segment is a single lowercase slug.
-Which built-ins exist, and how each one is materialised (embedded manifests vs
-the public zipball), is decided by the built-in catalog registry, not by the
-database row — so the same URL behaves right on Home and on members (members
-that have catalog fetching disabled fall back to the last catalog that synced).
+BarkVisor creates those entries automatically. You do not need to add them by hand; the Add repository form accepts HTTP and HTTPS URLs only.
 
-Legacy databases may still hold the pre-builtin Big Bear rows (the GitHub
-repository URL, or the member `barkvisor://home/catalog/apps` origin); the
-`M021` migration rewrites unflipped built-in GitHub rows onto
-`barkvisor://builtin/bigbear`, and rows that had already flipped to the member
-origin keep receiving the catalog fanned out from Home.
+## When a sync fails
 
-App images and templates keep their regular https / member catalog URLs — the
-built-in scheme covers app catalogs only.
+Check the error beside the Device. Make sure that Device is reachable and can access the catalog, then try **Sync** again. Its last successfully synced catalog may still be available.
 
 ## Related
 
-- [Create a Workload](create-workload.md)
+- [Create a VM](getting-started-quickstart.md)
+- [Apps](using-apps.md)
 - [Images](using-images.md)
-- [Settings: Library](settings-library.md)

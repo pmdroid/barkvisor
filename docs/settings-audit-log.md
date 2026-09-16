@@ -1,6 +1,6 @@
 # Settings: Audit Log
 
-The **Audit Log** tab is the who-did-what trail for this Home: every state-changing call through the API, with who authenticated it.
+The **Audit Log** tab records changes and the credentials used to make them.
 
 ![Settings Audit Log tab](img/settings-audit-log.png)
 
@@ -25,7 +25,7 @@ Each row shows:
 | User | Authenticated principal |
 | Action | What was attempted |
 | Resource | Which object it hit |
-| Auth | How the caller proved identity (password/API key) |
+| Auth | Authentication method recorded for the request |
 
 Pair it with [Logs](using-logs.md): audit says who changed what, logs say what happened next inside the system.
 

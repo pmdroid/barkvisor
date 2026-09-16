@@ -1,6 +1,6 @@
 # Devices
 
-A **Device** is a machine running the BarkVisor daemon — the Mac, PC, or board that hosts Workloads. The **Devices** page shows every machine in the **Home** and how it is doing.
+A **Device** is a computer running BarkVisor. The Devices page lists your computers and shows their status.
 
 ![Devices grid with health cards](img/devices.png)
 
@@ -22,7 +22,7 @@ Cards refresh automatically, so state changes show up without a reload. Clicking
 
 The detail page for one Device has:
 
-- A **reachability pill** and a `platform · hostArch` subtitle next to the name (member Devices are labeled **Member**)
+- Connection status, platform, and architecture next to the Device name
 - Stat cards **CPU** and **Memory** with sparklines, plus a GPU section
 - A **Facts** sheet — CPU, Memory, Storage, Temperature, Address, Uptime, Virtualization support
 - A **Workloads** table (Name, OS, CPU · Mem, Ports, Status) with per-row **Start** / **Stop** buttons and **Restart**, and a confirmation dialog before stopping (**Shutdown** vs **Force Stop**)
@@ -31,7 +31,7 @@ The detail page for one Device has:
 - **Disk directory** — default path for new VM disks on this Device (**Browse**, **Save**, **Reset to default**)
 - GPU passthrough readiness on Linux (IOMMU / vfio-pci / KVM). Setup: [GPU passthrough](getting-started-gpu-passthrough.md)
 
-When a member Device is unreachable, its page still renders — controls that need the agent grey out instead of pretending.
+When a Device is unreachable, you can still open its page, but controls that need a connection are disabled.
 
 ## Related
 

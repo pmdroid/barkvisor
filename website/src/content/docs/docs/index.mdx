@@ -1,55 +1,42 @@
 ---
-title: Documentation
-description: Open-source QEMU virtualization for macOS, Linux, and Windows — install, create VMs, and operate the headless daemon.
+title: BarkVisor documentation
+description: Install BarkVisor from a package, set up your Home, and manage VMs and Apps from your browser.
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a web UI.
+BarkVisor runs virtual machines and Docker Compose apps on your computers. Each computer is a **Device**. Your Devices make up a **Home** that you can manage from one web console.
 
-**New here?** Start with the shared **[Quickstart](/docs/getting-started/quickstart/)** — download an image and create your first VM (same flow on macOS, Linux, and Windows).
+## Install a package
 
-## Using the web UI
-
-<CardGrid>
-  <LinkCard title="Using the web UI" href="/docs/using/" description="Run BarkVisor, sign in, roles, and a map of every menu point." />
-  <LinkCard title="Dashboard" href="/docs/using/dashboard/" description="Triage inbox: incidents, feed columns, and vitals." />
-  <LinkCard title="Virtual Machines" href="/docs/using/vms/" description="Every Workload, health filters, and the detail-page tabs: console, VNC, metrics, logs." />
-  <LinkCard title="Settings" href="/docs/using/settings/" description="Home, Pairing, Library, Updates, and the rest of the Settings tabs." />
-</CardGrid>
-
-## Get started
+You do not need to build BarkVisor or install developer tools.
 
 <CardGrid>
-  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS, Linux, and Windows (arm64 / x86_64)." />
-  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS, Linux, and Windows." />
-  <LinkCard title="Home and pairing" href="/docs/guides/home-and-pairing/" description="Add a Device from Settings → Pairing; join from setup or barkvisor join." />
-  <LinkCard title="Ollama" href="/docs/guides/ollama/" description="Install Ollama, pull, Start on the Device that has the weights, search the library." />
-  <LinkCard title="Create a Workload" href="/docs/guides/create-workload/" description="Place a VM on this Device or another reachable Device." />
-  <LinkCard title="GPU passthrough" href="/docs/guides/gpu-passthrough/" description="Intel/AMD IOMMU, vfio-pci, and IOMMU groups on a Linux Device." />
-  <LinkCard title="Changelog" href="/docs/changelog/" description="What shipped for Home, pairing, Library, and Create VM." />
-  <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: Home failover, live migration, apps." />
-  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="Apple Silicon .pkg, inspect-then-run bootstrap, Settings → Updates." />
-  <LinkCard title="Installation (Linux)" href="/docs/linux/" description="Ubuntu / Debian .deb, root systemd, Networks Apply." />
-  <LinkCard title="Installation (Windows)" href="/docs/getting-started/windows/" description="Zip payload, QEMU, Windows Hypervisor Platform, LocalSystem service." />
-  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS or Linux." />
-  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
+  <LinkCard title="macOS" href="/docs/getting-started/installation/" description="Install the .pkg on an Apple Silicon Mac." />
+  <LinkCard title="Linux" href="/docs/linux/" description="Install the .deb on Ubuntu or Debian. Other distributions can use a portable tarball." />
+  <LinkCard title="Windows" href="/docs/getting-started/windows/" description="Install QEMU, enable Windows Hypervisor Platform, and install the BarkVisor zip." />
 </CardGrid>
 
-## Platforms
+## Set up and run
 
-| Platform | Packaging | Acceleration | Bridged networking |
-|----------|-----------|--------------|--------------------|
-| **macOS** (Apple Silicon) | `.pkg` | HVF | Homebrew `socket_vmnet` (root daemon starts it) |
-| **Linux** (Ubuntu / Debian) | `.deb` | KVM (or TCG) | host `br0` Apply + `qemu-bridge-helper` |
-| **Windows** | zip | WHPX | NAT only |
+<CardGrid>
+  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Name your Device, add a passkey, and choose an image folder." />
+  <LinkCard title="Create your first VM" href="/docs/getting-started/quickstart/" description="Choose an OS, configure the VM, and open its console." />
+  <LinkCard title="Install an App" href="/docs/using/apps/" description="Run a Docker Compose app from the catalog." />
+  <LinkCard title="Add another Device" href="/docs/guides/home-and-pairing/" description="Pair your computers and manage them from the same console." />
+</CardGrid>
 
-Same product: daemon + SPA, NAT, images, console/VNC. Host differences (accel, packaging, bridge) are by design.
+## Everyday use
 
-Install guides: **[macOS](/docs/getting-started/installation/)** · **[Linux](/docs/linux/)** · **[Windows](/docs/getting-started/windows/)**.
+<CardGrid>
+  <LinkCard title="Using the web UI" href="/docs/using/" description="Find your way around Devices, Workloads, Images, and Logs." />
+  <LinkCard title="Networks" href="/docs/using/networks/" description="Connect VMs with NAT or a bridge." />
+  <LinkCard title="Ollama" href="/docs/guides/ollama/" description="Download models and connect an inference client." />
+  <LinkCard title="Settings and updates" href="/docs/using/settings/" description="Manage sign-in, keys, catalogs, and package updates." />
+  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Get help with setup, VM startup, networking, and logs." />
+  <LinkCard title="Changelog" href="/docs/changelog/" description="Read release notes and recent changes." />
+</CardGrid>
 
-## Concepts
+## Contributing
 
-<LinkCard title="Product terminology" href="/docs/concepts/terminology/" description="Home is the tenancy; each machine is a Device — not a cluster or node." />
-
-Markdown source of truth: [`docs/`](https://github.com/pmdroid/barkvisor/tree/main/docs) in the repo. This site is built from `website/` (Astro + Starlight).
+Building from source is optional. See [Development](/docs/getting-started/development/) and [Building releases](/docs/getting-started/building-releases/) for contributor instructions.

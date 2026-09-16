@@ -1,373 +1,147 @@
 # Troubleshooting
 
-## Server fails to start
+Start with the error shown in the console. Open **Logs**, filter to the affected Device or workload, and check events around the time of the failure. **Diagnostics** downloads a support bundle.
 
-### Port 7777 already in use
+## Cannot open the console
 
-BarkVisor's HTTP server binds to port 7777 by default (configured in `Config.port`). If another process is using that port, the server will fail to start. Check for conflicts:
+The default address on the Device is `http://localhost:7777`.
 
-```sh
-lsof -i :7777
-```
+Check that the installed service is running:
 
-Kill the conflicting process. The server always binds to `0.0.0.0`.
+| Platform | Check |
+|----------|-------|
+| macOS | `sudo launchctl print system/dev.barkvisor` |
+| Linux | `systemctl status barkvisor.service` |
+| Windows | `Get-Service BarkVisor` in PowerShell |
 
-### Permission errors on data directory
+If another program uses port 7777, identify it before stopping anything. On macOS or Linux, `lsof -i :7777` shows the listener. You can set `BARKVISOR_PORT` in the service environment to use another port.
 
-Installed daemon data:
+An API-only Device does not serve the web console. Open the console on another paired Device instead.
 
-| Platform | Directory |
-|----------|-----------|
-| macOS / Linux | `/var/lib/barkvisor/` |
-| Windows | `C:\ProgramData\BarkVisor\` |
+## Passkey or setup problems
 
-Development (`swift run`):
+Use `localhost` when the browser is on the Device. For remote access, use an HTTPS hostname. Raw IP addresses, including `127.0.0.1`, cannot register a BarkVisor passkey.
 
-| Platform | Default data directory |
-|----------|------------------------|
-| macOS | `~/Library/Application Support/BarkVisor/` |
-| Linux | `~/.local/share/barkvisor/` |
-| Windows | `%LOCALAPPDATA%\BarkVisor\` |
+A passkey is tied to a hostname. If you registered it on `localhost`, return through `localhost`; switching to a LAN name or Tailscale name does not move that credential.
 
-Override with `BARKVISOR_DATA_DIR`. If the directory or its contents have incorrect permissions, the server will fail during initialization:
+See [remote setup](getting-started-first-launch.md#set-up-a-remote-device) for HTTPS and SSH-tunnel options.
 
-```sh
-ls -la /var/lib/barkvisor/
-# or: ls -la ~/.local/share/barkvisor/
-# Windows: Get-ChildItem $env:ProgramData\BarkVisor
-```
+If setup resumes at the image Library step, save the folder and continue. There is no need to delete the database. Deleting it removes accounts and workload records, even if disk files remain.
 
-### Database corruption recovery
+To change whether sign-in is required, use [Settings → Security](settings-security.md).
 
-On startup, BarkVisor attempts to open and migrate the SQLite database at:
+## Catalog is empty
 
-```
-/var/lib/barkvisor/db.sqlite                              # installed macOS / Linux
-C:\ProgramData\BarkVisor\db.sqlite                        # installed Windows
-~/Library/Application Support/BarkVisor/db.sqlite         # macOS dev
-~/.local/share/barkvisor/db.sqlite                        # Linux dev
-%LOCALAPPDATA%\BarkVisor\db.sqlite                        # Windows unpackaged
-```
+Open **Settings → Repositories** and click **Sync**. Check the status for each Device. The Device needs network access to the catalog URL.
 
-If the database fails to open, the server automatically attempts to restore from the most recent backup in the backups directory. If no backup is available, a fresh database is created (all data is lost). Check server logs for messages like `Database failed to open` or `Database restored from backup`.
+Catalog sync loads the list of images and templates. The image itself downloads when you create a VM from a template, or request a download.
 
-Database backups are enabled by default and run daily. The backup directory defaults to:
+## VM will not start
 
-```
-/var/lib/barkvisor/backups/                           # installed macOS / Linux
-C:\ProgramData\BarkVisor\backups\                     # installed Windows
-~/Library/Application Support/BarkVisor/backups/      # macOS dev
-~/.local/share/barkvisor/backups/                     # Linux dev
-```
+Open the VM's **Logs** tab and check the Device's diagnostics.
 
-Backup retention is 30 days by default, configurable via the `backupRetentionDays` UserDefaults key.
+| Error | What to check |
+|-------|---------------|
+| QEMU not found | Install QEMU using your platform's install guide |
+| Firmware missing | Install the matching QEMU firmware, OVMF, or AAVMF package |
+| Architecture mismatch | Use an image matching the selected Device's architecture |
+| Port already in use | Change the conflicting NAT port forward |
+| Disk access denied | Check the disk path and VM user's permissions |
+| `virtio-gpu-pci` is not a valid device | On Arch, install the separate QEMU display modules |
+| GPU passthrough unavailable | Follow the [Linux GPU setup guide](getting-started-gpu-passthrough.md) |
 
-### Checking server logs
+Linux uses KVM when available and slower software emulation otherwise. If guests are unusually slow, check access to `/dev/kvm`.
 
-BarkVisor writes structured JSON logs to:
-
-```
-/var/lib/barkvisor/logs/                              # installed macOS / Linux
-C:\ProgramData\BarkVisor\logs\                        # installed Windows
-~/Library/Application Support/BarkVisor/logs/         # macOS dev
-~/.local/share/barkvisor/logs/                        # Linux dev
-```
-
-Override with `BARKVISOR_LOG_DIR`. Levels: `debug`, `info`, `warn`, `error`, `fatal`. On macOS, BarkVisor also logs to the unified log (subsystem `dev.barkvisor`).
-
-```sh
-# macOS
-log stream --predicate 'subsystem == "dev.barkvisor"' --level debug
-
-# Linux (systemd install)
-journalctl -u barkvisor.service -f
-
-# Windows (newest file; -Wait cannot take a wildcard)
-$log = Get-ChildItem "$env:ProgramData\BarkVisor\logs" -File | Sort-Object LastWriteTime | Select-Object -Last 1
-Get-Content $log.FullName -Wait
-```
-
-### Linux-specific
-
-Linux install guide: [Installation (Linux)](getting-started-linux.md).
-
-- **QEMU not found:** install distro QEMU (see the Linux install checklist).
-- **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** use **Networks → Bridge setup → Apply**, or run the equivalent commands on that page. Rollback is a host timer. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
-- **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
-- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. The daemon is root; dropped QEMU needs group `kvm` when KVM is present.
-- **GPU attach not ready:** enable Intel or AMD IOMMU, load vfio-pci, then confirm IOMMU groups. See [GPU passthrough](getting-started-gpu-passthrough.md). Host GPU blanking and **In use by host** do not block Attach.
-- **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
-
-### Windows-specific
-
-Windows install guide: [Installation (Windows)](getting-started-windows.md).
-
-- **QEMU not found:** `winget install qemu` so `C:\Program Files\qemu\qemu-system-x86_64.exe` exists. `install.ps1` stops without it.
-- **WHPX fail:** enable **Windows Hypervisor Platform**, firmware virtualization in BIOS, reboot. See [Enable Windows features](getting-started-windows.md#enable-windows-features).
-- **Guests will not start:** doctor `whpx` must be ok. TCG is inventory-only.
-- **Blank SPA after zip install:** confirm `C:\Program Files\BarkVisor\share\barkvisor\frontend\dist\index.html`.
-- **Bridge unavailable:** NAT only on Windows.
-
-## Onboarding issues
-
-### Re-triggering setup
-
-BarkVisor shows a web-based setup screen on first launch when no admin user exists. Setup completion is tracked in the database (the presence of a user with a non-empty password).
-
-To re-trigger setup, delete the database and restart BarkVisor:
-
-```sh
-# macOS
-sudo launchctl bootout system/dev.barkvisor
-sudo rm /var/lib/barkvisor/db.sqlite
-sudo launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist
-
-# Linux
-sudo systemctl stop barkvisor.service
-sudo rm /var/lib/barkvisor/db.sqlite
-sudo systemctl start barkvisor.service
-```
-
-Then open `http://localhost:7777` to go through the setup wizard again.
-
-### Password validation
-
-During onboarding, the initial password must be at least 10 characters. The password is hashed with bcrypt before storage. If a password has already been set for the default user, onboarding will report an error.
-
-### Catalog sync failures
-
-On first launch, BarkVisor seeds a default image repository and templates from remote JSON files hosted on GitHub. If these fetches fail (network issues, DNS resolution, corporate proxy), the image library will be empty. You can trigger a manual sync from the web UI's image library page, or check that the URLs are reachable:
-
-```
-https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/images.json
-https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json
-```
-
-## QEMU and VM issues
-
-### QEMU binary not found
-
-**macOS** looks for `qemu-system-aarch64` and `qemu-img` in Homebrew first, then a leftover `/usr/local/libexec/barkvisor/` copy:
-
-1. `/opt/homebrew/bin/`
-2. `/usr/local/bin/`
-3. leftover libexec
-4. PATH via `which`
-
-```sh
-brew install qemu
-```
-
-**Linux** uses distro QEMU on `$PATH`. Install QEMU from the distro using [System Requirements](getting-started-linux.md#system-requirements) in the Linux install guide.
-
-**Windows** looks for `qemu-system-x86_64.exe` and `qemu-img.exe` under `C:\Program Files\qemu`, then `C:\msys64\ucrt64\bin`, then `PATH`. Install QEMU and enable WHPX using [Installation (Windows)](getting-started-windows.md).
-
-### Firmware not found
-
-BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
-
-1. `/opt/homebrew/share/qemu/` / `/usr/local/share/qemu/` (macOS Homebrew)
-2. leftover `/usr/local/share/barkvisor/qemu/` if present
-3. Distro OVMF / AAVMF paths on Linux (edk2 packages)
-4. `C:\Program Files\qemu\share` on Windows
-
-If VMs fail to boot with firmware errors, verify the firmware files exist at one of these paths.
+Windows requires Windows Hypervisor Platform by default. Enable it, enable hardware virtualization in firmware, and reboot. The `doctor` report checks whether the accelerator is usable.
 
 ### Windows setup: This PC must support Secure Boot
 
-Windows 11 setup can stop with **This PC must support Secure Boot**. Continue from the console (VNC) on the Workload:
+Windows 11 setup can stop with **This PC must support Secure Boot**. The existing workaround is to bypass the installer check from the VM's VNC console:
 
-1. On that screen, press **Shift+F10**. A Command Prompt opens.
-2. Run:
+1. Press **Shift+F10** to open Command Prompt.
+2. Run the command below.
+3. Close Command Prompt, go **Back** in setup, and continue.
 
 ```bat
 reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f
+```
+
+If setup also rejects TPM, the corresponding workaround is:
+
+```bat
 reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f
 ```
 
-3. Close the Command Prompt.
-4. In setup, go **Back**, then continue.
+These commands bypass checks; they do not enable Secure Boot or provide a TPM. Windows Devices do not support BarkVisor's TPM emulation. Prefer a supported guest configuration where possible.
 
-`BypassTPMCheck` is only needed if setup also complains about TPM. The TPM device on the Workload can stay enabled.
+Click inside VNC first if Shift+F10 is not reaching the guest.
 
-If Shift+F10 does not reach the guest, click the console first so it has keyboard focus.
+## Network problems
 
-### VM log files
+NAT does not require a bridge. To reach an SSH server or web service inside a NAT VM, publish its guest port in the VM's network settings. Restart the VM after changing port forwards.
 
-Per-VM stdout/stderr output is captured in:
+For bridged networking, use **Networks → Host interfaces → Create → Bridge**. After applying, click **Keep changes** within 60 seconds. See [Networks](using-networks.md).
 
-```
-/var/lib/barkvisor/logs/vms/                         # installed (macOS/Linux)
-~/Library/Application Support/BarkVisor/logs/vms/    # macOS dev
-~/.local/share/barkvisor/logs/vms/                   # Linux dev
-```
+- On macOS, install Homebrew `socket_vmnet` as your regular user.
+- On Linux, use a wired interface. The packaged service permits the QEMU bridge helper; a custom `NoNewPrivileges=true` setting prevents that helper from working.
+- On Windows, use NAT. Bridged networking is unavailable.
 
-Check these logs for QEMU error messages, boot failures, or crash output.
+For paired Devices, confirm the selected address is reachable from the joining Device. Copy the full pairing offer, not just its short code. See [Home and pairing](home-and-pairing.md).
 
-### VMs survive daemon restart (by design)
+## Blank page or disconnected console
 
-When the BarkVisor daemon stops, running QEMU processes are intentionally left alive. The daemon detaches its monitoring but does not kill the processes. On next launch, `VMProcessMonitor` scans the PID files directory:
+Installed packages include the web UI. If it is missing, reinstall the matching package and confirm the frontend files exist:
 
-```
-/var/lib/barkvisor/pids/                             # installed (macOS/Linux)
-~/Library/Application Support/BarkVisor/pids/        # macOS dev
-~/.local/share/barkvisor/pids/                       # Linux dev
-```
+| Platform | Frontend directory |
+|----------|--------------------|
+| macOS / Linux | `/usr/local/share/barkvisor/frontend/dist` |
+| Windows | `C:\Program Files\BarkVisor\share\barkvisor\frontend\dist` |
 
-Each `.pid` file contains the QEMU process ID. If the process is still running, BarkVisor reconnects to its QMP and VNC sockets and resumes monitoring. If the process has exited, the stale PID file is cleaned up and the VM state is updated in the database.
+The directory must contain `index.html`. A custom `BARKVISOR_FRONTEND_DIR` setting overrides the lookup.
 
-This means a quit-and-relaunch cycle does not interrupt running VMs.
+For contributor builds, see [Development](getting-started-development.md). A packaged installation does not need a frontend build command.
 
-### Forcing VM cleanup
+If a reverse proxy serves the console, forward API requests and WebSocket connections to the same Device. Reopen the page and sign in again if console authentication has expired.
 
-If a VM appears stuck in a running state but its QEMU process is gone, delete the corresponding PID file and restart BarkVisor:
+## Running VMs after a service restart
 
-```sh
-sudo rm /var/lib/barkvisor/pids/<vm-id>.pid
-sudo launchctl kickstart system/dev.barkvisor
-```
+Running VMs survive BarkVisor restarts. On startup, BarkVisor reconnects to their processes and consoles.
 
-## Helper and networking
+Use the VM's **Stop** action to shut it down. A stale status after restart should be investigated through logs before changing PID files or deleting data.
 
-### macOS: Homebrew socket_vmnet
+## Data, backups, and disk space
 
-On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. Install the package as your user (`brew install socket_vmnet`). Do not `sudo brew install`. The root Device daemon starts a BarkVisor-owned plist via launchctl. There is no XPC helper.
+| Platform | Installed data directory |
+|----------|--------------------------|
+| macOS / Linux | `/var/lib/barkvisor` |
+| Windows | `C:\ProgramData\BarkVisor` |
 
-```sh
-brew install socket_vmnet
-```
+Logs are in `logs/`, VM logs in `logs/vms/`, and database backups in `backups/`, unless you configured another location.
 
-The default service socket is `/opt/homebrew/var/run/socket_vmnet` (Intel Homebrew: `/usr/local/var/run/socket_vmnet`). If a Workload cannot attach:
+A SQLite **database or disk is full** error means the volume holding the database is full. Free space there; it may be different from the image Library's volume.
 
-- Confirm the service is started
-- Confirm the socket file exists
-- NAT Workloads do not need this service
+BarkVisor retries a failed database open. For SQLite corruption, it then tries the newest database backup. If there is no backup, it creates a fresh database and reports the loss of database records. Other database or migration errors leave the database in place.
 
-A leftover `dev.barkvisor.helper` from older installs is unused. Logs that repeat `BarkVisorHelper: XPC connection invalidated` mean that old helper is still trying to reconnect — not an in-tree XPC client. Homebrew/pkg postinstall boots leftover helpers out. You can also:
+Before attempting manual recovery, stop the service and preserve the data directory, including `db.sqlite`, `db.sqlite-wal`, and `db.sqlite-shm` if present. Database backups do not contain VM disks or App volumes.
+
+## Read service logs
+
+On Linux:
 
 ```sh
-sudo launchctl bootout system/dev.barkvisor.helper
-sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
-sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+journalctl -u barkvisor.service -f
 ```
 
-NAT Workloads do not need `socket_vmnet`.
-
-### Linux: host bridge
-
-On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. Prefer **Networks → Bridge setup → Apply**. See [Bridged networking](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
-
-### Windows: WHPX
-
-On **Windows**, guests start with WHPX. If doctor fails `whpx`, enable **Windows Hypervisor Platform** (`HypervisorPlatform`) in Windows Features, turn on firmware virtualization in BIOS, and reboot. TCG is inventory-only. See [Enable Windows features](getting-started-windows.md#enable-windows-features). Bridged networking is not supported. Use NAT.
-
-## Frontend
-
-### Blank page in the web UI
-
-If you see a blank page at `http://localhost:7777`, the frontend has not been built. During development, build it with:
+On macOS:
 
 ```sh
-cd frontend && bun install && bun run build
+log stream --predicate 'subsystem == "dev.barkvisor"' --level debug
 ```
 
-The server searches for the frontend `dist/` directory in several locations:
+On Windows, inspect the newest file under `C:\ProgramData\BarkVisor\logs`.
 
-1. `BARKVISOR_FRONTEND_DIR` if set and contains `index.html`
-2. `/usr/local/share/barkvisor/frontend/dist/` (installed daemon)
-3. `Sources/BarkVisor/Resources/frontend/dist/` (dev probes)
-4. `frontend/dist/` (dev probes)
+If an older macOS install repeatedly logs `BarkVisorHelper: XPC connection invalidated`, it may have a leftover helper from a previous installation. Current BarkVisor uses socket_vmnet for bridging. The repository's uninstall script includes cleanup for the old helper.
 
-On Linux, `./scripts/linux-frontend-serve.sh` builds the SPA and can start the daemon with the correct env. If none of these paths contain `index.html`, the SPA middleware is not registered and non-API routes return 404.
+## Report a problem
 
-### API proxy errors
-
-The frontend expects the API to be served from the same origin. CORS is configured to allow requests from `http://localhost:7777` and `http://127.0.0.1:7777` when the server binds to `0.0.0.0`. If you access the UI from a different hostname, CORS will reject the requests.
-
-### WebSocket ticket failures
-
-WebSocket and SSE connections use a single-use ticket system instead of passing JWTs in URL query parameters. The client exchanges its JWT for a short-lived ticket via an authenticated POST endpoint, then passes only the ticket in the connection URL.
-
-If WebSocket connections fail with authentication errors:
-
-- Ensure your JWT has not expired
-- Check that the ticket was consumed successfully (tickets are single-use and time-limited)
-- Verify the server clock is accurate (ticket expiry depends on system time)
-
-## Code signing
-
-### Hypervisor entitlement
-
-QEMU requires the `com.apple.security.hypervisor` entitlement to use Apple's Hypervisor.framework. Without it, VMs will fail to start with a permission error. This entitlement is applied during the build process (see `scripts/build-release.sh` step 10).
-
-For ad-hoc signed development builds, ensure the entitlement is present:
-
-```sh
-codesign -d --entitlements - /path/to/qemu-system-aarch64
-```
-
-### Gatekeeper blocks the installer
-
-If macOS blocks the BarkVisor `.pkg` installer, go to **System Settings > Privacy & Security** and click "Open Anyway". For properly notarized builds (created with `--require-notarize`), Gatekeeper should not intervene.
-
-### SQLite “database or disk is full”
-
-Logs with SQLite error-code **13** (`database or disk is full`) mean the **data dir** volume is out of space. LogService prunes logs (and extra DB backups) on those writes, skips the insert, and warns once. Free space on the data directory (not necessarily the Library path). Then restart is not required once writes succeed again.
-
-### Leftover helper vs current networking
-
-Current macOS bridged/vmnet uses Homebrew `socket_vmnet`. BarkVisor does not ship a privileged XPC helper. An **XPC team ID mismatch** message from old docs applied to `dev.barkvisor.helper`, which this tree no longer builds. Ignore it, or remove the leftover helper as above.
-
-## Performance
-
-### Metrics polling frequency
-
-The metrics collector polls each running VM via QMP every 5 seconds and stores samples in a ring buffer of 360 entries (30 minutes of history). If you have many VMs, this can generate significant QMP traffic. Metrics are not persisted to disk.
-
-### Disk info cache
-
-Disk size information is refreshed every 30 seconds by running `qemu-img info` on each disk. This runs in the background and results are cached in memory. If you have a large number of disks, the refresh cycle may take noticeable time.
-
-### Concurrent qemu-img operations
-
-Disk creation, resizing, and info queries all invoke `qemu-img` as a subprocess. These are not globally rate-limited, so creating many disks simultaneously may cause resource contention.
-
-## Diagnostics
-
-### Diagnostic bundle
-
-BarkVisor provides an API endpoint to generate a diagnostic bundle. The bundle is a `.tar.gz` archive containing:
-
-- `system-info.json` -- host OS version, CPU count, physical memory
-- `barkvisor-info.json` -- app version, uptime, data directory paths
-- `vm-states.json` -- currently running VMs with their PIDs and VNC socket paths
-- Recent log files
-
-The bundle is created in the system temp directory and automatically cleaned up after 15 minutes.
-
-### Database backups
-
-Automatic database backups run daily when enabled (on by default). Backups are stored in:
-
-```
-/var/lib/barkvisor/backups/                          # installed (macOS/Linux)
-~/Library/Application Support/BarkVisor/backups/     # macOS dev
-~/.local/share/barkvisor/backups/                    # Linux dev
-```
-
-You can customize the backup directory and retention period (default 30 days) via the settings API or UserDefaults keys `backupDirectory` and `backupRetentionDays`.
-
-### Log levels
-
-The application log system supports five levels in increasing severity: `debug`, `info`, `warn`, `error`, `fatal`. Logs are written as JSON lines with fields for timestamp, level, category, message, and optional VM ID, request ID, and error details. Old log files are pruned daily.
-
-### Rate limit bypass for testing
-
-Login rate limiting (10 attempts per 5-minute window per IP) can be disabled by setting the environment variable:
-
-```sh
-DISABLE_RATE_LIMIT=1
-```
-
-This is intended for automated testing only.
+Include the BarkVisor version, Device platform, action you took, error text, and relevant logs. A Diagnostics bundle helps with startup and runtime failures. Review it before sharing.

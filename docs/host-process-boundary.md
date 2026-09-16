@@ -6,10 +6,10 @@ In product copy that machine is a **Device** in a **Home**. See [Product termino
 
 ## Why
 
-BarkVisor is moving toward multi-device homes (Mac + Linux + boards), but multi-host is **N daemon installs**, not one process with many hosts.
+BarkVisor supports Homes with multiple Devices. Each Device runs its own daemon.
 
 - `Config.dataDir`, SQLite, VM sockets, and QEMU children are process-global and **host-local**.
-- Pairing / a control plane later **attaches** hosts over the network; it does not co-locate multiple hosts in one database.
+- Pairing connects Devices over the network. It does not combine their databases.
 
 ## Conventions
 

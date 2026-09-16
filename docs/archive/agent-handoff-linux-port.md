@@ -2,7 +2,7 @@
 
 # Agent handoff: BarkVisor Linux port + simplification
 
-> **Product docs supersede this file.** Current multi-distro Linux support (what works, distro matrix, smokes, limits) is in **[getting-started-linux.md](getting-started-linux.md)** and the root **README**. Keep this handoff for **historical PR/merge context** only.
+> **Product docs supersede this file.** Current Linux installation is in the [Linux guide](../getting-started-linux.md) and the [README](../../README.md). Keep this handoff for historical PR and merge context only.
 
 **Last updated:** 2026-07-30 (banner only; historical sections below unchanged)  
 **Repo:** `github.com/pmdroid/barkvisor`  

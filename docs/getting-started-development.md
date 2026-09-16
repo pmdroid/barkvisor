@@ -1,21 +1,21 @@
 # Development Environment Setup
 
-This guide covers building and running BarkVisor from source for local
-development on **macOS**. For **Linux**, see
-**[Installation (Linux)](getting-started-linux.md#building-from-source-optional)**
-and run `./scripts/linux-dev.sh` for packages + Swift and smoke setup. For
-**Windows**, see **[Installation (Windows)](getting-started-windows.md#building-from-source-optional)**
-and `.\scripts\windows-swift.ps1`.
+This guide is for contributors building BarkVisor from source. To use BarkVisor,
+install a package using the [macOS](getting-started-installation.md),
+[Linux](getting-started-linux.md), or [Windows](getting-started-windows.md) guide.
+
+The main workflow below is for macOS. Linux and Windows commands are at the end.
 
 **Website (landing + docs):** unified Astro app in `website/` syncs these Markdown
-files into `/docs/*` (`cd website && bun install && bun run dev`).
+files into `/docs/*`. Run `bun install`, `bun run sync`, and `bun run dev` in
+`website/`. Repeat the sync after editing source Markdown.
 
 ## Prerequisites (macOS)
 
 | Requirement      | Minimum version | Notes                                   |
 |------------------|-----------------|-----------------------------------------|
 | macOS            | 26              | Apple Silicon required (HVF acceleration requires arm64 host for arm64 VMs) |
-| Xcode / Swift    | Swift 6.x       | Local pin: `.swift-version` / `mise.toml` (currently 6.3.3). Linux CI/Docker package builds use the same **6.3.3** Ubuntu toolchains. |
+| Xcode / Swift    | Swift 6.3       | Local pin: `.swift-version` / `mise.toml` (currently 6.3.3). Linux CI/Docker package builds use the same **6.3.3** Ubuntu toolchains. |
 | Bun              | Latest           | JavaScript runtime for the frontend     |
 | Homebrew         | Latest           | For installing build and runtime deps   |
 | mise (optional)  | Latest           | Toolchain + tasks (`mise run build|test|lint`) |
@@ -66,7 +66,7 @@ The pkg does not ship a privileged helper. Linux still uses distro QEMU.
 
 ## Project Structure
 
-The project is organized as 3 Swift Package Manager library/executable targets:
+The three main Swift targets are:
 
 ```
 Package.swift
@@ -186,7 +186,8 @@ token (`scripts/dev-instance.sh token`), then clean up:
 
 ```sh
 scripts/dev-instance.sh stop              # kills daemon, removes temp data dir
-scripts/dev-instance.sh list | clean      # inventory / stop everything
+scripts/dev-instance.sh list              # list instances
+scripts/dev-instance.sh clean             # stop all registered throwaway instances
 scripts/dev-instance.sh self-test         # start → provision → seed → assert → stop
 ```
 
@@ -194,6 +195,9 @@ scripts/dev-instance.sh self-test         # start → provision → seed → ass
 
 | Variable              | Effect                                                      |
 |-----------------------|-------------------------------------------------------------|
+| `BARKVISOR_PORT` | HTTP port, default `7777` |
+| `BARKVISOR_DATA_DIR` | Absolute path to an isolated data directory |
+| `BARKVISOR_FRONTEND_DIR` | Absolute path to the built frontend directory |
 | `BARKVISOR_LOG_DIR`   | Override the log output directory (default: `<dataDir>/logs`) |
 | `BARKVISOR_LOG_LEVEL` | Minimum log level: `debug`, `info`, `warn`, `error`, `fatal` (default: `info`) |
 | `BARKVISOR_JOIN_CODE` | Pairing offer on first boot only (console-local join; ignored after setup) |
@@ -280,7 +284,7 @@ mise run guest-smoke-real   # Ubuntu cloud image + cloud-init + SSH
 mise run prepush-full       # prepush + api-bdd + guest-smoke (operators who opt in)
 ```
 
-`mise run prepush` stays lint + Swift tests + frontend tests. **Never** add
+`mise run prepush` runs lint, Swift tests, the Linux compile check, and frontend tests. **Never** add
 guest-boot to the default push gate.
 
 | Scenario | Mapper | Runtime |
@@ -313,7 +317,7 @@ mise run cross-device-smoke
 DRY_RUN=1 ./scripts/cross-device-smoke.sh   # syntax + endpoint inventory, no server
 ```
 
-`mise run prepush` stays lint + Swift tests + frontend tests. **Never** add
+`mise run prepush` runs lint, Swift tests, the Linux compile check, and frontend tests. **Never** add
 this smoke to the default push gate.
 
 Pairing redeem is LAN-only (not loopback). The host needs an RFC1918
@@ -327,6 +331,8 @@ via proxy, UI/Cypress, first-time join only.
 
 ## Bridged networking in development
 
+Run `mise run host-network-extra-ip` for the opt-in Linux extra-IP add/remove check. On macOS, this uses Docker. It is not part of the default push gate.
+
 BarkVisor does not ship a privileged helper. For bridged/vmnet on macOS:
 
 ```sh
@@ -337,3 +343,46 @@ Do not `sudo brew install`. A root Device starts socket_vmnet via launchctl.
 Dev instances that are not root still need a running socket. NAT Workloads
 do not need that service. `APPLE_TEAM_ID` is still required when notarizing
 a release pkg, not for a helper.
+
+## Linux development
+
+From a source checkout:
+
+```sh
+./scripts/linux-dev.sh
+source scripts/lib/linux-swift-compat.sh
+barkvisor_export_swift_env
+swift run BarkVisorApp
+```
+
+For an API-only source installation, `sudo SKIP_FRONTEND=1 ./scripts/install-linux.sh`
+skips copying the frontend and enables the agent service.
+
+To run the development container:
+
+```sh
+docker build -t barkvisor:dev -f Dockerfile .
+docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
+```
+
+Omit `--device /dev/kvm` to use software emulation.
+
+## Windows packages
+
+Build and stage the Windows payload from the repository root:
+
+```powershell
+cd frontend
+bun install --frozen-lockfile
+bun run build
+cd ..
+.\scripts\windows-swift.ps1 --% build -c release --product BarkVisorApp
+.\scripts\stage-windows-payload.ps1 `
+  -SourceDir .build\release `
+  -FrontendDir frontend\dist `
+  -OutDir build\windows-payload
+```
+
+Install it using `packaging\windows\install.ps1 -Source build\windows-payload`
+from an administrator shell. See [Building releases](getting-started-building-releases.md)
+for the package workflows.

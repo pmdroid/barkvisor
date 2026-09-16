@@ -1,12 +1,12 @@
 # Settings: API Keys
 
-The **API Keys** tab issues credentials for scripts and API clients — including inference clients talking to Ollama. This is the default tab when you open Settings.
+The **API Keys** tab creates credentials for scripts and inference clients. It is the default Settings tab when sign-in is required. Sessions that skip sign-in hide this tab; see [Security](settings-security.md).
 
 ![Settings API Keys tab with created keys](img/settings-api-keys.png)
 
 ## Create a key
 
-1. Click create. The modal asks for:
+1. Click **Create Key**. The form asks for:
    - Name
    - Expiry: 30 days, 90 days, 1 year, or Never
    - Kind: **inference** (Ollama/completions only) or **full** (whole Home API)

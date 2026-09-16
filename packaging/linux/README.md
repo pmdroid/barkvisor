@@ -11,8 +11,9 @@ Metadata and helpers for multi-format BarkVisor packages (**arm64** and **amd64*
 | `barkvisor-*-linux-{x86_64,aarch64}.tar.gz` | Any glibc host (+ `install.sh`) |
 | `arch/PKGBUILD` | Arch / Arch ARM (`makepkg`) |
 
-The appliance channel for operators is **Ubuntu / Debian `.deb`**. rpm / tarball / Arch
-are still produced for builders. They are not the getting-started path.
+Use the **Ubuntu / Debian `.deb`** for package installation and in-app updates.
+Other distributions can use the [portable tarball](../../docs/getting-started-linux.md#other-distros-portable-tarball-no-root).
+RPM and Arch output is also available for builders.
 
 ## Layout (all formats)
 
@@ -58,7 +59,5 @@ macOS `.pkg` assets from the separate release process keep different filenames
 and are not removed when Linux assets are re-uploaded (`gh release upload
 --clobber` only replaces matching names).
 
-arm64 package jobs are currently commented out in the workflow matrix (amd64
-GitHub-hosted runners only); build arm64 via
-`./scripts/build-linux-packages.sh --docker` on an arm64 host until runners are
-enabled.
+The workflow builds both architectures: amd64 on `ubuntu-24.04` and arm64 on
+`ubuntu-24.04-arm`.

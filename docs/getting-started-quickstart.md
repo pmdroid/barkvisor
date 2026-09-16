@@ -1,298 +1,68 @@
-# Quickstart -- Creating Your First VM
+# Create your first VM
 
-This guide walks through downloading an OS image, creating a virtual machine,
-connecting to it, and managing its lifecycle in BarkVisor.
+A VM runs on one Device in your Home. See the [glossary](product-terminology.md) for these terms.
 
-## Prerequisites
+Start here after [installing BarkVisor](getting-started-installation.md) and completing [first-run setup](getting-started-first-launch.md). Linux and Windows packages have their own [Linux](getting-started-linux.md) and [Windows](getting-started-windows.md) install guides.
 
-- BarkVisor is installed and the daemon is running:
-  - **macOS:** `sudo launchctl list | grep barkvisor`
-  - **Linux:** `systemctl status barkvisor.service` (or `swift run BarkVisorApp` in dev)
-  - **Windows:** `Get-Service BarkVisor` (see [Installation (Windows)](getting-started-windows.md))
-- The server is listening on port 7777 (default).
-- Optional: pick **All** or one **Device** in the sidebar. List pages (Workloads, Library, Networks, Logs) follow that scope. Create VM still asks which Device should run the guest.
-- At least one OS image is available, or you are ready to download/upload one.
-- QEMU is available:
-  - **macOS:** `brew install qemu swtpm socket_vmnet`
-  - **Linux:** distro QEMU/firmware packages (see [Installation (Linux)](getting-started-linux.md#system-requirements))
-  - **Windows:** `winget install qemu` plus Windows Hypervisor Platform (see [Installation (Windows)](getting-started-windows.md#install-qemu-and-other-software))
+## 1. Choose what to run
 
-## Getting an OS Image
+Open **Workloads → Create VM**, or click **Create VM** on the Dashboard.
 
-BarkVisor supports two image types:
+The wizard has three steps: **Gallery → Configure → Disk**. In Gallery, choose:
 
-| Type          | Use case                                             |
-|---------------|------------------------------------------------------|
-| `iso`         | Installer ISO (manual OS install via VNC)            |
-| `cloud-image` | Pre-built cloud image (automated via cloud-init)    |
+- A catalog template, such as Ubuntu or Debian, for a preconfigured VM.
+- **Windows** for a Windows installer ISO.
+- A custom image for your own ISO or cloud image.
 
-Architecture follows this **Device** (the machine running BarkVisor): `arm64` on Apple Silicon and Linux aarch64; `x86_64` on Linux amd64. Pick catalog images and `vmType` (`linux-arm64` / `linux-amd64`) that match `GET /api/system/capabilities` (`hostArch`). One Device is a **Home** of one. See [Product terminology](product-terminology.md).
+If the gallery is empty, open **Settings → Repositories**, sync the image and template catalogs, then reopen Create VM.
 
-### Downloading from a Repository
+## 2. Configure the VM
 
-1. Open the BarkVisor web UI at `http://localhost:7777`.
-2. Navigate to **Images** (or **Registry** if browsing repository catalogs).
-3. Browse the available repository images and click **Download**.
-4. BarkVisor streams the file from the source URL. Progress is a real percent
-   in the web UI and the Console (SSE). If the download fails, it retries
-   automatically up to 4 attempts with exponential backoff (2 s, 4 s, 8 s).
-5. Files ending in `.xz` or `.gz` are decompressed automatically after
-   download using `xz` or `gunzip`.
+Enter a name, choose a Device, and pick a size preset. The Device is the computer that will run the VM and store its disk. You can choose a reachable paired Device even if the sidebar is showing a different one.
 
-### Uploading an Image (TUS Resumable Upload)
+Fill in any fields the template requires. If it asks for an SSH key, select a saved public key or add one in the form. BarkVisor uses that key to give you access to the guest.
 
-BarkVisor implements the [TUS 1.0.0](https://tus.io/) resumable upload
-protocol. The frontend uses `tus-js-client` to upload images in 50 MB chunks.
+For Windows or a custom image, upload a file or provide its download URL. Use an image that matches the selected Device's architecture: `arm64` or `x86_64`. Wait for the image to finish preparing before continuing.
 
-1. Go to **Images** and click **Upload**.
-2. Select a local ISO or cloud image file.
-3. Provide a name, image type (`iso` or `cloud-image`), and arch (`arm64` or `x86_64`).
-4. The upload streams to the server in chunks. If the connection drops, resume
-   from where it left off -- the server tracks the byte offset.
-5. When the upload completes, the image status transitions to `ready`.
+Under **Advanced**, you can change CPU, memory, network, UEFI, and TPM settings. **Shared (NAT)** is the simplest network for a first VM. Bridged networking needs [bridge setup](using-networks.md) on the Device first.
 
-The maximum upload size is 128 GB (`Tus-Max-Size: 137438953472`).
+Click **Next**.
 
-## Creating a VM from the Wizard
+## 3. Choose a disk and create
 
-To place the Workload on another paired Device, see [Create a Workload](create-workload.md) and [Home and pairing](home-and-pairing.md).
+Choose **New disk** and set its size, or select an unused **Existing disk** on the Device. New qcow2 disks grow as the guest writes data, up to the size you choose.
 
-Click **Create VM** to open the creation wizard. It walks through the
-following steps:
+Linux Devices can also offer **Raw host device**, which gives the guest access to a physical disk. Use a new virtual disk for this walkthrough.
 
-### Step 1: OS Type and Name
+Click **Create**. The Workloads list shows download and provisioning progress. A template can download its image during this step. You do not need to submit the same VM again while it prepares.
 
-- Choose **Linux** or **Windows**. On Apple Silicon this typically sets
-  `vmType` to `linux-arm64` or `windows-arm64`. On Linux **x86_64** hosts use
-  `linux-amd64` (and matching catalog images); the wizard follows host
-  capabilities from `GET /api/system/capabilities`.
-- Enter a VM name (1--128 characters).
-- Windows selection automatically adjusts defaults: 4 CPUs, 4096 MB RAM,
-  64 GB disk, UEFI on, TPM enabled. It also ensures the VirtIO Windows
-  drivers ISO is available (downloading it if needed).
+## 4. Open the VM
 
-### Step 2: Hardware Configuration
+Open the VM from **Workloads**. If it is stopped, click **Start**.
 
-| Setting              | Range / Options                              | Default (Linux) | Default (Windows) |
-|----------------------|----------------------------------------------|-----------------|-------------------|
-| CPU count            | 1--256                                       | 2               | 4                 |
-| Memory (MB)          | 128--1,048,576                               | 1024            | 4096              |
-| Display resolution   | e.g. `1280x800`, `1920x1080`                | `1280x800`      | `1280x800`        |
-| UEFI boot            | on / off                                     | on              | on                |
-| TPM                  | on / off (auto-enabled for Windows)          | off             | on                |
+- **VNC** shows the guest's graphical display. Use it to complete an ISO installation.
+- **Console** opens the serial terminal, useful for Linux server images configured for serial access.
+- **Overview** shows hardware, disks, network details, and guest information when available.
+- **Logs** shows events for this VM. **Metrics** appears while it is running.
 
-### Step 3: Image Selection
+A cloud image boots an already-installed OS. An ISO starts an installer, so you still need to install the OS onto the VM disk.
 
-Choose the boot source:
+## 5. Connect over the network
 
-- **ISO mode** -- Select an installer ISO. A blank boot disk is created for
-  you. The VM boots from the ISO for a manual install.
-- **Cloud image mode** -- Select a cloud image. BarkVisor clones the image
-  into a new qcow2 boot disk (resized to your chosen disk size). You can
-  optionally configure cloud-init (see below).
+With NAT, publish a guest port from the VM's network settings. For example, forward host TCP port `2222` to guest port `22` for SSH, then connect to the Device running the VM:
 
-### Step 3a: Windows Drivers (Conditional)
-
-If Windows is selected and the VirtIO Windows drivers ISO (`virtio-win.iso`)
-is not already downloaded, the wizard prompts you to download it. This ISO is
-automatically attached as a secondary drive during VM creation.
-
-If setup stops on **This PC must support Secure Boot**, use the LabConfig
-bypass in [Troubleshooting](getting-started-troubleshooting.md#windows-setup-this-pc-must-support-secure-boot).
-
-### Step 4: Storage
-
-- **New disk** -- Specify the disk size in GB (minimum 1 GB, up to 8,192 GB).
-  In ISO mode a blank qcow2 disk is created instantly. In cloud-image mode
-  the disk is cloned and resized in a background task.
-- **Existing disk** -- Attach an unassigned disk that was previously created.
-- **Shared folders** -- Optionally share host directories with the guest via
-  virtio-9p.
-
-### Step 5: Networking
-
-- Select an existing network (NAT, bridged, or socket_vmnet). The default
-  network is pre-selected.
-- **Port forwarding** (NAT only) -- Add TCP/UDP rules mapping a host port to
-  a guest port. This is how you reach SSH or other services from the host.
-
-  Example: `TCP 2222 -> 22` forwards host port 2222 to guest port 22.
-
-### Step 6: Cloud-Init (Cloud Image Mode Only)
-
-When using a cloud image, you can provide:
-
-- **SSH public key** -- Select from your stored SSH keys (the default key is
-  pre-selected). The key is injected via cloud-init `ssh_authorized_keys`.
-- **User data** -- A free-form cloud-init user data script (YAML). Validated
-  before submission.
-
-### Step 7: Review and Create
-
-The summary shows all chosen settings and a preview of the equivalent QEMU
-command line. Click **Create** to provision the VM.
-
-- **ISO mode**: The VM is created synchronously (status: `stopped`).
-- **Cloud image mode**: The VM enters `provisioning` state while a background
-  task clones the disk and generates the cloud-init ISO. The API returns
-  HTTP 202 with a `taskID` you can poll. Once provisioning completes the VM
-  transitions to `stopped`.
-
-## Creating a VM from a Template
-
-Templates are pre-configured VM recipes that include an OS image slug,
-hardware defaults, port forwards, and a cloud-init user data template with
-fill-in-the-blank inputs.
-
-1. Navigate to **Templates** in the web UI.
-2. Browse templates by category and select one.
-3. Fill in the required inputs (e.g. hostname, password, SSH key). The
-   template defines which inputs are required, their min/max length, and
-   default values.
-4. Optionally override CPU, memory, disk size, or network.
-5. Click **Deploy**.
-
-If the template's image is not yet downloaded locally, BarkVisor
-automatically starts the download and returns a `"downloading"` status.
-Monitor the image download percent on the Images page; once the image is
-ready, deploy again.
-
-Used and free Library space is the **Library path** volume. That path can
-live on a different mount than the data dir. Unknown capacity is not shown as zeros.
-
-If the image is already available, the VM is created immediately through the
-same pipeline as the wizard (cloud-image mode with rendered user data).
-
-### Onyx
-
-**Onyx** (Lite) is a catalog template, same slot as Pi-hole. It installs Onyx
-Chat/Agents on Ubuntu 24.04 and talks to Home Ollama at
-`http://10.0.2.2:11434` (the slirp host). You can change that URL in the
-deploy form. NAT publishes guest `:80` on This Device as `http://127.0.0.1/`.
-A member Device's localhost is the wrong machine — open the UI on that
-Device.
-
-First boot clones the Onyx repo and runs `docker compose` Lite. That takes
-several minutes; it is not instant. This template does not grant the Agent
-network cage. `10.0.2.2:11434` is ordinary slirp host access. The SSH key
-picker only appears when a recipe declares an `ssh_keys` input (Ubuntu,
-Pi-hole); Onyx does not.
-
-## Starting a VM and Connecting
-
-### Start
-
-Select the VM and click **Start**. BarkVisor launches a `qemu-system-aarch64`
-process with HVF acceleration, UEFI firmware, and all configured devices. The
-VM state transitions to `running`.
-
-### VNC (Graphical Console)
-
-Click the **VNC** tab on the VM detail page. BarkVisor embeds a NoVNC client
-that connects over a WebSocket to the QEMU VNC socket (proxied through the
-server at `/api/vms/:id/vnc`). This gives you a full graphical console in the
-browser -- useful for OS installation and desktop environments.
-
-Copy and paste text with **Paste** / **Copy** on the VNC toolbar, or ⌘V /
-Ctrl+V while the display is focused. Guest copy needs `spice-vdagent` (Linux
-desktop) or Spice guest tools (Windows) inside the Workload, and a restart so
-QEMU picks up the vdagent channel.
-
-### Serial Console
-
-Click the **Console** tab. BarkVisor embeds a [wterm](https://wterm.dev) terminal that
-connects over a WebSocket to the QEMU serial socket at
-`/api/vms/:id/console`. This is the primary interface for headless Linux
-servers.
-
-### SSH via Port Forwarding
-
-If you configured a port forward (e.g. `TCP 2222 -> 22`), connect from
-your host terminal:
-
-```
-ssh -p 2222 user@localhost
+```sh
+ssh -p 2222 <guest-user>@<device-address>
 ```
 
-The guest's default IP on a NAT network is `10.0.2.15`. Port forwarding is
-configured through QEMU's user-mode networking (`-netdev user,hostfwd=...`).
+Replace the placeholders with the guest account and Device address. Use `localhost` only when your terminal is on that Device. Restart a running VM after changing port forwards.
 
-## Stopping and Managing VMs
+For bridged networking, use the guest's LAN address instead. Installing `qemu-guest-agent` inside the guest lets BarkVisor report its IP addresses and other guest details.
 
-### Stop Methods
+## Stop and manage the VM
 
-BarkVisor supports three stop methods, selectable from the stop button
-dropdown:
+**Stop** asks the guest to shut down cleanly. The dropdown also offers **ACPI Shutdown** and **Force Stop**. Force Stop immediately ends the VM process and can lose unsaved work. **Restart** reboots it.
 
-| Method         | Behavior                                                    |
-|----------------|-------------------------------------------------------------|
-| `guest-agent`  | Sends a shutdown command via `qemu-guest-agent` (graceful). |
-| `acpi`         | Sends an ACPI power button event (like pressing the button).|
-| `force`        | Immediately terminates the QEMU process (like pulling power).|
+Turn on **Start when this Device boots** if you want automatic startup. Stopping or restarting BarkVisor itself leaves running VMs alive.
 
-The default is `guest-agent`. If the guest agent is not installed, fall back
-to `acpi` or `force`.
-
-### Restart
-
-Restart sends a stop followed by a start. The VM must be running.
-
-### Disk Hotplug
-
-You can attach and detach additional disks to a running VM without rebooting:
-
-- **Hot-add**: On the VM detail page, click **Attach Disk**, select an
-  unassigned disk, and confirm. The disk is added via QMP `blockdev-add` +
-  `device_add`.
-- **Hot-remove**: Click the eject icon on an additional disk. The disk is
-  removed via QMP `device_del` + `blockdev-del`.
-
-The boot disk cannot be hot-removed.
-
-### Online Disk Resize
-
-Disks can be resized (grow only) from the Disks page via the resize action.
-The new size must be at least 1 GB and at most 8,192 GB. After resizing on
-the host, the guest OS must expand its filesystem to use the new space (e.g.
-`growpart` + `resize2fs` on Linux).
-
-### ISO Attach/Detach
-
-You can attach or detach ISO images on a running VM:
-
-- **Attach ISO**: Adds a virtual CD-ROM drive.
-- **Detach ISO**: Removes a specific ISO or all ISOs.
-
-## Monitoring
-
-### Live Metrics
-
-The **Metrics** tab on the VM detail page shows real-time charts powered by
-Chart.js:
-
-- **CPU utilization** (percent)
-- **Memory usage** (MB)
-- **Disk I/O** (read/write bytes per interval)
-
-Metrics are collected every 5 seconds via QMP queries to the running QEMU
-process and stored in a 30-minute ring buffer (360 samples). The metrics
-stream is delivered to the browser via Server-Sent Events (SSE) at
-`/api/vms/:id/state`.
-
-### Guest Information (qemu-guest-agent)
-
-If `qemu-guest-agent` is installed in the guest, the **Overview** tab
-displays rich guest info polled by `GuestAgentInventory` (qemu-guest-agent; not metrics):
-
-- IP addresses (source: `guest-agent`; falls back to `10.0.2.15` for NAT)
-- Hostname
-- OS name, version, and ID
-- Kernel version and release
-- Architecture
-- Timezone
-- Logged-in users
-- Filesystem mount points and usage
-- TCP listening ports (null when the addon cannot collect them, empty when none). Linux uses `ss`/`netstat`; Windows uses `netstat -ano` or PowerShell.
-
-Guest info is available at `GET /api/vms/:id/guest-info` and is persisted to
-the database for offline reference.
+For extra disks, shared folders, USB, GPU passthrough, and other options, see [Workload details](using-vm-details.md) and [Create a Workload](create-workload.md). To grow a virtual disk, use [Disks](using-disks.md), then expand the partition and filesystem inside the guest.

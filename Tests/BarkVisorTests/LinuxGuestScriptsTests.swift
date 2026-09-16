@@ -474,12 +474,16 @@ struct LinuxGuestScriptsTests {
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),
             encoding: .utf8,
         )
-        #expect(linux.contains("SKIP_FRONTEND=1"))
         #expect(linux.contains("barkvisor-agent.service"))
-        #expect(linux.contains("barkvisor join --code"))
         #expect(linux.contains("barkvisor-agent join --code"))
-        #expect(linux.contains("BARKVISOR_JOIN_CODE"))
-        #expect(linux.contains("/api/pairing/join"))
+        #expect(linux.contains("Enable only one"))
+        #expect(linux.contains("home-and-pairing.md"))
+        let development = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
+            encoding: .utf8,
+        )
+        #expect(development.contains("SKIP_FRONTEND=1"))
+        #expect(development.contains("BARKVISOR_JOIN_CODE"))
         #expect(!linux.localizedCaseInsensitiveContains("cluster"))
         #expect(!linux.localizedCaseInsensitiveContains("quorum"))
 
@@ -637,11 +641,11 @@ struct LinuxGuestScriptsTests {
             #expect(dockerBody.contains(needle), "docker wrapper should reference \(needle)")
         }
 
-        let linuxDocs = try String(
-            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),
+        let developmentDocs = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
             encoding: .utf8,
         )
-        #expect(linuxDocs.contains("mise run host-network-extra-ip"))
+        #expect(developmentDocs.contains("mise run host-network-extra-ip"))
 
         func run(path: URL, extraEnv: [String: String] = [:]) throws -> (Int32, String) {
             let proc = Process()

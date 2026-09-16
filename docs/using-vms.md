@@ -1,6 +1,6 @@
-# Virtual Machines
+# Workloads
 
-**Virtual Machines** lists every **Workload** (VM) in the Home across all Devices in the current [scope](using-overview.md).
+**Workloads** lists VMs and Apps across the Devices selected in the sidebar. Click a row to open [VM details](using-vm-details.md) or [App details](using-apps.md).
 
 ![Virtual Machines list with health filter chips](img/vms.png)
 
@@ -30,7 +30,7 @@ The counts update live; a failed count above zero is your cue to visit the [Dash
 
 **Create VM** opens the 3-step wizard (**Gallery → Configure → Disk**). The full walkthrough is in [Create a Workload](create-workload.md).
 
-Empty Homes see "No virtual machines yet" with a **Create your first VM** button.
+Use **Create App** for a Docker Compose app. See [Apps](using-apps.md).
 
 ## Related
 

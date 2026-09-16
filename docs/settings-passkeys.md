@@ -16,7 +16,9 @@ First-run setup registers the first passkey. Add more here.
 
 - **Delete** asks for confirm. You cannot delete the last passkey. Already-issued sessions stay until they expire.
 
-Sign in later with **Sign in with passkey** on the login page. The native Console app stays password-only (headless setup still sets a password for scripts).
+Sign in later with **Sign in with passkey** on the login page. The native Console also supports passkeys and phone sign-in offers. Password login remains available there for accounts provisioned with a password.
+
+If this session skips sign-in, the Passkeys tab is hidden. See [Settings → Security](settings-security.md).
 
 ## Related
 

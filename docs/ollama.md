@@ -1,57 +1,50 @@
-# Ollama
+# Run models with Ollama
 
-Ollama is optional. BarkVisor talks to it on each **Device**. Completions go through **Home** `:7777/v1`, not Device `:11434`.
+Ollama is optional. Install it on a Device to run local models, then use BarkVisor to manage those models and connect inference clients.
 
-The **Ollama** nav item stays visible for admin and inference even when no Device can reach Ollama.
+## 1. Install Ollama
 
-## Install (when Ollama is down)
+Open **Ollama** in BarkVisor. If the runtime is unavailable, the page shows installation instructions and a **Recheck** button.
 
-The page shows a multi-step panel and **Recheck**. Commands match the in-app copy. AgentBox and Mac mini are not install targets.
-
-**macOS**
+On macOS:
 
 ```sh
 brew install ollama
 brew services start ollama
 ```
 
-**Linux** — install the distro package, or see [ollama.com/download](https://ollama.com/download).
+For other platforms, follow [Ollama's download instructions](https://ollama.com/download). After it starts, click **Recheck**.
 
-When Ollama comes up, the page switches to the model list without a full reload.
+## 2. Download a model
 
-Live Device stats (CPU, memory, GPU busy percent) are on Device detail, not this page. Occupancy / passthrough is a different number.
+Choose the Device where the model should be stored.
 
-## Catalog vs library search
+Use **Search the Ollama library** to find models and click **Download**, or use **Pull by name** if you already know the model name. **Filter catalog** searches models already downloaded in your Home.
 
-**Filter catalog** matches names already pulled on the Home. That is not a library search.
+Model files stay on the Device that downloads them. Choose a model that fits that Device's available memory.
 
-**Search the Ollama library** looks up names through Home (`GET /api/home/ollama/library/search?q=`). The daemon fetches `https://ollama.com/api/tags` (allowlisted) and filters locally. Empty query, upstream down, and no matches are explicit states. Each result has **Download**, which is the existing pull (`POST /home/ollama/pull`).
+## 3. Start or stop a model
 
-**Pull by name** stays as a fallback when you already know the slug.
+Click **Start** beside a downloaded model. If several reachable Devices have it, choose one. With only one eligible Device, BarkVisor uses it directly.
 
-Pull still needs a **Device** for where the weights land (sidebar Device if one is selected, otherwise any reachable Device).
+A model cannot start on a Device that does not have its files. **Stop** unloads it from the Device running it and asks for confirmation.
 
-## Start and Stop
+## 4. Connect a client
 
-A pulled model can only run on a Device that already has it.
+Copy the **Completions** URL from the Ollama page. BarkVisor exposes an OpenAI-compatible endpoint through the Home console:
 
-- Sidebar scoped to one Device that has the model: **Start** runs there. No picker.
-- Sidebar **All**, one reachable location: **Start** runs there. No picker.
-- Several reachable Devices have it: picker lists only those Devices. Always a real Device, never “Any reachable Device.”
-- No reachable location: Start is disabled (not on this Device, or only on unreachable Devices).
+```text
+http://<device-address>:7777/v1/chat/completions
+```
 
-**Stop** uses the Device that is running the model and asks for confirmation first.
+Use the displayed HTTPS address if you configured HTTPS access. Clients that ask for a base URL use the address ending in `/v1`.
 
-## Completions
+Create an **inference** key under [Settings → API Keys](settings-api-keys.md) and enter it in your client. API requests send it as an `Authorization: Bearer <key>` header.
 
-Home serves OpenAI-compatible completions at:
-
-`http://<home>:7777/v1/chat/completions`
-
-That is **not** Device `:11434`. Send `Authorization: Bearer` with an inference key from Settings.
+Use BarkVisor's endpoint to route requests across the Home. Connecting directly to Ollama's port `11434` bypasses that routing.
 
 ## Related
 
-- [Product terminology](product-terminology.md)
-- [Home and pairing](home-and-pairing.md)
-- [Changelog](changelog.md)
+- [Ollama page](using-ollama.md)
+- [API Keys](settings-api-keys.md)
+- [Devices](using-devices.md)

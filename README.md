@@ -4,220 +4,59 @@
 
 <h1 align="center">BarkVisor</h1>
 
-> **Alpha Software** -- BarkVisor is under active development. APIs, configuration, and behavior may change rapidly between releases. Use at your own risk and expect breaking changes.
+BarkVisor runs virtual machines and Docker Compose apps on your computers. Manage them from a web browser, with an optional Ollama integration for local models.
 
-A headless daemon for managing QEMU virtual machines through a web UI.
+Each computer is a **Device**. Your Devices make up a **Home**, with one login and a console for managing them. Workloads stay on the Device you choose, even when another Device goes offline.
 
-**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF), **Ubuntu / Debian** (`.deb` + systemd / KVM), **Windows** (`zip` / WHPX), and a portable **`.tar.gz`** for other glibc distros (Arch, SteamOS, Fedora) — including an agent-only, no-root install. See [Linux install](docs/getting-started-linux.md) and [Windows install](docs/getting-started-windows.md).
+> Alpha software. APIs, configuration, and behavior can change between releases.
 
-In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
+## Install BarkVisor
 
-## Features
+Use a prebuilt package from [Releases](https://github.com/pmdroid/barkvisor/releases). You do not need to build BarkVisor or install developer tools.
 
-- Create, start, stop, and manage VMs with configurable CPU, RAM, disks, and networks
-- UEFI boot and TPM 2.0 support
-- Cloud-init provisioning with user data templates
-- Deploy VMs from templates, synced from remote catalogs
-- qcow2/raw disk management with hot-plug and online resize
-- NAT networking with port forwarding; **bridged networking** on macOS (socket_vmnet) and Linux (host bridge + qemu-bridge-helper)
-- OS image library with HTTP download and auto-decompression (arm64 and x86_64)
-- Live CPU, memory, and disk I/O metrics
-- Serial console (wterm) and VNC display (NoVNC) in the browser
-- JWT authentication, API keys, and audit logging
-- SSH key management for VM injection
-- Database backups, log rotation, and diagnostic bundles
-- USB passthrough (macOS and Linux via `usb-host`)
+| Your computer | Package and instructions |
+|---------------|--------------------------|
+| macOS 26+, Apple Silicon | [macOS installation](docs/getting-started-installation.md), `.pkg` |
+| Ubuntu or Debian, amd64 or arm64 | [Linux installation](docs/getting-started-linux.md), `.deb` |
+| Other Linux distributions | [Portable tarball](docs/getting-started-linux.md#other-distros-portable-tarball-no-root) |
+| Windows, amd64 or arm64 | [Windows installation](docs/getting-started-windows.md), zip |
 
-## Prerequisites
+QEMU is installed separately. Each guide explains which runtime packages you need.
 
-### macOS (primary packaging)
+After installation:
 
-- macOS 26+ (Apple Silicon only for HVF guests today)
-- Xcode with Swift 6 toolchain
-- [Bun](https://bun.sh) (for the frontend)
-- Homebrew
+1. Open `http://localhost:7777` on the Device.
+2. Complete [first-run setup](docs/getting-started-first-launch.md).
+3. [Create your first VM](docs/getting-started-quickstart.md) or [install an App](docs/using-apps.md).
 
-Install build dependencies:
+Passkeys need `localhost` or an HTTPS hostname. For a computer you access over the network, follow [remote setup](docs/getting-started-first-launch.md#set-up-a-remote-device).
 
-```bash
-brew install meson ninja pkg-config glib pixman dylibbundler \
-  gnutls jpeg-turbo libpng libssh libusb zstd lzo snappy \
-  autoconf automake libtool json-glib swiftlint swiftformat
-```
+## What you can do
 
-### Linux
+- Create VMs from catalog templates, cloud images, or installer ISOs.
+- Choose CPU, memory, disks, and networking for each VM.
+- Open graphical and serial consoles, inspect metrics, and read logs in the browser.
+- Install Docker Compose apps from the catalog on Devices with Docker installed.
+- Pair Devices and manage their workloads from one console.
+- Run Ollama models and connect compatible inference clients.
+- Attach USB peripherals on macOS and Linux, or pass through GPUs and PCI devices on Linux.
 
-Install a **prebuilt** Ubuntu / Debian `.deb` from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Prefer inspect-then-run bootstrap. Full steps: **[Installation (Linux)](docs/getting-started-linux.md)**.
+See [Using BarkVisor](docs/using-overview.md) for a guide to each page.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/pmdroid/barkvisor/main/scripts/get-barkvisor.sh -o get-barkvisor.sh
-less get-barkvisor.sh
-sudo bash get-barkvisor.sh
-# → http://localhost:7777
-# API-only Device: enable barkvisor-agent.service instead (do not run both)
-```
+## Guides
 
-Other distros or no-root hosts: grab the `.tar.gz` from [Releases](https://github.com/pmdroid/barkvisor/releases) and follow **[Other distros: portable tarball, no root](docs/getting-started-linux.md#other-distros-portable-tarball-no-root)** (Arch/SteamOS package names included — `qemu-base` alone is not enough for VM display).
+- [Home and pairing](docs/home-and-pairing.md)
+- [Apps](docs/using-apps.md)
+- [Ollama](docs/ollama.md)
+- [Disks](docs/using-disks.md) and [Networks](docs/using-networks.md)
+- [Settings](docs/using-settings.md) and [Updates](docs/settings-updates.md)
+- [Troubleshooting](docs/getting-started-troubleshooting.md)
+- [Changelog](docs/changelog.md) and [Roadmap](docs/roadmap.md)
 
-### Windows
+## Contributing
 
-Install QEMU and enable Windows Hypervisor Platform, then extract the zip and run `packaging\windows\install.ps1`. Full steps: **[Installation (Windows)](docs/getting-started-windows.md)**.
-
-## Quick Start
-
-### 1. Build and run the backend
-
-```bash
-swift build
-swift run BarkVisorApp
-```
-
-The server starts on `http://localhost:7777`. On first launch a web-based setup wizard registers a passkey. Use localhost, not `127.0.0.1`.
-
-### 2. Run the frontend (development)
-
-```bash
-cd frontend
-bun install
-bun run dev
-```
-
-The Vite dev server starts with hot reload, proxying API calls to the backend.
-
-### 3. Production frontend build
-
-```bash
-cd frontend
-bun run build
-```
-
-The built files go into `Sources/BarkVisor/Resources/frontend/` and are served by the backend directly.
-
-## Development
-
-Use [mise](https://mise.jdx.dev/) (see `mise.toml`) or raw Swift tools:
-
-```bash
-mise run build      # swift build -c release
-mise run test       # full swift test (same as CI Test; not --filter)
-mise run linux-ci   # Swift product + tests in the CI Linux image
-mise run lint       # swiftlint + swiftformat --lint
-swiftformat Sources/ Tests/   # apply formatting
-# CI equivalent: mise run lint && mise run test && mise run linux-ci
-# Default push gate: mise run prepush   (lint + test + linux-ci + frontend-test)
-```
-
-Guest-boot BDD is **opt-in** (`features/guest-boot.feature` → existing
-smoke scripts). Do not add it to default prepush — TCG Ubuntu boots can
-take ~15 minutes; KVM/HVF is typically a few minutes.
-
-```bash
-mise run guest-smoke        # blank disk, fast
-mise run guest-smoke-real   # REAL_GUEST=1, long
-mise run prepush-full       # prepush + guest-smoke
-```
-
-If `qemu-system-*` is missing the mapper prints `SKIP` and exits 0. See
-[Development — Guest-boot BDD](docs/getting-started-development.md#guest-boot-bdd-opt-in-not-prepush).
-
-### Frontend E2E tests
-
-```bash
-cd frontend
-bun run cy:open     # Interactive Cypress
-bun run test:e2e    # Headless Cypress
-```
-
-## Installation
-
-### macOS
-
-Download the latest `.pkg` from the releases page and install:
-
-```bash
-sudo installer -pkg BarkVisor-<version>.pkg -target /
-```
-
-This can also be done entirely over SSH on a remote Mac -- no GUI required.
-
-After installation, open `http://<host-ip>:7777` in a browser to complete setup.
-
-To uninstall:
-
-```bash
-sudo ./scripts/uninstall.sh          # keep data; keep shared br0
-sudo ./scripts/uninstall.sh --purge  # remove /var/lib/barkvisor; still keep br0
-```
-
-Uninstall removes marker-tagged `bridge.conf` / netplan / NetworkManager files only. Shared `br0` stays unless you pass `--remove-bridge` after `--purge` or `--revert` offered it. socket_vmnet is stopped, not `brew uninstall`ed, unless you ask.
-
-### Linux
-
-Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com/pmdroid/barkvisor/releases) and follow **[Installation (Linux)](docs/getting-started-linux.md)**. Building packages from source is optional (see that guide or [Development](docs/getting-started-development.md)).
-
-## Release Build
-
-The release script builds the frontend and Swift daemon, assembles the install layout (daemon), and creates a `.pkg` installer. macOS QEMU, swtpm, and socket_vmnet come from Homebrew at runtime (`brew install qemu swtpm socket_vmnet`). Set `BUNDLE_HYPERVISOR_DEPS=true` only if you still want the old from-source tree.
-
-```bash
-# Optional: Apple Team ID for notarization
-export APPLE_TEAM_ID=YOUR_TEAM_ID
-
-# Optional: signing identity for distribution
-export SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-
-./scripts/build-release.sh
-```
-
-Options:
-
-| Flag | Effect |
-|------|--------|
-| `--skip-deps` | Reuse cached dependency builds |
-| `--no-sign` | Skip code signing |
-| `--skip-notarize` | Create a signed package without submitting it to Apple |
-| `--no-pkg` | Skip installer .pkg creation |
-| `--require-notarize` | Fail if notarization credentials are missing |
-
-The output is `build/stage/` (install layout), `build/BarkVisor-<version>-standalone.tar.gz`, and `build/BarkVisor-<version>.pkg`.
-
-## Configuration
-
-**macOS:** installed daemon data is under `/var/lib/barkvisor/`; development builds use `~/Library/Application Support/BarkVisor/`.  
-**Linux:** development default is `~/.local/share/barkvisor`; installed layout uses `/var/lib/barkvisor` (see Linux guide).  
-**Windows:** installed layout uses `C:\ProgramData\BarkVisor`; unpackaged uses `%LOCALAPPDATA%\BarkVisor` (see Windows guide).  
-Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR` on every platform.
-
-| Path | Contents |
-|------|----------|
-| `db.sqlite` | Application database |
-| `jwt-secret` | Auto-generated JWT signing key |
-| `disks/` | VM disk images |
-| `images/` | Downloaded OS images |
-| `logs/` | Application logs |
-| `backups/` | Database backups |
-
-The server listens on port **7777** by default, bound to `0.0.0.0`.
-
-## Documentation
-
-**Website** (landing + docs, one deploy): `cd website && bun install && bun run build` → `website/dist/`. Deploy: `bun run deploy` (Cloudflare Pages). See [website/README.md](website/README.md).
-
-### Getting Started (source Markdown)
-
-- [Installation (macOS)](docs/getting-started-installation.md) — Apple Silicon `.pkg`, inspect-then-run bootstrap, Settings → Updates
-- [Installation (Linux)](docs/getting-started-linux.md) — Ubuntu / Debian `.deb`, root systemd, Networks Apply
-- [Installation (Windows)](docs/getting-started-windows.md) — zip payload, QEMU + WHPX, LocalSystem service
-- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, socket_vmnet (macOS) vs host bridge (Linux)
-- [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
-- [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing
-- [Ollama](docs/ollama.md) — Install, pull, Start, library search
-- [Create a Workload](docs/create-workload.md) — Place a VM; Linux disks, GPU, PCI
-- [GPU passthrough](docs/getting-started-gpu-passthrough.md) — Intel/AMD IOMMU, vfio-pci, verify groups (Linux)
-- [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
-- [Building Releases](docs/getting-started-building-releases.md) — macOS release script + Linux package builds
-- [Troubleshooting](docs/getting-started-troubleshooting.md) — Leftover helper XPC, disk-full, QEMU paths
+Building from source is optional. Contributor instructions are in [Development](docs/getting-started-development.md), [Building releases](docs/getting-started-building-releases.md), and the [website guide](website/README.md).
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE).

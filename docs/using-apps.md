@@ -1,63 +1,65 @@
 # Apps
 
-**Workloads** lists VMs and **Apps** on the Devices in the current [scope](using-overview.md). An App is a Docker Compose project on a Device, not a guest VM.
+An App is a Docker Compose project running on a Device. **Workloads** lists Apps alongside VMs.
 
-The Device needs Docker Compose v2 (`docker compose version`). On a Mac that is OrbStack, Colima, or Docker Desktop. Device doctor warns if compose is missing; it does not fail the Device.
+The Device needs Docker with Compose v2 installed. On macOS, BarkVisor can use OrbStack, Colima, or Docker Desktop. If Docker is missing, VM features still work.
 
 ![Workloads list with a running App](img/apps-list.png)
 
-## Create App
+## Create an App
 
-From **Workloads**, click **Create App**. The magazine is **Gallery → Configure → Review**.
+Open **Workloads → Create App**. The wizard has two steps: **Gallery → Configure**.
 
 ### Gallery
 
-Cards come from two catalogs: **Big Bear Universal Apps** and **LinuxServer.io**. A card that the Device cannot run (architecture, or compose that BarkVisor will not apply) stays visible with Install disabled.
+Browse **Big Bear Universal Apps** and **LinuxServer.io**, or use the search and category filters. Apps that cannot run on the selected Device show the reason.
 
 ![Create App gallery](img/apps-gallery.png)
 
 ### Configure
 
-Pick a **Device**. Fill the template: name, folders (FolderPicker for media), environment, secrets, and ports. LinuxServer images prefill **PUID**, **PGID**, and **TZ** from the Device. Secrets are stored in the Workload `.env` (mode 0600) and are not shown again in the UI.
+Choose a Device and fill in the app's settings: name, folders, environment variables, secrets, and ports. LinuxServer apps prefill user, group, and timezone values from the Device.
 
 ![Create App configure](img/apps-configure.png)
 
-**Create** applies the compose project. **Start** pulls the image and runs it.
+Click **Create** and follow progress in the Workloads list. Use **Start** if the app is stopped. Starting an app pulls any required container images.
 
-Published ports listen on all interfaces. **Open UI** uses the Device LAN address, not a wildcard host.
+Published ports are reachable through the Device's network address. **Open UI** opens the app's web interface when one is configured.
 
 ## App details
 
-Open the App row. Toolbar: **Stop**, **Restart**, **Open UI**, **Update** (when the catalog digest is newer), **Delete**.
-
-Tabs: **Overview**, **Logs**, **Environment**, **Volumes**. There is no guest console, VNC, or ACPI shutdown — those are VM-only.
+Open the App in **Workloads**. Available actions include **Start**, **Stop**, **Restart**, **Open UI**, **Update** when a newer catalog version is available, and **Delete**.
 
 ### Overview
 
-Status (image, digest, **Update available**), Access (LAN Open UI, published ports, ingress Direct vs prefix), Storage, and an environment summary. Secrets stay hidden.
+See the app image, update status, access links, volumes, resource usage, and environment summary. Secrets remain hidden.
 
-![App Overview](img/apps-detail.png)
+![App overview](img/apps-detail.png)
 
 ### Logs
 
-Compose logs for this project. Some apps print a first-run password here (for example qBittorrent).
+Read logs from the app's containers. Some apps print an initial password here.
 
 ![App logs](img/apps-logs.png)
 
+### Terminal
+
+Admins can open a terminal in a running container. Choose a container, then **New terminal**. Multiple sessions can stay open while you switch between them.
+
 ### Environment
 
-Template variables. Secret keys show as dots.
+Edit non-secret environment variables and save. Restart the app to apply the changes. Secrets stay redacted and are not replaced by the environment form.
 
 ![App environment](img/apps-env.png)
 
 ### Volumes
 
-Host binds and named volumes, plus the Workload volume root on the Device.
+See the Device folders and named volumes used by the app, plus its workload volume folder.
 
 ![App volumes](img/apps-volumes.png)
 
 ## Related
 
-- [Create a Workload](create-workload.md) — VMs
-- [Workload details](using-vm-details.md) — VM console and hardware
-- [Logs](using-logs.md) — Home-wide log stream
+- [Create a VM](getting-started-quickstart.md)
+- [Devices](using-devices.md)
+- [Logs](using-logs.md)

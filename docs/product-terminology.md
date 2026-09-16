@@ -29,7 +29,7 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 - Say **Home** when you mean the person’s set of Devices. One Device is already a Home.
 - Networks live at **Networks** (`/networks`), not Settings → Network.
 - First-run setup is `SetupView` (`/setup`). Do not add a second overlay wizard.
-- Joining an existing Home is a branch of that same `SetupView`, using `/api/pairing/join`. On an API-only Device (no SPA), `barkvisor-agent join --code` (or `barkvisor join --code`) posts the same offer to that console-local endpoint. Add a Device and the phone sign-in QR live on **Settings → Pairing** (`/api/pairing/codes`). **Settings → Home** is Device URL — not the pairing QR. Catalog Download lives on **Settings → Library**.
+- Join an existing Home with `barkvisor join --code`, or `barkvisor-agent join --code` on an API-only Device. The CLI posts to the console-local `/api/pairing/join` endpoint. The web setup wizard creates a new Home. Pairing offers and phone sign-in QRs live under **Settings → Pairing**. **Settings → Home** sets the Device URL. **Settings → Library** sets the image folder; **Settings → Repositories** manages catalogs.
 - The sidebar **Device** picker is **All** (Home union) or one Device. List pages filter to that scope. Create VM still has its own placement picker.
 
 ## Related
