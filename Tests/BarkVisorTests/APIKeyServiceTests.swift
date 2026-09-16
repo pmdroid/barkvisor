@@ -280,26 +280,29 @@ final class APIKeyServiceTests {
     }
 
     @Test func `create waits on hmac secret lock held by pairing rotate path`() async throws {
+        let acquired = AsyncStream.makeStream(of: Void.self)
         let hold = Task {
-            await withCheckedContinuation { (acquired: CheckedContinuation<Void, Never>) in
-                Task {
-                    await Config.withAPIKeyHmacSecretLock {
-                        acquired.resume()
-                        try? await Task.sleep(for: .milliseconds(200))
-                    }
-                }
+            await Config.withAPIKeyHmacSecretLock {
+                acquired.continuation.yield(())
+                acquired.continuation.finish()
+                try? await Task.sleep(for: .milliseconds(200))
+                return ContinuousClock.now
             }
         }
-        await hold.value
-        let started = ContinuousClock.now
-        _ = try await APIKeyService.create(
+        for await _ in acquired.stream {}
+        // Scheduling may consume most of the hold before this task resumes.
+        // Check completion order, not how long this caller happened to wait.
+        let created = try await APIKeyService.create(
             name: "Locked",
             expiresIn: nil,
             userId: "user-1",
             db: dbPool,
             hmacSecret: "test-hmac",
         )
-        #expect(started.duration(to: .now) >= .milliseconds(150))
+        let completedAt = ContinuousClock.now
+        let releasedAt = await hold.value
+        #expect(completedAt >= releasedAt)
+        #expect(created.apiKey.name == "Locked")
     }
 
     @Test func `hmac persist failure does not drop stored keys`() async throws {
