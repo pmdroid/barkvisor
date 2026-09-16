@@ -11,10 +11,31 @@ import GRDB
 /// - DEVICE_TRAY_MOVED: Media ejected
 /// - RESET: VM reset
 public actor QMPEventListener {
+    private final class CancelFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+
+        func set() {
+            lock.lock()
+            value = true
+            lock.unlock()
+        }
+
+        var isSet: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+    }
+
     private struct Run {
         let generation: UInt64
-        let task: Task<Void, Never>
+        let cancel: CancelFlag
         let client: QMPClient
+    }
+
+    private struct QMPEventBox: @unchecked Sendable {
+        let event: [String: Any]
     }
 
     private var runs: [String: Run] = [:]
@@ -38,37 +59,41 @@ public actor QMPEventListener {
     // MARK: - Lifecycle
 
     public func start(vmID: String, eventSocketPath: String) {
-        stop(vmID: vmID)
+        if let previous = runs.removeValue(forKey: vmID) {
+            previous.cancel.set()
+            previous.client.interrupt()
+        }
 
         let generation = nextGeneration
         nextGeneration &+= 1
         let client = QMPClient(socketPath: eventSocketPath, timeoutSeconds: 3)
-        let task = Task {
-            await self.run(vmID: vmID, generation: generation, socketPath: eventSocketPath, client: client)
+        let cancel = CancelFlag()
+        let listener = self
+        Thread.detachNewThread {
+            Self.ioLoop(
+                vmID: vmID,
+                generation: generation,
+                socketPath: eventSocketPath,
+                client: client,
+                cancel: cancel,
+                listener: listener,
+            )
         }
-        runs[vmID] = Run(generation: generation, task: task, client: client)
+        runs[vmID] = Run(generation: generation, cancel: cancel, client: client)
     }
 
     public func stop(vmID: String) {
         guard let run = runs.removeValue(forKey: vmID) else { return }
-        run.task.cancel()
+        run.cancel.set()
         run.client.interrupt()
     }
 
     public func stopAll() {
         for (_, run) in runs {
-            run.task.cancel()
+            run.cancel.set()
             run.client.interrupt()
         }
         runs.removeAll()
-    }
-
-    // MARK: - Event Loop
-
-    /// Thread-safe wrapper for transferring non-Sendable QMP event data across isolation boundaries.
-    private struct QMPEventBox: @unchecked Sendable {
-        let events: [[String: Any]]
-        let closed: Bool
     }
 
     private func isCurrent(vmID: String, generation: UInt64) -> Bool {
@@ -84,74 +109,55 @@ public actor QMPEventListener {
         }
     }
 
-    private func run(vmID: String, generation: UInt64, socketPath: String, client: QMPClient) async {
-        while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
-            if await waitForSocket(path: socketPath) {
-                if await connect(client: client), isCurrent(vmID: vmID, generation: generation) {
-                    client.setReceiveTimeoutSeconds(0)
-                    await readEvents(vmID: vmID, generation: generation, client: client)
-                }
-            }
-            client.disconnect()
-            if Task.isCancelled || !isCurrent(vmID: vmID, generation: generation) {
-                break
-            }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-        }
-        client.disconnect()
-    }
-
-    private func waitForSocket(path: String) async -> Bool {
-        var waitedNanos: UInt64 = 0
-        while !Task.isCancelled {
+    private nonisolated static func waitForSocketPath(_ path: String, cancel: CancelFlag) -> Bool {
+        var waited: TimeInterval = 0
+        while !cancel.isSet {
             if FileManager.default.fileExists(atPath: path) {
                 return true
             }
-            if waitedNanos >= 2_000_000_000 {
+            if waited >= 2 {
                 return false
             }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-            waitedNanos &+= 10_000_000
+            Thread.sleep(forTimeInterval: 0.01)
+            waited += 0.01
         }
         return false
     }
 
-    private func connect(client: QMPClient) async -> Bool {
-        await withCheckedContinuation { cont in
-            Thread.detachNewThread {
-                do {
-                    try client.connect()
-                    cont.resume(returning: true)
-                } catch {
-                    client.disconnect()
-                    cont.resume(returning: false)
+    private nonisolated static func ioLoop(
+        vmID: String,
+        generation: UInt64,
+        socketPath: String,
+        client: QMPClient,
+        cancel: CancelFlag,
+        listener: QMPEventListener,
+    ) {
+        while !cancel.isSet {
+            if !waitForSocketPath(socketPath, cancel: cancel) {
+                if cancel.isSet { return }
+                Thread.sleep(forTimeInterval: 2)
+                continue
+            }
+            do {
+                try client.connect()
+                client.setReceiveTimeoutSeconds(0)
+            } catch {
+                client.disconnect()
+                if cancel.isSet { return }
+                Thread.sleep(forTimeInterval: 2)
+                continue
+            }
+            while !cancel.isSet {
+                guard let message = try? client.readMessagePublic() else { break }
+                guard message["event"] != nil else { continue }
+                let box = QMPEventBox(event: message)
+                Task {
+                    await listener.handleEvent(vmID: vmID, generation: generation, event: box.event)
                 }
             }
-        }
-    }
-
-    private func readEvents(vmID: String, generation: UInt64, client: QMPClient) async {
-        while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
-            let box = await withCheckedContinuation { (cont: CheckedContinuation<QMPEventBox, Never>) in
-                Thread.detachNewThread {
-                    guard let message = try? client.readMessagePublic() else {
-                        cont.resume(returning: QMPEventBox(events: [], closed: true))
-                        return
-                    }
-                    cont.resume(
-                        returning: QMPEventBox(
-                            events: message["event"] == nil ? [] : [message],
-                            closed: false,
-                        ),
-                    )
-                }
-            }
-            guard !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) else { return }
-            if box.closed { return }
-            for event in box.events {
-                await handleEvent(vmID: vmID, generation: generation, event: event)
-                guard !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) else { return }
-            }
+            client.disconnect()
+            if cancel.isSet { return }
+            Thread.sleep(forTimeInterval: 2)
         }
     }
 

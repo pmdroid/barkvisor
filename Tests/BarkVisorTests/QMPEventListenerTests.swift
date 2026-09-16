@@ -31,10 +31,9 @@ import Testing
         _ predicate: @escaping @Sendable () async -> Bool,
         nanoseconds: UInt64 = 5_000_000_000,
     ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now + Duration.nanoseconds(Int64(nanoseconds))
+        let deadline = Date().addingTimeInterval(Double(nanoseconds) / 1_000_000_000)
         while await !predicate() {
-            if clock.now >= deadline {
+            if Date() >= deadline {
                 throw BarkVisorError.timeout("qmp fixture")
             }
             try await Task.sleep(nanoseconds: 5_000_000)
@@ -286,9 +285,8 @@ import Testing
                 await listener.start(vmID: "vm-panic", eventSocketPath: fixture.path)
                 try await waitUntil({ fixture.handshakeDone }, nanoseconds: qmpHandshakeNanos)
 
-                fixture.sendEvent(qmpPanicEvent)
-
                 try await waitUntil {
+                    fixture.sendEvent(qmpPanicEvent)
                     let state = try? await qmpTestState(of: "vm-panic", db: pool)
                     return state == "error"
                 }
@@ -320,11 +318,10 @@ import Testing
                 await listener.start(vmID: "vm-stream", eventSocketPath: fixture.path)
                 try await waitUntil({ fixture.handshakeDone }, nanoseconds: qmpHandshakeNanos)
 
-                fixture.sendEvent(qmpPanicEvent)
-                fixture.sendEvent(qmpResetEvent)
-                fixture.sendEvent(qmpBlockIOEvent)
-
                 try await waitUntil {
+                    fixture.sendEvent(qmpPanicEvent)
+                    fixture.sendEvent(qmpResetEvent)
+                    fixture.sendEvent(qmpBlockIOEvent)
                     let state = try? await qmpTestState(of: "vm-stream", db: pool)
                     return state == "error"
                 }
