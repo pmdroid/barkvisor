@@ -1,7 +1,6 @@
 /**
  * Client-side search + category filtering for the Apps gallery
  * (Create App drawer and the Library Apps tab).
- * See docs/app-workloads-mockups/apps-search-plan.md.
  */
 
 /** Fields the gallery filter reads; HomeApp/AppCatalogEntry both satisfy this. */
