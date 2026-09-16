@@ -31,9 +31,10 @@ import Testing
         _ predicate: @escaping @Sendable () async -> Bool,
         nanoseconds: UInt64 = 5_000_000_000,
     ) async throws {
-        let deadline = DispatchTime.now().uptimeNanoseconds + nanoseconds
+        let clock = ContinuousClock()
+        let deadline = clock.now + Duration.nanoseconds(Int64(nanoseconds))
         while await !predicate() {
-            if DispatchTime.now().uptimeNanoseconds > deadline {
+            if clock.now >= deadline {
                 throw BarkVisorError.timeout("qmp fixture")
             }
             try await Task.sleep(nanoseconds: 5_000_000)

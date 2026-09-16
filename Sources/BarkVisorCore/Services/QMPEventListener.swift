@@ -117,28 +117,35 @@ public actor QMPEventListener {
     }
 
     private func connect(client: QMPClient) async -> Bool {
-        await Task.detached(priority: .utility) { () -> Bool in
-            do {
-                try client.connect()
-                return true
-            } catch {
-                client.disconnect()
-                return false
+        await withCheckedContinuation { cont in
+            Thread.detachNewThread {
+                do {
+                    try client.connect()
+                    cont.resume(returning: true)
+                } catch {
+                    client.disconnect()
+                    cont.resume(returning: false)
+                }
             }
-        }.value
+        }
     }
 
     private func readEvents(vmID: String, generation: UInt64, client: QMPClient) async {
         while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
-            let box = await Task.detached(priority: .utility) { () -> QMPEventBox in
-                guard let message = try? client.readMessagePublic() else {
-                    return QMPEventBox(events: [], closed: true)
+            let box = await withCheckedContinuation { (cont: CheckedContinuation<QMPEventBox, Never>) in
+                Thread.detachNewThread {
+                    guard let message = try? client.readMessagePublic() else {
+                        cont.resume(returning: QMPEventBox(events: [], closed: true))
+                        return
+                    }
+                    cont.resume(
+                        returning: QMPEventBox(
+                            events: message["event"] == nil ? [] : [message],
+                            closed: false,
+                        ),
+                    )
                 }
-                return QMPEventBox(
-                    events: message["event"] == nil ? [] : [message],
-                    closed: false,
-                )
-            }.value
+            }
             guard !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) else { return }
             if box.closed { return }
             for event in box.events {
