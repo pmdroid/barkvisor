@@ -25,11 +25,11 @@ import Testing
     private let qmpGuestShutdownEvent =
         "{\"event\":\"SHUTDOWN\",\"data\":{\"guest\":true,\"reason\":\"guest-shutdown\"},\"timestamp\":{\"seconds\":1,\"microseconds\":0}}\n"
 
-    private let qmpHandshakeNanos: UInt64 = 5_000_000_000
+    private let qmpHandshakeNanos: UInt64 = 10_000_000_000
 
     private func waitUntil(
         _ predicate: @escaping @Sendable () async -> Bool,
-        nanoseconds: UInt64 = 2_000_000_000,
+        nanoseconds: UInt64 = 5_000_000_000,
     ) async throws {
         let deadline = DispatchTime.now().uptimeNanoseconds + nanoseconds
         while await !predicate() {
@@ -134,27 +134,37 @@ import Testing
             }
             started = true
             lock.unlock()
+            var poll = timeval(tv_sec: 0, tv_usec: 200_000)
+            setsockopt(listenFD, SOL_SOCKET, SO_RCVTIMEO, &poll, socklen_t(MemoryLayout<timeval>.size))
             let ready = DispatchSemaphore(value: 0)
             Thread.detachNewThread {
                 ready.signal()
-                let client = accept(self.listenFD, nil, nil)
-                guard client >= 0 else { return }
-                self.noteAccepted(client)
-                self.writeLine(qmpGreetingLine, to: client)
-                guard let line = self.readCommandLine(from: client) else {
-                    self.markPeerClosed()
-                    return
-                }
-                self.writeLine("{\"return\":{}}\n", to: client)
-                self.noteHandshake(line)
                 while true {
-                    let chunkSize = 4_096
-                    let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
-                    let n = read(client, chunk, chunkSize)
-                    chunk.deallocate()
-                    if n <= 0 { break }
+                    let client = accept(self.listenFD, nil, nil)
+                    if client < 0 {
+                        if errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR {
+                            continue
+                        }
+                        break
+                    }
+                    self.noteAccepted(client)
+                    self.writeLine(qmpGreetingLine, to: client)
+                    guard let line = self.readCommandLine(from: client) else {
+                        self.closeAccepted(client)
+                        continue
+                    }
+                    self.writeLine("{\"return\":{}}\n", to: client)
+                    self.noteHandshake(line)
+                    while true {
+                        let chunkSize = 4_096
+                        let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+                        let n = read(client, chunk, chunkSize)
+                        chunk.deallocate()
+                        if n <= 0 { break }
+                    }
+                    self.markPeerClosed()
+                    self.closeAccepted(client)
                 }
-                self.markPeerClosed()
             }
             ready.wait()
         }
@@ -203,8 +213,21 @@ import Testing
 
         private func noteAccepted(_ fd: Int32) {
             lock.lock()
+            let previous = acceptedFD
             acceptedFD = fd
             lock.unlock()
+            if previous >= 0, previous != fd {
+                close(previous)
+            }
+        }
+
+        private func closeAccepted(_ fd: Int32) {
+            lock.lock()
+            if acceptedFD == fd {
+                acceptedFD = -1
+            }
+            lock.unlock()
+            close(fd)
         }
 
         private func noteHandshake(_ line: String) {

@@ -154,6 +154,30 @@ public final class QMPClient: @unchecked Sendable {
         shutdownSocketLocked()
     }
 
+    public func setReceiveTimeoutSeconds(_ seconds: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        #if os(Windows)
+            guard winSock != INVALID_SOCKET else { return }
+            var ms = DWORD(max(0, seconds) * 1_000)
+            _ = withUnsafePointer(to: &ms) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: MemoryLayout<DWORD>.size) { bytes in
+                    setsockopt(
+                        winSock,
+                        SOL_SOCKET,
+                        SO_RCVTIMEO,
+                        bytes,
+                        Int32(MemoryLayout<DWORD>.size),
+                    )
+                }
+            }
+        #else
+            guard fd >= 0 else { return }
+            var tv = timeval(tv_sec: max(0, seconds), tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        #endif
+    }
+
     private func closeSocket() {
         lock.lock()
         defer { lock.unlock() }

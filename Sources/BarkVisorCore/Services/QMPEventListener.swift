@@ -42,7 +42,7 @@ public actor QMPEventListener {
 
         let generation = nextGeneration
         nextGeneration &+= 1
-        let client = QMPClient(socketPath: eventSocketPath, timeoutSeconds: 30)
+        let client = QMPClient(socketPath: eventSocketPath, timeoutSeconds: 3)
         let task = Task {
             await self.run(vmID: vmID, generation: generation, socketPath: eventSocketPath, client: client)
         }
@@ -88,6 +88,7 @@ public actor QMPEventListener {
         while !Task.isCancelled, isCurrent(vmID: vmID, generation: generation) {
             if await waitForSocket(path: socketPath) {
                 if await connect(client: client), isCurrent(vmID: vmID, generation: generation) {
+                    client.setReceiveTimeoutSeconds(0)
                     await readEvents(vmID: vmID, generation: generation, client: client)
                 }
             }
