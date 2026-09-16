@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${SWIFT_IMAGE:-swift:6.3.3-noble}"
 
 log() { echo "==> linux-ci-local: $*"; }
+die() { echo "error: linux-ci-local: $*" >&2; exit 1; }
 
 if [[ "${LINUX_CI_SKIP:-0}" == "1" ]]; then
   echo "linux-ci-local: LINUX_CI_SKIP=1"
@@ -19,21 +20,12 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   exit 0
 fi
 
-command -v docker >/dev/null 2>&1 || {
-  echo "linux-ci-local: docker not on PATH, skip"
-  exit 0
-}
-docker info >/dev/null 2>&1 || {
-  echo "linux-ci-local: docker daemon not running, skip"
-  exit 0
-}
+command -v docker >/dev/null 2>&1 || die "install Docker; this is the Linux CI compile"
+docker info >/dev/null 2>&1 || die "start Docker; this is the Linux CI compile"
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   log "pull $IMAGE"
-  if ! docker pull "$IMAGE"; then
-    echo "linux-ci-local: could not pull $IMAGE, skip"
-    exit 0
-  fi
+  docker pull "$IMAGE"
 fi
 
 log "Docker $IMAGE, product + tests"
@@ -44,6 +36,11 @@ docker run --rm \
   "$IMAGE" \
   bash -lc '
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq \
+  libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
+  zlib1g-dev libzstd-dev libedit-dev uuid-dev pkg-config >/dev/null
 mkdir -p /work
 tar -C /src -cf - \
   --exclude .build \
