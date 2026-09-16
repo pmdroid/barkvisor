@@ -99,11 +99,12 @@ Use [mise](https://mise.jdx.dev/) (see `mise.toml`) or raw Swift tools:
 
 ```bash
 mise run build      # swift build -c release
-mise run test       # swift test
+mise run test       # full swift test (same as CI Test; not --filter)
+mise run linux-ci   # Swift product + tests in the CI Linux image
 mise run lint       # swiftlint + swiftformat --lint
 swiftformat Sources/ Tests/   # apply formatting
-# CI equivalent: mise run lint && mise run test
-# Default push gate: mise run prepush   (lint + test + frontend-test)
+# CI equivalent: mise run lint && mise run test && mise run linux-ci
+# Default push gate: mise run prepush   (lint + test + linux-ci + frontend-test)
 ```
 
 Guest-boot BDD is **opt-in** (`features/guest-boot.feature` → existing

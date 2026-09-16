@@ -22,8 +22,12 @@ description = "Build the Swift package in release mode"
 run = '"$XCODE_DEFAULT_TOOLCHAIN_OVERRIDE/usr/bin/swift" build -c release'
 
 [tasks.test]
-description = "Run the test suite"
+description = "Full Swift test suite (same as CI Test; not --filter)"
 run = '"$XCODE_DEFAULT_TOOLCHAIN_OVERRIDE/usr/bin/swift" test'
+
+[tasks.linux-ci]
+description = "Compile Swift product and tests on the CI Linux image"
+run = "./scripts/linux-ci-local.sh"
 
 [tasks.frontend-test]
 description = "Run frontend unit tests"
@@ -31,8 +35,8 @@ dir = "frontend"
 run = ["bun install", "bun test"]
 
 [tasks.prepush]
-description = "Local CI gate: lint + Swift tests + frontend tests (must pass before push)"
-depends = ["lint", "test", "frontend-test"]
+description = "Local CI gate: lint + full Swift tests + Linux compile + frontend tests"
+depends = ["lint", "test", "linux-ci", "frontend-test"]
 
 # PAS-183 guest-boot BDD is opt-in. Do not add these to [tasks.prepush]:
 # TCG Ubuntu boots can take ~15 minutes (SSH_WAIT_SECS=900).

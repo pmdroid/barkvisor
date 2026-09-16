@@ -246,7 +246,8 @@ by Swift tests or `bun test`.
 
 ```sh
 swift test
-# or: mise run test
+# or: mise run test        # full suite, same as CI Test
+mise run linux-ci          # Glibc compile in Docker (CI Linux Build)
 ```
 
 The test suite includes unit tests for services, models, helpers, middleware,
