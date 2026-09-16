@@ -14,6 +14,7 @@ import Foundation
 public final class QMPClient: @unchecked Sendable {
     private let socketPath: String
     private let timeoutSeconds: Int
+    private let lock = NSLock()
     #if os(Windows)
         private var winSock: SOCKET = INVALID_SOCKET
     #else
@@ -47,10 +48,12 @@ public final class QMPClient: @unchecked Sendable {
     }
 
     private var isConnected: Bool {
+        lock.lock()
+        defer { lock.unlock() }
         #if os(Windows)
-            winSock != INVALID_SOCKET
+            return winSock != INVALID_SOCKET
         #else
-            fd >= 0
+            return fd >= 0
         #endif
     }
 
@@ -140,10 +143,45 @@ public final class QMPClient: @unchecked Sendable {
 
     public func disconnect() {
         closeSocket()
+        lock.lock()
         readBuffer.removeAll(keepingCapacity: false)
+        lock.unlock()
+    }
+
+    public func interrupt() {
+        lock.lock()
+        defer { lock.unlock() }
+        shutdownSocketLocked()
+    }
+
+    public func setReceiveTimeoutSeconds(_ seconds: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        #if os(Windows)
+            guard winSock != INVALID_SOCKET else { return }
+            var ms = DWORD(max(0, seconds) * 1_000)
+            _ = withUnsafePointer(to: &ms) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: MemoryLayout<DWORD>.size) { bytes in
+                    setsockopt(
+                        winSock,
+                        SOL_SOCKET,
+                        SO_RCVTIMEO,
+                        bytes,
+                        Int32(MemoryLayout<DWORD>.size),
+                    )
+                }
+            }
+        #else
+            guard fd >= 0 else { return }
+            var tv = timeval(tv_sec: max(0, seconds), tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        #endif
     }
 
     private func closeSocket() {
+        lock.lock()
+        defer { lock.unlock() }
+        shutdownSocketLocked()
         #if os(Windows)
             if winSock != INVALID_SOCKET {
                 closesocket(winSock)
@@ -153,6 +191,18 @@ public final class QMPClient: @unchecked Sendable {
             if fd >= 0 {
                 close(fd)
                 fd = -1
+            }
+        #endif
+    }
+
+    private func shutdownSocketLocked() {
+        #if os(Windows)
+            if winSock != INVALID_SOCKET {
+                shutdown(winSock, SD_BOTH)
+            }
+        #else
+            if fd >= 0 {
+                shutdown(fd, Int32(SHUT_RDWR))
             }
         #endif
     }
@@ -260,21 +310,43 @@ public final class QMPClient: @unchecked Sendable {
 
     private func writeSocket(_ buffer: UnsafeRawPointer, _ length: Int) -> Int {
         #if os(Windows)
-            Int(send(winSock, buffer.assumingMemoryBound(to: CChar.self), Int32(length), 0))
+            let sock = lockedWinSock()
+            guard sock != INVALID_SOCKET else { return -1 }
+            return Int(send(sock, buffer.assumingMemoryBound(to: CChar.self), Int32(length), 0))
         #else
-            write(fd, buffer, length)
+            let current = lockedFD()
+            guard current >= 0 else { return -1 }
+            return write(current, buffer, length)
         #endif
     }
 
     private func readSocket(_ buffer: UnsafeMutablePointer<UInt8>, _ length: Int) -> Int {
         #if os(Windows)
-            buffer.withMemoryRebound(to: CChar.self, capacity: length) { ptr in
-                Int(recv(winSock, ptr, Int32(length), 0))
+            let sock = lockedWinSock()
+            guard sock != INVALID_SOCKET else { return -1 }
+            return buffer.withMemoryRebound(to: CChar.self, capacity: length) { ptr in
+                Int(recv(sock, ptr, Int32(length), 0))
             }
         #else
-            read(fd, buffer, length)
+            let current = lockedFD()
+            guard current >= 0 else { return -1 }
+            return read(current, buffer, length)
         #endif
     }
+
+    #if os(Windows)
+        private func lockedWinSock() -> SOCKET {
+            lock.lock()
+            defer { lock.unlock() }
+            return winSock
+        }
+    #else
+        private func lockedFD() -> Int32 {
+            lock.lock()
+            defer { lock.unlock() }
+            return fd
+        }
+    #endif
 
     private func lastSocketError() -> Int32 {
         #if os(Windows)
