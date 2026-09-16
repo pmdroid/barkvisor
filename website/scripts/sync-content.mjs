@@ -46,12 +46,6 @@ const map = {
     title: 'Development',
     description: 'Build BarkVisor from source for local development.',
   },
-  'ci-kvm-runner.md': {
-    out: 'getting-started/ci-kvm-runner.md',
-    title: 'Guest-boot CI',
-    description:
-      'Optional GitHub Actions guest-boot lanes and the self-hosted KVM runner.',
-  },
   'getting-started-building-releases.md': {
     out: 'getting-started/building-releases.md',
     title: 'Building releases',
@@ -218,7 +212,6 @@ function fixLinks(body) {
     .replace(/\]\(getting-started-first-launch\.md(#[^)]*)?\)/g, '](/docs/getting-started/first-launch/$1)')
     .replace(/\]\(getting-started-quickstart\.md(#[^)]*)?\)/g, '](/docs/getting-started/quickstart/$1)')
     .replace(/\]\(getting-started-development\.md(#[^)]*)?\)/g, '](/docs/getting-started/development/$1)')
-    .replace(/\]\(ci-kvm-runner\.md(#[^)]*)?\)/g, '](/docs/getting-started/ci-kvm-runner/$1)')
     .replace(/\]\(getting-started-building-releases\.md(#[^)]*)?\)/g, '](/docs/getting-started/building-releases/$1)')
     .replace(/\]\(getting-started-troubleshooting\.md(#[^)]*)?\)/g, '](/docs/getting-started/troubleshooting/$1)')
     .replace(/\]\(product-terminology\.md(#[^)]*)?\)/g, '](/docs/concepts/terminology/$1)')
@@ -259,10 +252,12 @@ function fixLinks(body) {
     .replace(/\/docs\/([^)#\s]+)\/(#[^)]*)\)/g, '/docs/$1$2)');
 }
 
-// Remove previously generated pages (keep hand-written index.mdx)
-for (const rel of Object.values(map).map((m) => m.out)) {
-  const p = path.join(outDir, rel);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+if (fs.existsSync(outDir)) {
+  for (const entry of fs.readdirSync(outDir)) {
+    if (entry !== 'index.mdx') {
+      fs.rmSync(path.join(outDir, entry), { recursive: true, force: true });
+    }
+  }
 }
 
 fs.mkdirSync(outDir, { recursive: true });

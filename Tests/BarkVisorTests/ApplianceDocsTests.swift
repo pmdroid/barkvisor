@@ -134,9 +134,7 @@ struct ApplianceDocsTests {
         #expect(linux.contains("getting-started-gpu-passthrough.md"))
         #expect(linux.contains("does not block Attach"))
 
-        let website = try read("website/src/content/docs/docs/guides/gpu-passthrough.md")
-        #expect(website.contains("intel_iommu=on"))
-        #expect(website.contains("/docs/linux/"))
+        #expect(text.contains("intel_iommu=on"))
 
         let sync = try read("website/scripts/sync-content.mjs")
         #expect(sync.contains("getting-started-gpu-passthrough.md"))

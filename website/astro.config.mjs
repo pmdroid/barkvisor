@@ -86,7 +86,6 @@ export default defineConfig({
           label: 'Build',
           items: [
             { label: 'Development', link: '/docs/getting-started/development/' },
-            { label: 'Guest-boot CI', link: '/docs/getting-started/ci-kvm-runner/' },
             { label: 'Building releases', link: '/docs/getting-started/building-releases/' },
           ],
         },
