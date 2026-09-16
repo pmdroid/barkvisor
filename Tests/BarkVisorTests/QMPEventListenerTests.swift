@@ -25,6 +25,8 @@ import Testing
     private let qmpGuestShutdownEvent =
         "{\"event\":\"SHUTDOWN\",\"data\":{\"guest\":true,\"reason\":\"guest-shutdown\"},\"timestamp\":{\"seconds\":1,\"microseconds\":0}}\n"
 
+    private let qmpHandshakeNanos: UInt64 = 5_000_000_000
+
     private func waitUntil(
         _ predicate: @escaping @Sendable () async -> Bool,
         nanoseconds: UInt64 = 2_000_000_000,
@@ -80,11 +82,11 @@ import Testing
         let path: String
         private let listenFD: Int32
         private let lock = NSLock()
+        private var started = false
         private var acceptedFD: Int32 = -1
         private var didHandshake = false
         private var didPeerClose = false
         private var receivedCommandLine: String?
-        private var reader: Task<Void, Never>?
 
         init(dir: URL, name: String) throws {
             let path = dir.appendingPathComponent(name).path
@@ -126,9 +128,15 @@ import Testing
 
         func begin() {
             lock.lock()
-            defer { lock.unlock() }
-            guard reader == nil else { return }
-            reader = Task.detached(priority: .utility) {
+            guard !started else {
+                lock.unlock()
+                return
+            }
+            started = true
+            lock.unlock()
+            let ready = DispatchSemaphore(value: 0)
+            Thread.detachNewThread {
+                ready.signal()
                 let client = accept(self.listenFD, nil, nil)
                 guard client >= 0 else { return }
                 self.noteAccepted(client)
@@ -148,6 +156,7 @@ import Testing
                 }
                 self.markPeerClosed()
             }
+            ready.wait()
         }
 
         func sendEvent(_ line: String) {
@@ -234,7 +243,7 @@ import Testing
         }
     }
 
-    @Suite("QMPEventListener")
+    @Suite("QMPEventListener", .serialized)
     struct QMPEventListenerTests {
         @Test func `guest panic lands in db well under the socket timeout`() async throws {
             let dir = try qmpMakeTempDir()
@@ -242,29 +251,34 @@ import Testing
             try AppDatabase.makeMigrator().migrate(pool)
             try await qmpInsertVM("vm-panic", db: pool)
             let listener = QMPEventListener(dbPool: pool)
-            defer { _ = Task { await listener.stopAll() } }
             defer { try? FileManager.default.removeItem(at: dir) }
             let manager = VMManager(dbPool: pool)
             await listener.setVMManager(manager)
 
-            let fixture = try QMPEventFixture(dir: dir, name: "panic.sock")
-            defer { fixture.shutdown() }
-            fixture.begin()
-            await listener.start(vmID: "vm-panic", eventSocketPath: fixture.path)
-            try await waitUntil { fixture.handshakeDone }
+            do {
+                let fixture = try QMPEventFixture(dir: dir, name: "panic.sock")
+                defer { fixture.shutdown() }
+                fixture.begin()
+                await listener.start(vmID: "vm-panic", eventSocketPath: fixture.path)
+                try await waitUntil({ fixture.handshakeDone }, nanoseconds: qmpHandshakeNanos)
 
-            fixture.sendEvent(qmpPanicEvent)
+                fixture.sendEvent(qmpPanicEvent)
 
-            try await waitUntil {
-                let state = try? await qmpTestState(of: "vm-panic", db: pool)
-                return state == "error"
+                try await waitUntil {
+                    let state = try? await qmpTestState(of: "vm-panic", db: pool)
+                    return state == "error"
+                }
+                try await waitUntil {
+                    await manager.healthError(for: "vm-panic") == "Kernel panic"
+                }
+                let health = await manager.healthError(for: "vm-panic")
+                #expect(health == "Kernel panic")
+                #expect(!fixture.peerClosed)
+                await listener.stopAll()
+            } catch {
+                await listener.stopAll()
+                throw error
             }
-            try await waitUntil {
-                await manager.healthError(for: "vm-panic") == "Kernel panic"
-            }
-            let health = await manager.healthError(for: "vm-panic")
-            #expect(health == "Kernel panic")
-            #expect(!fixture.peerClosed)
         }
 
         @Test func `streamed events are applied as they arrive without disconnect`() async throws {
@@ -273,30 +287,35 @@ import Testing
             try AppDatabase.makeMigrator().migrate(pool)
             try await qmpInsertVM("vm-stream", db: pool)
             let listener = QMPEventListener(dbPool: pool)
-            defer { _ = Task { await listener.stopAll() } }
             defer { try? FileManager.default.removeItem(at: dir) }
 
-            let fixture = try QMPEventFixture(dir: dir, name: "stream.sock")
-            defer { fixture.shutdown() }
-            fixture.begin()
-            await listener.start(vmID: "vm-stream", eventSocketPath: fixture.path)
-            try await waitUntil { fixture.handshakeDone }
+            do {
+                let fixture = try QMPEventFixture(dir: dir, name: "stream.sock")
+                defer { fixture.shutdown() }
+                fixture.begin()
+                await listener.start(vmID: "vm-stream", eventSocketPath: fixture.path)
+                try await waitUntil({ fixture.handshakeDone }, nanoseconds: qmpHandshakeNanos)
 
-            fixture.sendEvent(qmpPanicEvent)
-            fixture.sendEvent(qmpResetEvent)
-            fixture.sendEvent(qmpBlockIOEvent)
+                fixture.sendEvent(qmpPanicEvent)
+                fixture.sendEvent(qmpResetEvent)
+                fixture.sendEvent(qmpBlockIOEvent)
 
-            try await waitUntil {
-                let state = try? await qmpTestState(of: "vm-stream", db: pool)
-                return state == "error"
+                try await waitUntil {
+                    let state = try? await qmpTestState(of: "vm-stream", db: pool)
+                    return state == "error"
+                }
+                try await waitUntil {
+                    let entries = try? await AuditService.vmEvents(vmID: "vm-stream", db: pool)
+                    return entries?.contains { entry in
+                        entry.detail?.contains("block io error") == true
+                    } ?? false
+                }
+                #expect(!fixture.peerClosed)
+                await listener.stopAll()
+            } catch {
+                await listener.stopAll()
+                throw error
             }
-            try await waitUntil {
-                let entries = try? await AuditService.vmEvents(vmID: "vm-stream", db: pool)
-                return entries?.contains { entry in
-                    entry.detail?.contains("block io error") == true
-                } ?? false
-            }
-            #expect(!fixture.peerClosed)
         }
 
         @Test func `events on a stopped run cannot poison the restarted run`() async throws {
@@ -305,60 +324,65 @@ import Testing
             try AppDatabase.makeMigrator().migrate(pool)
             try await qmpInsertVM("vm-stale", db: pool)
             let listener = QMPEventListener(dbPool: pool)
-            defer { _ = Task { await listener.stopAll() } }
             defer { try? FileManager.default.removeItem(at: dir) }
             let manager = VMManager(dbPool: pool)
             await listener.setVMManager(manager)
 
-            let oldSocket = try QMPEventFixture(dir: dir, name: "old.sock")
-            defer { oldSocket.shutdown() }
-            let newSocket = try QMPEventFixture(dir: dir, name: "new.sock")
-            defer { newSocket.shutdown() }
-            let commandSocket = try QMPEventFixture(dir: dir, name: "cmd.sock")
-            defer { commandSocket.shutdown() }
-            commandSocket.begin()
+            do {
+                let oldSocket = try QMPEventFixture(dir: dir, name: "old.sock")
+                defer { oldSocket.shutdown() }
+                let newSocket = try QMPEventFixture(dir: dir, name: "new.sock")
+                defer { newSocket.shutdown() }
+                let commandSocket = try QMPEventFixture(dir: dir, name: "cmd.sock")
+                defer { commandSocket.shutdown() }
+                commandSocket.begin()
 
-            let running = RunningVM(
-                process: nil,
-                pid: 4_242,
-                serialSocketPath: dir.appendingPathComponent("serial.sock").path,
-                vncSocketPath: dir.appendingPathComponent("vnc.sock").path,
-                qmpSocketPath: commandSocket.path,
-                qmpEventSocketPath: newSocket.path,
-                swtpmProcess: nil,
-                reconnected: true,
-            )
-            await manager.registerReconnectedVM(vmID: "vm-stale", running: running)
-
-            oldSocket.begin()
-            await listener.start(vmID: "vm-stale", eventSocketPath: oldSocket.path)
-            try await waitUntil { oldSocket.handshakeDone }
-
-            await listener.stop(vmID: "vm-stale")
-
-            newSocket.begin()
-            await listener.start(vmID: "vm-stale", eventSocketPath: newSocket.path)
-            try await waitUntil { newSocket.handshakeDone }
-            try await pool.write { db in
-                try db.execute(
-                    sql: "UPDATE vms SET state = 'running', updatedAt = ? WHERE id = ?",
-                    arguments: [iso8601.string(from: Date()), "vm-stale"],
+                let running = RunningVM(
+                    process: nil,
+                    pid: 4_242,
+                    serialSocketPath: dir.appendingPathComponent("serial.sock").path,
+                    vncSocketPath: dir.appendingPathComponent("vnc.sock").path,
+                    qmpSocketPath: commandSocket.path,
+                    qmpEventSocketPath: newSocket.path,
+                    swtpmProcess: nil,
+                    reconnected: true,
                 )
+                await manager.registerReconnectedVM(vmID: "vm-stale", running: running)
+
+                oldSocket.begin()
+                await listener.start(vmID: "vm-stale", eventSocketPath: oldSocket.path)
+                try await waitUntil({ oldSocket.handshakeDone }, nanoseconds: qmpHandshakeNanos)
+
+                await listener.stop(vmID: "vm-stale")
+
+                newSocket.begin()
+                await listener.start(vmID: "vm-stale", eventSocketPath: newSocket.path)
+                try await waitUntil({ newSocket.handshakeDone }, nanoseconds: qmpHandshakeNanos)
+                try await pool.write { db in
+                    try db.execute(
+                        sql: "UPDATE vms SET state = 'running', updatedAt = ? WHERE id = ?",
+                        arguments: [iso8601.string(from: Date()), "vm-stale"],
+                    )
+                }
+
+                oldSocket.sendEvent(qmpPanicEvent)
+                oldSocket.sendEvent(qmpGuestShutdownEvent)
+                try await Task.sleep(nanoseconds: 400_000_000)
+
+                let state = try await qmpTestState(of: "vm-stale", db: pool)
+                #expect(state == "running")
+                #expect(commandSocket.commandLine == nil)
+                let health = await manager.healthError(for: "vm-stale")
+                #expect(health == nil)
+
+                newSocket.sendEvent(qmpResetEvent)
+                let stateAfter = try await qmpTestState(of: "vm-stale", db: pool)
+                #expect(stateAfter == "running")
+                await listener.stopAll()
+            } catch {
+                await listener.stopAll()
+                throw error
             }
-
-            oldSocket.sendEvent(qmpPanicEvent)
-            oldSocket.sendEvent(qmpGuestShutdownEvent)
-            try await Task.sleep(nanoseconds: 400_000_000)
-
-            let state = try await qmpTestState(of: "vm-stale", db: pool)
-            #expect(state == "running")
-            #expect(commandSocket.commandLine == nil)
-            let health = await manager.healthError(for: "vm-stale")
-            #expect(health == nil)
-
-            newSocket.sendEvent(qmpResetEvent)
-            let stateAfter = try await qmpTestState(of: "vm-stale", db: pool)
-            #expect(stateAfter == "running")
         }
 
         @Test func `stop closes the live event socket promptly`() async throws {
@@ -367,17 +391,22 @@ import Testing
             try AppDatabase.makeMigrator().migrate(pool)
             try await qmpInsertVM("vm-stop", db: pool)
             let listener = QMPEventListener(dbPool: pool)
-            defer { _ = Task { await listener.stopAll() } }
             defer { try? FileManager.default.removeItem(at: dir) }
 
-            let fixture = try QMPEventFixture(dir: dir, name: "stop.sock")
-            defer { fixture.shutdown() }
-            fixture.begin()
-            await listener.start(vmID: "vm-stop", eventSocketPath: fixture.path)
-            try await waitUntil { fixture.handshakeDone }
+            do {
+                let fixture = try QMPEventFixture(dir: dir, name: "stop.sock")
+                defer { fixture.shutdown() }
+                fixture.begin()
+                await listener.start(vmID: "vm-stop", eventSocketPath: fixture.path)
+                try await waitUntil({ fixture.handshakeDone }, nanoseconds: qmpHandshakeNanos)
 
-            await listener.stop(vmID: "vm-stop")
-            try await waitUntil { fixture.peerClosed }
+                await listener.stop(vmID: "vm-stop")
+                try await waitUntil { fixture.peerClosed }
+                await listener.stopAll()
+            } catch {
+                await listener.stopAll()
+                throw error
+            }
         }
 
         @Test func `stopAll closes every reader`() async throws {
@@ -387,22 +416,29 @@ import Testing
             try await qmpInsertVM("vm-a", db: pool)
             try await qmpInsertVM("vm-b", db: pool)
             let listener = QMPEventListener(dbPool: pool)
-            defer { _ = Task { await listener.stopAll() } }
             defer { try? FileManager.default.removeItem(at: dir) }
 
-            let fixtureA = try QMPEventFixture(dir: dir, name: "a.sock")
-            defer { fixtureA.shutdown() }
-            let fixtureB = try QMPEventFixture(dir: dir, name: "b.sock")
-            defer { fixtureB.shutdown() }
-            fixtureA.begin()
-            fixtureB.begin()
-            await listener.start(vmID: "vm-a", eventSocketPath: fixtureA.path)
-            await listener.start(vmID: "vm-b", eventSocketPath: fixtureB.path)
-            try await waitUntil { fixtureA.handshakeDone && fixtureB.handshakeDone }
+            do {
+                let fixtureA = try QMPEventFixture(dir: dir, name: "a.sock")
+                defer { fixtureA.shutdown() }
+                let fixtureB = try QMPEventFixture(dir: dir, name: "b.sock")
+                defer { fixtureB.shutdown() }
+                fixtureA.begin()
+                fixtureB.begin()
+                await listener.start(vmID: "vm-a", eventSocketPath: fixtureA.path)
+                await listener.start(vmID: "vm-b", eventSocketPath: fixtureB.path)
+                try await waitUntil(
+                    { fixtureA.handshakeDone && fixtureB.handshakeDone },
+                    nanoseconds: qmpHandshakeNanos,
+                )
 
-            await listener.stopAll()
-            try await waitUntil {
-                fixtureA.peerClosed && fixtureB.peerClosed
+                await listener.stopAll()
+                try await waitUntil {
+                    fixtureA.peerClosed && fixtureB.peerClosed
+                }
+            } catch {
+                await listener.stopAll()
+                throw error
             }
         }
     }
