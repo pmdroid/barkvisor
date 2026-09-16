@@ -1,26 +1,31 @@
 # Images
 
-**Images** is the OS image library on this Device: ISOs and cloud images that [Create VM](create-workload.md) offers as boot media.
+**Images** lists OS images across the Devices selected in the sidebar. Images can be installer ISOs or cloud images used to create VMs.
 
 ![Images library with capacity bar](img/images.png)
 
-## Library capacity
+Each Device stores its own image files. The page identifies the Device that owns each image and reports unavailable Devices separately.
 
-The capacity bar shows used/free space for the Library path's volume. That volume can differ from the data directory; the same numbers appear under [Settings → Library](settings-library.md). Unknown capacity is not shown as zeros.
+## Upload or download an image
 
-## Upload and download
+- Click **Upload** to choose a local file, review its name and architecture, and confirm.
+- Click **Download** to provide an image URL.
+- Use **Create VM** to choose a catalog template. BarkVisor downloads its image when needed.
 
-- **Upload** opens a File → Identity rail modal: pick a file, review name/arch, and confirm. Accepted archives include `.xz` / `.gz`.
-- **Download** pulls an image from a URL (paste the URL in the Download modal). Catalog images land through [Create VM](create-workload.md); catalog URLs live under [Settings → Repositories](settings-repositories.md).
+Choose an image architecture matching the Device that will run the VM. Supported compressed images include `.xz` and `.gz`.
 
-Catalog downloads follow this Device's architecture by default; you can still download the other arch when it will deploy on a matching Device.
+## Storage space
 
-## The table
+The capacity bar shows space on the volume holding the image Library. This may differ from the volume holding VM disks. Change the image folder under [Settings → Library](settings-library.md).
 
-Name · Type · Arch · Size · Location · Status, with a delete action per row. Deleting frees library space but breaks nothing that already booted from it.
+Changing the folder does not move existing files.
+
+## Delete an image
+
+Use the row's delete action to remove the image from its owning Device. Check whether a VM still needs it, especially an attached installer ISO. A VM disk cloned from a cloud image is a separate file.
 
 ## Related
 
-- [Settings: Repositories](settings-repositories.md)
-- [Settings: Library](settings-library.md)
-- [Virtual Machines](using-vms.md)
+- [Create your first VM](getting-started-quickstart.md)
+- [Repositories](settings-repositories.md)
+- [Disks](using-disks.md)

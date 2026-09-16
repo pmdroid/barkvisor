@@ -1,6 +1,6 @@
 # Settings: SSH Keys
 
-The **SSH Keys** tab stores public keys that get injected into guests, so you can `ssh` into Workloads without password games.
+The **SSH Keys** tab stores public keys you can select when creating a VM. Cloud-init adds the selected key to the guest so you can sign in over SSH.
 
 ![Settings SSH Keys tab](img/settings-ssh-keys.png)
 
@@ -15,7 +15,7 @@ The **SSH Keys** tab stores public keys that get injected into guests, so you ca
 - **Set Default** — marks the key new Workloads receive
 - **Delete** — removes it from the store; already-provisioned guests keep their copy until reprovisioned
 
-For secret-less API access instead of shell access, use [API Keys](settings-api-keys.md).
+For scripts that call BarkVisor's API, use [API Keys](settings-api-keys.md).
 
 ## Related
 

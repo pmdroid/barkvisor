@@ -1,12 +1,12 @@
 # Disks
 
-**Disks** manages virtual disks across the Home — separate from boot images.
+**Disks** manages VM disks across your Home. An image is the source used to install or create a VM; a disk stores the VM's files.
 
 ![Disks page with per-Device usage and disk table](img/disks.png)
 
 ## Per-device usage
 
-Storage cards show each Device's disk usage; unreachable Devices render as unreachable cards instead of fake numbers.
+Storage cards show each Device's disk usage. Unreachable Devices are marked unavailable.
 
 ## Create Disk
 
@@ -37,7 +37,9 @@ Linux block-device notes:
 | Resize | Grow in place |
 | Delete | Remove after confirmation (hidden while a Workload uses the disk) |
 
-New disks on a Device go to that Device's default disk directory unless Create Disk picks another folder — see the disk directory on the [Device](using-devices.md) page.
+New disks use the default disk folder on the [Device](using-devices.md) page unless you choose another folder during creation.
+
+Resizing grows a disk; it does not shrink it. After increasing its size, expand the partition and filesystem inside the guest to use the extra space.
 
 ## Related
 

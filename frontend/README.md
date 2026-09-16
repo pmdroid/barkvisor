@@ -21,7 +21,7 @@ The Vite dev server starts on `http://localhost:5173` with hot reload. API calls
 bun run build
 ```
 
-Output goes to `../Sources/BarkVisor/Resources/frontend/dist/` and is served by the backend directly.
+Output goes to `frontend/dist/` in the repository. The backend can serve this directory directly; set `BARKVISOR_FRONTEND_DIR` to its absolute path if needed.
 
 ## E2E Tests
 

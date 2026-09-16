@@ -96,7 +96,7 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toMatch(/\*\*Datacenter\*\*.*Do not use/s)
     expect(text).toMatch(/\*\*Quorum\*\*.*Do not use/s)
     expect(text).toContain('getting-started-first-launch.md')
-    expect(text).toContain('Joining an existing Home')
+    expect(text).toContain('Join an existing Home with `barkvisor join --code`')
     expect(text).toContain('/api/pairing/join')
     expect(text).not.toContain('/api/home/*` — shipped')
   })

@@ -1,122 +1,71 @@
 # Networks
 
-**Networks** owns connectivity for the Home: host NIC addressing on this Device, plus VM network records (NAT, bridged, isolated). Networks live here, not in Settings.
+Use **Networks** to manage the Device's network interfaces and the networks attached to VMs.
 
-![Networks — Host interfaces tab](img/networks.png)
+![Networks Host interfaces tab](img/networks.png)
 
-Words: **Home**, **Device**, **Workload**, **Bridge**. Host addressing is this Device. Configure it on **Networks → Host interfaces**. Workload networks are logical records on the **VM networks** tab.
+## Choose a VM network
 
-## Tabs
+| Mode | When to use it |
+|------|----------------|
+| **NAT** | A VM needs internet access without changing the Device's network. Publish individual guest ports to reach its services. |
+| **Bridged** | A VM needs its own address on your LAN. Set up a bridge on the Device first. |
+| **Isolated** | A VM should use an isolated network configuration. |
 
-**Networks** opens with two tabs:
+Windows Devices support NAT. Bridge management is available on macOS and Linux.
 
-| Tab | Purpose |
-|-----|---------|
-| **Host interfaces** (default) | Live NICs on this Device — addresses, Apply. Bridges are their own rows. |
-| **VM networks** | NAT / bridged / isolated records Workloads attach to |
+## Host interfaces
 
-**Create → Bridge** is the path for a **new** switch. Fresh install: NICs are unbridged. Uplink Apply no longer implies `br0`.
+This tab lists network interfaces, their addresses, link state, bridge membership, and owning Device.
 
-## Host interfaces tab
+Select an interface to inspect or edit it. The DHCP address is read-only. You can add static addresses alongside it. Gateway and DNS settings apply to the interface, not to each additional address.
 
-The table lists each NIC on the Device:
+Click **Apply** to review the proposed changes before they take effect. After applying, click **Keep changes** within 60 seconds. Otherwise, BarkVisor rolls them back.
 
-| Column | Meaning |
-|--------|---------|
-| Device | Which Device owns the NIC |
-| Interface | OS name (`en0`, `eth0`, `br0`, …) |
-| Role | uplink, bridge, tailscale, … |
-| Link | link state when known |
-| Addresses (live) | DHCP + static aliases read from the host |
-| Bridge | bridge membership / readiness |
-| Route | default route when relevant |
+Changing an interface that carries your browser or SSH connection can interrupt that connection. Review the warning before applying.
 
-The toolbar **Create** button opens a menu with **Bridge**. The create modal suggests the next-free `brN` (editable) and enslaves one unused NIC — Linux refuses Wi-Fi, macOS allows `en0` (Wi-Fi).
+## Create a bridge
 
-Apply creates the host bridge and wires a bridged Workload network (`network.bridge = brN`) to it. Same confirm and 60 second Keep as other host-network changes. Two NICs are two Bridges. Workloads pick a Bridge by `brN`.
+1. Open **Host interfaces → Create → Bridge**.
+2. Choose the Device and an unused network interface.
+3. Keep the suggested bridge name, such as `br0`, or enter another.
+4. Click **Apply**, review the changes, and confirm.
+5. Click **Keep changes** within 60 seconds.
 
-Select a row to open the **edit drawer** below the table.
+BarkVisor creates the bridge and a bridged VM network for it. You can then choose bridged networking when creating or editing a VM.
 
-### Address list
+### Linux
 
-The drawer keeps DHCP on. The router lease is shown and is not editable or removable.
+Use a wired interface. Linux Wi-Fi interfaces and ifupdown-managed configurations are not supported by this flow.
 
-- **DHCP** — live lease from the router (read-only)
-- **additional** — extra static CIDR on the same NIC
-- **on host** chip — BarkVisor wrote this config
+BarkVisor configures the host bridge and QEMU bridge helper. Existing shared bridges are not deleted automatically.
 
-**Gateway** and **DNS** apply to the NIC as a whole (not per alias). A Bridge row has no address fields — it shows which NIC it is attached to. Add extra static IPs on the NIC, then **Apply** and **Keep changes** within the keep window. DHCP stays on.
+### macOS
 
-**Apply** persists the address plan on the host. **Revert** undoes BarkVisor files without deleting a shared Bridge. Linux Bridge rows can **Delete**.
+Install socket_vmnet with Homebrew as your regular user:
 
-### Multi-address examples
+```sh
+brew install socket_vmnet
+```
 
-**DHCP primary + static alias** — the common case for a service IP alongside router DHCP: keep DHCP on, add one extra static address on the same NIC, Apply, then Keep.
+The installed BarkVisor service starts socket_vmnet. You can use a supported LAN interface, including Wi-Fi. NAT VMs work without socket_vmnet.
 
-**Static-only** (no DHCP) — used on bridges: fill in the static address plus gateway and DNS, Apply, then Keep.
+## VM networks
 
-Use **Apply** in the drawer — it previews the plan before anything on the host changes.
+The **VM networks** tab lists the network records VMs can use.
 
-### Mac vs Linux — gateway and DNS
+Click **Create Network**, choose a Device and mode, then fill in the available fields. For bridged mode, choose a bridge configured under **Host interfaces**. NAT and isolated networks offer a DNS server field.
 
-Both platforms use the same drawer. Apply paths differ:
+A **Bridge · Pending** entry means the Device's bridge is not ready. Select it to open the relevant host interface. NAT remains available while bridge setup is incomplete.
 
-| | Linux | macOS |
-|---|--------|--------|
-| DHCP + aliases | netplan / NetworkManager / systemd-networkd on the NIC or `br0` | `networksetup -setdhcp` on the hardware port; aliases via `ifconfig <dev> alias …` |
-| Static + gateway | Written into netplan/NM with `via:` / routes | `networksetup -setmanual` with gateway on the service |
-| DNS | netplan `nameservers` / NM | `networksetup -setdnsservers` on the hardware port |
-| Bridge | Enslave wired uplink into `br0`, qemu-bridge-helper ACL | `socket_vmnet` LaunchDaemon; LAN NIC is not enslaved |
+Attach a network in **Create VM** or on the VM's [detail page](using-vm-details.md). For NAT services such as SSH, configure a port forward there. Restart a running VM after changing its port forwards.
 
-On **Linux**, gateway and DNS in the drawer apply to the whole interface plan (including DHCP primary). Static-only uplinks require a gateway before Apply.
+## Remove or revert changes
 
-On **macOS**, gateway and DNS follow the hardware port (`networksetup`). Aliases use `ifconfig` and do not get separate gateway/DNS fields. Install socket_vmnet as your user: `brew install socket_vmnet`. Do not `sudo brew install`.
-
-### Linux Bridge (`brN`)
-
-**Create → Bridge** allocates the next-free `brN` and enslaves one unused wired NIC. Apply persists that `brN` with NetworkManager, netplan, or systemd-networkd, writes a marker-tagged `allow brN` in `/etc/qemu/bridge.conf`, and setuids `qemu-bridge-helper` on known paths. Shared kernel bridges are never default-deleted.
-
-Apply first shows a confirmation with collapsible change details. After Apply, changes stay **pending** for 60 seconds. A modal asks you to click **Keep changes** or they auto-revert — including tearing down a Bridge you just created. If the NIC carries SSH or the SPA, Apply warns before the uplink moves.
-
-Wi-Fi is refused. ifupdown is refused.
-
-Use **Create → Bridge** in the toolbar — it walks you through NIC selection and confirmation.
-
-### macOS (`socket_vmnet`)
-
-**Create → Bridge** maps the next-free `brN` onto a NIC (`en0` Wi-Fi is allowed), starts `socket_vmnet`, and adds a bridged Workload network. Extra static aliases still apply on the NIC from the same drawer. NAT Workloads work with bridged host networking down.
-
-After Apply, the same **60 second keep window** applies: click **Keep changes** in the modal. If the timer expires, the Device auto-reverts.
-
-Automating host networking (scripts, onboarding)? The same operations live in `docs/api/openapi.yaml` as `POST /api/system/interfaces`.
-
-## VM networks tab
-
-Switch to **VM networks** for logical network records Workloads attach to.
-
-- **Create Network** — opens the create modal (NAT, bridged, or isolated)
-- List + inspect pane — mode, subnet, attached Workloads, interfaces
-
-A Device that can do bridged networking but is not host-ready yet may still show as amber **Bridge · Pending** in the list. Selecting it deep-links to the owning interface on **Host interfaces**. NAT still works when bridged host networking is not ready.
-
-### Create Workload network
-
-The modal takes:
-
-| Field | Meaning |
-|-------|---------|
-| Mode | **NAT**, **bridged**, or **isolated** |
-| Host bridge interface | NIC from **Host interfaces** (bridged mode) — configure the bridge there first |
-| DNS Server | DNS handed to guests (NAT / isolated) |
-
-Device addresses (NICs, DHCP, gateways) are on **Host interfaces**. Workload networks are logical — NAT, bridged, or isolated.
-
-Attach networks to a Workload in its [Create VM](create-workload.md) wizard step or from [Workload details](using-vm-details.md).
+**Revert**, where offered, removes BarkVisor's host-network configuration. Linux bridges also offer **Delete**. You must remove workload references before deleting a bridge in use.
 
 ## Related
 
-- [Workload details](using-vm-details.md)
+- [Create your first VM](getting-started-quickstart.md)
 - [Devices](using-devices.md)
-- [Installation (Linux)](getting-started-linux.md#bridged-networking)
-- [Installation (macOS)](getting-started-installation.md)
-- [Installation (Windows)](getting-started-windows.md)
+- [Troubleshooting](getting-started-troubleshooting.md)

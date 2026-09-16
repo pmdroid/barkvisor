@@ -1,5 +1,7 @@
 # Apps gallery search and categories
 
+Historical design plan. Search and category filtering are now implemented; see the current [Apps guide](../../using-apps.md).
+
 Catalog already has `category` (Big Bear metadata; LinuxServer needs a map or "Apps"). Gallery today dumps every card.
 
 - Search: client-side on name, tagline, description. AND with category.

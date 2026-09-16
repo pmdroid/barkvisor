@@ -1,59 +1,45 @@
 # BarkVisor website
 
-One Astro app: **marketing landing** (`/`) + **Starlight docs** (`/docs/*`).
+The Astro site contains the landing page at `/` and Starlight documentation at `/docs/`.
 
-Markdown for docs lives in the repo `docs/` folder and is synced into
-`src/content/docs/docs/` at build time.
+## Edit documentation
 
-## Commands
+Edit the source Markdown in the repository's `docs/` directory. The build copies published pages into `website/src/content/docs/docs/` and adjusts their links. Do not edit those generated copies.
+
+The docs home page, `src/content/docs/docs/index.mdx`, is maintained directly. To publish a new page, add it to `scripts/sync-content.mjs` and the sidebar in `astro.config.mjs`.
+
+Keep the main docs focused on installing packages and using BarkVisor. Put build commands and internal details in contributor guides.
+
+## Preview
+
+From this directory:
 
 ```sh
-bun install
-bun run dev      # http://localhost:4321/  and  /docs/
-bun run build    # → dist/  (landing + docs)
+bun install --frozen-lockfile
+bun run dev
+```
+
+Open `http://localhost:4321/docs/`. The dev command syncs the docs before starting. Run `bun run sync` again after editing source files in `docs/` while the dev server is running.
+
+## Build
+
+```sh
+bun run build
 bun run preview
-bun run deploy   # build + wrangler pages deploy dist
 ```
 
-## Cloudflare Pages
+The build runs the sync step and writes the landing page and docs to `dist/`.
 
-### CLI (one shot)
+## Deploy
 
-```sh
-cd website
-bun install
-bun run deploy
-# or: bun run build && npx wrangler pages deploy dist --project-name=barkvisor
-```
+`bun run deploy` builds the site and deploys `dist/` to the Cloudflare Pages project `barkvisor`. It requires Cloudflare credentials.
 
-### Git-connected project
+For a Git-connected Pages project:
 
 | Setting | Value |
-|---------|--------|
-| **Root directory** | `website` |
-| **Build command** | `bun install && bun run build` |
-| **Build output directory** | `dist` |
-| **Framework preset** | None |
+|---------|-------|
+| Root directory | `website` |
+| Build command | `bun install --frozen-lockfile && bun run build` |
+| Build output directory | `dist` |
 
-`wrangler.jsonc` is optional for Pages. If present it must be **Pages-shaped**
-(`pages_build_output_dir` only — do **not** set Workers `assets`). You can also
-set root/build/output entirely in the dashboard and omit the file.
-
-Optional env: `NODE_VERSION=22`. If Bun is not available on Pages, use
-`npm install && npm run build` (after generating a package-lock, or keep using
-Bun via the [Bun install step](https://bun.sh/guides/install/cf-pages)).
-
-Custom domain: Pages → **Custom domains**.
-
-## Layout
-
-```
-website/
-  src/pages/index.astro          # landing
-  src/content/docs/docs/         # Starlight routes under /docs/
-  src/styles/landing.css
-  src/styles/starlight.css       # theme tokens matching landing
-  public/                        # favicons, hero, og-image
-  scripts/sync-content.mjs       # docs/*.md → content
-  dist/                          # build output (gitignored)
-```
+Configure custom domains in the Pages project.

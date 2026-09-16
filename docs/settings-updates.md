@@ -1,58 +1,28 @@
 # Settings: Updates
 
-**Settings → Updates** (`?tab=updates`) is the appliance upgrade path. It is for a root Device installed from Ubuntu / Debian `.deb` or macOS Apple Silicon `.pkg`, with data under `/var/lib/barkvisor`.
+Use **Settings → Updates** to update a Device installed from a macOS `.pkg` or Ubuntu / Debian `.deb`.
 
-`swift run`, a smoke instance, and a leftover Homebrew keg stay fail-closed. Those Devices explain why Apply is unavailable.
+## Install an update
 
-## What you see
+1. Click **Check**.
+2. Review the available version.
+3. Click **Apply** and confirm.
+4. Wait for the package to install and the Device to reconnect.
 
-- Current version on this Device
-- A newer GitHub release, or “already on the latest”
-- **Check**, then **Apply** after you confirm
+BarkVisor downloads the matching package and checks its checksum before installation. If the checksum is missing or incorrect, the update stops.
 
-The Device downloads the matching asset and verifies the `.sha256` sidecar before it installs. A missing or bad checksum refuses the apply.
+The data directory stays in place. Running VMs stay up while the BarkVisor service restarts. The browser may briefly lose its connection during the restart.
 
-| Platform | Apply |
-|----------|--------|
-| Ubuntu / Debian | `dpkg -i` the newer `.deb`, then restart `barkvisor.service` (`KillMode=process`) |
-| macOS Apple Silicon | `installer -pkg … -target /`, then reload the LaunchDaemon |
+## Other installations
 
-The data directory is preserved. GRDB runs new migrations on start. Running Workloads stay up across the daemon restart.
+Windows zip and portable Linux tarball installations need a manual update. Follow the [Windows](getting-started-windows.md#updates) or [Linux](getting-started-linux.md#other-distros-portable-tarball-no-root) guide.
 
-There is no XPC helper and no `sudo brew`. Do not `brew upgrade barkvisor`.
+Development instances do not support package updates. The page explains why **Apply** is unavailable.
 
-## Test a local update
-
-Production Check and Apply hit GitHub Releases (`https://api.github.com/repos/pmdroid/barkvisor/releases`). Packaged appliances do not expose a free-form update URL.
-
-To exercise Apply without publishing a release, serve a GitHub-shaped feed from built packages, then point one Device at it.
-
-1. Build a package **newer** than the Device under test.
-   macOS: `scripts/build-release.sh` writes `build/BarkVisor-<ver>.pkg` plus a `.sha256`.
-   Linux: `scripts/build-linux-packages.sh` writes `build/linux-packages/barkvisor_<ver>_<arch>.deb` plus a `.sha256`.
-   See [Building releases](getting-started-building-releases.md).
-
-2. Serve the feed:
-   ```sh
-   mise run local-updates
-   # or point --dir at the package folder
-   scripts/serve-local-updates.sh --dir build/linux-packages --tag v9.9.9
-   ```
-   The script prints `BARKVISOR_UPDATE_URL=http://127.0.0.1:<port>/repos/pmdroid/barkvisor/releases` and listens on loopback only. Use `--tag` when the filename version is not the version you want advertised.
-
-3. Point the Device at that URL.
-   - Any build: set `BARKVISOR_UPDATE_URL` and restart.
-     Linux package: add it to `/etc/barkvisor/barkvisor.env`, then `sudo systemctl restart barkvisor.service`.
-     macOS package: add `BARKVISOR_UPDATE_URL` under `EnvironmentVariables` in `/Library/LaunchDaemons/dev.barkvisor.plist`, then `sudo launchctl kickstart -k system/dev.barkvisor`.
-   - Dev builds only (version contains `dev` or `0.0.0`): Settings → Updates → Test update URL.
-
-Check offers the feed only when the tag is newer than the installed Device. `--prerelease` is for the beta channel.
-
-The server binds `127.0.0.1`. On a remote Device, copy the assets onto that unit and run the script there, or tunnel the port so `127.0.0.1:<port>` on the Device reaches the machine that is serving.
+Homebrew manages QEMU and other macOS runtime packages, not BarkVisor itself.
 
 ## Related
 
-- [Installation (macOS)](getting-started-installation.md)
-- [Installation (Linux)](getting-started-linux.md)
-- [Installation (Windows)](getting-started-windows.md)
-- [Settings](using-settings.md)
+- [Install on macOS](getting-started-installation.md)
+- [Install on Linux](getting-started-linux.md)
+- [Troubleshooting](getting-started-troubleshooting.md)

@@ -1,23 +1,23 @@
 # Create a Workload
 
-A **Workload** is a VM running on one **Device**. Create it from the Home dashboard even when it will run on another Device.
+A **Workload** is a VM or App running on one **Device**. This guide covers VM options. For a first VM, follow the [Quickstart](getting-started-quickstart.md). For Docker Compose apps, see [Apps](using-apps.md).
 
 ## From the dashboard
 
 1. Open the Home console (`http://<dashboard-device>:7777`).
 2. Click **Create VM**.
-3. Pick what to run from the template gallery, Windows, or your own Library image.
+3. Pick a template, Windows, or a custom image from the gallery.
 4. Name the VM, pick the Device, size, and disk options in the 3-step Create VM dialog (**Gallery → Configure → Disk**).
-5. Create. Provisioning on a member Device is proxied through Home. The phone does not connect to the member’s IP.
+5. Click **Create** and follow progress in Workloads.
 
-Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-win). Windows on **x86_64** is a guest profile in progress (`windows-amd64`); Linux guests already run on both arches. If Windows 11 setup says the PC must support Secure Boot, see [Troubleshooting](getting-started-troubleshooting.md#windows-setup-this-pc-must-support-secure-boot).
+Windows and Linux guest profiles support **arm64** and **x86_64**. Use an image matching the selected Device. Available acceleration and TPM support depend on the Device's platform; Windows Devices do not provide TPM emulation. If Windows 11 setup says the PC must support Secure Boot, see [Troubleshooting](getting-started-troubleshooting.md#windows-setup-this-pc-must-support-secure-boot).
 
 ## Images
 
 - Catalog downloads follow this Device’s architecture. You can still download the other arch when you will deploy it on a matching Device.
 - A missing Library copy on the target Device is a placement warning, not a silent skip.
 - Optional: set a custom Library directory in **Settings**.
-- **Settings → Library** and the Images page show used/free for that Library path’s volume. It can differ from the data dir. Depot Device offline is an empty/error state, not zeros.
+- **Settings → Library** and Images show used and free space on the volume containing the image folder. This can be separate from the volume holding VM disks.
 
 ## Disks
 
@@ -27,7 +27,7 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 ## GPU and PCI (Linux)
 
 - GPU list labels **NVIDIA**, **Intel**, and **AMD**. Several cards of the same vendor stay listed separately.
-- GPU attach is the existing passthrough path (IOMMU / vfio-pci / KVM). Fail closed if that is not ready. Linux host setup: [GPU passthrough](getting-started-gpu-passthrough.md).
+- GPU attachment requires IOMMU, vfio-pci, and KVM. The UI explains what is missing if the Device is not ready. See [GPU passthrough](getting-started-gpu-passthrough.md).
 - Workload detail also has a **PCI** picker for other VFIO devices. The boot disk and the last remaining uplink stay excluded. The picker is hidden on **macOS**.
 
 ## Create App
@@ -36,7 +36,7 @@ Docker apps are a separate path: **Workloads → Create App**. See [Apps](using-
 
 ## After create
 
-The Workload lives in that Device’s SQLite. Start, stop, and console from the Device detail page. If that Device is unreachable, the dashboard says so — it does not invent counts, and Workloads on other Devices keep running.
+Open the VM in Workloads to start, stop, or connect to it. Its data stays on the selected Device. If that Device becomes unreachable, workloads on other Devices keep running.
 
 ## Related
 

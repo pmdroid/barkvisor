@@ -1,196 +1,116 @@
-# Building Release Packages
+# Building releases
 
-The release build process is driven by `scripts/build-release.sh`. This script compiles all native dependencies from source, builds the Swift application in release mode, assembles the daemon install layout with all helper binaries and firmware, bundles dynamic libraries, code signs everything with the appropriate entitlements, and creates a distributable `.pkg` installer and standalone archive. Optionally, it notarizes the DMG with Apple.
+This guide is for contributors building packages. To install BarkVisor, use a release package from the [macOS](getting-started-installation.md), [Linux](getting-started-linux.md), or [Windows](getting-started-windows.md) guide.
 
-## Prerequisites
+## macOS package
 
-### Homebrew packages
+Use the Swift toolchain pinned in `mise.toml`, Bun, and the packaging tools:
 
-Install the required build tools and libraries:
+```sh
+brew install dylibbundler xz cdrtools
+./scripts/build-release.sh --no-sign
+```
+
+Run the script from the repository root. It builds the frontend and Swift daemon, stages the install layout, bundles supporting libraries, and creates a package for local use.
+
+The default package includes `xz` and `mkisofs`. It does not build or bundle QEMU, swtpm, or socket_vmnet. Install those separately with Homebrew on the destination Mac.
+
+### Version and output
+
+Set `BARKVISOR_VERSION` to choose the version. Otherwise, the script uses an exact `v*` tag on the current commit, or `0.0.0-dev`. It embeds the version in the daemon and frontend.
+
+Output:
+
+- `build/stage/`, the install layout.
+- `build/BarkVisor-<version>-standalone.tar.gz`.
+- `build/BarkVisor-<version>.pkg` and its `.sha256` checksum.
+
+### Signing and notarization
+
+Distribution builds need both signing identities and the `barkvisor-notarize` Keychain profile:
+
+```sh
+export SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)"
+./scripts/build-release.sh --require-notarize
+```
+
+The script signs the binaries and installer, submits the `.pkg` through `xcrun notarytool`, and staples the ticket. It does not create a DMG. Configure the Keychain profile with valid notarization credentials before running the script.
+
+| Flag | Effect |
+|------|--------|
+| `--skip-deps` | Reuse cached source dependency builds when bundling them |
+| `--no-sign` | Skip executable and library signing |
+| `--skip-notarize` | Skip notarization of a signed package |
+| `--no-pkg` | Skip installer creation, subject to the limitation below |
+| `--require-notarize` | Require signing identities and a working Keychain profile |
+
+The script currently writes a package checksum even with `--no-pkg`. On a clean build that final step fails, although the standalone archive has been created.
+
+The script sources `.env` if present. Assignments there can replace exported values. Keep version and signing configuration consistent.
+
+### Optional bundled runtime
+
+Set `BUNDLE_HYPERVISOR_DEPS=true` to build the older bundled runtime path. It builds QEMU, xz, libtpms, swtpm, socket_vmnet, and firmware from the pinned sources.
+
+This path also needs `uv` and native build tools:
 
 ```sh
 brew install meson ninja pkg-config glib pixman dylibbundler \
   gnutls jpeg-turbo libpng libssh libusb zstd lzo snappy \
-  autoconf automake libtool json-glib
+  autoconf automake libtool json-glib gawk cdrtools uv
+BUNDLE_HYPERVISOR_DEPS=true ./scripts/build-release.sh --no-sign
 ```
 
-The script also checks for `gawk` and `glibtoolize` at runtime and will error with an install suggestion if any are missing.
+Version and checksum overrides are defined near the top of `scripts/build-release.sh`.
 
-### Python environment
+## Linux packages
 
-A Python virtual environment is created automatically using `uv`. The `distlib` package is installed into it (required by the libtpms/swtpm build). You must have `uv` available on your PATH.
-
-### Frontend toolchain
-
-The frontend is built with `bun`. Ensure `bun` is installed before running the script.
-
-### Required environment variable
-
-- `APPLE_TEAM_ID` -- Your Apple Developer Team ID. Required for notarizing a signed pkg. There is no privileged helper to inject a team ID into.
-
-## Build steps
-
-The script performs the following steps in order:
-
-### Step 0: Verify prerequisites
-
-Checks that all required CLI tools are present (`meson`, `ninja`, `pkg-config`, `dylibbundler`, `autoconf`, `automake`, `glibtoolize`, `gawk`). Creates a Python venv with `distlib` if one does not already exist.
-
-### Step 1: Build QEMU from source
-
-Downloads and compiles QEMU (default version 10.2.2) configured for:
-
-- Target: `aarch64-softmmu` only
-- HVF (Hypervisor.framework) acceleration
-- VNC with JPEG and PNG support
-- Compression: zstd, lzo, snappy
-- libssh, libusb, and QEMU tools enabled
-- GUI backends disabled (no SDL, GTK, Cocoa, OpenGL, SPICE)
-- Docs and guest agent disabled
-
-The build uses all available CPU cores. Homebrew keg-only package paths are automatically collected and passed to the configure step.
-
-### Step 2: Build xz-utils (static)
-
-Downloads and compiles xz-utils (default version 5.8.2) as a static library. This provides the `xz` binary used for decompressing downloaded images.
-
-### Step 3: Build libtpms and swtpm
-
-Clones and builds libtpms (with OpenSSL and TPM2 support) and swtpm from their upstream GitHub repositories. A macOS-specific patch is applied to swtpm to replace `SOCK_CLOEXEC` (which does not exist on macOS) with `0`.
-
-### Step 4: Build socket_vmnet
-
-Clones and builds `socket_vmnet` from the lima-vm project. This provides bridged networking for VMs via the macOS vmnet framework. The built `socket_vmnet` and `socket_vmnet_client` binaries are copied into the deps prefix.
-
-### Step 5: Download AAVMF firmware
-
-Downloads the AAVMF secure boot firmware (`AAVMF_CODE.secboot.fd`) from an Ubuntu `.deb` package. The deb is extracted in a temporary directory and the firmware file is placed in the QEMU share directory.
-
-### Step 6: Build frontend
-
-Runs `bun install` and `bun run build` in the `frontend/` directory to produce the static web UI assets.
-
-### Step 7: Build Swift app (release)
-
-Injects the release version into `Config.version` via `scripts/lib/inject-version.sh` (replacing the in-tree `0.0.0-dev` default, derived from the git tag / `BARKVISOR_VERSION`). Then runs `swift build -c release`. The source file is restored afterward so the working tree stays clean.
-
-**Linux packages:** the same inject runs before `swift build` in `.github/workflows/linux-packages.yml` and in Docker builds (`BARKVISOR_VERSION` / `VERSION`). Package metadata version alone does not change the binary; inject must happen at compile time.
-
-This produces:
-
-- `.build/release/BarkVisorApp` -- the main application
-
-### Step 8: Assemble daemon install layout
-
-Creates the staged install layout under `build/stage/`:
-
-```
-usr/local/
-  bin/
-    barkvisor                   (Home Device daemon)
-    barkvisor-agent             (API-only Device; symlink)
-  libexec/barkvisor/            (xz + mkisofs; QEMU only if BUNDLE_HYPERVISOR_DEPS=true)
-  lib/barkvisor/                (daemon dylibs, populated in step 9)
-  share/barkvisor/
-    templates.json
-    frontend/dist/              (web UI)
-Library/
-  LaunchDaemons/
-    dev.barkvisor.plist
-```
-
-### Step 9: Bundle dylibs with dylibbundler
-
-Runs `dylibbundler` against all Mach-O binaries in the staged layout (main executable and libexec tools). This copies required dynamic libraries into `lib/barkvisor/` and rewrites load paths. Extended attributes are stripped before and after this step, and duplicate `LC_RPATH` entries are deduplicated.
-
-### Step 10: Code sign with entitlements
-
-If `SIGNING_IDENTITY` is set, performs a full Developer ID code signing pass. If not set and `--no-sign` is not passed, ad-hoc signing is performed instead (sufficient for local use but not for distribution).
-
-The entitlements applied to both the main app and helper binaries are:
-
-- `com.apple.security.hypervisor` -- required for QEMU to use HVF
-- `com.apple.security.network.server` -- required for the Vapor HTTP server
-- `com.apple.security.network.client` -- required for outbound connections (image downloads, repository sync)
-
-Signing order: shared libraries in `lib/barkvisor/` first, then helper binaries in `libexec/barkvisor/`, then the main executable.
-
-### Step 11: Create standalone archive
-
-Creates a compressed tarball at `build/BarkVisor-VERSION-standalone.tar.gz` containing the staged install layout for manual extraction.
-
-### Step 12: Create installer .pkg
-
-Builds a macOS installer package at `build/BarkVisor-VERSION.pkg`. The `.pkg` installs files to their system locations and can be signed with an `INSTALLER_IDENTITY` if provided. If `SIGNING_IDENTITY`, `APPLE_ID`, and `APPLE_TEAM_ID` are all set, the package is submitted for notarization using `xcrun notarytool` with the `barkvisor-notarize` keychain profile, and the notarization ticket is stapled. If credentials are missing and `--require-notarize` is passed, the script fails.
-
-## CLI flags
-
-| Flag                  | Effect                                                  |
-|-----------------------|---------------------------------------------------------|
-| `--skip-deps`        | Skip dependency builds; use previously cached artifacts |
-| `--no-sign`          | Skip all code signing                                   |
-| `--no-pkg`           | Skip installer .pkg creation                             |
-| `--require-notarize` | Fail if notarization credentials are missing            |
-
-## Environment variables
-
-| Variable             | Required | Default       | Description                                          |
-|----------------------|----------|---------------|------------------------------------------------------|
-| `APPLE_TEAM_ID`     | Yes      | --            | Apple Developer Team ID for XPC verification         |
-| `SIGNING_IDENTITY`  | No       | (empty)       | Developer ID signing identity (e.g. `"Developer ID Application: Name (TEAMID)"`) |
-| `APPLE_ID`          | No       | (empty)       | Apple ID email for notarization                      |
-| `BARKVISOR_VERSION` | No       | `1.0.0`       | Version string embedded in Info.plist and DMG name   |
-| `QEMU_VERSION`      | No       | `10.2.2`      | QEMU source version to download and build            |
-| `XZ_VERSION`        | No       | `5.8.2`       | xz-utils source version to download and build        |
-| `QEMU_SHA256`       | No       | (empty)       | Expected SHA-256 of the QEMU source tarball          |
-| `XZ_SHA256`         | No       | (empty)       | Expected SHA-256 of the xz source tarball            |
-
-Variables can also be placed in a `.env` file at the project root. The script sources it if present, but explicit environment variables take precedence.
-
-## Output
-
-After a successful build, the following artifacts are produced:
-
-- `build/stage/` -- the staged install layout
-- `build/BarkVisor-VERSION-standalone.tar.gz` -- standalone archive for manual installation
-- `build/BarkVisor-VERSION.pkg` -- macOS installer package (unless `--no-pkg` was passed)
-
-The build summary printed at the end includes the app bundle size, bundled helpers, framework count, and firmware file count.
-
-## Linux packages (deb / rpm / tarball / Arch)
-
-macOS `.pkg` builds are separate from **Linux** multi-format packages. On a Linux
-build host (or via Docker from macOS):
+On a Linux build host with Swift and the packaging tools:
 
 ```sh
 swift build -c release --product BarkVisorApp
 ./scripts/linux-frontend-serve.sh
 ./scripts/build-linux-packages.sh
-# → build/linux-packages/*.deb *.rpm *.tar.gz (+ Arch PKGBUILD)
+```
 
-# From macOS / CI with Docker (Ubuntu 24.04 builder):
+Or use Docker, including from macOS:
+
+```sh
 ./scripts/build-linux-packages.sh --docker
 ```
 
-| Format | Typical targets |
-|--------|-----------------|
-| `.deb` | Ubuntu, Debian (appliance channel) |
-| `.rpm` | Fedora, Rocky, Alma, RHEL (builder artifact; not this milestone) |
-| `.tar.gz` | Any glibc host (+ `install.sh`) |
-| Arch `PKGBUILD` | Arch / Arch ARM |
+Artifacts go to `build/linux-packages/`.
 
-CI workflow **Linux Packages** (`.github/workflows/linux-packages.yml`) builds on
-tag `v*` or manual dispatch. Full install matrix, layout, and runtime notes:
-[getting-started-linux.md](getting-started-linux.md) and
-[packaging/linux/README.md](../packaging/linux/README.md).
+| Format | Use |
+|--------|-----|
+| `.deb` | Ubuntu and Debian installation and in-app updates |
+| `.rpm` | Builder output for Fedora, Rocky, Alma, and RHEL |
+| `.tar.gz` | Portable installation on compatible glibc hosts |
+| Arch `PKGBUILD` | Arch packaging |
 
-Linux packages ship the daemon, SPA, and Swift runtime. QEMU/OVMF come from the
-distro as hard package dependencies. Bridged networking uses the host bridge path (no separate
-helper binary to bundle).
+Packages include the daemon, frontend, and Swift runtime. QEMU and firmware come from the distribution.
+
+The **Linux Packages** workflow builds amd64 and arm64 packages on `v*` tags or manual dispatch. Tag builds attach release assets; manual runs upload CI artifacts. The workflow and Docker build inject the release version before Swift compilation. Changing package metadata alone does not change an already-built binary.
+
+See [Linux packaging](../packaging/linux/README.md) for layout and dependencies.
 
 ## Windows zip
 
-CI workflow **Windows Package** (`.github/workflows/windows-package.yml`) builds
-`barkvisor-windows-amd64.zip` and `barkvisor-windows-arm64.zip` on tag `v*` or
-manual dispatch. The zip is the payload (`BarkVisor.exe`, Swift/VC DLLs, SPA).
-QEMU is not bundled. Install steps: [Installation (Windows)](getting-started-windows.md).
+The **Windows Package** workflow builds `barkvisor-windows-amd64.zip` and `barkvisor-windows-arm64.zip` on `v*` tags or manual dispatch.
+
+The zip contains `BarkVisor.exe`, Swift and VC runtime DLLs, and frontend assets. QEMU is installed separately. Local build instructions are in [Development](getting-started-development.md#windows-packages).
+
+## Test a local package update
+
+Build a package with a newer version than the test Device, then serve it with:
+
+```sh
+scripts/serve-local-updates.sh --dir build/linux-packages --tag v9.9.9
+```
+
+For macOS, use `--dir build`. The script prints a loopback `BARKVISOR_UPDATE_URL` for a GitHub-shaped release feed.
+
+Set that variable in the test Device's service environment and restart it. Linux uses `/etc/barkvisor/barkvisor.env`; macOS uses `EnvironmentVariables` in `/Library/LaunchDaemons/dev.barkvisor.plist`. Development builds also offer **Test update URL** in Settings → Updates.
+
+The feed listens on loopback. Run it on the test Device, or tunnel the port so the Device's loopback address reaches it. Remove the override after testing to return to GitHub Releases.

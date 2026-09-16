@@ -1,12 +1,12 @@
 # Ollama
 
-The **Ollama** nav item (route `/models`) manages local model runtimes across the Home. It is visible to admins and to users with the **inference** role.
+The **Ollama** page manages models across your Home. Admins can manage the runtime and models. Inference users can use available models but cannot administer the Device.
 
 ![Ollama page with per-Device status and model list](img/ollama.png)
 
 ## Picking a Device
 
-The left rail lists Devices with their Ollama reach state and pulled-model counts. Selecting one scopes the inspect pane.
+The left panel lists Devices, whether Ollama is reachable, and how many models are downloaded. Select a Device to see its models.
 
 ## Status and models
 
@@ -26,7 +26,7 @@ The inspect pane shows the Home completions URL (`/v1/chat/completions`). Infere
 
 ## Export
 
-The **More** menu holds **Export JSON**, which dumps the current `ollama ps` output. It is hidden when no Device is reachable.
+Choose **More → Export JSON** to download a snapshot of the current model status. This is hidden when no Device is reachable.
 
 ## Related
 

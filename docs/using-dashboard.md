@@ -1,39 +1,27 @@
 # Dashboard
 
-**Dashboard** is the triage inbox for your Home: what needs attention first, what is running, and how the machines feel.
+The Dashboard shows workloads, Device status, and problems that need attention.
 
-![Dashboard with the ops ticker, workload sections, and Home device card](img/dashboard.png)
+![Dashboard with workload sections and Device status](img/dashboard.png)
 
-## Incidents
+## Problems and workloads
 
-Problems float to the top as incident rows — **Failed** Workloads and **Unreachable** Devices. Failed rows carry an **Open** button that jumps straight to the offending item. If nothing is wrong, there are no incidents and the board reads calm.
+Failed workloads and unreachable Devices appear as incidents. Click **Open** to inspect the affected item.
 
-## Feed columns
+Workloads are grouped into **Needs you**, **Running**, and **Stopped**. Running and Stopped sections appear when they have items. Each workload shows its Device; click it to open its details.
 
-Below the incidents, Workloads sort into sections:
+The side panel shows Home Device status and available usage information. Open [Devices](using-devices.md) for detailed CPU, memory, storage, and GPU readings.
 
-| Section | Meaning |
-|--------|---------|
-| **Needs you** | Always visible — waiting on a human decision, or "Nothing needs you" |
-| **Running** | Live Workloads across the scoped Devices (only when non-empty) |
-| **Stopped** | Shut down Workloads (only when non-empty) |
+## Customize the page
 
-Failed Workloads surface as incident rows at the top. Each card carries the Workload name and its Device; clicking one opens [Workload details](using-vm-details.md).
+Click **Customize** to show, hide, or reorder modules. Use **Move up** and **Move down**, then **Done**. The layout is saved in your browser.
 
-## Home card
+## Create a VM
 
-The side rail shows the **Home** Device card (name, platform · arch, reachability) — per-Device CPU/memory meters live on [Devices](using-devices.md) and the Device detail page. Spikes there usually explain the incidents on the left.
-
-## Customize
-
-**Customize** opens the "Customize Home" drawer: reorder modules with the ▲/▼ (Move up/Move down) buttons and show/hide modules you never look at, then **Done**. Layout is per person, not global.
-
-## Create VM
-
-**Create VM** starts the [Create a Workload](create-workload.md) wizard without leaving the dashboard — the fastest path from "I noticed something" to "I placed a fix".
+Click **Create VM** to choose an OS and a Device. See [Create your first VM](getting-started-quickstart.md).
 
 ## Related
 
 - [Devices](using-devices.md)
-- [Workload details](using-vm-details.md)
-- [Logs](using-logs.md) — dig into why something failed
+- [Workloads](using-vms.md)
+- [Logs](using-logs.md)

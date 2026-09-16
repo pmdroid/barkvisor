@@ -1,83 +1,79 @@
-# First Launch and Setup
+# First launch and setup
 
-## What happens at startup
+After installing a package, BarkVisor runs in the background and serves the web console on port `7777`.
 
-When BarkVisor starts for the first time, it prepares its data directory, creates everything it needs (including a **Default NAT** network so VMs get internet with zero configuration, plus the official image and template catalogs), and starts the web console on port **7777**.
+Open `http://localhost:7777` in a browser on that Device. Use `localhost`, not `127.0.0.1`, because BarkVisor rejects raw IP addresses for passkeys.
 
-## Web-based setup
+If you want to add this Device to an existing Home, follow [Home and pairing](home-and-pairing.md) before creating a new Home.
 
-Open `http://localhost:7777` in your browser. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, a setup wizard walks you through five short steps.
+See the [glossary](product-terminology.md) for Home, Device, and Workload definitions.
 
-### 1. Welcome
+## Set up a remote Device
+
+Passkeys need a secure browser connection: `localhost` or an HTTPS hostname. Opening a remote Device's IP address over HTTP will not work for passkey setup.
+
+If you already use Tailscale, enable HTTPS access on the Device:
+
+```sh
+tailscale serve --bg 7777
+```
+
+Open the HTTPS address printed by the command. Tailscale must be installed and connected first; follow its [Serve instructions](https://tailscale.com/docs/reference/tailscale-cli/serve).
+
+Another option, for a Device with SSH access, is a tunnel from your computer:
+
+```sh
+ssh -L 7777:localhost:7777 <user>@<device-address>
+```
+
+Keep the tunnel open and browse to `http://localhost:7777`. This requires port 7777 to be free on your computer.
+
+Use the same hostname for later sign-ins. A passkey registered on `localhost` will not sign you in through a different hostname.
+
+## 1. Name the Device
 
 ![Setup welcome screen](img/setup-welcome.png)
 
-Confirm the **Device name** and click **Continue**. This creates a new Home on this machine. To add this Device to an existing Home instead, join from the command line on this host (see [Home and pairing](home-and-pairing.md)) — this Device keeps running even if the other Device later goes offline.
+Confirm the **Device name** and click **Continue**. This creates the first Device in a new Home.
 
-### 2. Add a passkey
+On a private computer, you can select **skip sign-in on this computer**. Setup still registers a passkey; afterward, direct local connections can enter without signing in. Network connections still require sign-in. You can change this under [Settings → Security](settings-security.md).
+
+## 2. Add a passkey
 
 ![Add a passkey](img/setup-passkey.png)
 
-Click **Add passkey** and confirm with Touch ID, Windows Hello, or your password manager. There is no username or password — the passkey signs you in from now on.
+Click **Add passkey** and confirm with Touch ID, Windows Hello, or your password manager. The web console uses a passkey instead of a username and password.
 
-If setup was interrupted earlier and you want a clean start, stop the daemon, delete the data directory, and start again.
+If setup was interrupted after this step, reopen the same address. The wizard can resume at the Library step.
 
-### 3. Image Library folder
+## 3. Choose the image Library folder
 
 ![Image Library folder](img/setup-library.png)
 
-Pick where this Device stores OS images (**Browse**, pick a folder, **Save folder**, **Continue**). You can change this later under **Settings → Library**.
+Keep the suggested folder or click **Browse** to choose another. Click **Save folder**, then **Continue**.
 
-### 4. Image catalog
+This folder stores downloaded and uploaded OS images. It is separate from your VM disks. You can change it later under **Settings → Library**.
+
+## 4. Sync the catalog
 
 ![Image catalog](img/setup-catalog.png)
 
-Click **Sync catalog** so OS images and templates are available immediately — or **Skip** and sync later from **Settings → Repositories**.
+Click **Sync catalog** to load the list of available images and templates, then **Continue**. This fetches the catalog, not every OS image.
 
-### 5. Ready
+You can also click **Skip** and sync later from **Settings → Repositories**.
 
-![Setup complete — All Set](img/setup-ready.png)
+## 5. Open the Dashboard
 
-Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the main UI (shown here: [Dashboard](using-dashboard.md)).
+![Setup complete](img/setup-ready.png)
 
-![Dashboard after setup](img/dashboard.png)
+Click **Launch Dashboard**. BarkVisor signs you in and opens the Dashboard.
 
-## Words we use
+Next, [create your first VM](getting-started-quickstart.md) or [install an App](using-apps.md).
 
-This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Home and pairing](home-and-pairing.md) and [Product terminology](product-terminology.md). What shipped is in the [Changelog](changelog.md).
+## After setup
 
-## After Setup
+Use the same web address each time you return. Sign in with your passkey unless your connection is allowed to skip sign-in. Add more passkeys under **Settings → Passkeys**.
 
-Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).
+NAT networking is ready without extra configuration. For bridged networking on macOS or Linux, follow [Networks](using-networks.md).
 
-On subsequent launches, the server detects the existing admin and starts normally without showing the setup screen (you land on **Login** instead). Sign in with **Sign in with passkey**. Add more under **Settings → Passkeys**.
-
-## Bridged networking (optional)
-
-NAT works out of the box on every host. For bridged networking:
-
-### macOS
-
-Install **socket_vmnet** with Homebrew as your user (`brew install socket_vmnet` — never with `sudo`). The BarkVisor daemon starts it for you. NAT Workloads work without this.
-
-### Linux
-
-Open **Networks → Host interfaces → Create → Bridge** and Apply. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
-
-## Catalog Sync
-
-Image and template catalogs from built-in repositories are synced automatically in the background on each startup. You can also trigger a manual sync from **Settings → Repositories**, or add custom catalog URLs there.
-
-## Shutdown behavior
-
-If you stop the daemon while VMs are running, the VMs keep running in the background — BarkVisor reconnects to them on next launch. To stop everything, stop your VMs in the web UI first.
-
-To stop the daemon itself:
-
-```sh
-# macOS
-sudo launchctl bootout system/dev.barkvisor
-
-# Linux
-sudo systemctl stop barkvisor.service
-```
+Stopping BarkVisor leaves running VMs alive. To shut down a VM, use its **Stop** action in the console.

@@ -1,56 +1,37 @@
 # Roadmap
 
-Ideas we want to build. Dates are not commitments. Words: **Home**, **Device**, **Workload**, **Library**.
+These are product ideas, not release commitments. See the [changelog](changelog.md) for release notes.
 
-The full board is [BarkVisor product ideas](https://linear.app/kyku/project/barkvisor-product-ideas-66fdcb2cf979). What already works is in the [changelog](changelog.md).
+## Available now
 
-## Shipping now
+BarkVisor supports paired Devices with a shared Home login, VMs on a chosen Device, Docker Compose apps from catalogs, per-Device image Libraries, and Ollama integration.
 
-A Home of one or more Devices: pair with a code, one login, place a Workload on a picked Device, Library, API-only worker. Each Device keeps its own QEMU and SQLite if the others go away.
+Create VM starts with a gallery before asking where to run the guest. Linux and Windows guest profiles support arm64 and x86_64. The dashboard shows which Device owns each workload. Each Device keeps running its local workloads when another Device is offline.
 
-## Next
+## Availability and moving workloads
 
-Finish the Home you can run today:
+- Restart a workload on another Device after a failure.
+- Move a stopped workload between compatible Devices.
+- Migrate a running VM between compatible Devices.
+- Coordinate failover so a workload cannot accidentally start twice.
+- Provide a dedicated Linux appliance image.
 
-- Create VM asks what you want before where it runs
-- Windows on x86 Devices (`windows-amd64`)
-- Dashboard shows which Device each Workload is on
-- Guest-boot checks locally and on a KVM runner
-- Recover and re-pair a Device without losing inventory
+## Storage and backups
 
-## Later — availability
+- Share workload storage between Devices.
+- Deduplicate Library images by content hash.
+- Add more ZFS snapshot and replication support.
+- Schedule workload backups, verify them, and restore them as new workloads.
+- Export a workload and its data for another Device.
 
-A Home that survives a Device dying, not only a Device that survives the Home going quiet.
+Current database backups cover BarkVisor's database, not a complete backup of VM disks or App volumes.
 
-- **Failover** — restart a portable Workload on another Device after a failure
-- **Live migration** — move a running Workload between compatible Devices
-- **Stopped move** — same-architecture migrate when the guest is off
-- **Optional controller** — one Device can coordinate the others without being required
-- **Quorum** — Devices agree who is in the Home and who can place or fail over, so a split brain does not double-start a Workload
-- **Linux appliance** — a dedicated-server image for a Device that only runs BarkVisor
+## Apps, networking, and access
 
-## Later — storage
+- Make Apps and their data portable between Devices.
+- Add update policies and automatic rollback for workloads.
+- Add private networking across Devices and friendly service URLs.
+- Extend remote-access setup beyond detecting an existing Tailscale installation.
+- Suggest workload placement based on energy use.
 
-- **Ceph / distributed storage** — Workload disks that more than one Device can see, so failover does not copy a qcow2 first
-- **Content-addressed Library** — one copy of each image, verified by hash
-- **Managed volumes** — disks that outlive a single Workload
-- **Deeper ZFS** — snapshots and send/receive when the Device already uses ZFS
-
-## Later — Workloads and backup
-
-- Portable Application Workloads (not only VMs)
-- Curated home app catalog
-- Scheduled backups, backup verification, restore as a new Workload
-- Portable backup / export bundle you can take to another Device
-- Workload update policies and automatic rollback
-
-## Later — network and access
-
-- Cross-Device private network
-- Tailscale or WireGuard so a Home works off the LAN (v1: detect Tailscale, advertise tailnet, optional require-tailnet; WireGuard is docs-only)
-
-- Friendly service URLs
-- Two-factor login (TOTP). Passkeys for web sign-in already ship.
-- Energy-aware placement (prefer the Device that is already awake)
-
-These stay product ideas until the Home you have now is boring to operate.
+The [product ideas board](https://linear.app/kyku/project/barkvisor-product-ideas-66fdcb2cf979) tracks further proposals.

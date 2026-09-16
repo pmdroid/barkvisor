@@ -1,6 +1,6 @@
 # Workload details
 
-Every VM row links to its detail page. This is where you drive a single **Workload**: lifecycle actions, hardware facts, and the console surfaces.
+Open a VM from Workloads to manage its hardware, start or stop it, and connect to its console. Apps have a separate [detail view](using-apps.md).
 
 ![Workload detail: Overview tab with hardware, network, and disks](img/vm-detail.png)
 
@@ -12,7 +12,7 @@ Every VM row links to its detail page. This is where you drive a single **Worklo
 - **Restart** — clean reboot
 - **Delete** — removes the Workload after confirmation
 
-Actions that need the Device's agent are disabled while it is unreachable.
+Controls are disabled when the Device cannot be reached.
 
 ## Tabs
 
@@ -28,7 +28,9 @@ A console in the browser (serial console).
 
 ### VNC
 
-Graphical access via noVNC. The VNC view can be popped out into a dedicated resizable window (open VNC in a new resizable window) you can park on a second monitor.
+Use VNC for a graphical desktop or an OS installer. You can open it in a separate resizable window.
+
+The toolbar offers **Paste** and **Copy**. Guest clipboard support needs `spice-vdagent` on a Linux desktop or Spice guest tools on Windows, plus a compatible QEMU build. Restart the VM after enabling that support.
 
 ### Metrics
 
