@@ -29,6 +29,25 @@ describe('useTaskPoller (PAS-34)', () => {
     expect(get.mock.calls[0]?.[0]).toBe('/home/devices/peer-1/v1/tasks/t1')
   })
 
+  test('lostAfter treats consecutive misses as a restart, not a failed task', async () => {
+    const get = mock(() => Promise.reject(new Error('Task not found')))
+    api.get = get as typeof api.get
+    const { poll } = useTaskPoller()
+    let lost = 0
+    let failed = 0
+    const event = await poll('system-update-1.0.0-alpha.7', {
+      interval: 1,
+      lostAfter: 3,
+      onLost: () => { lost += 1 },
+      onFailed: () => { failed += 1 },
+    })
+    expect(lost).toBe(1)
+    expect(failed).toBe(0)
+    expect(event.status).toBe('completed')
+    expect(event.error).toBeNull()
+    expect(get.mock.calls.length).toBe(3)
+  })
+
   test('stop rejects an in-flight poll', async () => {
     let resolveGet: ((value: unknown) => void) | undefined
     const get = mock(

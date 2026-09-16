@@ -18,7 +18,7 @@ import {
   deviceUpdateSettingsPath,
   resolveSelectedDevice,
 } from '../utils/homeDeviceApi'
-import { pollUntilHealthy } from '../utils/updateHealthPoll'
+import { consecutiveTaskMissesBeforeHealthPoll, pollUntilHealthy } from '../utils/updateHealthPoll'
 import AppButton from './ui/AppButton.vue'
 import AppSelect from './ui/AppSelect.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -140,6 +140,10 @@ async function doInstallUpdate() {
     await pollTask(data.taskID, {
       interval: 1500,
       path: deviceTaskPath(device, data.taskID),
+      lostAfter: consecutiveTaskMissesBeforeHealthPoll,
+      onLost: () => {
+        if (isCurrentDevice(device)) void startHealthPoll(device)
+      },
       onComplete: () => {
         if (isCurrentDevice(device)) void startHealthPoll(device)
       },
