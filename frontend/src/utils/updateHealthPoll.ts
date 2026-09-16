@@ -1,5 +1,7 @@
 export type HealthPollResult = 'ok' | 'timeout'
 
+export const consecutiveTaskMissesBeforeHealthPoll = 3
+
 export async function pollUntilHealthy(opts: {
   health: () => Promise<boolean>
   now?: () => number

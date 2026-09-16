@@ -14,12 +14,14 @@ export function useTaskPoller() {
   let timer: ReturnType<typeof setTimeout> | null = null
   let rejectPoll: ((error: Error) => void) | null = null
 
-  async function poll(taskID: string, { interval = 1000, path, onComplete, onFailed }: {
+  async function poll(taskID: string, { interval = 1000, path, onComplete, onFailed, lostAfter, onLost }: {
     interval?: number
     /** Override GET path (member: /home/devices/:id/v1/tasks/:id). */
     path?: string
     onComplete?: (event: TaskEvent) => void
     onFailed?: (event: TaskEvent) => void
+    lostAfter?: number
+    onLost?: () => void
   } = {}): Promise<TaskEvent> {
     polling.value = true
     let consecutiveErrors = 0
@@ -48,6 +50,22 @@ export function useTaskPoller() {
           }
         } catch {
           consecutiveErrors++
+          if (lostAfter != null && consecutiveErrors >= lostAfter) {
+            polling.value = false
+            rejectPoll = null
+            onLost?.()
+            const lostEvent: TaskEvent = {
+              taskID,
+              kind: task.value?.kind ?? 'systemUpdate',
+              status: 'completed',
+              progress: task.value?.progress ?? 1,
+              error: null,
+              resultPayload: null,
+            }
+            task.value = lostEvent
+            resolve(lostEvent)
+            return
+          }
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
             polling.value = false
             rejectPoll = null
