@@ -52,13 +52,13 @@ public actor QMPEventListener {
     public func stop(vmID: String) {
         guard let run = runs.removeValue(forKey: vmID) else { return }
         run.task.cancel()
-        run.client.disconnect()
+        run.client.interrupt()
     }
 
     public func stopAll() {
         for (_, run) in runs {
             run.task.cancel()
-            run.client.disconnect()
+            run.client.interrupt()
         }
         runs.removeAll()
     }
@@ -73,6 +73,15 @@ public actor QMPEventListener {
 
     private func isCurrent(vmID: String, generation: UInt64) -> Bool {
         runs[vmID]?.generation == generation
+    }
+
+    private func commitPanicState(vmID: String) throws {
+        try dbPool.write { db in
+            try db.execute(
+                sql: "UPDATE vms SET state = 'error', updatedAt = ? WHERE id = ?",
+                arguments: [iso8601.string(from: Date()), vmID],
+            )
+        }
     }
 
     private func run(vmID: String, generation: UInt64, socketPath: String, client: QMPClient) async {
@@ -163,16 +172,9 @@ public actor QMPEventListener {
             let action = (data?["action"] as? String) ?? "unknown"
             Log.vm.error("Kernel panic detected (action: \(action))", vm: vmID)
 
-            // Update DB state to error — the QEMU process may still be running
+            guard isCurrent(vmID: vmID, generation: generation) else { return }
             do {
-                guard isCurrent(vmID: vmID, generation: generation) else { return }
-                try await dbPool.write { db in
-                    try db.execute(
-                        sql: "UPDATE vms SET state = 'error', updatedAt = ? WHERE id = ?",
-                        arguments: [iso8601.string(from: Date()), vmID],
-                    )
-                }
-                guard isCurrent(vmID: vmID, generation: generation) else { return }
+                try commitPanicState(vmID: vmID)
                 let event = VMStateEvent(id: vmID, state: "error", error: "Kernel panic")
                 await AuditService.logVMEvent(
                     action: VMLifecycleAction.crashed,

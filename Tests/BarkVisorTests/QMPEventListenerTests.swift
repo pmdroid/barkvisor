@@ -145,8 +145,8 @@ import Testing
                     self.markPeerClosed()
                     return
                 }
-                self.noteHandshake(line)
                 self.writeLine("{\"return\":{}}\n", to: client)
+                self.noteHandshake(line)
                 while true {
                     let chunkSize = 4_096
                     let chunk = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
@@ -235,7 +235,7 @@ import Testing
                 guard let base = buf.baseAddress else { return }
                 var written = 0
                 while written < buf.count {
-                    let n = send(fd, base + written, buf.count - written, MSG_NOSIGNAL)
+                    let n = send(fd, base + written, buf.count - written, Int32(MSG_NOSIGNAL))
                     if n <= 0 { return }
                     written += n
                 }
