@@ -168,8 +168,20 @@ public final class QMPClient: @unchecked Sendable {
             let msg = try readMessage(maxBytes: maxResponseBytes)
             // Skip asynchronous events — they have an "event" key
             if msg["event"] != nil { continue }
+            if let error = msg["error"] {
+                throw Self.commandErrorResponse(error)
+            }
             return msg
         }
+    }
+
+    private static func commandErrorResponse(_ error: Any) -> BarkVisorError {
+        if let detail = error as? [String: Any] {
+            let errorClass = detail["class"] as? String ?? "unknown"
+            let desc = detail["desc"] as? String ?? String(describing: detail)
+            return BarkVisorError.monitorError("QMP error (\(errorClass)): \(desc)")
+        }
+        return BarkVisorError.monitorError("QMP error (\(String(describing: error)))")
     }
 
     private func sendCommand(_ cmd: [String: Any]) throws {
