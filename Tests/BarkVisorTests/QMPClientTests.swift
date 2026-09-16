@@ -58,7 +58,9 @@ import Testing
         }
 
         func start() {
+            let ready = DispatchSemaphore(value: 0)
             Thread.detachNewThread { [self] in
+                ready.signal()
                 while true {
                     lock.lock()
                     let stopped = self.stopped
@@ -72,6 +74,7 @@ import Testing
                     if errno != EWOULDBLOCK, errno != EAGAIN { break }
                 }
             }
+            ready.wait()
         }
 
         func script(_ command: String, _ replies: [[String: Any]]) {
@@ -184,7 +187,7 @@ import Testing
         }
     }
 
-    @Suite("QMPClient")
+    @Suite("QMPClient", .serialized)
     struct QMPClientTests {
         private func makeServer(name: String, greetsWithQMP: Bool) throws -> QMPTestServer {
             let dir = FileManager.default.temporaryDirectory
