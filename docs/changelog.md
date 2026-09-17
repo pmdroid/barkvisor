@@ -4,6 +4,10 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+## 1.0.0-alpha.9 — 2026-09-16
+
+- Devices and other Home pages load when sign-in is off, even if a paired Device is unreachable. Alpha.8 could sit on an empty Devices list because health waited on that Device until the browser gave up.
+
 ## 1.0.0-alpha.8 — 2026-09-16
 
 - VM status events arrive promptly, and QEMU and guest-agent command errors are reported instead of being treated as success.
