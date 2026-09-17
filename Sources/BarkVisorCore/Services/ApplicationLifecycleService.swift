@@ -558,10 +558,12 @@ public enum ApplicationLifecycleService {
         if !snap.image.isEmpty {
             vm.imageRef = snap.image
         }
-        if let digest = snap.digest {
-            vm.digest = digest
+        if snap.catalogResolved {
+            if let digest = snap.digest {
+                vm.digest = digest
+            }
+            vm.catalogDigest = snap.catalogDigest
         }
-        vm.catalogDigest = snap.catalogDigest
         vm.updatedAt = iso8601.string(from: Date())
         vm.syncSpecProjection(bumpGeneration: false)
         let persisted = vm

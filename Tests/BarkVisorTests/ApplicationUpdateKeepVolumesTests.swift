@@ -126,6 +126,10 @@ final class ApplicationUpdateKeepVolumesTests {
             #expect(vm.updateAvailable)
             #expect(vm.digest == "sha256:configaaaa")
             #expect(vm.catalogDigest == "sha256:configbbbb")
+            docker.failManifest = true
+            try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
+            #expect(vm.catalogDigest == "sha256:configbbbb")
+            #expect(vm.updateAvailable)
         }
     }
 
@@ -225,6 +229,7 @@ private final class RecordingDockerRunner: DockerCommandRunning, @unchecked Send
     var inspectConfig = "sha256:configaaaa"
     var manifestDigest = "sha256:bbb222ccc333"
     var manifestConfig = "sha256:configbbbb"
+    var failManifest = false
 
     func run(arguments: [String], timeout _: TimeInterval) throws -> CommandResult {
         if arguments.first == "inspect" {
@@ -248,6 +253,9 @@ private final class RecordingDockerRunner: DockerCommandRunning, @unchecked Send
             return CommandResult(exitCode: 0, stdout: Data(json.utf8), stderr: Data())
         }
         if arguments.contains("manifest") {
+            if failManifest {
+                return CommandResult(exitCode: 1, stdout: Data(), stderr: Data("unavailable".utf8))
+            }
             let json = """
             {"Descriptor":{"digest":"\(manifestDigest)"},\
             "SchemaV2Manifest":{"config":{"digest":"\(manifestConfig)"}}}

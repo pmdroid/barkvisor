@@ -28,6 +28,7 @@ struct ApplicationImageSnapshot: Equatable {
     var image: String
     var digest: String?
     var catalogDigest: String?
+    var catalogResolved: Bool
 }
 
 public enum ApplicationImageFacts {
@@ -118,11 +119,12 @@ public enum ApplicationImageFacts {
     }
 
     public static func registryDigest(for image: String) -> String? {
-        let identities = registryIdentities(for: image)
-        return identities.platformManifest
-            ?? identities.index
-            ?? identities.manifests.first
-            ?? identities.config
+        let lookup = registryIdentities(for: image)
+        guard lookup.resolved else { return nil }
+        return lookup.identities.platformManifest
+            ?? lookup.identities.index
+            ?? lookup.identities.manifests.first
+            ?? lookup.identities.config
     }
 
     static func snapshot(
@@ -142,24 +144,35 @@ public enum ApplicationImageFacts {
                 image: imageName,
                 digest: first?.identities.manifests.first,
                 catalogDigest: nil,
+                catalogResolved: false,
             )
         }
-        let catalog = registryIdentities(for: catalogImage, os: os, arch: arch)
+        let lookup = registryIdentities(for: catalogImage, os: os, arch: arch)
+        if !lookup.resolved {
+            return ApplicationImageSnapshot(
+                image: imageName.isEmpty ? catalogImage : imageName,
+                digest: first?.identities.manifests.first ?? first?.identities.config,
+                catalogDigest: nil,
+                catalogResolved: false,
+            )
+        }
         if let first {
-            let aligned = alignedDigests(running: first.identities, catalog: catalog)
+            let aligned = alignedDigests(running: first.identities, catalog: lookup.identities)
             return ApplicationImageSnapshot(
                 image: imageName,
                 digest: aligned.digest,
                 catalogDigest: aligned.catalogDigest,
+                catalogResolved: true,
             )
         }
         return ApplicationImageSnapshot(
             image: catalogImage,
             digest: nil,
-            catalogDigest: catalog.platformManifest
-                ?? catalog.index
-                ?? catalog.manifests.first
-                ?? catalog.config,
+            catalogDigest: lookup.identities.platformManifest
+                ?? lookup.identities.index
+                ?? lookup.identities.manifests.first
+                ?? lookup.identities.config,
+            catalogResolved: true,
         )
     }
 
@@ -184,6 +197,11 @@ public enum ApplicationImageFacts {
     private struct InspectRecord {
         var image: String
         var identities: ImageIdentities
+    }
+
+    private struct CatalogLookup {
+        var identities: ImageIdentities
+        var resolved: Bool
     }
 
     private static func runningRecords(
@@ -265,9 +283,9 @@ public enum ApplicationImageFacts {
         for image: String,
         os: String = "linux",
         arch: String? = nil,
-    ) -> ImageIdentities {
+    ) -> CatalogLookup {
         let trimmed = image.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return ImageIdentities() }
+        if trimmed.isEmpty { return CatalogLookup(identities: ImageIdentities(), resolved: false) }
         let pin: String? = trimmed.contains("@") ? normalizeDigest(trimmed) : nil
         if let result = try? DockerCLI.run(
             arguments: ["manifest", "inspect", "--verbose", trimmed],
@@ -281,12 +299,12 @@ public enum ApplicationImageFacts {
                let pin {
                 identities.manifests = [pin]
             }
-            return identities
+            return CatalogLookup(identities: identities, resolved: true)
         }
         if let pin {
-            return ImageIdentities(manifests: [pin])
+            return CatalogLookup(identities: ImageIdentities(manifests: [pin]), resolved: true)
         }
-        return ImageIdentities()
+        return CatalogLookup(identities: ImageIdentities(), resolved: false)
     }
 
     private static func parseInspectRecords(_ json: String) -> [InspectRecord] {

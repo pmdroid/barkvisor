@@ -237,6 +237,7 @@ final class ApplicationImageFactsCommandTests {
         }
         #expect(snap.digest == snap.catalogDigest)
         #expect(snap.digest != nil)
+        #expect(snap.catalogResolved)
         #expect(!ApplicationImageFacts.updateAvailable(running: snap.digest, catalog: snap.catalogDigest))
     }
 
@@ -298,6 +299,34 @@ final class ApplicationImageFactsCommandTests {
             }
         }
         #expect(!ApplicationImageFacts.updateAvailable(running: snap.digest, catalog: snap.catalogDigest))
+        #expect(snap.catalogResolved)
+    }
+
+    @Test func `failed registry inspect does not claim catalog resolution`() async throws {
+        let compose = IDComposeRunner()
+        let docker = IdentityDockerRunner()
+        docker.containerJSON = """
+        [{"Id":"0123456789abcdef","Image":"sha256:configcccc",\
+        "Config":{"Image":"lscr.io/linuxserver/qbittorrent:latest"}}]
+        """
+        docker.imageJSON = """
+        [{"Id":"sha256:configcccc","RepoTags":["lscr.io/linuxserver/qbittorrent:latest"],\
+        "RepoDigests":["lscr.io/linuxserver/qbittorrent@sha256:platformbbbb"]}]
+        """
+        docker.failManifest = true
+        let snap = try await ComposeRuntime.$runnerOverride.withValue(compose) {
+            try await DockerCLI.$runnerOverride.withValue(docker) {
+                try ApplicationImageFacts.snapshot(
+                    id: "app-qb",
+                    project: "barkvisor-appqb",
+                    image: "lscr.io/linuxserver/qbittorrent:latest",
+                    dataDir: FileManager.default.temporaryDirectory,
+                )
+            }
+        }
+        #expect(!snap.catalogResolved)
+        #expect(snap.catalogDigest == nil)
+        #expect(snap.digest == "sha256:platformbbbb")
     }
 }
 
@@ -318,6 +347,7 @@ private final class IdentityDockerRunner: DockerCommandRunning, @unchecked Senda
     var containerJSON = "[]"
     var imageJSON = "[]"
     var manifestJSON = "{}"
+    var failManifest = false
     var inspectTargets: [[String]] = []
 
     func run(arguments: [String], timeout _: TimeInterval) throws -> CommandResult {
@@ -328,6 +358,9 @@ private final class IdentityDockerRunner: DockerCommandRunning, @unchecked Senda
             return CommandResult(exitCode: 0, stdout: Data(json.utf8), stderr: Data())
         }
         if arguments.contains("manifest") {
+            if failManifest {
+                return CommandResult(exitCode: 1, stdout: Data(), stderr: Data("unavailable".utf8))
+            }
             return CommandResult(exitCode: 0, stdout: Data(manifestJSON.utf8), stderr: Data())
         }
         return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
