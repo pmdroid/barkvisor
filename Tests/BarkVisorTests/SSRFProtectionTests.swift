@@ -625,8 +625,6 @@ private func pinLoopback(host: String) {
             self.handler = handler
             let sock = socket(AF_INET, PlatformSocket.stream, 0)
             guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-            var yes: Int32 = 1
-            _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
             var addr = sockaddr_in()
             addr.sin_family = sa_family_t(AF_INET)
             addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
