@@ -22,6 +22,7 @@ struct HomeDevicesControllerTests {
         mtlsClient: (any HomeDeviceProxyClient)? = nil,
         vmManager: VMManager? = nil,
         localFacts: (@Sendable () async -> HomeDeviceLiveFacts)? = nil,
+        reachability: HomeDeviceReachabilityMonitor = HomeDeviceReachabilityMonitor(),
         keys: JWTKeyCollection? = nil,
     ) -> HomeDevicesController {
         HomeDevicesController(
@@ -31,6 +32,7 @@ struct HomeDevicesControllerTests {
             mtlsClient: mtlsClient,
             vmManager: vmManager,
             localFacts: localFacts,
+            reachability: reachability,
             keys: keys,
         )
     }
@@ -480,6 +482,37 @@ struct HomeDevicesControllerTests {
         #expect(HomeDeviceProxy.healthProbeBudgetNanoseconds == 2_500_000_000)
     }
 
+    @Test func `healthReport skips a member already known unreachable`() async throws {
+        let dir = try isolatedDir("health-skip-down")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hungId = "hung-peer"
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "this-device"),
+            HomeDevice(hostId: hungId, role: "member", agentHost: "10.0.0.11", agentPort: 7_778),
+        ])
+        let client = RecordingProxyClient()
+        client.hang(host: "10.0.0.11", port: 7_778, path: "/api/agent/inventory")
+        let monitor = HomeDeviceReachabilityMonitor()
+        await monitor.replace([hungId: HomeDeviceHealthAggregator.connectTimeout])
+        let started = ContinuousClock.now
+        let report = await controller(
+            dir: dir,
+            hostId: "self",
+            mtlsClient: client,
+            reachability: monitor,
+        ).healthReport(
+            listed: listed,
+            local: localFacts(running: 1),
+            bearer: nil,
+            probeBudgetNanoseconds: 2_000_000_000,
+        )
+        let elapsed = started.duration(to: .now)
+        #expect(elapsed < Duration.milliseconds(400))
+        #expect(client.calls.isEmpty)
+        let hung = try #require(report.devices.first { $0.hostId == hungId })
+        #expect(hung.reachability == HomeDeviceHealthAggregator.connectTimeout)
+    }
+
     @Test func `connect timeout and member 5xx are not sold as Device offline`() async throws {
         let dir = try isolatedDir("hop-codes")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -651,6 +684,28 @@ struct HomeDevicesControllerTests {
         let down = try #require(scored.candidates.first { $0.hostId == downId })
         #expect(!down.eligible)
         #expect(down.reasons.contains { $0.code == HomePlacementScorer.offlineCode })
+    }
+
+    @Test func `health hop bearer stays local when Home has no User`() async throws {
+        let dir = try isolatedDir("health-hop-empty")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let keys = JWTKeyCollection()
+        await keys.add(hmac: .init(from: "home-hop-empty-secret"), digestAlgorithm: .sha256)
+        let ctl = controller(dir: dir, hostId: "self", keys: keys)
+        let bearer = await ctl.hopBearerForHealth(
+            user: AuthBypass.syntheticAdmin,
+            db: pool,
+            incoming: "keep-me",
+        )
+        #expect(bearer == "keep-me")
+        let empty = await ctl.hopBearerForHealth(
+            user: AuthBypass.syntheticAdmin,
+            db: pool,
+            incoming: nil,
+        )
+        #expect(empty == nil)
     }
 
     @Test func `bypass hop authorization mints the provisioned admin JWT`() async throws {

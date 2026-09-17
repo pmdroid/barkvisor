@@ -93,7 +93,7 @@ struct HomeDevicesController: RouteCollection {
         let user = try req.requireUser
         let listed = try await listedDevices(db: req.db)
         let facts = await resolvedLocalFacts(db: req.db)
-        let bearer = try await hopAuthorization(
+        let bearer = await hopBearerForHealth(
             user: user,
             db: req.db,
             incoming: req.headers.bearerAuthorization?.token,
@@ -113,7 +113,7 @@ struct HomeDevicesController: RouteCollection {
         let body = try req.content.decode(HomePlacementScoreRequest.self)
         let listed = try await listedDevices(db: req.db)
         let facts = await resolvedLocalFacts(db: req.db)
-        let bearer = try await hopAuthorization(
+        let bearer = await hopBearerForHealth(
             user: user,
             db: req.db,
             incoming: req.headers.bearerAuthorization?.token,
@@ -199,27 +199,35 @@ struct HomeDevicesController: RouteCollection {
     ) async -> [String: HomeDeviceProbeOutcome] {
         var probed: [String: HomeDeviceProbeOutcome] = [:]
         guard !members.isEmpty else { return probed }
-        await withTaskGroup(of: (String, HomeDeviceProbeOutcome)?.self) { group in
-            for device in members {
+        var pending: [HomeDevice] = []
+        for device in members {
+            if await reachability.permitsHop(to: device.hostId) {
+                pending.append(device)
+            }
+        }
+        if !pending.isEmpty {
+            await withTaskGroup(of: (String, HomeDeviceProbeOutcome)?.self) { group in
+                for device in pending {
+                    group.addTask {
+                        await Optional((device.hostId, self.probeMember(device, bearer: bearer)))
+                    }
+                }
                 group.addTask {
-                    await Optional((device.hostId, self.probeMember(device, bearer: bearer)))
+                    try? await Task.sleep(nanoseconds: budgetNanoseconds)
+                    return nil
                 }
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: budgetNanoseconds)
-                return nil
-            }
-            var expired = false
-            for await item in group {
-                guard let (id, outcome) = item else {
-                    expired = true
-                    group.cancelAll()
-                    continue
-                }
-                if expired { continue }
-                probed[id] = outcome
-                if probed.count == members.count {
-                    group.cancelAll()
+                var expired = false
+                for await item in group {
+                    guard let (id, outcome) = item else {
+                        expired = true
+                        group.cancelAll()
+                        continue
+                    }
+                    if expired { continue }
+                    probed[id] = outcome
+                    if probed.count == pending.count {
+                        group.cancelAll()
+                    }
                 }
             }
         }
@@ -312,6 +320,18 @@ struct HomeDevicesController: RouteCollection {
         } catch let error as Abort where error.status == .badGateway {
             await reachability.markUnavailable(id)
             throw error
+        }
+    }
+
+    func hopBearerForHealth(
+        user: AuthenticatedUser,
+        db: DatabasePool,
+        incoming: String?,
+    ) async -> String? {
+        do {
+            return try await hopAuthorization(user: user, db: db, incoming: incoming)
+        } catch {
+            return incoming
         }
     }
 

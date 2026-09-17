@@ -49,7 +49,7 @@ function requestPath(url: unknown): string {
 
 export function isHomeMemberProxyRequest(config?: { url?: string } | null): boolean {
   const path = requestPath(config?.url)
-  return path.includes('/home/devices/')
+  return /\/home\/devices\/[^/]+\/v1(?:\/|$)/.test(path)
 }
 
 /** A member application response proves the hop worked, including HTTP 5xx. */

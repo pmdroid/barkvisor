@@ -28,7 +28,7 @@ export const useDevicesStore = defineStore('devices', () => {
     if (inFlight) return inFlight
     if (!force && report.value && Date.now() - lastSuccessfulFetchAt < HOME_REACHABILITY_REFRESH_MS) return
     const seq = ++fetchSeq
-    loading.value = true
+    if (!report.value) loading.value = true
     inFlight = (async () => {
       try {
         const { data } = await api.get<HomeDeviceHealthReport>('/home/devices/health')

@@ -239,6 +239,10 @@ describe('auth store (PAS-242)', () => {
   test('member proxy 503 setup_required does not latch local setup', () => {
     expect(isHomeMemberProxyRequest({ url: '/home/devices/peer-1/v1/vms' })).toBe(true)
     expect(isHomeMemberProxyRequest({ url: '/api/home/devices/peer-1/v1/vms' })).toBe(true)
+    expect(isHomeMemberProxyRequest({ url: '/home/devices/health' })).toBe(false)
+    expect(isHomeMemberProxyRequest({ url: '/api/home/devices/health' })).toBe(false)
+    expect(isHomeMemberProxyRequest({ url: '/home/devices' })).toBe(false)
+    expect(isHomeMemberProxyRequest({ url: '/home/devices/peer-1' })).toBe(false)
     expect(isHomeMemberProxyRequest({ url: '/vms' })).toBe(false)
     expect(isHomeMemberProxyRequest({ url: '/setup/status' })).toBe(false)
     const client = readFileSync(join(here, '../api/client.ts'), 'utf8')

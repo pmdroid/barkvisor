@@ -97,6 +97,26 @@ describe('devices store (PAS-52)', () => {
     expect(store.error).toBeNull()
   })
 
+  test('a health refetch does not look like a first load', async () => {
+    let resolveSecond!: (value: { data: HomeDeviceHealthReport }) => void
+    const second = new Promise<{ data: HomeDeviceHealthReport }>((resolve) => {
+      resolveSecond = resolve
+    })
+    const get = mock()
+      .mockResolvedValueOnce({ data: report })
+      .mockReturnValueOnce(second)
+    api.get = get as typeof api.get
+    const store = useDevicesStore()
+    await store.fetchHealth()
+    expect(store.loading).toBe(false)
+    const refetch = store.fetchHealth({ force: true })
+    expect(store.loading).toBe(false)
+    expect(store.devices).toHaveLength(2)
+    resolveSecond({ data: report })
+    await refetch
+    expect(store.loading).toBe(false)
+  })
+
   test('replaces displayed reachability when Home reports a recovery', async () => {
     const get = mock()
       .mockResolvedValueOnce({ data: report })
