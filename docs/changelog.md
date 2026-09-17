@@ -4,6 +4,8 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+## 1.0.0-alpha.8 — 2026-09-16
+
 - VM status events arrive promptly, and QEMU and guest-agent command errors are reported instead of being treated as success.
 - Home consoles can reach paired Devices when sign-in is disabled on the console Device.
 - The Updates page treats a disappearing update task during a daemon restart as a reconnect, rather than immediately reporting failure.
