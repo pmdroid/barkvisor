@@ -2,7 +2,7 @@
 
 ## Sub-features
 
-- **Host interfaces** tab (default) — NIC table + edit drawer. DHCP lease is always on (read-only). Extra static CIDRs via **+ Add address**. Gateway/DNS. **Apply** (preview/dry-run, then confirm). No drawer **Revert** / **Re-check**. Owned Bridges can **Delete**. Toolbar **Create → Bridge** (no standalone Bridge setup button)
+- **Host interfaces** tab (default) — NIC table + edit drawer. DHCP row is always shown and read-only. Extra CIDRs via **+ Add address** (labeled Additional address, posted as `kind: "alias"`). Gateway/DNS. **Apply** (SPA sends `action: "dry-run"`, then confirm). No drawer **Revert** / **Re-check**. Owned Bridges can **Delete**. Toolbar **Create** menu → **Bridge** (no standalone Bridge setup button)
 - **VM networks** tab — NAT / bridged / isolated Workload networks + **Create Network**
 - Apply mutates the host — on a throwaway, do not confirm Apply. Use `POST /api/system/bridges` `{action:"check"}` for a non-mutating plan, or `networks-interfaces-flow.mjs` without clicking through the confirm dialog
 
@@ -17,6 +17,6 @@ bun helpers/networks-interfaces-flow.mjs --base "$URL" --user admin --pass "$PAS
   --dir "evidence/run-networks-interfaces"
 ```
 
-Optional `--check` mocks the Apply POST (`/api/system/interfaces` or `/api/system/bridges`), asserts `addresses[]`, then `POST /api/system/bridges` with `action: "check"` (does not persist).
+Optional `--check` mocks the Apply POST (`/api/system/interfaces` or `/api/system/bridges`), asserts `addresses[]`, then `POST /api/system/bridges` with `action: "check"` (does not persist). After Apply the confirm overlay is dismissed before switching to **VM networks**.
 
 Do not confirm Apply on a real uplink. The only user-facing Revert is the 60s **Keep network changes** window after a real Apply.

@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { redactPage } from './redactPage.mjs'
 
 const args = process.argv.slice(2)
 function arg(name, fallback) {
@@ -56,6 +57,7 @@ try {
   secret = (await page.locator('.modal div[style*="word-break"]').innerText()).trim()
 
   shotShown = `${dir}/secret-shown.png`
+  await redactPage(page)
   await page.screenshot({ path: shotShown, fullPage: true })
   writeFileSync(`${dir}/show-once-secret.txt`, `${secret}\n`)
 
@@ -63,6 +65,7 @@ try {
   await page.waitForSelector('.modal', { state: 'detached' })
   await page.waitForTimeout(500)
   shotModal = `${dir}/keys-table.png`
+  await redactPage(page)
   await page.screenshot({ path: shotModal, fullPage: true })
 } finally {
   await browser.close()

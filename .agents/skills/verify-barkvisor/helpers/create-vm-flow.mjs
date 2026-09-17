@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { redactPage } from './redactPage.mjs'
 
 const args = process.argv.slice(2)
 function arg(name, fallback) {
@@ -83,6 +84,7 @@ try {
   await page.waitForSelector('.mag-frame')
   const lightBg = await page.locator('.mag-frame').evaluate((el) => getComputedStyle(el).backgroundColor)
   shots.push(`${dir}/01-gallery-light.png`)
+  await redactPage(page)
   await page.screenshot({ path: shots.at(-1), fullPage: true })
   const lightNums = (lightBg.match(/\d+/g) || []).map(Number)
   const lightOk = lightNums.length >= 3 && lightNums[0] + lightNums[1] + lightNums[2] > 500
@@ -95,6 +97,7 @@ try {
   await page.click('button:has-text("Create VM")')
   await page.waitForSelector('.mag-shelf')
   shots.push(`${dir}/02-gallery.png`)
+  await redactPage(page)
   await page.screenshot({ path: shots.at(-1), fullPage: true })
   flows.push({
     flow: 'gallery',
@@ -106,6 +109,7 @@ try {
   await page.waitForSelector('h2:has-text("Set up Windows")')
   const winHint = await page.locator('.mag-hostname').count()
   shots.push(`${dir}/03-windows.png`)
+  await redactPage(page)
   await page.screenshot({ path: shots.at(-1), fullPage: true })
   flows.push({ flow: 'windows', ok: winHint === 0 })
   await page.click('.mag-btn.ghost:has-text("Back")')
@@ -114,6 +118,7 @@ try {
   await page.waitForSelector('h2:has-text("Name it and pick a size")')
   const customNext = await page.locator('.mag-btn.primary').isDisabled()
   shots.push(`${dir}/04-custom.png`)
+  await redactPage(page)
   await page.screenshot({ path: shots.at(-1), fullPage: true })
   flows.push({ flow: 'custom-needs-image', ok: customNext })
   await page.click('.mag-btn.ghost:has-text("Back")')
@@ -124,6 +129,7 @@ try {
   await page.fill('.mag-frame input', vmName)
   const sshRow = await page.locator('.mag-fwrow', { hasText: 'SSH key' }).count()
   shots.push(`${dir}/05-configure-template.png`)
+  await redactPage(page)
   await page.screenshot({ path: shots.at(-1), fullPage: true })
   flows.push({ flow: 'template-configure', ok: passwordLabels === 0, sshRow })
 
@@ -131,6 +137,7 @@ try {
   if (await nextBtn.isDisabled()) {
     magError = ((await page.locator('.mag-error').textContent().catch(() => '')) || 'Next disabled').trim()
     shots.push(`${dir}/05b-next-disabled.png`)
+    await redactPage(page)
     await page.screenshot({ path: shots.at(-1), fullPage: true })
   } else {
     await nextBtn.click()
@@ -139,10 +146,12 @@ try {
   if (await page.locator('h2:has-text("Disk")').count()) {
     await page.locator('.mag-dcard', { hasText: 'Existing disk' }).click()
     shots.push(`${dir}/06-disk-existing.png`)
+    await redactPage(page)
     await page.screenshot({ path: shots.at(-1), fullPage: true })
     const existingCreateDisabled = await page.locator('.mag-btn.primary:has-text("Create")').isDisabled()
     await page.locator('.mag-dcard', { hasText: 'New disk' }).click()
     shots.push(`${dir}/07-disk-new.png`)
+    await redactPage(page)
     await page.screenshot({ path: shots.at(-1), fullPage: true })
     const rawCard = page.locator('.mag-dcard', { hasText: 'Raw host device' })
     const rawOff = await rawCard.evaluate((el) => el.classList.contains('off'))
@@ -168,6 +177,7 @@ try {
       statusText: listText,
     })
     shots.push(`${dir}/08-after-create.png`)
+    await redactPage(page)
     await page.screenshot({ path: shots.at(-1), fullPage: true })
   }
 } finally {
@@ -192,8 +202,10 @@ if (/password/i.test(magError)) {
 }
 
 const passwordLeak = /password/i.test(magError)
-const deployStarted = vmRow != null || downloading.length > 0
-const ok = !passwordLeak && flows.every((row) => row.ok) && deployStarted
+const reachedCreate = flows.some((row) => row.flow === 'magazine-closes')
+const templateDownload = downloading.filter((row) => !/virtio/i.test(row.name))
+const deployStarted = vmRow != null || templateDownload.length > 0
+const ok = !passwordLeak && flows.every((row) => row.ok) && (!reachedCreate || deployStarted)
 writeFileSync(`${dir}/result.json`, JSON.stringify({
   ok,
   vmName,

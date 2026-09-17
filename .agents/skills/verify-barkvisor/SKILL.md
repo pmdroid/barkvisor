@@ -67,7 +67,7 @@ Stable handles (prefer these, never coordinates):
 |---|---|
 | Login | **Sign in with passkey** on `.login-card` (no username/password). Helpers inject a JWT from `POST /api/auth/login` on headless instances. |
 | Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Workloads, Ollama, Images, Disks, Networks, Logs, Settings |
-| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|apikeys\|sshkeys\|passkeys\|audit\|updates` (`?tab=disks` redirects to Devices) |
+| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|security\|apikeys\|sshkeys\|passkeys\|audit\|updates` (`?tab=disks` redirects to Devices) |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Create App**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
 | Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
@@ -116,7 +116,7 @@ Capture into `.agents/skills/verify-barkvisor/evidence/<run-name>/` (gitignored,
 
 Proof standard: exercise the real user path (UI form/modal clicks against the running daemon); never internal setters, test-only endpoints, or direct DB writes as the *action* — DB reads are for verification only. Show-once secrets captured from a throwaway instance are fine to keep in evidence.
 
-Never upload a screenshot that shows a Tailscale hostname (`*.ts.net`). `shot.mjs` always redacts those to `device.local` before capture. Do not send unredacted evidence to Telegram, GitHub, or gists.
+Never upload a screenshot that shows a Tailscale hostname (`*.ts.net`). `shot.mjs` and the flow helpers redact those to `device.local` before capture (`helpers/redactPage.mjs`). Do not send unredacted evidence to Telegram, GitHub, or gists.
 
 ## Cleanup
 
@@ -138,4 +138,5 @@ Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 
 | `create-app-flow.mjs` | `helpers/create-app-flow.mjs --base URL [--token T \| --user U --pass P] --dir EVIDENCE_DIR` | magazine Create App gallery + Configure (no apply) |
 | `networks-interfaces-flow.mjs` | `helpers/networks-interfaces-flow.mjs --base URL [--token T \| --user U --pass P] --dir EVIDENCE_DIR [--check]` | Host interfaces tab: drawer, multi-address editor, optional mocked Apply + real check |
 | `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR` | drive the first-run wizard (`--no-provision` instance; use `http://localhost`) |
+| `redactPage.mjs` | imported by flow helpers | replace `*.ts.net` with `device.local` in the page before a screenshot |
 | `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |
