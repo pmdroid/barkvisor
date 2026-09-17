@@ -94,15 +94,15 @@ struct TerminalControllerTests {
         // The member `.terminal` hop continues to the host API's TerminalController,
         // which must be the one to spend the ticket. The agent spending it too was
         // the instant-close/401 reconnect loop on member devices (#614).
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let minted = await store.createTicket(
             forUserID: "u1", username: "admin", targetVMID: "vm-9",
         )
         try await AgentLocalProxyController.requireTunnelTicket(
-            kind: .terminal, vmID: "vm-9", ticket: minted,
+            kind: .terminal, vmID: "vm-9", ticket: minted, ticketStore: store,
         )
         try await AgentLocalProxyController.requireTunnelTicket(
-            kind: .terminal, vmID: "vm-9", ticket: minted,
+            kind: .terminal, vmID: "vm-9", ticket: minted, ticketStore: store,
         )
         let spent = await store.validateTicket(minted, forVMID: "vm-9")
         #expect(spent?.userID == "u1", "host API must still find the ticket spendable")
@@ -112,24 +112,25 @@ struct TerminalControllerTests {
         // shows the reason instead of looping (#614).
     }
 
-    @Test func `agent-terminated tunnels spend the ticket exactly once`() async throws {
+    @Test(arguments: [HomeConsoleKind.vnc, .console])
+    func `agent-terminated tunnels spend the ticket exactly once`(_ kind: HomeConsoleKind) async throws {
         // VNC and serial terminate on this agent (QEMU socket / ConsoleBufferManager),
         // so their ticket stays spend-on-arrival and replays die at the door.
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let minted = await store.createTicket(
             forUserID: "u2", username: "admin", targetVMID: "vm-9",
         )
         try await AgentLocalProxyController.requireTunnelTicket(
-            kind: .vnc, vmID: "vm-9", ticket: minted,
+            kind: kind, vmID: "vm-9", ticket: minted, ticketStore: store,
         )
         await #expect(throws: Error.self) {
             try await AgentLocalProxyController.requireTunnelTicket(
-                kind: .vnc, vmID: "vm-9", ticket: minted,
+                kind: .vnc, vmID: "vm-9", ticket: minted, ticketStore: store,
             )
         }
         await #expect(throws: Error.self) {
             try await AgentLocalProxyController.requireTunnelTicket(
-                kind: .console, vmID: "vm-9", ticket: minted,
+                kind: .console, vmID: "vm-9", ticket: minted, ticketStore: store,
             )
         }
     }
@@ -148,13 +149,13 @@ struct TerminalControllerTests {
     }
 
     @Test func `tunnel ticket gate binds the ticket to the workload for agent-terminated kinds`() async throws {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let minted = await store.createTicket(
             forUserID: "u3", username: "admin", targetVMID: "vm-other",
         )
         await #expect(throws: Error.self) {
             try await AgentLocalProxyController.requireTunnelTicket(
-                kind: .console, vmID: "vm-9", ticket: minted,
+                kind: .console, vmID: "vm-9", ticket: minted, ticketStore: store,
             )
         }
     }

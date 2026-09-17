@@ -83,6 +83,7 @@ struct AgentLocalProxyController: RouteCollection {
         kind: HomeConsoleKind,
         vmID: String,
         ticket: String?,
+        ticketStore: WebSocketTicketStore = .shared,
     ) async throws {
         do {
             try StreamTicketPolicy.requirePassThroughDeviceTicket(ticket)
@@ -90,7 +91,7 @@ struct AgentLocalProxyController: RouteCollection {
             throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
         }
         guard let ticket, kind != .terminal else { return }
-        guard await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil
+        guard await ticketStore.validateTicket(ticket, forVMID: vmID) != nil
         else {
             throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
         }

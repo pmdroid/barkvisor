@@ -23,6 +23,7 @@ public actor WebSocketTicketStore {
 
     private var tickets: [String: TicketEntry] = [:]
     private var pruneTask: Task<Void, Never>?
+    private let now: @Sendable () -> Date
 
     public static let shared: WebSocketTicketStore = {
         let store = WebSocketTicketStore()
@@ -30,7 +31,9 @@ public actor WebSocketTicketStore {
         return store
     }()
 
-    private init() {}
+    init(now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
+    }
 
     private func startPruning() {
         guard pruneTask == nil else { return }
@@ -51,7 +54,7 @@ public actor WebSocketTicketStore {
             userID: userID,
             username: username,
             targetVMID: targetVMID,
-            expiresAt: Date().addingTimeInterval(30),
+            expiresAt: now().addingTimeInterval(30),
         )
         tickets[ticket] = entry
         return ticket
@@ -66,7 +69,7 @@ public actor WebSocketTicketStore {
         guard let entry = tickets.removeValue(forKey: ticket) else {
             return nil
         }
-        guard entry.expiresAt > Date() else { return nil }
+        guard entry.expiresAt > now() else { return nil }
         guard entry.targetVMID == vmID else { return nil }
         return (userID: entry.userID, username: entry.username)
     }
@@ -78,13 +81,13 @@ public actor WebSocketTicketStore {
         guard let entry = tickets.removeValue(forKey: ticket) else {
             return nil
         }
-        guard entry.expiresAt > Date() else { return nil }
+        guard entry.expiresAt > now() else { return nil }
         guard entry.targetVMID == nil else { return nil }
         return (userID: entry.userID, username: entry.username)
     }
 
     private func pruneExpired() {
-        let now = Date()
+        let now = now()
         tickets = tickets.filter { $0.value.expiresAt > now }
     }
 }

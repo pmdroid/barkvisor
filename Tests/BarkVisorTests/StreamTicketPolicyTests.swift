@@ -152,7 +152,7 @@ struct StreamTicketPolicyTests {
             try StreamTicketPolicy.requirePassThroughDeviceTicket("not-a-uuid")
         }
 
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let minted = await store.createTicket(
             forUserID: "u1", username: "admin", targetVMID: "vm-1",
         )
@@ -188,7 +188,7 @@ struct StreamTicketPolicyTests {
     }
 
     @Test func `owner device spend is workload scoped`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(
             forUserID: "u1", username: "admin", targetVMID: "vm-1",
         )

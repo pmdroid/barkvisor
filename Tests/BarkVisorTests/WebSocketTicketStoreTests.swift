@@ -3,10 +3,8 @@ import Testing
 @testable import BarkVisorCore
 
 struct WebSocketTicketStoreTests {
-    // We use the shared singleton — tests are serial within this suite
-
     @Test func `create and validate VM ticket`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
         #expect(!ticket.isEmpty)
@@ -18,7 +16,7 @@ struct WebSocketTicketStoreTests {
     }
 
     @Test func `ticket is single use`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
         let first = await store.validateTicket(ticket, forVMID: "vm-1")
@@ -30,15 +28,16 @@ struct WebSocketTicketStoreTests {
     }
 
     @Test func `ticket wrong VM`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
         let result = await store.validateTicket(ticket, forVMID: "vm-2")
         #expect(result == nil, "Ticket scoped to vm-1 should not validate for vm-2")
+        #expect(await store.validateTicket(ticket, forVMID: "vm-1") == nil)
     }
 
     @Test func `non scoped ticket`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin")
 
         let result = await store.validateTicket(ticket)
@@ -47,7 +46,7 @@ struct WebSocketTicketStoreTests {
     }
 
     @Test func `non scoped ticket is single use`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin")
 
         let first = await store.validateTicket(ticket)
@@ -58,7 +57,7 @@ struct WebSocketTicketStoreTests {
     }
 
     @Test func `unscoped SSE rejects a Workload scoped ticket`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
         let unscoped = await store.validateTicket(ticket)
@@ -67,11 +66,40 @@ struct WebSocketTicketStoreTests {
     }
 
     @Test func `invalid ticket returns nil`() async {
-        let store = WebSocketTicketStore.shared
+        let store = TicketTestClock().makeStore()
         let result = await store.validateTicket("nonexistent-ticket", forVMID: "vm-1")
         #expect(result == nil)
 
         let result2 = await store.validateTicket("nonexistent-ticket")
         #expect(result2 == nil)
+    }
+
+    @Test(arguments: [29.0, 30.0, 31.0], [false, true])
+    func `tickets expire exactly thirty seconds after creation`(
+        elapsed: TimeInterval,
+        scoped: Bool,
+    ) async {
+        let clock = TicketTestClock()
+        let store = clock.makeStore()
+        let ticket = await store.createTicket(
+            forUserID: "u1", username: "admin", targetVMID: scoped ? "vm-1" : nil,
+        )
+        clock.advance(by: elapsed)
+
+        let result = if scoped {
+            await store.validateTicket(ticket, forVMID: "vm-1")
+        } else {
+            await store.validateTicket(ticket)
+        }
+        #expect((result != nil) == (elapsed < 30))
+
+        // Rewinding the clock cannot revive a consumed or expired ticket.
+        clock.advance(by: -elapsed)
+        let replay = if scoped {
+            await store.validateTicket(ticket, forVMID: "vm-1")
+        } else {
+            await store.validateTicket(ticket)
+        }
+        #expect(replay == nil)
     }
 }
