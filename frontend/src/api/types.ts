@@ -1197,6 +1197,11 @@ export interface HomeDeviceResourceSummary {
   memoryTotalMB?: number | null
   memoryUsedMB?: number | null
   cpuLoadPercent?: number | null
+  gpuPercent?: number | null
+  temperatureC?: number | null
+  cpuTemperatureC?: number | null
+  gpuTemperatureC?: number | null
+  diskTemperatureC?: number | null
 }
 
 export interface HomeDeviceFeatureSummary {

@@ -286,6 +286,9 @@ struct DeviceDetailView: View {
         if let gpu = points.reversed().compactMap(\.gpuPercent).first {
             return String(format: "%.0f%%", gpu)
         }
+        if let gpu = device.resources?.gpuPercent {
+            return String(format: "%.0f%%", gpu)
+        }
         return "—"
     }
 

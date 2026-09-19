@@ -136,6 +136,11 @@ struct HomeDeviceResourceSummary: Decodable, Hashable {
     var memoryTotalMB: Int?
     var memoryUsedMB: Int?
     var cpuLoadPercent: Double?
+    var gpuPercent: Double?
+    var temperatureC: Double?
+    var cpuTemperatureC: Double?
+    var gpuTemperatureC: Double?
+    var diskTemperatureC: Double?
 }
 
 struct HomeDeviceDoctorFailure: Decodable, Hashable {
@@ -229,6 +234,9 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
         var parts: [String] = []
         if let cpu = resources.cpuLoadPercent {
             parts.append("CPU \(Int(cpu.rounded()))%")
+        }
+        if let gpu = resources.gpuPercent {
+            parts.append("GPU \(Int(gpu.rounded()))%")
         }
         if let used = resources.memoryUsedMB, let total = resources.memoryTotalMB {
             parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024))

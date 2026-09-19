@@ -79,12 +79,32 @@ public struct ResourcesInfo: Codable, Sendable, Equatable {
     public let memoryTotalMB: Int
     public let memoryUsedMB: Int
     public let cpuLoadPercent: Double
+    public let gpuPercent: Double?
+    public let temperatureC: Double?
+    public let cpuTemperatureC: Double?
+    public let gpuTemperatureC: Double?
+    public let diskTemperatureC: Double?
 
-    public init(cpuCount: Int, memoryTotalMB: Int, memoryUsedMB: Int, cpuLoadPercent: Double) {
+    public init(
+        cpuCount: Int,
+        memoryTotalMB: Int,
+        memoryUsedMB: Int,
+        cpuLoadPercent: Double,
+        gpuPercent: Double? = nil,
+        temperatureC: Double? = nil,
+        cpuTemperatureC: Double? = nil,
+        gpuTemperatureC: Double? = nil,
+        diskTemperatureC: Double? = nil,
+    ) {
         self.cpuCount = cpuCount
         self.memoryTotalMB = memoryTotalMB
         self.memoryUsedMB = memoryUsedMB
         self.cpuLoadPercent = cpuLoadPercent
+        self.gpuPercent = gpuPercent
+        self.temperatureC = temperatureC
+        self.cpuTemperatureC = cpuTemperatureC
+        self.gpuTemperatureC = gpuTemperatureC
+        self.diskTemperatureC = diskTemperatureC
     }
 }
 

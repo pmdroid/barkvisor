@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import api from '../api/client'
-import type { SystemStats } from '../api/types'
+import type { HomeDeviceHealthSnapshot } from '../api/types'
 import DeviceCard from '../components/DeviceCard.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDiskStore } from '../stores/disks'
 import { formatHostSensorTemps, formatVolumeUsed } from '../utils/format'
+import { isReachabilityOk } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const router = useRouter()
 const devices = useDevicesStore()
 const diskStore = useDiskStore()
 const { summary: storageSummary } = storeToRefs(diskStore)
-const stats = ref<SystemStats | null>(null)
 
-const selfTempLabel = computed(() => {
-  const temps = formatHostSensorTemps(stats.value?.metrics)
+function deviceTempLabel(device: HomeDeviceHealthSnapshot) {
+  if (!isReachabilityOk(device.reachability)) return null
+  const temps = formatHostSensorTemps(device.resources)
   const parts = [
     temps.cpu ? `CPU ${temps.cpu}` : null,
     temps.gpu ? `GPU ${temps.gpu}` : null,
@@ -26,29 +26,19 @@ const selfTempLabel = computed(() => {
     temps.legacy,
   ].filter(Boolean)
   return parts.length ? parts.join(' · ') : null
-})
+}
 const selfStorageLabel = computed(() => {
   const summary = storageSummary.value
   if (!summary || !summary.volumeTotalBytes) return null
   return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
 })
 
-async function fetchStats() {
-  try {
-    const { data } = await api.get('/system/stats')
-    stats.value = data
-  } catch {
-  }
-}
-
 let pollTimer: number
 onMounted(() => {
   devices.fetchHealth()
-  void fetchStats()
   void diskStore.fetchSummary().catch(() => {})
   pollTimer = window.setInterval(() => {
     if (!devices.loading) devices.fetchHealth()
-    void fetchStats()
   }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -87,7 +77,7 @@ onUnmounted(() => clearInterval(pollTimer))
           v-for="row in devices.devices"
           :key="row.hostId"
           :device="row"
-          :temp-label="row.role === 'self' ? selfTempLabel : null"
+          :temp-label="deviceTempLabel(row)"
           :storage-label="row.role === 'self' ? selfStorageLabel : null"
         />
       </div>

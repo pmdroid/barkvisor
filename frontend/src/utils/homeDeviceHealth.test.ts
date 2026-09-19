@@ -31,6 +31,12 @@ describe('deviceResourcesLine', () => {
     expect(line).not.toMatch(/gpu/i)
     expect(deviceResourcesLine({ reachability: 'unreachable', resources: { cpuLoadPercent: 90 } })).toBeNull()
     expect(deviceResourcesLine({ reachability: 'ok' })).toBeNull()
+    expect(
+      deviceResourcesLine({
+        reachability: 'ok',
+        resources: { cpuLoadPercent: 41, gpuPercent: 72, memoryUsedMB: 49152, memoryTotalMB: 131072 },
+      }),
+    ).toBe('CPU 41% · GPU 72% · 48.0 / 128 GB')
   })
 
   test('zero memory total is present, not treated as missing', () => {

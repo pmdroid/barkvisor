@@ -102,6 +102,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     let homeDevices = HomeDevicesController(
         vmManager: deps.vmManager, healthProbes: deps.healthProbes, keys: deps.keys,
     )
+    homeDevices.bootDisplay(routes: app)
+    app.middleware.use(DisplayHomeMiddleware(home: homeDevices), at: .beginning)
     try protected.register(collection: homeDevices)
     Task {
         await homeDevices.refreshReachability()

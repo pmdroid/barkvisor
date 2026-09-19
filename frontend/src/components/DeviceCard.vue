@@ -60,6 +60,12 @@ const cpuPercent = computed(() => {
   return value == null ? null : Math.round(value)
 })
 
+const gpuPercent = computed(() => {
+  if (!reachable.value) return null
+  const value = props.device.resources?.gpuPercent
+  return value == null ? null : Math.round(value)
+})
+
 const memLabel = computed(() => {
   if (!reachable.value) return null
   const used = props.device.resources?.memoryUsedMB
@@ -174,6 +180,17 @@ async function saveRename() {
         ></span>
       </span>
       <span class="ops-m-val">{{ cpuPercent == null ? '—' : cpuPercent + '%' }}</span>
+    </span>
+    <span v-if="gpuPercent != null" class="ops-meter">
+      <span class="ops-m-label">GPU</span>
+      <span class="ops-track">
+        <span
+          class="ops-fill"
+          :class="gpuPercent >= 60 ? 'hot' : 'cpu'"
+          :style="{ width: gpuPercent + '%' }"
+        ></span>
+      </span>
+      <span class="ops-m-val">{{ gpuPercent }}%</span>
     </span>
     <span class="ops-meter">
       <span class="ops-m-label">MEM</span>
