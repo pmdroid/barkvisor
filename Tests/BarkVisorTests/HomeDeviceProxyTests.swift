@@ -387,7 +387,8 @@ struct HomeDeviceProxyTests {
         #expect(HomeDeviceProxy.isSystemTerminal(components: ["system", "terminal"]))
         #expect(!HomeDeviceProxy.isSystemTerminal(components: ["vms", "vm-1", "terminal"]))
         #expect(try HomeDeviceProxy.isSystemTerminal(apiPath: "/api/system/terminal"))
-        #expect(!(try HomeDeviceProxy.isSystemTerminal(apiPath: "/api/vms/vm-1/terminal")))
+        let workloadTerminal = try HomeDeviceProxy.isSystemTerminal(apiPath: "/api/vms/vm-1/terminal")
+        #expect(!workloadTerminal)
         let url = try HomeDeviceProxy.systemTerminalURL(
             HomeSystemTerminalTarget(
                 isSelf: true,

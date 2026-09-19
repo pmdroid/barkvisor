@@ -248,13 +248,19 @@
             cargs: [UnsafeMutablePointer<CChar>?],
             cenv: [UnsafeMutablePointer<CChar>?]?,
         ) {
-            cargs.withUnsafeBufferPointer { argv in
+            cargs.withUnsafeBytes { raw in
+                let argv = raw.baseAddress!.assumingMemoryBound(
+                    to: (UnsafeMutablePointer<CChar>?).self,
+                )
                 if let env = cenv {
-                    env.withUnsafeBufferPointer { envp in
-                        _ = execve(path, argv.baseAddress, envp.baseAddress)
+                    env.withUnsafeBytes { envRaw in
+                        let envp = envRaw.baseAddress!.assumingMemoryBound(
+                            to: (UnsafeMutablePointer<CChar>?).self,
+                        )
+                        _ = execve(path, argv, envp)
                     }
                 } else {
-                    _ = execv(path, argv.baseAddress)
+                    _ = execv(path, argv)
                 }
             }
         }

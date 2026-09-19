@@ -68,7 +68,7 @@ public enum DeviceLoginAccount: Sendable {
     public static func systemUIDFloor(platform: PlatformKind) -> UInt32 {
         switch platform {
         case .macOS: return 500
-        case .linux: return 1000
+        case .linux: return 1_000
         }
     }
 

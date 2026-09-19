@@ -56,7 +56,7 @@ struct DeviceLoginAccountTests {
         )
         #expect(
             DeviceLoginAccount.isOffered(
-                name: "ubuntu", uid: 1000, shell: "/bin/bash", euid: 0, platform: .linux,
+                name: "ubuntu", uid: 1_000, shell: "/bin/bash", euid: 0, platform: .linux,
             ),
         )
     }
