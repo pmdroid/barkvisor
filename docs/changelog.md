@@ -4,6 +4,8 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+- Windows zip packages compile.
+
 ## 1.0.0-alpha.12 — 2026-09-19
 
 - Home has a public 800×480 display page at `/display/home` for a TRMNL screenshot.
