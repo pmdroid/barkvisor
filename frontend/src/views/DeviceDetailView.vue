@@ -36,6 +36,7 @@ import {
   doctorBannerTitle,
   doctorFailures,
   doctorFailuresFromReport,
+  doctorHostBridgeSetup,
   reachabilityHint,
   reachabilityLabel,
 } from '../utils/homeDeviceHealth'
@@ -117,6 +118,7 @@ const missingDeps = computed(() => {
   if (deviceDoctor.value) return doctorFailuresFromReport(deviceDoctor.value)
   return doctorFailures(device.value)
 })
+const bridgeSetup = computed(() => doctorHostBridgeSetup(deviceDoctor.value))
 
 function formatUptime(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return ''
@@ -706,6 +708,18 @@ async function removeDevice() {
           </div>
           <div class="ops-banner-sub">{{ doctorBannerSub(missingDeps) }}</div>
         </div>
+      </div>
+
+      <div v-if="bridgeSetup" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+        <div>
+          <div class="ops-banner-title">
+            <span class="ops-dot warn pulse"></span>
+            Bridged networking is not ready
+          </div>
+          <div class="ops-banner-sub">{{ bridgeSetup.detail }}</div>
+        </div>
+        <button type="button" class="mini go" @click="router.push('/networks')">Set up Bridge</button>
       </div>
 
       <div v-if="failedVms.length" class="ops-banner">
