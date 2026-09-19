@@ -64,6 +64,12 @@ try {
   await page.waitForSelector('.ops-toolbar', { timeout: 15000 })
   await page.getByRole('button', { name: 'Terminal' }).click()
   await page.waitForSelector('.terminal-modal', { timeout: 10000 })
+  const box = await page.locator('.terminal-modal').boundingBox()
+  const vp = page.viewportSize()
+  if (!box || !vp || box.width < vp.width - 24 || box.height < vp.height - 24) {
+    console.error(`terminal-modal too small: ${box?.width}x${box?.height} viewport ${vp?.width}x${vp?.height}`)
+    process.exit(1)
+  }
   pickerShot = `${dir}/picker.png`
   await redactPage(page)
   await page.screenshot({ path: pickerShot, fullPage: true })

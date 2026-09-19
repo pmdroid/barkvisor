@@ -1191,12 +1191,15 @@ async function removeDevice() {
   margin-bottom: 14px;
 }
 .terminal-overlay {
-  padding: 16px;
+  padding: 8px;
+  align-items: stretch;
+  justify-content: stretch;
 }
 .terminal-modal {
-  width: calc(100vw - 32px);
-  height: calc(100vh - 32px);
+  width: 100%;
+  height: 100%;
   max-width: none;
+  max-height: none;
 }
 .terminal-modal-head {
   display: flex;
@@ -1298,9 +1301,14 @@ async function removeDevice() {
 }
 @media (max-width: 768px) {
   .stat-grid { grid-template-columns: 1fr; }
+  .terminal-overlay {
+    padding: 0;
+  }
   .terminal-modal {
     width: 100%;
     height: 100dvh;
+    max-height: none;
+    border-radius: 0;
   }
   .terminal-modal-head {
     flex-direction: column;
