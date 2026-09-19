@@ -349,9 +349,11 @@ struct TerminalController: RouteCollection {
     #endif
 }
 
-private struct TerminalSessionKey: StorageKey {
-    typealias Value = TerminalController.TerminalSession
-}
+#if !os(Windows)
+    private struct TerminalSessionKey: StorageKey {
+        typealias Value = TerminalController.TerminalSession
+    }
+#endif
 
 struct WorkloadContainerResponse: Content {
     let service: String
