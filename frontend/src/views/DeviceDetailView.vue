@@ -314,19 +314,19 @@ async function refreshGpuDevices(row: HomeDeviceHealthSnapshot | null = device.v
   }
   const host = row.hostId
   try {
-    const [{ data: devices }, share] = await Promise.all([
-      api.get<HostGPUDevice[]>(deviceGpuDevicesPath(row)),
-      api.get<HostGPUShareDevice[]>(deviceGpuSharePath(row)).then(
-        ({ data }) => (Array.isArray(data) ? data : []),
-        () => [] as HostGPUShareDevice[],
-      ),
-    ])
+    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(row))
     if (hostId.value !== host) return
-    gpuDevices.value = Array.isArray(devices) ? devices : []
-    gpuShare.value = share
+    gpuDevices.value = Array.isArray(data) ? data : []
   } catch {
     if (hostId.value !== host) return
     gpuDevices.value = []
+  }
+  try {
+    const { data } = await api.get<HostGPUShareDevice[]>(deviceGpuSharePath(row))
+    if (hostId.value !== host) return
+    gpuShare.value = Array.isArray(data) ? data : []
+  } catch {
+    if (hostId.value !== host) return
     gpuShare.value = []
   }
 }
