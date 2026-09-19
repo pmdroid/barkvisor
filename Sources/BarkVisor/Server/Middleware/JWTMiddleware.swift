@@ -61,6 +61,12 @@ extension Vapor.Request {
 
 struct JWTAuthMiddleware: AsyncMiddleware {
     let keys: JWTKeyCollection
+    let ticketStore: WebSocketTicketStore
+
+    init(keys: JWTKeyCollection, ticketStore: WebSocketTicketStore = .shared) {
+        self.keys = keys
+        self.ticketStore = ticketStore
+    }
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
@@ -255,7 +261,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         else {
             throw Abort(.unauthorized, reason: "Missing vm")
         }
-        guard let userInfo = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID)
+        guard let userInfo = await ticketStore.validateTicket(ticket, forVMID: vmID)
         else {
             throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
         }
@@ -273,7 +279,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         ticket: String,
         chainingTo next: any AsyncResponder,
     ) async throws -> Vapor.Response {
-        guard let userInfo = await WebSocketTicketStore.shared.validateTicket(ticket) else {
+        guard let userInfo = await ticketStore.validateTicket(ticket) else {
             throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
         }
         try await attach(
@@ -303,7 +309,8 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             }
             return try await next.respond(to: request)
         }
-        return try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
+        return try await HomeTunnelAuthMiddleware(keys: keys, ticketStore: ticketStore)
+            .respond(to: request, chainingTo: next)
     }
 
     private func authenticateJWT(token: String, request: Vapor.Request) async throws
@@ -376,6 +383,12 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 /// Device `?ticket=` / noVNC `?token=` are passed through unspent.
 struct HomeTunnelAuthMiddleware: AsyncMiddleware {
     let keys: JWTKeyCollection
+    let ticketStore: WebSocketTicketStore
+
+    init(keys: JWTKeyCollection, ticketStore: WebSocketTicketStore = .shared) {
+        self.keys = keys
+        self.ticketStore = ticketStore
+    }
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
@@ -412,7 +425,7 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             guard let vmID = request.parameters.get("vmId"), !vmID.isEmpty else {
                 throw Abort(.unauthorized, reason: "Missing vm")
             }
-            guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session, forVMID: vmID)
+            guard let userInfo = await ticketStore.validateTicket(session, forVMID: vmID)
             else {
                 throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
             }

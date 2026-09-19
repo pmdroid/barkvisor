@@ -14,6 +14,8 @@ private struct OKResponder: AsyncResponder {
 
 @Suite("JWTAuthMiddleware ticket scope (PAS-280)", .serialized)
 struct JWTAuthMiddlewareTests {
+    private let ticketStore = TicketTestClock().makeStore()
+
     private func makeApp() async throws -> Application {
         var env = Environment(name: "testing", arguments: ["barkvisor-test"])
         env.commandInput = CommandInput(arguments: ["barkvisor-test"])
@@ -42,7 +44,7 @@ struct JWTAuthMiddlewareTests {
     }
 
     private func mintTicket(vmID: String? = "vm-1") async -> String {
-        await WebSocketTicketStore.shared.createTicket(
+        await ticketStore.createTicket(
             forUserID: "user-1", username: "admin", targetVMID: vmID,
         )
     }
@@ -50,7 +52,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `control plane ignores unscoped ticket and does not spend it`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket()
         do {
             let req = request(app, path: "/api/vms/vm-1/start?ticket=\(ticket)")
@@ -60,7 +62,7 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-1")
+            let leftover = await ticketStore.validateTicket(ticket, forVMID: "vm-1")
             #expect(leftover?.userID == "user-1", "control-plane ?ticket= must not spend the ticket")
             await stop(app)
         } catch {
@@ -72,7 +74,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `stray ticket on control plane still allows Bearer JWT`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket()
         let payload = UserPayload(
             sub: .init(value: "user-1"),
@@ -86,7 +88,7 @@ struct JWTAuthMiddlewareTests {
             let response = try await jwt.respond(to: req, chainingTo: OKResponder())
             #expect(response.status == .ok)
             #expect(req.authenticatedUser?.authMethod == "jwt")
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-1")
+            let leftover = await ticketStore.validateTicket(ticket, forVMID: "vm-1")
             #expect(leftover != nil)
             await stop(app)
         } catch {
@@ -98,7 +100,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `go path accepts session cookie and rejects anonymous`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let payload = UserPayload(
             sub: .init(value: "user-1"),
             username: "admin",
@@ -131,7 +133,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `owner device state SSE spends ticket for that Workload`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: "vm-state")
         do {
             let req = request(app, path: "/api/vms/vm-state/state?ticket=\(ticket)")
@@ -139,7 +141,7 @@ struct JWTAuthMiddlewareTests {
             #expect(response.status == .ok)
             #expect(req.authenticatedUser?.authMethod == "ticket")
             #expect(req.authenticatedUser?.userId == "user-1")
-            let spent = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-state")
+            let spent = await ticketStore.validateTicket(ticket, forVMID: "vm-state")
             #expect(spent == nil)
             await stop(app)
         } catch {
@@ -151,7 +153,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `metrics stream ticket is Workload scoped`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: "vm-a")
         do {
             let req = request(app, path: "/api/vms/vm-b/metrics/stream?ticket=\(ticket)")
@@ -161,7 +163,7 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-a")
+            let leftover = await ticketStore.validateTicket(ticket, forVMID: "vm-a")
             #expect(leftover == nil, "wrong-Workload spend still consumes the ticket")
             await stop(app)
         } catch {
@@ -173,7 +175,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `logs SSE rejects a Workload scoped ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: "vm-1")
         do {
             let req = request(app, path: "/api/logs/stream?ticket=\(ticket)")
@@ -183,7 +185,7 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-1")
+            let leftover = await ticketStore.validateTicket(ticket, forVMID: "vm-1")
             #expect(leftover == nil, "unscoped spend still consumes a VM-scoped ticket")
             await stop(app)
         } catch {
@@ -195,7 +197,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `logs SSE spends unscoped ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: nil)
         do {
             let req = request(app, path: "/api/logs/stream?ticket=\(ticket)")
@@ -212,7 +214,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `diagnostics bundle download does not spend a Device ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: nil)
         do {
             let req = request(
@@ -225,7 +227,7 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket)
+            let leftover = await ticketStore.validateTicket(ticket)
             #expect(leftover?.userID == "user-1", "diagnostics download must not spend ?ticket=")
             await stop(app)
         } catch {
@@ -237,7 +239,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `stray ticket on diagnostics download still allows Bearer JWT`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket(vmID: nil)
         let payload = UserPayload(
             sub: .init(value: "user-1"),
@@ -254,7 +256,7 @@ struct JWTAuthMiddlewareTests {
             let response = try await jwt.respond(to: req, chainingTo: OKResponder())
             #expect(response.status == .ok)
             #expect(req.authenticatedUser?.authMethod == "jwt")
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket)
+            let leftover = await ticketStore.validateTicket(ticket)
             #expect(leftover != nil)
             await stop(app)
         } catch {
@@ -266,7 +268,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `home tunnel does not spend Device ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket()
         do {
             let req = request(
@@ -279,7 +281,7 @@ struct JWTAuthMiddlewareTests {
             } catch let error as AbortError {
                 #expect(error.status == .unauthorized)
             }
-            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-1")
+            let leftover = await ticketStore.validateTicket(ticket, forVMID: "vm-1")
             #expect(leftover != nil)
             await stop(app)
         } catch {
@@ -291,7 +293,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `home tunnel session query accepts only single-use tickets`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let ticket = await mintTicket()
         let session = await mintTicket(vmID: "vm-1")
         do {
@@ -303,11 +305,11 @@ struct JWTAuthMiddlewareTests {
             let response = try await jwt.respond(to: req, chainingTo: OKResponder())
             #expect(response.status == .ok)
             #expect(req.authenticatedUser?.authMethod == "ticket")
-            let leftoverDevice = await WebSocketTicketStore.shared.validateTicket(
+            let leftoverDevice = await ticketStore.validateTicket(
                 ticket, forVMID: "vm-1",
             )
             #expect(leftoverDevice != nil)
-            let spentSession = await WebSocketTicketStore.shared.validateTicket(
+            let spentSession = await ticketStore.validateTicket(
                 session, forVMID: "vm-1",
             )
             #expect(spentSession == nil)
@@ -321,7 +323,7 @@ struct JWTAuthMiddlewareTests {
     @Test func `home tunnel rejects a raw JWT as the session query value`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
-        let jwt = JWTAuthMiddleware(keys: keys)
+        let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
         let payload = UserPayload(
             sub: .init(value: "user-1"),
             username: "admin",
@@ -482,7 +484,7 @@ struct JWTAuthMiddlewareTests {
             app.database = database
 
             let keys = await makeKeys()
-            let jwt = JWTAuthMiddleware(keys: keys)
+            let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
             let payload = UserPayload(
                 sub: .init(value: "reader-1"),
                 username: "reader",
@@ -597,7 +599,7 @@ struct JWTAuthMiddlewareTests {
             app.database = database
 
             let keys = await makeKeys()
-            let jwt = JWTAuthMiddleware(keys: keys)
+            let jwt = JWTAuthMiddleware(keys: keys, ticketStore: ticketStore)
             let payload = UserPayload(
                 sub: .init(value: "admin-1"),
                 username: "admin",
