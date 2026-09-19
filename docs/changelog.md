@@ -4,6 +4,8 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+- The Linux `.deb` installs on Ubuntu 26.04, where the distro renamed `libxml2` to `libxml2-16`.
+
 ## 1.0.0-alpha.9 — 2026-09-16
 
 - Devices and other Home pages load when sign-in is off, even if a paired Device is unreachable. Alpha.8 could sit on an empty Devices list because health waited on that Device until the browser gave up.

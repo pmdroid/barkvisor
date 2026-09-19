@@ -101,6 +101,19 @@ struct RootDaemonPackagingTests {
         #expect(prerm.contains("systemctl stop barkvisor.service"))
     }
 
+    @Test func `deb depends on libxml2 or libxml2-16`() throws {
+        let control = try read("packaging/linux/debian/control.in")
+        #expect(control.contains("libxml2 | libxml2-16"))
+        #expect(!control.contains(", libxml2,"))
+
+        let postinst = try read("packaging/linux/debian/postinst")
+        #expect(postinst.contains("libxml2.so.2"))
+        #expect(postinst.contains("libxml2.so.16"))
+        let shim = try #require(postinst.range(of: "libxml2.so.2"))
+        let restart = try #require(postinst.range(of: "try-restart barkvisor.service"))
+        #expect(shim.lowerBound < restart.lowerBound)
+    }
+
     @Test func `linux packaging installs vfio udev rule and drop-user groups`() throws {
         let rules = try read("packaging/linux/udev/99-barkvisor-vfio.rules")
         #expect(rules == "SUBSYSTEM==\"vfio\", GROUP=\"kvm\", MODE=\"0660\"\n")
