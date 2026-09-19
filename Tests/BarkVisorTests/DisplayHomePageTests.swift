@@ -51,20 +51,56 @@ struct DisplayHomePageTests {
             timeZone: TimeZone(secondsFromGMT: 0)!,
         )
         #expect(html.contains("MacMini"))
-        #expect(html.contains("agentbox"))
+        #expect(!html.contains("agentbox"))
         #expect(html.contains("goldbox"))
-        #expect(html.contains("Unreachable"))
+        #expect(!html.contains("Unreachable"))
+        #expect(html.contains("2/3 up"))
         #expect(html.contains("GPU"))
         #expect(html.contains("72%"))
         #expect(html.contains("CPU 52°C"))
         #expect(html.contains("GPU 67°C"))
         #expect(html.contains("2 workloads"))
         #expect(html.contains("1 failed"))
-        #expect(html.contains("card down"))
+        #expect(!html.contains("card down"))
         let from = try #require(html.range(of: "MacMini"))
-        let to = try #require(html.range(of: "agentbox"))
+        let to = try #require(html.range(of: "goldbox"))
         let miniSlice = html[from.lowerBound..<to.lowerBound]
         #expect(!miniSlice.contains("GPU"))
+    }
+
+    @Test func `five reachable devices wrap two columns`() {
+        let names = ["MacMini", "goldbox", "steamdeck", "studio", "nas"]
+        let listed = HomeDeviceList(devices: names.enumerated().map { index, name in
+            HomeDevice(
+                hostId: name,
+                role: index == 0 ? "self" : "member",
+                displayName: name,
+            )
+        })
+        var members: [String: HomeDeviceProbeOutcome] = [:]
+        for name in names.dropFirst() {
+            members[name] = .ok(
+                HomeDeviceLiveFacts(
+                    displayName: name,
+                    platform: HomeDevicePlatformSummary(os: "Linux", arch: "arm64"),
+                    resources: HomeDeviceResourceSummary(cpuLoadPercent: 10),
+                ),
+            )
+        }
+        let report = HomeDeviceHealthAggregator.report(
+            listed: listed,
+            local: HomeDeviceLiveFacts(
+                displayName: "MacMini",
+                platform: HomeDevicePlatformSummary(os: "macOS", arch: "arm64"),
+                resources: HomeDeviceResourceSummary(cpuLoadPercent: 8),
+            ),
+            members: members,
+        )
+        let html = DisplayHomePage.html(report: report)
+        #expect(html.contains("quad n5 tight"))
+        for name in names {
+            #expect(html.contains(name))
+        }
     }
 
     @Test func `old resource json without gpu stays nil not zero`() throws {

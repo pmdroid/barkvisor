@@ -10,7 +10,10 @@ public enum DisplayHomePage {
         timeZone: TimeZone = .current,
     ) -> String {
         let clock = clockString(now, timeZone: timeZone)
-        let cards = report.devices.map(cardHTML).joined()
+        let shown = boardDevices(report)
+        let n = shown.count
+        let tight = n >= 5 ? " tight" : ""
+        let cards = shown.map(cardHTML).joined()
         return """
         <!DOCTYPE html>
         <html lang="en">
@@ -26,7 +29,11 @@ public enum DisplayHomePage {
         .head{font-size:18px;height:28px;border-bottom:3px solid #000;padding-bottom:6px;}
         .head .meta{font-size:14px;font-weight:500;}
         .foot{font-size:11px;height:20px;border-top:2px solid #000;padding-top:6px;letter-spacing:.08em;}
-        .quad{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-height:0;}
+        .quad{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px;min-height:0;}
+        .quad.n1{grid-template-columns:1fr;}
+        .quad.tight .name{font-size:16px;}
+        .quad.tight .plat{margin:2px 0 4px;}
+        .quad.tight .card{padding:6px 8px 6px;}
         .card{border:3px solid #000;padding:10px 12px 8px;display:flex;flex-direction:column;min-width:0;min-height:0;}
         .card.down{background:#000;color:#fff;}
         .name{font-size:22px;font-weight:700;line-height:1;}
@@ -43,12 +50,16 @@ public enum DisplayHomePage {
         <body>
         <div class="board">
         <header class="head"><span>Home</span><span class="meta">\(report.totals.reachable)/\(report.totals.devices) up · \(escape(clock))</span></header>
-        <div class="quad">\(cards)</div>
+        <div class="quad n\(n)\(tight)">\(cards)</div>
         <footer class="foot"><span>Fetched \(escape(clock))</span><span>BarkVisor</span></footer>
         </div>
         </body>
         </html>
         """
+    }
+
+    static func boardDevices(_ report: HomeDeviceHealthReport) -> [HomeDeviceHealthSnapshot] {
+        report.devices.filter { $0.reachability == HomeDeviceHealthAggregator.ok }
     }
 
     static func cardHTML(_ device: HomeDeviceHealthSnapshot) -> String {
