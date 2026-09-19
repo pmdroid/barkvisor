@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatCores, formatLogClock, formatMemoryMB, formatPortForwards, formatStorageSize, formatTemperatureC, formatVolumeUsed, parseLogDate } from './format'
+import { formatCores, formatHostSensorTemps, formatLogClock, formatMemoryMB, formatPortForwards, formatStorageSize, formatTemperatureC, formatVolumeUsed, parseLogDate } from './format'
 
 describe('formatTemperatureC', () => {
   test('missing sensors are not rendered as 0°C', () => {
@@ -12,6 +12,26 @@ describe('formatTemperatureC', () => {
     expect(formatTemperatureC(0)).toBe('0°C')
     expect(formatTemperatureC(47.6)).toBe('48°C')
     expect(formatTemperatureC(31)).toBe('31°C')
+  })
+})
+
+describe('formatHostSensorTemps', () => {
+  test('split sensors win over the legacy single reading', () => {
+    expect(formatHostSensorTemps({
+      temperatureC: 40,
+      cpuTemperatureC: 41,
+      gpuTemperatureC: 67,
+      diskTemperatureC: null,
+    })).toEqual({ cpu: '41°C', gpu: '67°C', disk: null, legacy: null })
+  })
+
+  test('old agents keep a single temperature', () => {
+    expect(formatHostSensorTemps({ temperatureC: 43.1 })).toEqual({
+      cpu: null,
+      gpu: null,
+      disk: null,
+      legacy: '43°C',
+    })
   })
 })
 

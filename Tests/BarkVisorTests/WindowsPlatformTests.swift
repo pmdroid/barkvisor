@@ -356,9 +356,11 @@ struct WindowsPlatformTests {
         #endif
     }
 
-    @Test func `gpu utilization is nil on windows`() {
+    @Test func `gpu utilization is nil on windows without nvidia smi`() {
         #if os(Windows)
-            #expect(PlatformGPU.utilizationPercent() == nil)
+            if NVIDIAMetrics.executable() == nil {
+                #expect(PlatformGPU.utilizationPercent() == nil)
+            }
         #endif
     }
 
@@ -435,7 +437,9 @@ struct WindowsPlatformTests {
             #expect(PlatformHost.memoryUsedMB >= 0)
             #expect(PlatformHost.memoryUsedMB <= PlatformHost.physicalMemoryMB)
             #expect(PlatformHost.temperatureCelsius == nil)
-            #expect(PlatformGPU.utilizationPercent() == nil)
+            if NVIDIAMetrics.executable() == nil {
+                #expect(PlatformGPU.utilizationPercent() == nil)
+            }
             let ifaces = HostInfoService.listInterfaces()
             #expect(ifaces.contains { $0.ipAddress == "127.0.0.1" })
             #expect(HostInfoService.interfaceExists("Loopback"))

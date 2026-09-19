@@ -39,6 +39,9 @@ public struct HostMetrics: Sendable, Equatable {
     public let memoryUsedMB: Int
     public let storage: [StorageEntry]
     public let temperatureC: Double?
+    public let cpuTemperatureC: Double?
+    public let gpuTemperatureC: Double?
+    public let diskTemperatureC: Double?
     public let uptimeSeconds: Int
     public let agentHealthy: Bool
 
@@ -52,6 +55,9 @@ public struct HostMetrics: Sendable, Equatable {
         temperatureC: Double?,
         uptimeSeconds: Int,
         agentHealthy: Bool,
+        cpuTemperatureC: Double? = nil,
+        gpuTemperatureC: Double? = nil,
+        diskTemperatureC: Double? = nil,
     ) {
         self.hostId = hostId
         self.collectedAt = collectedAt
@@ -60,6 +66,9 @@ public struct HostMetrics: Sendable, Equatable {
         self.memoryUsedMB = memoryUsedMB
         self.storage = storage
         self.temperatureC = temperatureC
+        self.cpuTemperatureC = cpuTemperatureC
+        self.gpuTemperatureC = gpuTemperatureC
+        self.diskTemperatureC = diskTemperatureC
         self.uptimeSeconds = uptimeSeconds
         self.agentHealthy = agentHealthy
     }
@@ -89,6 +98,9 @@ public struct HostMetrics: Sendable, Equatable {
             temperatureC: capture.temperatureC,
             uptimeSeconds: capture.uptimeSeconds,
             agentHealthy: capture.agentHealthy,
+            cpuTemperatureC: capture.cpuTemperatureC,
+            gpuTemperatureC: capture.gpuTemperatureC,
+            diskTemperatureC: capture.diskTemperatureC,
         )
     }
 
@@ -110,11 +122,24 @@ public struct HostMetrics: Sendable, Equatable {
 /// Live / injected probes that are not part of `HostInventory.resources`.
 public struct HostMetricsCapture: Sendable, Equatable {
     public let temperatureC: Double?
+    public let cpuTemperatureC: Double?
+    public let gpuTemperatureC: Double?
+    public let diskTemperatureC: Double?
     public let uptimeSeconds: Int
     public let agentHealthy: Bool
 
-    public init(temperatureC: Double?, uptimeSeconds: Int, agentHealthy: Bool = true) {
+    public init(
+        temperatureC: Double?,
+        uptimeSeconds: Int,
+        agentHealthy: Bool = true,
+        cpuTemperatureC: Double? = nil,
+        gpuTemperatureC: Double? = nil,
+        diskTemperatureC: Double? = nil,
+    ) {
         self.temperatureC = temperatureC
+        self.cpuTemperatureC = cpuTemperatureC
+        self.gpuTemperatureC = gpuTemperatureC
+        self.diskTemperatureC = diskTemperatureC
         self.uptimeSeconds = uptimeSeconds
         self.agentHealthy = agentHealthy
     }
@@ -123,12 +148,16 @@ public struct HostMetricsCapture: Sendable, Equatable {
     /// for this colocated process (Wave 0 has no remote agent heartbeat).
     /// Linux thermal sysfs is cached for `HostInventoryService.metricsSliceTTL`.
     public static func live(now: Date = Date()) -> HostMetricsCapture {
-        HostMetricsCapture(
-            temperatureC: temperatureCache.reading(now: now, ttl: HostInventoryService.metricsSliceTTL) {
-                PlatformHost.temperatureCelsius
-            },
+        let temps = temperatureCache.reading(now: now, ttl: HostInventoryService.metricsSliceTTL) {
+            PlatformHost.temperatures
+        }
+        return HostMetricsCapture(
+            temperatureC: temps.cpuC,
             uptimeSeconds: Int(ProcessInfo.processInfo.systemUptime.rounded(.down)),
             agentHealthy: true,
+            cpuTemperatureC: temps.cpuC,
+            gpuTemperatureC: temps.gpuC,
+            diskTemperatureC: temps.diskC,
         )
     }
 
@@ -142,9 +171,13 @@ private let temperatureCache = TemperatureCache()
 /// Poll-interval cache for Linux `/sys/class/thermal` (nil on macOS).
 private final class TemperatureCache: @unchecked Sendable {
     private let lock = NSLock()
-    private var cached: (value: Double?, expiresAt: Date)?
+    private var cached: (value: HostSensorTemperatures, expiresAt: Date)?
 
-    func reading(now: Date, ttl: TimeInterval, load: () -> Double?) -> Double? {
+    func reading(
+        now: Date,
+        ttl: TimeInterval,
+        load: () -> HostSensorTemperatures,
+    ) -> HostSensorTemperatures {
         lock.lock()
         if let cached, cached.expiresAt > now {
             let value = cached.value
@@ -175,8 +208,27 @@ extension HostMetrics: Codable {
         case memoryUsedMB
         case storage
         case temperatureC
+        case cpuTemperatureC
+        case gpuTemperatureC
+        case diskTemperatureC
         case uptimeSeconds
         case agentHealthy
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hostId = try container.decode(String.self, forKey: .hostId)
+        collectedAt = try container.decode(String.self, forKey: .collectedAt)
+        cpuLoadPercent = try container.decode(Double.self, forKey: .cpuLoadPercent)
+        memoryTotalMB = try container.decode(Int.self, forKey: .memoryTotalMB)
+        memoryUsedMB = try container.decode(Int.self, forKey: .memoryUsedMB)
+        storage = try container.decode([StorageEntry].self, forKey: .storage)
+        temperatureC = try container.decodeIfPresent(Double.self, forKey: .temperatureC)
+        cpuTemperatureC = try container.decodeIfPresent(Double.self, forKey: .cpuTemperatureC)
+        gpuTemperatureC = try container.decodeIfPresent(Double.self, forKey: .gpuTemperatureC)
+        diskTemperatureC = try container.decodeIfPresent(Double.self, forKey: .diskTemperatureC)
+        uptimeSeconds = try container.decode(Int.self, forKey: .uptimeSeconds)
+        agentHealthy = try container.decode(Bool.self, forKey: .agentHealthy)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -193,6 +245,21 @@ extension HostMetrics: Codable {
             try container.encode(temperatureC, forKey: .temperatureC)
         } else {
             try container.encodeNil(forKey: .temperatureC)
+        }
+        if let cpuTemperatureC {
+            try container.encode(cpuTemperatureC, forKey: .cpuTemperatureC)
+        } else {
+            try container.encodeNil(forKey: .cpuTemperatureC)
+        }
+        if let gpuTemperatureC {
+            try container.encode(gpuTemperatureC, forKey: .gpuTemperatureC)
+        } else {
+            try container.encodeNil(forKey: .gpuTemperatureC)
+        }
+        if let diskTemperatureC {
+            try container.encode(diskTemperatureC, forKey: .diskTemperatureC)
+        } else {
+            try container.encodeNil(forKey: .diskTemperatureC)
         }
         try container.encode(uptimeSeconds, forKey: .uptimeSeconds)
         try container.encode(agentHealthy, forKey: .agentHealthy)

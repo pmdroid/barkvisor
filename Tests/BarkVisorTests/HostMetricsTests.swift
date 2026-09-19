@@ -87,6 +87,47 @@ struct HostMetricsTests {
         #expect(PlatformHost.parseThermalMilliCelsius("not-a-number") == nil)
     }
 
+    @Test func `encodes split cpu gpu disk temperatures as json null not zero`() throws {
+        let metrics = HostMetrics.from(
+            inventory: inventory(),
+            capture: HostMetricsCapture(
+                temperatureC: nil,
+                uptimeSeconds: 1,
+                gpuTemperatureC: 61.2,
+                diskTemperatureC: 34,
+            ),
+        )
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(metrics)) as? [String: Any]
+        #expect(object?["temperatureC"] is NSNull)
+        #expect(object?["cpuTemperatureC"] is NSNull)
+        #expect(object?["gpuTemperatureC"] as? Double == 61.2)
+        #expect(object?["diskTemperatureC"] as? Double == 34)
+        let decoded = try JSONDecoder().decode(HostMetrics.self, from: JSONEncoder().encode(metrics))
+        #expect(decoded.cpuTemperatureC == nil)
+        #expect(decoded.gpuTemperatureC == 61.2)
+        #expect(decoded.diskTemperatureC == 34)
+    }
+
+    @Test func `hwmon picker uses nvme composite and nvidia die`() {
+        let chips: [(name: String, samples: [(label: String, milli: String)])] = [
+            (name: "coretemp", samples: [("Package id 0", "41000")]),
+            (name: "nvidia", samples: [("GPU", "56000")]),
+            (
+                name: "nvme",
+                samples: [
+                    ("Composite", "39000"),
+                    ("Sensor 1", "51000"),
+                ],
+            ),
+            (name: "amdgpu", samples: [("edge", "not-a-number")]),
+        ]
+        #expect(PlatformHost.selectHwmonCelsius(chips: chips, kind: .gpu) == 56)
+        #expect(PlatformHost.selectHwmonCelsius(chips: chips, kind: .disk) == 39)
+        #expect(PlatformHost.hwmonKind("drivetemp") == .disk)
+        #expect(PlatformHost.hwmonKind("i915") == .gpu)
+        #expect(PlatformHost.pickDiskCelsius(samples: [("Sensor 1", 44), ("Composite", 33)]) == 33)
+    }
+
     @Test func `thermal zone picker prefers cpu pkg and skips bad readings`() {
         let zones: [(type: String, milli: String)] = [
             (type: "acpitz", milli: "30000"),

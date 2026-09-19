@@ -13,7 +13,7 @@ import {
 import { apiErrorMessage } from '../api/errors'
 import { saveDeviceName } from '../api/deviceName'
 import api from '../api/client'
-import type { DiskSettings, DoctorReport, HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
+import type { DiskSettings, DoctorReport, HomeDeviceHealthSnapshot, HostGPUDevice, HostGPUShareDevice, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import FolderPicker from '../components/FolderPicker.vue'
@@ -29,7 +29,7 @@ import {
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
-import { canFetchDeviceWorkloads, deviceAboutPath, deviceDiskSettingsPath, deviceDoctorPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { canFetchDeviceWorkloads, deviceAboutPath, deviceDiskSettingsPath, deviceDoctorPath, deviceGpuDevicesPath, deviceGpuSharePath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
   doctorBannerSub,
@@ -42,7 +42,8 @@ import {
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { opsStatusClass, opsStatusLabel, vmHealth } from '../utils/workloadHealth'
-import { formatCores, formatMemoryMB, formatPortForwards, formatTemperatureC, formatVolumeUsed } from '../utils/format'
+import { formatCores, formatHostSensorTemps, formatMemoryMB, formatPortForwards, formatVolumeUsed } from '../utils/format'
+import { gpuFactNames } from '../utils/gpuShare'
 import { acceleratorLabel, listBackendBadge, vmBackend } from '../utils/workloadBackend'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
@@ -88,6 +89,8 @@ const showCreate = ref(false)
 const deviceAbout = ref<SystemAbout | null>(null)
 const deviceDoctor = ref<DoctorReport | null>(null)
 const deviceStats = ref<SystemStats | null>(null)
+const gpuDevices = ref<HostGPUDevice[]>([])
+const gpuShare = ref<HostGPUShareDevice[]>([])
 const renaming = ref(false)
 const nameDraft = ref('')
 const nameSaving = ref(false)
@@ -150,7 +153,12 @@ const storageFact = computed(() => {
   if (!summary || !summary.volumeTotalBytes) return ''
   return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
 })
-const temperatureFact = computed(() => formatTemperatureC(deviceStats.value?.metrics?.temperatureC) ?? '')
+const gpuFact = computed(() => gpuFactNames(gpuDevices.value, gpuShare.value))
+const sensorTemps = computed(() => formatHostSensorTemps(deviceStats.value?.metrics))
+const cpuTempFact = computed(() => sensorTemps.value.cpu ?? '')
+const gpuTempFact = computed(() => sensorTemps.value.gpu ?? '')
+const diskTempFact = computed(() => sensorTemps.value.disk ?? '')
+const temperatureFact = computed(() => sensorTemps.value.legacy ?? '')
 const addressFact = computed(() => device.value?.agentHost || '')
 const uptimeFact = computed(() => formatUptime(deviceAbout.value?.processUptimeSeconds))
 const virtFact = computed(() => {
@@ -295,6 +303,31 @@ async function refreshDoctor(row: HomeDeviceHealthSnapshot | null = device.value
   } catch {
     if (hostId.value !== host) return
     deviceDoctor.value = null
+  }
+}
+
+async function refreshGpuDevices(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    gpuDevices.value = []
+    gpuShare.value = []
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(row))
+    if (hostId.value !== host) return
+    gpuDevices.value = Array.isArray(data) ? data : []
+  } catch {
+    if (hostId.value !== host) return
+    gpuDevices.value = []
+  }
+  try {
+    const { data } = await api.get<HostGPUShareDevice[]>(deviceGpuSharePath(row))
+    if (hostId.value !== host) return
+    gpuShare.value = Array.isArray(data) ? data : []
+  } catch {
+    if (hostId.value !== host) return
+    gpuShare.value = []
   }
 }
 
@@ -445,6 +478,7 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
   await workloads.fetchFor(row)
   await refreshAbout(row)
   await refreshDoctor(row)
+  await refreshGpuDevices(row)
   await refreshStats(row)
   await refreshHistory(row)
   if (canFetchDeviceWorkloads(row)) {
@@ -493,6 +527,8 @@ watch(hostId, () => {
   deviceAbout.value = null
   deviceDoctor.value = null
   deviceStats.value = null
+  gpuDevices.value = []
+  gpuShare.value = []
   void refresh(true)
 })
 watch(diskDirectoryDraft, (next) => {
@@ -756,6 +792,22 @@ async function removeDevice() {
           <div v-if="storageFact" class="fact">
             <span class="k">Storage</span>
             <span class="v">{{ storageFact }}</span>
+          </div>
+          <div v-if="gpuFact" class="fact">
+            <span class="k">GPU</span>
+            <span class="v">{{ gpuFact }}</span>
+          </div>
+          <div v-if="cpuTempFact" class="fact">
+            <span class="k">CPU temp</span>
+            <span class="v">{{ cpuTempFact }}</span>
+          </div>
+          <div v-if="gpuTempFact" class="fact">
+            <span class="k">GPU temp</span>
+            <span class="v">{{ gpuTempFact }}</span>
+          </div>
+          <div v-if="diskTempFact" class="fact">
+            <span class="k">Disk temp</span>
+            <span class="v">{{ diskTempFact }}</span>
           </div>
           <div v-if="temperatureFact" class="fact">
             <span class="k">Temperature</span>

@@ -8,7 +8,7 @@ import DeviceCard from '../components/DeviceCard.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDiskStore } from '../stores/disks'
-import { formatTemperatureC, formatVolumeUsed } from '../utils/format'
+import { formatHostSensorTemps, formatVolumeUsed } from '../utils/format'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const router = useRouter()
@@ -17,7 +17,16 @@ const diskStore = useDiskStore()
 const { summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
 
-const selfTempLabel = computed(() => formatTemperatureC(stats.value?.metrics?.temperatureC))
+const selfTempLabel = computed(() => {
+  const temps = formatHostSensorTemps(stats.value?.metrics)
+  const parts = [
+    temps.cpu ? `CPU ${temps.cpu}` : null,
+    temps.gpu ? `GPU ${temps.gpu}` : null,
+    temps.disk ? `Disk ${temps.disk}` : null,
+    temps.legacy,
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : null
+})
 const selfStorageLabel = computed(() => {
   const summary = storageSummary.value
   if (!summary || !summary.volumeTotalBytes) return null

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { HostGPUShareDevice } from '../api/types'
-import { defaultGPUShareIds, gpuShareOccupancy, gpuShareVisible } from './gpuShare'
+import { defaultGPUShareIds, gpuFactNames, gpuShareOccupancy, gpuShareVisible } from './gpuShare'
 
 function card(partial: Partial<HostGPUShareDevice> & Pick<HostGPUShareDevice, 'id' | 'label'>): HostGPUShareDevice {
   return {
@@ -12,6 +12,17 @@ function card(partial: Partial<HostGPUShareDevice> & Pick<HostGPUShareDevice, 'i
 }
 
 describe('gpuShare', () => {
+  test('facts keep passthrough names and fall back to share', () => {
+    expect(gpuFactNames(
+      [{ name: 'NVIDIA 2e12 (nvidia)' }],
+      [{ name: 'AMD 163f (amdgpu)' }],
+    )).toBe('NVIDIA 2e12 (nvidia), AMD 163f (amdgpu)')
+    expect(gpuFactNames([], [{ name: 'AMD 163f (amdgpu)' }])).toBe('AMD 163f (amdgpu)')
+    expect(gpuFactNames([{ name: 'AMD 163f (amdgpu)' }], [{ name: 'AMD 163f (amdgpu)' }])).toBe(
+      'AMD 163f (amdgpu)',
+    )
+  })
+
   test('macos empty inventory hides the section', () => {
     expect(gpuShareVisible([])).toBe(false)
     expect(defaultGPUShareIds([])).toEqual([])
