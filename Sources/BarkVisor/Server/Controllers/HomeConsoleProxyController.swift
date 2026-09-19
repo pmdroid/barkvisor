@@ -31,6 +31,77 @@ struct HomeConsoleProxyController {
         register(app: app, kind: .vnc)
         register(app: app, kind: .console)
         register(app: app, kind: .terminal)
+        registerSystemTerminal(app: app)
+    }
+
+    private func registerSystemTerminal(app: any RoutesBuilder) {
+        app.webSocket(
+            "api", "home", "devices", ":id", "v1", "system", "terminal",
+            shouldUpgrade: { req in
+                _ = try req.requireUser
+                try HomeConsoleProxy.requireTicket(req)
+                _ = try self.systemTerminalURL(req: req)
+                return [:]
+            },
+            onUpgrade: { req, ws in
+                Task {
+                    await self.tunnelSystemTerminal(req: req, inbound: ws)
+                }
+            },
+        )
+    }
+
+    func systemTerminalURL(req: Vapor.Request) throws -> URL {
+        let id = try req.parameters.require("id")
+        if id == hostId {
+            return try HomeDeviceProxy.systemTerminalURL(
+                HomeSystemTerminalTarget(
+                    isSelf: true,
+                    localPort: localPort,
+                    agentHost: nil,
+                    agentPort: localPort,
+                    query: req.url.query,
+                ),
+            )
+        }
+        let store = devices ?? DeviceRegistry(dataDir: dataDir)
+        let record: DeviceRecord
+        do {
+            guard let found = try store.record(forHostId: id) else {
+                throw BarkVisorError.notFound("Device not found")
+            }
+            record = found
+        } catch let error as BarkVisorError {
+            throw error
+        } catch {
+            throw Abort(
+                .serviceUnavailable,
+                reason: "Device registry is unavailable; local runtime continues",
+            )
+        }
+        guard let agentHost = record.agentHost, !agentHost.isEmpty else {
+            throw Abort(.serviceUnavailable, reason: "Device has no reachable address")
+        }
+        return try HomeDeviceProxy.systemTerminalURL(
+            HomeSystemTerminalTarget(
+                isSelf: false,
+                localPort: localPort,
+                agentHost: agentHost,
+                agentPort: record.agentPort,
+                query: req.url.query,
+            ),
+        )
+    }
+
+    private func tunnelSystemTerminal(req: Vapor.Request, inbound: WebSocket) async {
+        let url: URL
+        do {
+            url = try systemTerminalURL(req: req)
+        } catch {
+            WebSocketRelay.close(inbound)
+            return
+        }
+        await WebSocketHop.run(inbound: inbound, url: url, dialer: dialer)
     }
 
     private func register(app: any RoutesBuilder, kind: HomeConsoleKind) {

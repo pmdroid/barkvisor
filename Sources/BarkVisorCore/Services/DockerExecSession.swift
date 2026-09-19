@@ -18,6 +18,10 @@
             arguments: [String],
             cols: Int,
             rows: Int,
+            argv0: String?,
+            environment: [String]?,
+            credentials: DeviceLoginAccount.Credentials?,
+            workingDirectory: String?,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling
@@ -33,12 +37,25 @@
             arguments: [String],
             cols: Int,
             rows: Int,
+            argv0: String? = nil,
+            environment: [String]? = nil,
+            credentials: DeviceLoginAccount.Credentials? = nil,
+            workingDirectory: String? = nil,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling {
             let pty = PTYProcess()
             pty.configure(onData: onData, onExit: onExit)
-            try pty.start(executable: executable, arguments: arguments, cols: cols, rows: rows)
+            try pty.start(
+                executable: executable,
+                arguments: arguments,
+                cols: cols,
+                rows: rows,
+                argv0: argv0,
+                environment: environment,
+                credentials: credentials,
+                workingDirectory: workingDirectory,
+            )
             return pty
         }
     }
@@ -170,6 +187,10 @@
                     arguments: arguments,
                     cols: request.cols,
                     rows: request.rows,
+                    argv0: nil,
+                    environment: nil,
+                    credentials: nil,
+                    workingDirectory: nil,
                     onData: onData,
                     onExit: { [weak self] code in self?.deliverExit(code) },
                 )

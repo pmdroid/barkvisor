@@ -131,6 +131,37 @@ public enum HomeDeviceProxy {
         }
     }
 
+    public static func isSystemTerminal(components: [String]) -> Bool {
+        components == ["system", "terminal"]
+    }
+
+    public static func isSystemTerminal(apiPath: String) throws -> Bool {
+        let normalized = try normalizedAPIPath(apiPath)
+        let parts = normalized.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard parts.first == "api" else { return false }
+        return isSystemTerminal(components: Array(parts.dropFirst()))
+    }
+
+    public static func systemTerminalURL(_ target: HomeSystemTerminalTarget) throws -> URL {
+        let path = try memberAPIPath(components: ["system", "terminal"])
+        let query = forwardedConsoleQuery(target.query)
+        let http: URL
+        if target.isSelf {
+            http = try localURL(port: target.localPort, path: path, query: query)
+        } else {
+            guard let agentHost = target.agentHost, !agentHost.isEmpty else {
+                throw BarkVisorError.badRequest("Device has no reachable address")
+            }
+            http = try memberURL(
+                host: agentHost,
+                port: target.agentPort,
+                path: path,
+                query: query,
+            )
+        }
+        return try webSocketURL(from: http)
+    }
+
     public static func consoleKind(apiPath: String) throws -> HomeConsoleKind? {
         let normalized = try normalizedAPIPath(apiPath)
         let parts = normalized.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
@@ -196,6 +227,28 @@ public enum HomeConsoleKind: String, Sendable {
 }
 
 /// Where Home (or the agent hop) should open the console WebSocket.
+public struct HomeSystemTerminalTarget: Sendable {
+    public var isSelf: Bool
+    public var localPort: Int
+    public var agentHost: String?
+    public var agentPort: Int
+    public var query: String?
+
+    public init(
+        isSelf: Bool,
+        localPort: Int,
+        agentHost: String?,
+        agentPort: Int,
+        query: String?,
+    ) {
+        self.isSelf = isSelf
+        self.localPort = localPort
+        self.agentHost = agentHost
+        self.agentPort = agentPort
+        self.query = query
+    }
+}
+
 public struct HomeConsoleTarget: Sendable {
     public var isSelf: Bool
     public var localPort: Int

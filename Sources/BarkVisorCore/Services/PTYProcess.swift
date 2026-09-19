@@ -51,9 +51,20 @@
             return started && !finished
         }
 
-        /// Fork the child onto a new PTY and `execv` the given program.
         @discardableResult
-        public func start(executable: String, arguments: [String], cols: Int = 80, rows: Int = 24) throws -> pid_t {
+        public func start(
+            executable: String,
+            arguments: [String],
+            cols: Int = 80,
+            rows: Int = 24,
+            argv0: String? = nil,
+            environment: [String]? = nil,
+            credentials: DeviceLoginAccount.Credentials? = nil,
+            workingDirectory: String? = nil,
+        ) throws -> pid_t {
+            if let credentials, credentials.uid == 0 {
+                throw BarkVisorError.badRequest("Unknown or disallowed account")
+            }
             lock.lock()
             guard !started else {
                 lock.unlock()
@@ -61,13 +72,32 @@
             }
             lock.unlock()
 
-            var cargs: [UnsafeMutablePointer<CChar>?] = ([executable] + arguments).map { strdup($0) }
+            let cargs: [UnsafeMutablePointer<CChar>?] = ([argv0 ?? executable] + arguments).map { strdup($0) }
                 + [nil]
             defer { for ptr in cargs where ptr != nil {
                 free(ptr)
             } }
+            var cenv: [UnsafeMutablePointer<CChar>?]?
+            if let environment {
+                cenv = environment.map { strdup($0) } + [nil]
+            }
+            defer {
+                if let cenv {
+                    for ptr in cenv where ptr != nil {
+                        free(ptr)
+                    }
+                }
+            }
 
-            guard let forked = try PTYProcess.forkAttached(cargs: cargs, cols: cols, rows: rows) else {
+            guard let forked = PTYProcess.forkAttached(
+                executable: executable,
+                cargs: cargs,
+                cenv: cenv,
+                credentials: credentials,
+                workingDirectory: workingDirectory,
+                cols: cols,
+                rows: rows,
+            ) else {
                 let reason = String(cString: strerror(errno))
                 throw BarkVisorError.internalError("pty spawn failed: \(reason)")
             }
@@ -139,29 +169,34 @@
 
         // MARK: - Fork
 
-        /// Returns `(pid, masterFd)` in the parent; the child only makes
-        /// async-signal-safe syscalls before `execv` and never returns.
         private static func forkAttached(
-            cargs: [UnsafeMutablePointer<CChar>?], cols: Int, rows: Int,
+            executable: String,
+            cargs: [UnsafeMutablePointer<CChar>?],
+            cenv: [UnsafeMutablePointer<CChar>?]?,
+            credentials: DeviceLoginAccount.Credentials?,
+            workingDirectory: String?,
+            cols: Int,
+            rows: Int,
         ) -> (pid: pid_t, master: Int32)? {
             var ws = winsize(
                 ws_row: UInt16(max(1, min(rows, 9_999))),
                 ws_col: UInt16(max(1, min(cols, 9_999))),
                 ws_xpixel: 0, ws_ypixel: 0,
             )
+            let path = strdup(executable)
+            guard let path else { return nil }
+            let cwd = workingDirectory.flatMap { strdup($0) }
             #if os(macOS)
                 var master: Int32 = 0
                 let pid: pid_t = forkpty(&master, nil, nil, &ws)
                 if pid == 0 {
-                    let path = UnsafePointer(cargs[0]!)
-                    cargs.withUnsafeBytes { raw in
-                        execv(
-                            path,
-                            raw.baseAddress!.assumingMemoryBound(to: (UnsafeMutablePointer<CChar>?).self),
-                        )
-                    }
+                    if let credentials, !dropInChild(credentials) { _exit(127) }
+                    if let cwd { _ = chdir(cwd) }
+                    execChild(path: path, cargs: cargs, cenv: cenv)
                     _exit(127)
                 }
+                if let cwd { free(cwd) }
+                free(path)
                 guard pid > 0 else { return nil }
                 return (pid, master)
             #elseif os(Linux)
@@ -177,15 +212,13 @@
                     _ = dup2(slave, 2)
                     if master >= 0 { close(master) }
                     if slave >= 0 { close(slave) }
-                    let path = UnsafePointer(cargs[0]!)
-                    cargs.withUnsafeBytes { raw in
-                        execv(
-                            path,
-                            raw.baseAddress!.assumingMemoryBound(to: (UnsafeMutablePointer<CChar>?).self),
-                        )
-                    }
+                    if let credentials, !dropInChild(credentials) { _exit(127) }
+                    if let cwd { _ = chdir(cwd) }
+                    execChild(path: path, cargs: cargs, cenv: cenv)
                     _exit(127)
                 }
+                if let cwd { free(cwd) }
+                free(path)
                 close(slave)
                 guard pid > 0 else {
                     close(master)
@@ -193,6 +226,43 @@
                 }
                 return (pid, master)
             #endif
+        }
+
+        private static func dropInChild(_ credentials: DeviceLoginAccount.Credentials) -> Bool {
+            var gids = credentials.groups.map { gid_t($0) }
+            let groupOK: Bool = gids.withUnsafeMutableBufferPointer { buf in
+                #if os(macOS)
+                    setgroups(Int32(buf.count), buf.baseAddress) == 0
+                #else
+                    setgroups(buf.count, buf.baseAddress) == 0
+                #endif
+            }
+            guard groupOK else { return false }
+            guard setgid(gid_t(credentials.gid)) == 0 else { return false }
+            guard setuid(uid_t(credentials.uid)) == 0 else { return false }
+            return true
+        }
+
+        private static func execChild(
+            path: UnsafeMutablePointer<CChar>,
+            cargs: [UnsafeMutablePointer<CChar>?],
+            cenv: [UnsafeMutablePointer<CChar>?]?,
+        ) {
+            cargs.withUnsafeBytes { raw in
+                let argv = raw.baseAddress!.assumingMemoryBound(
+                    to: (UnsafeMutablePointer<CChar>?).self,
+                )
+                if let env = cenv {
+                    env.withUnsafeBytes { envRaw in
+                        let envp = envRaw.baseAddress!.assumingMemoryBound(
+                            to: (UnsafeMutablePointer<CChar>?).self,
+                        )
+                        _ = execve(path, argv, envp)
+                    }
+                } else {
+                    _ = execv(path, argv)
+                }
+            }
         }
 
         // MARK: - Loops

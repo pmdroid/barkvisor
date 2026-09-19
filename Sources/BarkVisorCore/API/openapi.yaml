@@ -1265,6 +1265,37 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/users:
+    get:
+      tags: [evolving]
+      operationId: listDeviceLoginUsers
+      x-barkvisor-stability: evolving
+      summary: Login accounts that can open a Device terminal
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name, uid, home, shell]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: integer
+                    home:
+                      type: string
+                    shell:
+                      type: string
+        "403":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/updates/check:
     get:
       tags: [evolving]
@@ -2219,6 +2250,36 @@ paths:
       parameters:
         - $ref: "#/components/parameters/id"
         - $ref: "#/components/parameters/vmId"
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/system/terminal:
+    get:
+      tags: [out-of-band]
+      operationId: deviceTerminal
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Device login-account terminal WebSocket (`?ticket=`)
+      parameters:
+        - name: ticket
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/home/devices/{id}/v1/system/terminal:
+    get:
+      tags: [out-of-band]
+      operationId: homeDeviceTerminal
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Home tunnel Device terminal (`?ticket=` + `?session=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
       responses:
         "101":
           description: Switching Protocols

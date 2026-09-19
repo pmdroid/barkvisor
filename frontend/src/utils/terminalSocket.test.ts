@@ -12,6 +12,8 @@ import {
   terminalResizeFrame,
   terminalSocketPath,
   terminalSocketQuery,
+  deviceTerminalSocketPath,
+  deviceTerminalSocketQuery,
 } from './terminalSocket'
 import { deviceVmContainersPath, deviceVmTerminalPath } from './homeDeviceApi'
 
@@ -20,6 +22,7 @@ const self = { hostId: 'desk-1', role: 'self', reachability: 'ok' }
 const member = { hostId: 'peer/1', role: 'member', reachability: 'ok' }
 
 const panel = readFileSync(join(here, '../components/TerminalPanel.vue'), 'utf8')
+const devicePanel = readFileSync(join(here, '../components/DeviceTerminalPanel.vue'), 'utf8')
 const detailView = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
 
 const decoder = new TextDecoder()
@@ -39,6 +42,13 @@ describe('terminalSocket (#609)', () => {
     expect(terminalSocketPath(member, 'vm-9')).toBe(
       '/home/devices/peer%2F1/v1/vms/vm-9/terminal',
     )
+    expect(deviceTerminalSocketPath(self)).toBe('/system/terminal')
+    expect(deviceTerminalSocketPath(member)).toBe('/home/devices/peer%2F1/v1/system/terminal')
+    expect(deviceTerminalSocketQuery('tix')).toBe('ticket=tix')
+    expect(deviceTerminalSocketQuery('tix', 'home-session', { cols: 120, rows: 32 })).toBe(
+      'ticket=tix&session=home-session&cols=120&rows=32',
+    )
+    expect(deviceTerminalSocketQuery('tix', 'home-session')).not.toContain('user=')
   })
 
   test('query carries ticket and service; members add the Home session', () => {
@@ -68,6 +78,15 @@ describe('terminalSocket (#609)', () => {
     expect(panel).toContain('terminalResizeFrame(cols, rows)')
     expect(panel).toContain('terminalPasteChunks(data)')
     expect(panel).not.toContain('token=')
+  })
+
+  test('device terminal panel mints a user ticket and never puts user on the socket URL', () => {
+    expect(devicePanel).toContain('mintDeviceTerminalTickets(props.osUser, props.device)')
+    expect(devicePanel).toContain('deviceTerminalSocketPath(props.device)')
+    expect(devicePanel).toContain('deviceTerminalSocketQuery(ticket, session, size)')
+    expect(devicePanel).not.toContain('user=')
+    expect(devicePanel).not.toContain('token=')
+    expect(devicePanel).toContain('fill')
   })
 })
 

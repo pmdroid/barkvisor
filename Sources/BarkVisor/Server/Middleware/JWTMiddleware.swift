@@ -89,6 +89,8 @@ struct JWTAuthMiddleware: AsyncMiddleware {
                     request, ticket: ticket, chainingTo: next,
                 )
             }
+        case .ownerDeviceSystemTerminal:
+            break
         case .other:
             break
         }
@@ -422,12 +424,22 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
         let session = StreamTicketPolicy.homeSession(fromQuery: request.url.query)
             ?? request.query[String.self, at: StreamTicketPolicy.sessionQueryName]
         if let session, !session.isEmpty {
-            guard let vmID = request.parameters.get("vmId"), !vmID.isEmpty else {
+            let userInfo: (userID: String, username: String)
+            if let vmID = request.parameters.get("vmId"), !vmID.isEmpty {
+                guard let spent = await ticketStore.validateTicket(session, forVMID: vmID)
+                else {
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
+                }
+                userInfo = spent
+            } else if StreamTicketPolicy.isHomeSystemTerminal(request.url.path),
+                      let hostId = request.parameters.get("id"), !hostId.isEmpty {
+                guard let spent = await ticketStore.validateTicket(session, hostID: hostId)
+                else {
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
+                }
+                userInfo = (spent.userID, spent.username)
+            } else {
                 throw Abort(.unauthorized, reason: "Missing vm")
-            }
-            guard let userInfo = await ticketStore.validateTicket(session, forVMID: vmID)
-            else {
-                throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
             }
             let role = try await JWTAuthMiddleware.resolveRole(
                 userId: userInfo.userID, sessionFallback: nil, request: request,

@@ -33,6 +33,12 @@ The detail page for one Device has:
 
 When a Device is unreachable, you can still open its page, but controls that need a connection are disabled.
 
+## Terminal
+
+**Terminal** on the Device detail toolbar opens a near-full-window modal with a shell as a login account on that Device. Pick the account, confirm, then type. BarkVisor admin is the credential; there is no OS password prompt. Root is not offered. Further privilege is whatever `sudo` already allows that account.
+
+The same control works for a Member: the console Device hops the session. SSH keys in Settings are guest cloud-init keys and are not used here.
+
 ## Related
 
 - [Virtual Machines](using-vms.md)

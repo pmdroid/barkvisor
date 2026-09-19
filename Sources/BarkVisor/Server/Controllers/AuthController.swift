@@ -54,6 +54,8 @@ extension LoginOfferIssue: Content {}
 
 struct WSTicketRequest: Content {
     let vmID: String?
+    let hostId: String?
+    let user: String?
 }
 
 struct WSTicketResponse: Content {
@@ -291,10 +293,43 @@ struct AuthController: RouteCollection {
             } else {
                 nil
             }
-        let ticket = await WebSocketTicketStore.shared.createTicket(
-            forUserID: authUser.userId, username: authUser.username,
-            targetVMID: body?.vmID.flatMap { $0.isEmpty ? nil : $0 },
-        )
+        let vmID = body?.vmID.flatMap { $0.isEmpty ? nil : $0 }
+        let osUser = body?.user.flatMap { $0.isEmpty ? nil : $0 }
+        let hostId = body?.hostId.flatMap { $0.isEmpty ? nil : $0 }
+        if osUser != nil, vmID != nil {
+            throw BarkVisorError.badRequest("Ticket cannot target a Workload and a Device account")
+        }
+        let ticket: String
+        if let osUser {
+            guard DeviceLoginAccount.isSafeName(osUser) else {
+                throw BarkVisorError.badRequest("Unknown or disallowed account")
+            }
+            let boundHost = hostId ?? Config.hostId
+            if boundHost == Config.hostId {
+                #if os(Windows)
+                    throw Abort(
+                        .notImplemented,
+                        reason: "Device terminal is not available on Windows",
+                    )
+                #else
+                    guard DeviceLoginAccount.spawnRecord(name: osUser) != nil else {
+                        throw BarkVisorError.badRequest("Unknown or disallowed account")
+                    }
+                #endif
+            }
+            ticket = await WebSocketTicketStore.shared.createTicket(
+                forUserID: authUser.userId,
+                username: authUser.username,
+                targetHostID: boundHost,
+                osUser: osUser,
+            )
+        } else {
+            ticket = await WebSocketTicketStore.shared.createTicket(
+                forUserID: authUser.userId,
+                username: authUser.username,
+                targetVMID: vmID,
+            )
+        }
         return WSTicketResponse(ticket: ticket)
     }
 
