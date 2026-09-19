@@ -4,8 +4,12 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
-- The Linux `.deb` installs on Ubuntu 26.04, where the distro renamed `libxml2` to `libxml2-16`.
+## 1.0.0-alpha.10 — 2026-09-19
+
 - Devices list cards can rename a Device.
+- NVIDIA and AMD GPUs report busy percent. Host CPU and GPU temperatures are shown separately.
+- The Linux `.deb` installs on Ubuntu 26.04, where the distro renamed `libxml2` to `libxml2-16`.
+- App updates compare Docker images by digest so a catalog row stays current when registry inspect fails.
 
 ## 1.0.0-alpha.9 — 2026-09-16
 
