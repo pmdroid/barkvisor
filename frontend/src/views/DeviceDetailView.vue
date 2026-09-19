@@ -1016,7 +1016,7 @@ async function removeDevice() {
 
     <div
       v-if="showTerminal && auth.isAdmin && device"
-      class="modal-overlay"
+      class="modal-overlay terminal-overlay"
       @click.self="!terminalSessionUser && closeTerminal()"
     >
       <div class="split-frame terminal-modal" role="dialog" aria-modal="true" aria-labelledby="device-terminal-title">
@@ -1190,9 +1190,13 @@ async function removeDevice() {
 .disk-sheet {
   margin-bottom: 14px;
 }
+.terminal-overlay {
+  padding: 16px;
+}
 .terminal-modal {
-  width: min(1120px, calc(100vw - 32px));
-  height: min(780px, calc(100vh - 32px));
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+  max-width: none;
 }
 .terminal-modal-head {
   display: flex;
