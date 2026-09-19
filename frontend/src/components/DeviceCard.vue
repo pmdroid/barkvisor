@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { saveDeviceName } from '../api/deviceName'
+import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot } from '../api/types'
+import { useDevicesStore } from '../stores/devices'
+import { useToastStore } from '../stores/toast'
+import { canFetchDeviceWorkloads } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
+import AppButton from './ui/AppButton.vue'
 
 const props = defineProps<{
   device: HomeDeviceHealthSnapshot
@@ -15,6 +21,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ click: [] }>()
 const router = useRouter()
+const devices = useDevicesStore()
+const toast = useToastStore()
+const canRename = computed(() => canFetchDeviceWorkloads(props.device))
+const renaming = ref(false)
+const nameDraft = ref('')
+const nameSaving = ref(false)
+const nameInput = ref<HTMLInputElement | null>(null)
 
 const reachable = computed(() => isReachabilityOk(props.device.reachability))
 const reachLabel = computed(() => reachabilityLabel(props.device.reachability))
@@ -69,17 +82,76 @@ function onClick() {
     router.push({ name: 'device-detail', params: { hostId: props.device.hostId } })
   }
 }
+
+async function startRename() {
+  if (!canRename.value) return
+  nameDraft.value = title.value
+  renaming.value = true
+  await nextTick()
+  nameInput.value?.focus()
+  nameInput.value?.select()
+}
+
+function cancelRename() {
+  renaming.value = false
+  nameDraft.value = ''
+}
+
+async function saveRename() {
+  if (!canRename.value || nameSaving.value) return
+  const name = nameDraft.value.trim()
+  if (!name) {
+    toast.error('Device name must not be empty')
+    return
+  }
+  nameSaving.value = true
+  try {
+    const named = await saveDeviceName(name, props.device)
+    nameDraft.value = named.displayName
+    renaming.value = false
+    await devices.fetchHealth({ force: true })
+    toast.success('Device name saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save Device name'))
+  } finally {
+    nameSaving.value = false
+  }
+}
 </script>
 
 <template>
-  <button
-    type="button"
-    class="ops-dev"
-    :class="{ selected, unreachable: !reachable }"
-    :aria-label="`${title} — Workloads`"
-    :title="reachHint || undefined"
-    @click="onClick"
-  >
+  <div class="card-wrap" :class="{ 'can-rename': canRename && !renaming }">
+    <form
+      v-if="renaming"
+      class="ops-dev rename-form"
+      :class="{ selected, unreachable: !reachable }"
+      @submit.prevent="saveRename"
+    >
+      <input
+        ref="nameInput"
+        v-model="nameDraft"
+        class="rename-input"
+        type="text"
+        maxlength="64"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Device name"
+        :disabled="nameSaving"
+      />
+      <div class="rename-actions">
+        <AppButton variant="primary" :loading="nameSaving" :disabled="!nameDraft.trim()">Save</AppButton>
+        <button type="button" class="rename-cancel" :disabled="nameSaving" @click="cancelRename">Cancel</button>
+      </div>
+    </form>
+    <button
+      v-else
+      type="button"
+      class="ops-dev"
+      :class="{ selected, unreachable: !reachable }"
+      :aria-label="`${title} — Workloads`"
+      :title="reachHint || undefined"
+      @click="onClick"
+    >
     <span class="ops-dev-top">
       <span class="ops-dot" :class="[reachable ? 'ok' : 'bad', { pulse: !reachable }]"></span>
       <span class="ops-dev-name">{{ title }}</span>
@@ -114,5 +186,73 @@ function onClick() {
       <span v-if="tempLabel">{{ tempLabel }}</span>
       <span v-if="storageLabel">Storage {{ storageLabel }}</span>
     </span>
-  </button>
+    </button>
+    <button
+      v-if="canRename && !renaming"
+      type="button"
+      class="rename-btn"
+      @click="startRename"
+    >Rename</button>
+  </div>
 </template>
+
+<style scoped>
+.card-wrap {
+  position: relative;
+}
+.card-wrap.can-rename :deep(.ops-dev) {
+  padding-right: 64px;
+}
+.rename-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 1;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.rename-btn:hover {
+  color: var(--text);
+}
+.rename-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: default;
+}
+.rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 14px;
+  font-weight: 600;
+}
+.rename-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rename-cancel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.rename-cancel:hover {
+  color: var(--text);
+}
+</style>

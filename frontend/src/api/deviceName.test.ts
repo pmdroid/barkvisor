@@ -45,6 +45,15 @@ describe('device name client (#388)', () => {
     expect(detail).toContain('Rename')
     expect(detail).toContain('saveDeviceName(name, row)')
 
+    const card = readFileSync(join(here, '../components/DeviceCard.vue'), 'utf8')
+    expect(card).toContain('saveDeviceName')
+    expect(card).toContain('canRename')
+    expect(card).toContain('canFetchDeviceWorkloads')
+    expect(card).toContain('startRename')
+    expect(card).toContain('await devices.fetchHealth({ force: true })')
+    expect(card).toContain('Rename')
+    expect(card).toContain('saveDeviceName(name, props.device)')
+
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
     const homeStart = settings.indexOf('v-if="tab === \'home\'"')
     const pairingStart = settings.indexOf('v-if="isPairingTab(tab)"')

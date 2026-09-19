@@ -76,6 +76,32 @@ describe('devices store (PAS-52)', () => {
     expect(store.error).toBeTruthy()
   })
 
+  test('force waits for an in-flight fetch then loads again', async () => {
+    let resolveFirst!: (value: { data: HomeDeviceHealthReport }) => void
+    const firstResponse = new Promise<{ data: HomeDeviceHealthReport }>((resolve) => {
+      resolveFirst = resolve
+    })
+    const renamed: HomeDeviceHealthReport = {
+      ...report,
+      devices: report.devices.map((row) => (
+        row.hostId === 'self-1' ? { ...row, displayName: 'lab' } : row
+      )),
+    }
+    const get = mock()
+      .mockReturnValueOnce(firstResponse)
+      .mockResolvedValueOnce({ data: renamed })
+    api.get = get as typeof api.get
+    const store = useDevicesStore()
+    const first = store.fetchHealth()
+    const forced = store.fetchHealth({ force: true })
+    expect(get).toHaveBeenCalledTimes(1)
+    resolveFirst({ data: report })
+    await first
+    await forced
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(store.deviceByHostId('self-1')?.displayName).toBe('lab')
+  })
+
   test('does not start a second health fetch while one is in flight', async () => {
     let resolveFirst!: (value: { data: HomeDeviceHealthReport }) => void
     const firstResponse = new Promise<{ data: HomeDeviceHealthReport }>((resolve) => {
