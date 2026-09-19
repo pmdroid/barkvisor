@@ -162,6 +162,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     // `app`; the /containers picker rides JWT auth on `protected`.
     TerminalController().register(app: app)
     try protected.register(collection: TerminalController())
+    DeviceTerminalController().register(app: app)
+    try protected.register(collection: DeviceTerminalController())
     // StreamTicketPolicy: Home tunnel spends session=, not Device ticket=.
     HomeConsoleProxyController().register(app: protected)
 }

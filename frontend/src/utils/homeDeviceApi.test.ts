@@ -39,6 +39,8 @@ import {
   deviceVmSpecPath,
   deviceVmVncPath,
   deviceVmsBasePath,
+  deviceSystemTerminalPath,
+  deviceSystemUsersPath,
   deviceWsTicketPath,
   defaultPickedHostId,
   deviceImagePath,
@@ -69,6 +71,10 @@ describe('homeDeviceApi (PAS-52)', () => {
     )
     expect(deviceWsTicketPath(self)).toBe('/auth/ws-ticket')
     expect(deviceWsTicketPath(member)).toBe('/home/devices/peer%2F1/v1/auth/ws-ticket')
+    expect(deviceSystemUsersPath(self)).toBe('/system/users')
+    expect(deviceSystemUsersPath(member)).toBe('/home/devices/peer%2F1/v1/system/users')
+    expect(deviceSystemTerminalPath(self)).toBe('/system/terminal')
+    expect(deviceSystemTerminalPath(member)).toBe('/home/devices/peer%2F1/v1/system/terminal')
     expect(deviceVmVncPath(member, 'vm-9')).toBe('/home/devices/peer%2F1/v1/vms/vm-9/vnc')
     expect(deviceVmConsolePath(self, 'vm-9')).toBe('/vms/vm-9/console')
   })

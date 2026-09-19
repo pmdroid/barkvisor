@@ -89,6 +89,21 @@ struct StreamTicketPolicyTests {
         #expect(StreamTicketPolicy.deviceTicket(fromQuery: "session=only") == nil)
     }
 
+    @Test func `device terminal paths are stream sites on both ends`() {
+        let local = "/api/system/terminal"
+        #expect(StreamTicketPolicy.site(path: local) == .ownerDeviceSystemTerminal)
+        #expect(StreamTicketPolicy.spendsDeviceTicket(path: local))
+        #expect(StreamTicketPolicy.isOwnerDeviceSystemTerminal(local))
+        #expect(!StreamTicketPolicy.isOwnerDeviceStream(local))
+        #expect(StreamTicketPolicy.site(path: "/api/system/users") == .other)
+        let tunneled = "/api/home/devices/peer-1/v1/system/terminal"
+        #expect(StreamTicketPolicy.site(path: tunneled) == .homeTunnel)
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: tunneled))
+        #expect(StreamTicketPolicy.isHomeConsoleTunnel(tunneled))
+        #expect(StreamTicketPolicy.isHomeSystemTerminal(tunneled))
+        #expect(!StreamTicketPolicy.isHomeSystemTerminal("/api/home/devices/peer-1/v1/vms/vm-1/terminal"))
+    }
+
     @Test func `app terminal paths are stream sites on both ends`() {
         // Owner Device: one-use ticket spend (issue #609).
         let local = "/api/vms/vm-1/terminal"

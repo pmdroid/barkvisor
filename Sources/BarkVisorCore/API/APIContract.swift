@@ -114,6 +114,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/system/gpu-share", stability: .evolving),
         Route(method: "GET", path: "/api/system/pci-devices", stability: .evolving),
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
+        Route(method: "GET", path: "/api/system/users", stability: .evolving),
         Route(method: "GET", path: "/api/system/updates/check", stability: .evolving),
         Route(method: "POST", path: "/api/system/updates/install", stability: .evolving),
         Route(method: "GET", path: "/api/system/updates/settings", stability: .evolving),
@@ -202,6 +203,8 @@ public enum APIContract {
         Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/console", stability: .outOfBand),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/terminal", stability: .outOfBand),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/vnc", stability: .outOfBand),
+        Route(method: "GET", path: "/api/system/terminal", stability: .outOfBand),
+        Route(method: "GET", path: "/api/home/devices/{id}/v1/system/terminal", stability: .outOfBand),
     ]
 
     /// Prefixes reserved for later waves — not implemented as routes today.

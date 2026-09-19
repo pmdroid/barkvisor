@@ -12,10 +12,11 @@ import {
 } from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
 import { saveDeviceName } from '../api/deviceName'
-import api from '../api/client'
+import api, { listDeviceLoginUsers, type DeviceLoginUser } from '../api/client'
 import type { DiskSettings, DoctorReport, HomeDeviceHealthSnapshot, HostGPUDevice, HostGPUShareDevice, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
+import DeviceTerminalPanel from '../components/DeviceTerminalPanel.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -23,6 +24,7 @@ import { useDeviceDisksStore } from '../stores/deviceDisks'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
+import { useAuthStore } from '../stores/auth'
 import {
   emptyDeviceStatsChartSeries,
   latestGpuPercent,
@@ -54,6 +56,7 @@ const devices = useDevicesStore()
 const workloads = useDeviceWorkloadsStore()
 const disks = useDeviceDisksStore()
 const toast = useToastStore()
+const auth = useAuthStore()
 
 const hostId = computed(() => String(route.params.hostId ?? ''))
 const device = computed(() => devices.deviceByHostId(hostId.value))
@@ -86,6 +89,13 @@ const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } |
 const removeConfirm = ref(false)
 const removeLoading = ref(false)
 const showCreate = ref(false)
+const showTerminal = ref(false)
+const terminalUsers = ref<DeviceLoginUser[]>([])
+const terminalUser = ref('')
+const terminalUsersLoading = ref(false)
+const terminalUsersError = ref('')
+const terminalConfirm = ref(false)
+const terminalSessionUser = ref('')
 const deviceAbout = ref<SystemAbout | null>(null)
 const deviceDoctor = ref<DoctorReport | null>(null)
 const deviceStats = ref<SystemStats | null>(null)
@@ -571,6 +581,43 @@ function openWorkload(vm: (typeof vms.value)[number]) {
   })
 }
 
+async function openTerminal() {
+  const row = device.value
+  if (!row || !auth.isAdmin) return
+  showTerminal.value = true
+  terminalSessionUser.value = ''
+  terminalUsersError.value = ''
+  terminalUsersLoading.value = true
+  try {
+    const rows = await listDeviceLoginUsers(row)
+    terminalUsers.value = rows
+    if (rows.some((item) => item.name === terminalUser.value)) return
+    terminalUser.value = rows[0]?.name ?? ''
+  } catch (e: unknown) {
+    terminalUsers.value = []
+    terminalUser.value = ''
+    terminalUsersError.value = apiErrorMessage(e, 'Could not list login accounts')
+  } finally {
+    terminalUsersLoading.value = false
+  }
+}
+
+function requestTerminal() {
+  if (!terminalUser.value) return
+  terminalConfirm.value = true
+}
+
+function confirmTerminal() {
+  terminalConfirm.value = false
+  terminalSessionUser.value = terminalUser.value
+}
+
+function closeTerminal() {
+  showTerminal.value = false
+  terminalConfirm.value = false
+  terminalSessionUser.value = ''
+}
+
 function requestStop(id: string, method: 'acpi' | 'force') {
   const vm = vms.value.find((row) => row.id === id)
   stopConfirm.value = { id, name: vm?.name || id, method }
@@ -651,6 +698,12 @@ async function removeDevice() {
         {{ [platformLabel, roleFact].filter(Boolean).join(' · ') }}
       </span>
       <div v-if="device" class="ops-actions">
+        <AppButton
+          v-if="auth.isAdmin && canFetchDeviceWorkloads(device)"
+          @click="openTerminal"
+        >
+          Terminal
+        </AppButton>
         <AppButton
           v-if="canFetchDeviceWorkloads(device)"
           variant="primary"
@@ -961,6 +1014,53 @@ async function removeDevice() {
       @created="showCreate = false; refresh()"
     />
 
+    <div
+      v-if="showTerminal && auth.isAdmin && device"
+      class="modal-overlay terminal-overlay"
+      @click.self="!terminalSessionUser && closeTerminal()"
+    >
+      <div class="split-frame terminal-modal" role="dialog" aria-modal="true" aria-labelledby="device-terminal-title">
+        <section class="split-stage">
+          <div class="split-head terminal-modal-head">
+            <div>
+              <h2 id="device-terminal-title">Terminal</h2>
+              <p>{{ title }}</p>
+            </div>
+            <div class="terminal-modal-tools">
+              <select
+                id="device-terminal-user"
+                v-model="terminalUser"
+                aria-label="Account"
+                :disabled="terminalUsersLoading || !terminalUsers.length"
+              >
+                <option v-if="!terminalUsers.length" value="">Account</option>
+                <option v-for="row in terminalUsers" :key="row.name" :value="row.name">{{ row.name }}</option>
+              </select>
+              <AppButton
+                variant="primary"
+                :disabled="!terminalUser || terminalUsersLoading"
+                @click="requestTerminal"
+              >Open</AppButton>
+              <button type="button" class="mini" @click="closeTerminal">Close</button>
+            </div>
+          </div>
+          <div class="terminal-modal-body">
+            <p v-if="terminalUsersLoading" class="terminal-modal-copy">Loading login accounts...</p>
+            <p v-else-if="terminalUsersError" class="terminal-modal-copy">{{ terminalUsersError }}</p>
+            <p v-else-if="!terminalUsers.length" class="terminal-modal-copy">No login users on this Device.</p>
+            <DeviceTerminalPanel
+              v-else-if="terminalSessionUser"
+              :key="`${device.hostId}:${terminalSessionUser}`"
+              fill
+              :os-user="terminalSessionUser"
+              :device="device"
+            />
+            <p v-else class="terminal-modal-copy">Pick an account, then Open.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <ConfirmDialog
       v-if="stopConfirm"
       :title="stopConfirm.method === 'force' ? 'Force Stop Workload' : 'Stop Workload'"
@@ -970,6 +1070,14 @@ async function removeDevice() {
       :loading="workloads.isActing(hostId, stopConfirm.id)"
       @confirm="doStop"
       @cancel="stopConfirm = null"
+    />
+    <ConfirmDialog
+      v-if="terminalConfirm && terminalUser"
+      title="Open terminal"
+      :message="`This opens a shell as ${terminalUser} on this Device using your BarkVisor admin session.`"
+      confirm-label="Open"
+      @confirm="confirmTerminal"
+      @cancel="terminalConfirm = false"
     />
     <ConfirmDialog
       v-if="removeConfirm && device"
@@ -1082,6 +1190,47 @@ async function removeDevice() {
 .disk-sheet {
   margin-bottom: 14px;
 }
+.terminal-overlay {
+  padding: 8px;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.terminal-modal {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+.terminal-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.terminal-modal-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.terminal-modal-tools select {
+  min-width: 140px;
+}
+.terminal-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.terminal-modal-copy {
+  margin: 0;
+  padding: 16px 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .disk-sheet-body {
   padding: 4px 14px 14px;
   max-width: 640px;
@@ -1152,5 +1301,21 @@ async function removeDevice() {
 }
 @media (max-width: 768px) {
   .stat-grid { grid-template-columns: 1fr; }
+  .terminal-overlay {
+    padding: 0;
+  }
+  .terminal-modal {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+  .terminal-modal-head {
+    flex-direction: column;
+  }
+  .terminal-modal-tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 </style>
