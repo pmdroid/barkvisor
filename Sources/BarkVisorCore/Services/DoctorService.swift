@@ -450,8 +450,8 @@ public enum DoctorService {
             vfioDropCheck(inputs),
             swtpmCheck(inputs),
             healthCheck(inputs),
-            linuxBridgeCheck(inputs, privileged: privileged),
-            macSocketCheck(inputs, privileged: privileged),
+            linuxBridgeCheck(inputs),
+            macSocketCheck(inputs),
         ])
         return DoctorReport(
             ok: !checks.contains { $0.status == .fail },
@@ -836,10 +836,7 @@ public enum DoctorService {
         )
     }
 
-    private static func linuxBridgeCheck(
-        _ inputs: DoctorFactInputs,
-        privileged: Bool,
-    ) -> DoctorCheck {
+    private static func linuxBridgeCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
         if isWindows(inputs.os) {
             return DoctorCheck(
                 id: "linux-bridge",
@@ -876,15 +873,12 @@ public enum DoctorService {
         }
         return DoctorCheck(
             id: "linux-bridge",
-            status: privileged ? .fail : .warn,
-            detail: "\(summary). Copy Bridge setup steps; doctor never applies them.",
+            status: .warn,
+            detail: "\(summary). Apply from Networks → Host interfaces. Doctor never applies host network changes.",
         )
     }
 
-    private static func macSocketCheck(
-        _ inputs: DoctorFactInputs,
-        privileged: Bool,
-    ) -> DoctorCheck {
+    private static func macSocketCheck(_ inputs: DoctorFactInputs) -> DoctorCheck {
         if isWindows(inputs.os) {
             return DoctorCheck(
                 id: "macos-socket-vmnet",
@@ -909,8 +903,8 @@ public enum DoctorService {
         }
         return DoctorCheck(
             id: "macos-socket-vmnet",
-            status: privileged ? .fail : .warn,
-            detail: "\(summary). \(SocketVmnetDiscovery.installHint). Doctor never starts the service.",
+            status: .warn,
+            detail: "\(summary). \(SocketVmnetDiscovery.installHint). Apply from Networks → Host interfaces. Doctor never starts the service.",
         )
     }
 
