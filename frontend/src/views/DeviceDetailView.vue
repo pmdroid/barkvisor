@@ -960,6 +960,7 @@ async function removeDevice() {
           </template>
           <DeviceTerminalPanel
             v-if="terminalSessionUser && device"
+            :key="`${device.hostId}:${terminalSessionUser}`"
             :os-user="terminalSessionUser"
             :device="device"
           />

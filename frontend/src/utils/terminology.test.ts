@@ -173,6 +173,7 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('canRename')
     expect(text).toContain('Rename')
     expect(text).toContain('DeviceTerminalPanel')
+    expect(text).toContain(':key="`${device.hostId}:${terminalSessionUser}`"')
     expect(text).toContain('listDeviceLoginUsers')
     expect(text).toContain('Terminal')
     expect(text).not.toContain('GPU passthrough')
