@@ -86,7 +86,7 @@ enum NVIDIAMetrics {
                 "--query-gpu=utilization.gpu,temperature.gpu",
                 "--format=csv,noheader,nounits",
             ],
-            timeout: 2,
+            timeout: 0.8,
         ), result.succeeded else { return .empty }
         return parseCSV(result.stdoutString)
     }

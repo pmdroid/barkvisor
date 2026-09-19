@@ -41,7 +41,7 @@ enum AMDMetrics {
         guard let result = try? PlatformProcess.run(
             executable: tool,
             arguments: arguments,
-            timeout: 2,
+            timeout: 0.8,
         ), result.succeeded else { return .empty }
         return parseCSV(result.stdoutString)
     }

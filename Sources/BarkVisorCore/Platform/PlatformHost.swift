@@ -294,15 +294,12 @@ public enum PlatformHost {
     #if os(Linux)
         private static func linuxTemperatures() -> HostSensorTemperatures {
             let cpu = linuxThermalCelsius()
-            let nvidia = NVIDIAMetrics.reading()
-            let amd = AMDMetrics.reading()
             let hwmon = linuxHwmonTemps()
+            let nvidia = NVIDIAMetrics.reading().temperatureC
+            let amd = AMDMetrics.reading().temperatureC
             return HostSensorTemperatures(
                 cpuC: cpu,
-                gpuC: NVIDIAMetrics.combine(
-                    NVIDIAMetrics.combine(nvidia.temperatureC, amd.temperatureC),
-                    hwmon.gpuC,
-                ),
+                gpuC: NVIDIAMetrics.combine(NVIDIAMetrics.combine(hwmon.gpuC, nvidia), amd),
                 diskC: hwmon.diskC,
             )
         }
