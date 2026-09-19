@@ -51,9 +51,9 @@ struct DisplayHomePageTests {
             timeZone: TimeZone(secondsFromGMT: 0)!,
         )
         #expect(html.contains("MacMini"))
-        #expect(!html.contains("agentbox"))
+        #expect(html.contains("agentbox"))
         #expect(html.contains("goldbox"))
-        #expect(!html.contains("Unreachable"))
+        #expect(html.contains("Unreachable"))
         #expect(html.contains("2/3 up"))
         #expect(html.contains("GPU"))
         #expect(html.contains("72%"))
@@ -61,11 +61,46 @@ struct DisplayHomePageTests {
         #expect(html.contains("GPU 67°C"))
         #expect(html.contains("2 workloads"))
         #expect(html.contains("1 failed"))
-        #expect(!html.contains("card down"))
+        #expect(html.contains("card down"))
         let from = try #require(html.range(of: "MacMini"))
-        let to = try #require(html.range(of: "goldbox"))
+        let to = try #require(html.range(of: "agentbox"))
         let miniSlice = html[from.lowerBound..<to.lowerBound]
         #expect(!miniSlice.contains("GPU"))
+    }
+
+    @Test func `four up and one down still wraps five tiles`() {
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "MacMini"),
+            HomeDevice(hostId: "down", role: "member", displayName: "agentbox"),
+            HomeDevice(hostId: "a", role: "member", displayName: "goldbox"),
+            HomeDevice(hostId: "b", role: "member", displayName: "steamdeck"),
+            HomeDevice(hostId: "c", role: "member", displayName: "studio"),
+        ])
+        let ok = HomeDeviceLiveFacts(
+            displayName: "peer",
+            platform: HomeDevicePlatformSummary(os: "Linux", arch: "arm64"),
+            resources: HomeDeviceResourceSummary(cpuLoadPercent: 10),
+        )
+        let report = HomeDeviceHealthAggregator.report(
+            listed: listed,
+            local: HomeDeviceLiveFacts(
+                displayName: "MacMini",
+                platform: HomeDevicePlatformSummary(os: "macOS", arch: "arm64"),
+                resources: HomeDeviceResourceSummary(cpuLoadPercent: 8),
+            ),
+            members: [
+                "down": .unreachable("Device is unreachable"),
+                "a": .ok(ok),
+                "b": .ok(ok),
+                "c": .ok(ok),
+            ],
+        )
+        let html = DisplayHomePage.html(report: report)
+        #expect(html.contains("quad n5 tight"))
+        #expect(html.contains("board tight"))
+        #expect(html.contains("agentbox"))
+        #expect(html.contains("Unreachable"))
+        #expect(html.contains("4/5 up"))
     }
 
     @Test func `five reachable devices wrap two columns`() {

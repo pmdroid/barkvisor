@@ -25,16 +25,24 @@ public enum DisplayHomePage {
         html,body{margin:0;padding:0;background:#fff;color:#000;}
         *{box-sizing:border-box;}
         .board{width:\(width)px;height:\(height)px;padding:12px 14px 10px;display:flex;flex-direction:column;gap:8px;font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#000;overflow:hidden;}
+        .board.tight{padding:8px 10px 6px;gap:6px;}
         .head,.foot{display:flex;justify-content:space-between;align-items:baseline;font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
         .head{font-size:18px;height:28px;border-bottom:3px solid #000;padding-bottom:6px;}
+        .board.tight .head{font-size:16px;height:22px;padding-bottom:4px;}
         .head .meta{font-size:14px;font-weight:500;}
         .foot{font-size:11px;height:20px;border-top:2px solid #000;padding-top:6px;letter-spacing:.08em;}
+        .board.tight .foot{font-size:10px;height:16px;padding-top:4px;}
         .quad{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px;min-height:0;}
         .quad.n1{grid-template-columns:1fr;}
-        .quad.tight .name{font-size:16px;}
-        .quad.tight .plat{margin:2px 0 4px;}
-        .quad.tight .card{padding:6px 8px 6px;}
-        .card{border:3px solid #000;padding:10px 12px 8px;display:flex;flex-direction:column;min-width:0;min-height:0;}
+        .quad.tight{gap:6px;}
+        .quad.tight .name{font-size:15px;}
+        .quad.tight .plat{margin:1px 0 2px;font-size:10px;}
+        .quad.tight .card{padding:5px 7px;}
+        .quad.tight .row{font-size:11px;margin-top:2px;gap:6px;}
+        .quad.tight .bar{height:6px;}
+        .quad.tight .temps,.quad.tight .loads{font-size:10px;padding-top:2px;}
+        .quad.tight .stamp{font-size:14px;}
+        .card{border:3px solid #000;padding:10px 12px 8px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
         .card.down{background:#000;color:#fff;}
         .name{font-size:22px;font-weight:700;line-height:1;}
         .plat{font-size:11px;margin:4px 0 8px;letter-spacing:.04em;text-transform:uppercase;}
@@ -43,12 +51,13 @@ public enum DisplayHomePage {
         .bar{flex:1;height:10px;border:2px solid currentColor;position:relative;}
         .bar i{display:block;height:100%;background:currentColor;}
         .row .v{width:48px;text-align:right;flex:none;}
-        .temps,.loads{font-size:13px;font-weight:600;margin-top:auto;padding-top:6px;}
+        .temps{font-size:13px;font-weight:600;margin-top:auto;padding-top:4px;}
+        .loads{font-size:13px;font-weight:600;padding-top:2px;}
         .stamp{font-size:20px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:auto;}
         </style>
         </head>
         <body>
-        <div class="board">
+        <div class="board\(tight)">
         <header class="head"><span>Home</span><span class="meta">\(report.totals.reachable)/\(report.totals.devices) up · \(escape(clock))</span></header>
         <div class="quad n\(n)\(tight)">\(cards)</div>
         <footer class="foot"><span>Fetched \(escape(clock))</span><span>BarkVisor</span></footer>
@@ -59,7 +68,7 @@ public enum DisplayHomePage {
     }
 
     static func boardDevices(_ report: HomeDeviceHealthReport) -> [HomeDeviceHealthSnapshot] {
-        report.devices.filter { $0.reachability == HomeDeviceHealthAggregator.ok }
+        report.devices
     }
 
     static func cardHTML(_ device: HomeDeviceHealthSnapshot) -> String {
