@@ -940,33 +940,6 @@ async function removeDevice() {
         />
       </div>
 
-      <div v-if="showTerminal && auth.isAdmin && canFetchDeviceWorkloads(device)" class="sheet terminal-sheet">
-        <div class="sheet-head">
-          <h3>Terminal</h3>
-          <button type="button" class="mini" @click="closeTerminal">Close</button>
-        </div>
-        <div class="disk-sheet-body">
-          <p v-if="terminalUsersLoading" class="disk-dir-copy">Loading login accounts...</p>
-          <p v-else-if="terminalUsersError" class="disk-dir-copy">{{ terminalUsersError }}</p>
-          <p v-else-if="!terminalUsers.length" class="disk-dir-copy">No login users on this Device.</p>
-          <template v-else>
-            <label class="disk-dir-copy" for="device-terminal-user">Account</label>
-            <div class="disk-dir-row">
-              <select id="device-terminal-user" v-model="terminalUser">
-                <option v-for="row in terminalUsers" :key="row.name" :value="row.name">{{ row.name }}</option>
-              </select>
-              <AppButton variant="primary" :disabled="!terminalUser" @click="requestTerminal">Open</AppButton>
-            </div>
-          </template>
-          <DeviceTerminalPanel
-            v-if="terminalSessionUser && device"
-            :key="`${device.hostId}:${terminalSessionUser}`"
-            :os-user="terminalSessionUser"
-            :device="device"
-          />
-        </div>
-      </div>
-
       <template v-if="canFetchDeviceWorkloads(device)">
         <p v-if="listError" class="list-error">{{ listError }}</p>
 
@@ -1040,6 +1013,53 @@ async function removeDevice() {
       @close="showCreate = false"
       @created="showCreate = false; refresh()"
     />
+
+    <div
+      v-if="showTerminal && auth.isAdmin && device"
+      class="modal-overlay"
+      @click.self="!terminalSessionUser && closeTerminal()"
+    >
+      <div class="split-frame terminal-modal" role="dialog" aria-modal="true" aria-labelledby="device-terminal-title">
+        <section class="split-stage">
+          <div class="split-head terminal-modal-head">
+            <div>
+              <h2 id="device-terminal-title">Terminal</h2>
+              <p>{{ title }}</p>
+            </div>
+            <div class="terminal-modal-tools">
+              <select
+                id="device-terminal-user"
+                v-model="terminalUser"
+                aria-label="Account"
+                :disabled="terminalUsersLoading || !terminalUsers.length"
+              >
+                <option v-if="!terminalUsers.length" value="">Account</option>
+                <option v-for="row in terminalUsers" :key="row.name" :value="row.name">{{ row.name }}</option>
+              </select>
+              <AppButton
+                variant="primary"
+                :disabled="!terminalUser || terminalUsersLoading"
+                @click="requestTerminal"
+              >Open</AppButton>
+              <button type="button" class="mini" @click="closeTerminal">Close</button>
+            </div>
+          </div>
+          <div class="terminal-modal-body">
+            <p v-if="terminalUsersLoading" class="terminal-modal-copy">Loading login accounts...</p>
+            <p v-else-if="terminalUsersError" class="terminal-modal-copy">{{ terminalUsersError }}</p>
+            <p v-else-if="!terminalUsers.length" class="terminal-modal-copy">No login users on this Device.</p>
+            <DeviceTerminalPanel
+              v-else-if="terminalSessionUser"
+              :key="`${device.hostId}:${terminalSessionUser}`"
+              fill
+              :os-user="terminalSessionUser"
+              :device="device"
+            />
+            <p v-else class="terminal-modal-copy">Pick an account, then Open.</p>
+          </div>
+        </section>
+      </div>
+    </div>
 
     <ConfirmDialog
       v-if="stopConfirm"
@@ -1170,11 +1190,39 @@ async function removeDevice() {
 .disk-sheet {
   margin-bottom: 14px;
 }
-.terminal-sheet {
-  margin-bottom: 14px;
+.terminal-modal {
+  width: min(1120px, calc(100vw - 32px));
+  height: min(780px, calc(100vh - 32px));
 }
-.terminal-sheet .terminal-wrap {
-  margin-top: 12px;
+.terminal-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.terminal-modal-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.terminal-modal-tools select {
+  min-width: 140px;
+}
+.terminal-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.terminal-modal-copy {
+  margin: 0;
+  padding: 16px 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
 }
 .disk-sheet-body {
   padding: 4px 14px 14px;
@@ -1246,5 +1294,16 @@ async function removeDevice() {
 }
 @media (max-width: 768px) {
   .stat-grid { grid-template-columns: 1fr; }
+  .terminal-modal {
+    width: 100%;
+    height: 100dvh;
+  }
+  .terminal-modal-head {
+    flex-direction: column;
+  }
+  .terminal-modal-tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 </style>

@@ -63,7 +63,7 @@ try {
   await page.goto(`${base}/devices/${encodeURIComponent(selfDevice.hostId)}`, { waitUntil: 'networkidle' })
   await page.waitForSelector('.ops-toolbar', { timeout: 15000 })
   await page.getByRole('button', { name: 'Terminal' }).click()
-  await page.waitForSelector('.terminal-sheet', { timeout: 10000 })
+  await page.waitForSelector('.terminal-modal', { timeout: 10000 })
   pickerShot = `${dir}/picker.png`
   await redactPage(page)
   await page.screenshot({ path: pickerShot, fullPage: true })

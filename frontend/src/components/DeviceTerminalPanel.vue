@@ -18,6 +18,7 @@ import { type DeviceApiTarget } from '../utils/homeDeviceApi'
 const props = defineProps<{
   osUser: string
   device?: DeviceApiTarget | null
+  fill?: boolean
 }>()
 
 const term = useTemplateRef('term')
@@ -200,7 +201,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="terminal-wrap">
+  <div class="terminal-wrap" :class="{ fill }">
     <div v-if="status" class="terminal-status">
       {{ status }}
     </div>
@@ -243,5 +244,18 @@ onUnmounted(() => {
   border-radius: 0;
   box-shadow: none;
   padding: 8px;
+}
+.terminal-wrap.fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  box-shadow: none;
+}
+.terminal-wrap.fill .terminal-term {
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }
 </style>

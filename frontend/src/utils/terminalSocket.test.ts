@@ -86,6 +86,7 @@ describe('terminalSocket (#609)', () => {
     expect(devicePanel).toContain('deviceTerminalSocketQuery(ticket, session, size)')
     expect(devicePanel).not.toContain('user=')
     expect(devicePanel).not.toContain('token=')
+    expect(devicePanel).toContain('fill')
   })
 })
 
