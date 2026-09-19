@@ -4,6 +4,12 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+## 1.0.0-alpha.12 — 2026-09-19
+
+- Home has a public 800×480 display page at `/display/home` for a TRMNL screenshot.
+- Devices list cards show GPU percent and host temperatures from health.
+- Doctor warns when the host bridge is missing and points at Networks Apply. Device detail has **Set up Bridge**.
+
 ## 1.0.0-alpha.11 — 2026-09-19
 
 - Device detail **Terminal** opens a full-window shell as a login account on that Device. BarkVisor admin is the credential. Root is not offered.
