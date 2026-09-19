@@ -25,7 +25,10 @@ export const useDevicesStore = defineStore('devices', () => {
   }
 
   async function fetchHealth({ force = false }: { force?: boolean } = {}): Promise<void> {
-    if (inFlight) return inFlight
+    if (inFlight) {
+      if (!force) return inFlight
+      await inFlight
+    }
     if (!force && report.value && Date.now() - lastSuccessfulFetchAt < HOME_REACHABILITY_REFRESH_MS) return
     const seq = ++fetchSeq
     if (!report.value) loading.value = true
