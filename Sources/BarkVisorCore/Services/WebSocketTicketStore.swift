@@ -11,12 +11,23 @@ public actor WebSocketTicketStore {
         public let userID: String
         public let username: String
         public let targetVMID: String?
+        public let targetHostID: String?
+        public let osUser: String?
         public let expiresAt: Date
 
-        public init(userID: String, username: String, targetVMID: String?, expiresAt: Date) {
+        public init(
+            userID: String,
+            username: String,
+            targetVMID: String?,
+            targetHostID: String? = nil,
+            osUser: String? = nil,
+            expiresAt: Date,
+        ) {
             self.userID = userID
             self.username = username
             self.targetVMID = targetVMID
+            self.targetHostID = targetHostID
+            self.osUser = osUser
             self.expiresAt = expiresAt
         }
     }
@@ -47,13 +58,20 @@ public actor WebSocketTicketStore {
 
     /// Create a short-lived single-use ticket for the given user, optionally scoped to a specific VM.
     /// Tickets expire after 30 seconds.
-    public func createTicket(forUserID userID: String, username: String, targetVMID: String? = nil)
-        -> String {
+    public func createTicket(
+        forUserID userID: String,
+        username: String,
+        targetVMID: String? = nil,
+        targetHostID: String? = nil,
+        osUser: String? = nil,
+    ) -> String {
         let ticket = UUID().uuidString
         let entry = TicketEntry(
             userID: userID,
             username: username,
             targetVMID: targetVMID,
+            targetHostID: targetHostID,
+            osUser: osUser,
             expiresAt: now().addingTimeInterval(30),
         )
         tickets[ticket] = entry
@@ -70,7 +88,9 @@ public actor WebSocketTicketStore {
             return nil
         }
         guard entry.expiresAt > now() else { return nil }
-        guard entry.targetVMID == vmID else { return nil }
+        guard entry.targetVMID == vmID, entry.targetHostID == nil, entry.osUser == nil else {
+            return nil
+        }
         return (userID: entry.userID, username: entry.username)
     }
 
@@ -82,8 +102,23 @@ public actor WebSocketTicketStore {
             return nil
         }
         guard entry.expiresAt > now() else { return nil }
-        guard entry.targetVMID == nil else { return nil }
+        guard entry.targetVMID == nil, entry.targetHostID == nil, entry.osUser == nil else {
+            return nil
+        }
         return (userID: entry.userID, username: entry.username)
+    }
+
+    public func validateTicket(_ ticket: String, hostID: String) -> (
+        userID: String, username: String, osUser: String,
+    )? {
+        guard let entry = tickets.removeValue(forKey: ticket) else {
+            return nil
+        }
+        guard entry.expiresAt > now() else { return nil }
+        guard entry.targetVMID == nil, entry.targetHostID == hostID, let osUser = entry.osUser,
+              !osUser.isEmpty
+        else { return nil }
+        return (userID: entry.userID, username: entry.username, osUser: osUser)
     }
 
     private func pruneExpired() {

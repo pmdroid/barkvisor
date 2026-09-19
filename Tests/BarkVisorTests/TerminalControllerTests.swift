@@ -369,6 +369,10 @@ struct TerminalControllerTests {
             arguments: [String],
             cols: Int,
             rows: Int,
+            argv0: String?,
+            environment: [String]?,
+            credentials: DeviceLoginAccount.Credentials?,
+            workingDirectory: String?,
             onData: @escaping @Sendable ([UInt8]) -> Void,
             onExit: @escaping @Sendable (Int32) -> Void,
         ) throws -> any ExecPTYHandling {
@@ -376,6 +380,10 @@ struct TerminalControllerTests {
             child.launchArguments = arguments
             child.onData = onData
             child.onExit = onExit
+            _ = argv0
+            _ = environment
+            _ = credentials
+            _ = workingDirectory
             return child
         }
     }

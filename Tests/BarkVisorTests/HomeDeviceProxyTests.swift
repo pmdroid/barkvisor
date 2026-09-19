@@ -384,6 +384,23 @@ struct HomeDeviceProxyTests {
         #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/vms/vm-1/vnc") == .vnc)
         #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/vms/vm-1/console") == .console)
         #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/auth/ws-ticket") == nil)
+        #expect(HomeDeviceProxy.isSystemTerminal(components: ["system", "terminal"]))
+        #expect(!HomeDeviceProxy.isSystemTerminal(components: ["vms", "vm-1", "terminal"]))
+        #expect(try HomeDeviceProxy.isSystemTerminal(apiPath: "/api/system/terminal"))
+        #expect(!(try HomeDeviceProxy.isSystemTerminal(apiPath: "/api/vms/vm-1/terminal")))
+        let url = try HomeDeviceProxy.systemTerminalURL(
+            HomeSystemTerminalTarget(
+                isSelf: true,
+                localPort: 7_777,
+                agentHost: nil,
+                agentPort: 7_777,
+                query: "ticket=abc&session=home&cols=80&rows=24",
+            ),
+        )
+        #expect(url.path == "/api/system/terminal")
+        #expect(url.query?.contains("ticket=abc") == true)
+        #expect(url.query?.contains("cols=80") == true)
+        #expect(url.query?.contains("session=") == false)
         #expect(
             try HomeDeviceProxy.memberAPIPath(components: ["vms", "vm-1", "vnc"])
                 == "/api/vms/vm-1/vnc",

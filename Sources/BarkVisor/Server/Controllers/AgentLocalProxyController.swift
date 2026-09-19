@@ -42,6 +42,52 @@ struct AgentLocalProxyController: RouteCollection {
         registerConsoleTunnel(app: app, kind: .vnc)
         registerConsoleTunnel(app: app, kind: .console)
         registerConsoleTunnel(app: app, kind: .terminal)
+        registerSystemTerminalTunnel(app: app)
+    }
+
+    private func registerSystemTerminalTunnel(app: Vapor.Application) {
+        app.webSocket(
+            "api", "system", "terminal",
+            shouldUpgrade: { req in
+                let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+                    ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+                    ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
+                do {
+                    try StreamTicketPolicy.requirePassThroughDeviceTicket(ticket)
+                } catch let error as BarkVisorError {
+                    throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
+                }
+                return [:]
+            },
+            onUpgrade: { req, inbound in
+                Task {
+                    await self.tunnelSystemTerminal(req: req, inbound: inbound)
+                }
+            },
+        )
+    }
+
+    func tunnelSystemTerminal(inbound: any WebSocketHopPeer, query: String?) async {
+        let url: URL
+        do {
+            url = try HomeDeviceProxy.systemTerminalURL(
+                HomeSystemTerminalTarget(
+                    isSelf: true,
+                    localPort: localPort,
+                    agentHost: nil,
+                    agentPort: localPort,
+                    query: query,
+                ),
+            )
+        } catch {
+            inbound.close()
+            return
+        }
+        await WebSocketHop.run(inbound: inbound, url: url, dialer: dialer)
+    }
+
+    private func tunnelSystemTerminal(req: Vapor.Request, inbound: WebSocket) async {
+        await tunnelSystemTerminal(inbound: VaporWebSocketPeer(inbound), query: req.url.query)
     }
 
     private func registerConsoleTunnel(app: Vapor.Application, kind: HomeConsoleKind) {

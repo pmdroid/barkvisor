@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { wsTicketPath } from '../utils/consoleHome'
 import { needsHomeSession } from '../utils/streamTicket'
-import { deviceVmContainersPath, type DeviceApiTarget } from '../utils/homeDeviceApi'
+import { deviceSystemUsersPath, deviceVmContainersPath, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 export const HOME_MEMBER_PROXY_TIMEOUT_MS = 4000
 
@@ -146,6 +146,33 @@ export async function listWorkloadContainers(
   const target = device ?? { hostId: 'self', role: 'self' }
   const { data } = await api.get<WorkloadContainer[]>(deviceVmContainersPath(target, vmID))
   return data
+}
+
+export type DeviceLoginUser = {
+  name: string
+  uid: number
+  home: string
+  shell: string
+}
+
+export async function listDeviceLoginUsers(
+  device?: DeviceApiTarget | null,
+): Promise<DeviceLoginUser[]> {
+  const target = device ?? { hostId: 'self', role: 'self' }
+  const { data } = await api.get<DeviceLoginUser[]>(deviceSystemUsersPath(target))
+  return data
+}
+
+export async function mintDeviceTerminalTickets(
+  osUser: string,
+  device?: DeviceApiTarget | null,
+): Promise<{ ticket: string; session?: string }> {
+  const { data } = await api.post(wsTicketPath(device), { user: osUser })
+  if (needsHomeSession(device) && device) {
+    const session = await api.post('/auth/ws-ticket', { hostId: device.hostId, user: osUser })
+    return { ticket: data.ticket, session: session.data.ticket }
+  }
+  return { ticket: data.ticket }
 }
 
 export default api

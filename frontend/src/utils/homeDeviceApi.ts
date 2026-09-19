@@ -303,3 +303,11 @@ export function deviceVmTerminalPath(device: DeviceApiTarget, vmId: string): str
 export function deviceVmContainersPath(device: DeviceApiTarget, vmId: string): string {
   return `${deviceVmPath(device, vmId)}/containers`
 }
+
+export function deviceSystemUsersPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/users')
+}
+
+export function deviceSystemTerminalPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/terminal')
+}

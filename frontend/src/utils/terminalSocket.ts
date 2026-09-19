@@ -2,13 +2,14 @@
  *  console; `service=` names the compose service whose container we exec into. */
 
 import {
+  deviceSystemTerminalPath,
   deviceVmContainersPath,
   deviceVmTerminalPath,
   type DeviceApiTarget,
 } from './homeDeviceApi'
 import { STREAM_SESSION_QUERY, STREAM_TICKET_QUERY } from './streamTicket'
 
-export { deviceVmContainersPath, deviceVmTerminalPath }
+export { deviceSystemTerminalPath, deviceVmContainersPath, deviceVmTerminalPath }
 
 export const TERMINAL_SERVICE_QUERY = 'service'
 export const TERMINAL_COLS_QUERY = 'cols'
@@ -49,6 +50,30 @@ export function terminalSocketQuery(
   const params = new URLSearchParams({
     [STREAM_TICKET_QUERY]: ticket,
     [TERMINAL_SERVICE_QUERY]: service,
+  })
+  if (session) params.set(STREAM_SESSION_QUERY, session)
+  const sane = saneTerminalWindowSize(size)
+  if (sane) {
+    params.set(TERMINAL_COLS_QUERY, String(sane.cols))
+    params.set(TERMINAL_ROWS_QUERY, String(sane.rows))
+  }
+  return params.toString()
+}
+
+export function deviceTerminalSocketPath(
+  device: DeviceApiTarget | null | undefined,
+): string {
+  const target = device ?? { hostId: 'self', role: 'self' }
+  return deviceSystemTerminalPath(target)
+}
+
+export function deviceTerminalSocketQuery(
+  ticket: string,
+  session?: string | null,
+  size?: TerminalWindowSize | null,
+): string {
+  const params = new URLSearchParams({
+    [STREAM_TICKET_QUERY]: ticket,
   })
   if (session) params.set(STREAM_SESSION_QUERY, session)
   const sane = saneTerminalWindowSize(size)

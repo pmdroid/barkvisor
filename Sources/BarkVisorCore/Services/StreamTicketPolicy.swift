@@ -39,10 +39,12 @@ public enum StreamTicketPolicy {
         case homeTunnel
         /// Other JWT routes: Bearer or API key only. Never spend Device `ticket`.
         case other
+        case ownerDeviceSystemTerminal
     }
 
     public static func site(path: String) -> Site {
         if isHomeConsoleTunnel(path) { return .homeTunnel }
+        if isOwnerDeviceSystemTerminal(path) { return .ownerDeviceSystemTerminal }
         if isOwnerDeviceStream(path) { return .ownerDevice }
         if isOwnerDeviceSSE(path) { return .ownerDeviceSSE }
         return .other
@@ -51,7 +53,7 @@ public enum StreamTicketPolicy {
     /// JWT middleware may spend `?ticket=` only on these sites (PAS-280).
     public static func spendsDeviceTicket(path: String) -> Bool {
         switch site(path: path) {
-        case .ownerDevice, .ownerDeviceSSE: return true
+        case .ownerDevice, .ownerDeviceSSE, .ownerDeviceSystemTerminal: return true
         case .homeTunnel, .other: return false
         }
     }
@@ -60,6 +62,22 @@ public enum StreamTicketPolicy {
     public static func isHomeConsoleTunnel(_ path: String) -> Bool {
         guard path.contains("/api/home/devices/") else { return false }
         return path.hasSuffix("/vnc") || path.hasSuffix("/console") || path.hasSuffix("/terminal")
+    }
+
+    public static func isOwnerDeviceSystemTerminal(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        return parts == ["api", "system", "terminal"]
+    }
+
+    public static func isHomeSystemTerminal(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        return parts.count == 7
+            && parts[0] == "api"
+            && parts[1] == "home"
+            && parts[2] == "devices"
+            && parts[4] == "v1"
+            && parts[5] == "system"
+            && parts[6] == "terminal"
     }
 
     /// `/api/vms/{id}/vnc|console|terminal|state` and `/api/vms/{id}/metrics/stream`.
