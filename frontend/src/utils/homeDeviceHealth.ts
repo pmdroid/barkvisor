@@ -130,6 +130,19 @@ export function doctorBannerSub(failures: HomeDeviceDoctorFailure[]): string {
   return failures.map((row) => row.detail).filter(Boolean).join(' · ')
 }
 
+const HOST_BRIDGE_DOCTOR_IDS = new Set(['linux-bridge', 'macos-socket-vmnet'])
+
+/** Warn-only host-bridge doctor rows. Apply lives on Networks, not doctor. */
+export function doctorHostBridgeSetup(
+  report: DoctorReport | null | undefined,
+): HomeDeviceDoctorFailure | null {
+  const row = report?.checks?.find(
+    (check) => HOST_BRIDGE_DOCTOR_IDS.has(check.id) && check.status === 'warn',
+  )
+  if (!row) return null
+  return { id: row.id, detail: row.detail }
+}
+
 export function reachabilityHint(
   device: { reachability?: string | null; reachabilityError?: string | null },
 ): string | null {
