@@ -10,10 +10,11 @@ public enum DisplayHomePage {
         timeZone: TimeZone = .current,
     ) -> String {
         let clock = clockString(now, timeZone: timeZone)
-        let shown = boardDevices(report)
+        let shown = report.devices
         let n = shown.count
         let tight = n >= 5 ? " tight" : ""
         let cards = shown.map(cardHTML).joined()
+        let up = "\(report.totals.reachable)/\(report.totals.devices) up"
         return """
         <!DOCTYPE html>
         <html lang="en">
@@ -21,18 +22,51 @@ public enum DisplayHomePage {
         <meta charset="utf-8">
         <meta name="viewport" content="width=\(width), height=\(height)">
         <title>Home</title>
-        <style>
+        <style>\(css)</style>
+        </head>
+        <body>
+        <div class="board\(tight)">
+        <header class="head">
+        <span>Home</span>
+        <span class="meta">\(up) · \(escape(clock))</span>
+        </header>
+        <div class="quad n\(n)\(tight)">\(cards)</div>
+        <footer class="foot">
+        <span>Fetched \(escape(clock))</span>
+        <span>BarkVisor</span>
+        </footer>
+        </div>
+        </body>
+        </html>
+        """
+    }
+
+    static let css = """
         html,body{margin:0;padding:0;background:#fff;color:#000;}
         *{box-sizing:border-box;}
-        .board{width:\(width)px;height:\(height)px;padding:12px 14px 10px;display:flex;flex-direction:column;gap:8px;font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#000;overflow:hidden;}
+        .board{
+        width:\(width)px;height:\(height)px;padding:12px 14px 10px;
+        display:flex;flex-direction:column;gap:8px;
+        font-family:ui-monospace,Menlo,Consolas,monospace;
+        background:#fff;color:#000;overflow:hidden;
+        }
         .board.tight{padding:8px 10px 6px;gap:6px;}
-        .head,.foot{display:flex;justify-content:space-between;align-items:baseline;font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
+        .head,.foot{
+        display:flex;justify-content:space-between;align-items:baseline;
+        font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+        }
         .head{font-size:18px;height:28px;border-bottom:3px solid #000;padding-bottom:6px;}
         .board.tight .head{font-size:16px;height:22px;padding-bottom:4px;}
         .head .meta{font-size:14px;font-weight:500;}
-        .foot{font-size:11px;height:20px;border-top:2px solid #000;padding-top:6px;letter-spacing:.08em;}
+        .foot{
+        font-size:11px;height:20px;border-top:2px solid #000;
+        padding-top:6px;letter-spacing:.08em;
+        }
         .board.tight .foot{font-size:10px;height:16px;padding-top:4px;}
-        .quad{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px;min-height:0;}
+        .quad{
+        flex:1;display:grid;grid-template-columns:1fr 1fr;
+        grid-auto-rows:1fr;gap:8px;min-height:0;
+        }
         .quad.n1{grid-template-columns:1fr;}
         .quad.tight{gap:6px;}
         .quad.tight .name{font-size:15px;}
@@ -42,55 +76,65 @@ public enum DisplayHomePage {
         .quad.tight .bar{height:6px;}
         .quad.tight .temps,.quad.tight .loads{font-size:10px;padding-top:2px;}
         .quad.tight .stamp{font-size:14px;}
-        .card{border:3px solid #000;padding:10px 12px 8px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
+        .card{
+        border:3px solid #000;padding:10px 12px 8px;
+        display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
+        }
         .card.down{background:#000;color:#fff;}
         .name{font-size:22px;font-weight:700;line-height:1;}
-        .plat{font-size:11px;margin:4px 0 8px;letter-spacing:.04em;text-transform:uppercase;}
-        .row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-top:4px;}
+        .plat{
+        font-size:11px;margin:4px 0 8px;letter-spacing:.04em;text-transform:uppercase;
+        }
+        .row{
+        display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+        margin-top:4px;
+        }
         .row .k{width:36px;flex:none;}
         .bar{flex:1;height:10px;border:2px solid currentColor;position:relative;}
         .bar i{display:block;height:100%;background:currentColor;}
         .row .v{width:48px;text-align:right;flex:none;}
         .temps{font-size:13px;font-weight:600;margin-top:auto;padding-top:4px;}
         .loads{font-size:13px;font-weight:600;padding-top:2px;}
-        .stamp{font-size:20px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:auto;}
-        </style>
-        </head>
-        <body>
-        <div class="board\(tight)">
-        <header class="head"><span>Home</span><span class="meta">\(report.totals.reachable)/\(report.totals.devices) up · \(escape(clock))</span></header>
-        <div class="quad n\(n)\(tight)">\(cards)</div>
-        <footer class="foot"><span>Fetched \(escape(clock))</span><span>BarkVisor</span></footer>
-        </div>
-        </body>
-        </html>
+        .stamp{
+        font-size:20px;font-weight:700;letter-spacing:.12em;
+        text-transform:uppercase;margin-top:auto;
+        }
         """
-    }
-
-    static func boardDevices(_ report: HomeDeviceHealthReport) -> [HomeDeviceHealthSnapshot] {
-        report.devices
-    }
 
     static func cardHTML(_ device: HomeDeviceHealthSnapshot) -> String {
         let name = escape(device.label)
         let plat = escape(platformLine(device))
         if device.reachability != HomeDeviceHealthAggregator.ok {
             return """
-            <article class="card down"><div class="name">\(name)</div><div class="plat">\(plat)</div><div class="stamp">Unreachable</div></article>
+            <article class="card down">
+            <div class="name">\(name)</div>
+            <div class="plat">\(plat)</div>
+            <div class="stamp">Unreachable</div>
+            </article>
             """
         }
         let res = device.resources
         let cpuBar = bar("CPU", res?.cpuLoadPercent)
         let gpuBar = bar("GPU", res?.gpuPercent)
         let memPct: Double? = {
-            guard let used = res?.memoryUsedMB, let total = res?.memoryTotalMB, total > 0 else { return nil }
+            guard let used = res?.memoryUsedMB, let total = res?.memoryTotalMB, total > 0 else {
+                return nil
+            }
             return min((Double(used) / Double(total)) * 100, 100)
         }()
         let memBar = bar("MEM", memPct)
-        let temps = [sensorLine(res), memLine(res)].filter { !$0.isEmpty }.joined(separator: " · ")
+        let temps = [sensorLine(res), memLine(res)].filter { !$0.isEmpty }.joined(
+            separator: " · ",
+        )
         let loads = loadLine(device)
         return """
-        <article class="card"><div class="name">\(name)</div><div class="plat">\(plat)</div>\(cpuBar)\(gpuBar)\(memBar)<div class="temps">\(escape(temps))</div><div class="loads">\(escape(loads))</div></article>
+        <article class="card">
+        <div class="name">\(name)</div>
+        <div class="plat">\(plat)</div>
+        \(cpuBar)\(gpuBar)\(memBar)
+        <div class="temps">\(escape(temps))</div>
+        <div class="loads">\(escape(loads))</div>
+        </article>
         """
     }
 
@@ -98,7 +142,11 @@ public enum DisplayHomePage {
         guard let value else { return "" }
         let w = max(0, min(100, Int(value.rounded())))
         return """
-        <div class="row"><span class="k">\(label)</span><span class="bar"><i style="width:\(w)%"></i></span><span class="v">\(w)%</span></div>
+        <div class="row">
+        <span class="k">\(label)</span>
+        <span class="bar"><i style="width:\(w)%"></i></span>
+        <span class="v">\(w)%</span>
+        </div>
         """
     }
 
@@ -111,19 +159,27 @@ public enum DisplayHomePage {
 
     static func sensorLine(_ res: HomeDeviceResourceSummary?) -> String {
         var bits: [String] = []
-        if let c = res?.cpuTemperatureC { bits.append("CPU \(Int(c.rounded()))°C") }
-        if let g = res?.gpuTemperatureC { bits.append("GPU \(Int(g.rounded()))°C") }
-        if let d = res?.diskTemperatureC { bits.append("Disk \(Int(d.rounded()))°C") }
-        if bits.isEmpty, let t = res?.temperatureC { bits.append("\(Int(t.rounded()))°C") }
+        if let c = res?.cpuTemperatureC {
+            bits.append("CPU \(Int(c.rounded()))°C")
+        }
+        if let g = res?.gpuTemperatureC {
+            bits.append("GPU \(Int(g.rounded()))°C")
+        }
+        if let d = res?.diskTemperatureC {
+            bits.append("Disk \(Int(d.rounded()))°C")
+        }
+        if bits.isEmpty, let t = res?.temperatureC {
+            bits.append("\(Int(t.rounded()))°C")
+        }
         return bits.joined(separator: " · ")
     }
 
     static func memLine(_ res: HomeDeviceResourceSummary?) -> String {
         guard let used = res?.memoryUsedMB, let total = res?.memoryTotalMB else { return "" }
-        let usedGB = Double(used) / 1024
-        let totalGB = Double(total) / 1024
-        let usedText = used % 1024 == 0 ? String(Int(usedGB)) : String(format: "%.1f", usedGB)
-        let totalText = total % 1024 == 0 ? String(Int(totalGB)) : String(format: "%.0f", totalGB)
+        let usedGB = Double(used) / 1_024
+        let totalGB = Double(total) / 1_024
+        let usedText = used % 1_024 == 0 ? String(Int(usedGB)) : String(format: "%.1f", usedGB)
+        let totalText = total % 1_024 == 0 ? String(Int(totalGB)) : String(format: "%.0f", totalGB)
         return "\(usedText) / \(totalText) GB"
     }
 

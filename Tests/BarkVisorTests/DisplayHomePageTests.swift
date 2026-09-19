@@ -45,10 +45,11 @@ struct DisplayHomePageTests {
                 ),
             ],
         )
+        let zone = try #require(TimeZone(secondsFromGMT: 0))
         let html = DisplayHomePage.html(
             report: report,
             now: Date(timeIntervalSince1970: 1_700_000_000),
-            timeZone: TimeZone(secondsFromGMT: 0)!,
+            timeZone: zone,
         )
         #expect(html.contains("MacMini"))
         #expect(html.contains("agentbox"))
@@ -64,7 +65,7 @@ struct DisplayHomePageTests {
         #expect(html.contains("card down"))
         let from = try #require(html.range(of: "MacMini"))
         let to = try #require(html.range(of: "agentbox"))
-        let miniSlice = html[from.lowerBound..<to.lowerBound]
+        let miniSlice = html[from.lowerBound ..< to.lowerBound]
         #expect(!miniSlice.contains("GPU"))
     }
 
