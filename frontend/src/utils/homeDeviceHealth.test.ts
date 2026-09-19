@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   deviceResourcesLine,
   deviceWorkloadLine,
@@ -6,6 +9,7 @@ import {
   doctorBannerTitle,
   doctorFailures,
   doctorFailuresFromReport,
+  doctorHostBridgeSetup,
   hasDoctorFailures,
   hasKnownHealthCounts,
   homeWorkloadsRunningLine,
@@ -16,6 +20,8 @@ import {
   reachabilityPillClass,
   resolveHealthCounts,
 } from './homeDeviceHealth'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 describe('deviceResourcesLine', () => {
   test('reachable CPU and memory match the Device row, with no GPU copy', () => {
@@ -193,5 +199,39 @@ describe('doctor failures', () => {
       { id: 'qemu', detail: 'qemu-system-aarch64 not found.' },
       { id: 'swtpm', detail: 'swtpm not found.' },
     ])
+  })
+
+  test('host-bridge warn is setup, not a missing required dependency', () => {
+    expect(doctorHostBridgeSetup(undefined)).toBeNull()
+    expect(doctorHostBridgeSetup({
+      ok: true,
+      checks: [{ id: 'linux-bridge', status: 'ok', detail: 'br0 ready=true' }],
+    })).toBeNull()
+    expect(doctorHostBridgeSetup({
+      ok: false,
+      checks: [{ id: 'qemu', status: 'fail', detail: 'missing' }],
+    })).toBeNull()
+    expect(doctorHostBridgeSetup({
+      ok: true,
+      checks: [{
+        id: 'linux-bridge',
+        status: 'warn',
+        detail: 'br0 address=none. Apply from Networks → Host interfaces.',
+      }],
+    })).toEqual({
+      id: 'linux-bridge',
+      detail: 'br0 address=none. Apply from Networks → Host interfaces.',
+    })
+    expect(doctorHostBridgeSetup({
+      ok: true,
+      checks: [{ id: 'macos-socket-vmnet', status: 'warn', detail: 'socket=false' }],
+    })?.id).toBe('macos-socket-vmnet')
+  })
+
+  test('Device detail sends host-bridge setup to Networks Apply', () => {
+    const src = readFileSync(join(here, '../views/DeviceDetailView.vue'), 'utf8')
+    expect(src).toContain('doctorHostBridgeSetup')
+    expect(src).toContain('Set up Bridge')
+    expect(src).toContain("router.push('/networks')")
   })
 })

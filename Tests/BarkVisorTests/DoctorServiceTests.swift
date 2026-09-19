@@ -290,7 +290,7 @@ struct DoctorServiceTests {
         #expect(!report.ok)
     }
 
-    @Test func `linux bridge reuses host facts and fails when privileged`() {
+    @Test func `linux bridge missing is warn even when privileged`() {
         let facts = linuxMissing()
         let report = DoctorService.assemble(from: inputs(
             uid: 0,
@@ -298,8 +298,14 @@ struct DoctorServiceTests {
             suggestedBridgeAddress: nil,
         ))
         #expect(report.hostBridge == facts)
-        #expect(check(report, "linux-bridge").status == .fail)
-        #expect(!report.ok)
+        #expect(check(report, "linux-bridge").status == .warn)
+        #expect(check(report, "linux-bridge").detail.contains("Networks"))
+        #expect(check(report, "linux-bridge").detail.contains("never applies"))
+        #expect(!check(report, "linux-bridge").detail.contains("Copy Bridge setup"))
+        #expect(report.ok)
+        let summary = HomeDeviceDoctorSummary.from(report: report)
+        #expect(summary.ok)
+        #expect(!summary.failures.contains { $0.id == "linux-bridge" })
     }
 
     @Test func `linux bridge missing is warn when unprivileged`() {
@@ -309,6 +315,7 @@ struct DoctorServiceTests {
             suggestedBridgeAddress: nil,
         ))
         #expect(check(report, "linux-bridge").status == .warn)
+        #expect(check(report, "linux-bridge").detail.contains("Networks"))
         #expect(report.ok)
     }
 
@@ -321,15 +328,20 @@ struct DoctorServiceTests {
         #expect(check(report, "linux-bridge").detail.contains("br0"))
     }
 
-    @Test func `macos socket missing fails when privileged`() {
+    @Test func `macos socket missing is warn even when privileged`() {
         let report = DoctorService.assemble(from: inputs(
             os: "macOS",
             uid: 0,
             hostBridge: macMissing(),
         ))
-        #expect(check(report, "macos-socket-vmnet").status == .fail)
+        #expect(check(report, "macos-socket-vmnet").status == .warn)
+        #expect(check(report, "macos-socket-vmnet").detail.contains("Networks"))
+        #expect(check(report, "macos-socket-vmnet").detail.contains("never starts"))
         #expect(check(report, "linux-bridge").status == .skip)
-        #expect(!report.ok)
+        #expect(report.ok)
+        let summary = HomeDeviceDoctorSummary.from(report: report)
+        #expect(summary.ok)
+        #expect(!summary.failures.contains { $0.id == "macos-socket-vmnet" })
     }
 
     @Test func `macos socket ready is ok`() {
