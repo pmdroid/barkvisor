@@ -28,6 +28,35 @@ case "$1" in
     # Apply writes /etc/qemu/bridge.conf. The dir must exist before the unit
     # starts or systemd ignores ReadWritePaths=-/etc/qemu (ProtectSystem=strict).
     install -d -m 0755 /etc/qemu
+    compat_dir=/usr/local/lib/barkvisor/compat
+    dest="${compat_dir}/libxml2.so.2"
+    if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then
+      mkdir -p "$compat_dir"
+      ma=""
+      if command -v dpkg-architecture >/dev/null 2>&1; then
+        ma="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
+      fi
+      if [ -z "$ma" ]; then
+        case "$(uname -m)" in
+          x86_64 | amd64) ma=x86_64-linux-gnu ;;
+          aarch64 | arm64) ma=aarch64-linux-gnu ;;
+        esac
+      fi
+      set --
+      if [ -n "$ma" ]; then
+        set -- "/usr/lib/${ma}" "/lib/${ma}"
+      fi
+      set -- "$@" /usr/lib /lib
+      for d in "$@"; do
+        if [ -e "$d/libxml2.so.2" ]; then
+          break
+        fi
+        if [ -e "$d/libxml2.so.16" ]; then
+          ln -sfn "$d/libxml2.so.16" "$dest"
+          break
+        fi
+      done
+    fi
     if command -v udevadm >/dev/null 2>&1; then
       udevadm control --reload || true
       udevadm trigger --subsystem-match=vfio || true
