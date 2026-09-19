@@ -8,6 +8,7 @@ export function deviceResourcesLine(device: {
   reachability?: string
   resources?: {
     cpuLoadPercent?: number | null
+    gpuPercent?: number | null
     memoryUsedMB?: number | null
     memoryTotalMB?: number | null
   } | null
@@ -16,6 +17,9 @@ export function deviceResourcesLine(device: {
   const parts: string[] = []
   if (device.resources.cpuLoadPercent != null) {
     parts.push(`CPU ${Math.round(device.resources.cpuLoadPercent)}%`)
+  }
+  if (device.resources.gpuPercent != null) {
+    parts.push(`GPU ${Math.round(device.resources.gpuPercent)}%`)
   }
   if (device.resources.memoryUsedMB != null && device.resources.memoryTotalMB != null) {
     parts.push(

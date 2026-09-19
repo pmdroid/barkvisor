@@ -4844,6 +4844,21 @@ components:
           type: integer
         cpuLoadPercent:
           type: number
+        gpuPercent:
+          type: number
+          nullable: true
+        temperatureC:
+          type: number
+          nullable: true
+        cpuTemperatureC:
+          type: number
+          nullable: true
+        gpuTemperatureC:
+          type: number
+          nullable: true
+        diskTemperatureC:
+          type: number
+          nullable: true
 
     HomeDeviceHealthSnapshot:
       type: object

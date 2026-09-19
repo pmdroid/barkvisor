@@ -107,6 +107,43 @@ struct HomeDevicesController: RouteCollection {
         return report
     }
 
+    func bootDisplay(routes: any RoutesBuilder) {
+        routes.get("display", "home", use: displayHome)
+    }
+
+    @Sendable
+    func displayHome(req: Vapor.Request) async throws -> Response {
+        let listed = try await listedDevices(db: req.db)
+        let facts = await resolvedLocalFacts(db: req.db)
+        let bearer = await displayHopBearer(db: req.db)
+        let report = await healthReport(listed: listed, local: facts, bearer: bearer)
+        var headers = HTTPHeaders()
+        headers.replaceOrAdd(name: .contentType, value: "text/html; charset=utf-8")
+        headers.replaceOrAdd(name: .cacheControl, value: "no-store")
+        return Response(
+            status: .ok,
+            headers: headers,
+            body: .init(string: DisplayHomePage.html(report: report)),
+        )
+    }
+
+    func displayHopBearer(db: DatabasePool) async -> String? {
+        guard let keys else { return nil }
+        let admin: User?
+        do {
+            admin = try await db.read { try User.fetchProvisionedAdmin($0) }
+        } catch {
+            return nil
+        }
+        guard let admin else { return nil }
+        return try? await AuthService.signMemberHopToken(
+            userId: admin.id,
+            username: admin.username,
+            role: UserRolePolicy.parseStored(admin.role).rawValue,
+            keys: keys,
+        )
+    }
+
     @Sendable
     func scorePlacement(req: Vapor.Request) async throws -> HomePlacementScoreResponse {
         let user = try req.requireUser
@@ -455,12 +492,7 @@ struct HomeDevicesController: RouteCollection {
                 os: PlatformHost.platformName,
                 arch: PlatformCapabilities.hostArch,
             ),
-            resources: HomeDeviceResourceSummary(
-                cpuCount: slice.resources.cpuCount,
-                memoryTotalMB: slice.resources.memoryTotalMB,
-                memoryUsedMB: slice.resources.memoryUsedMB,
-                cpuLoadPercent: slice.resources.cpuLoadPercent,
-            ),
+            resources: HomeDeviceResourceSummary(from: slice.resources),
             features: HostInventoryService.featureSummary(),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,

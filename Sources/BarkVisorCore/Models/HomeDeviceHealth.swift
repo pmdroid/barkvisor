@@ -78,17 +78,46 @@ public struct HomeDeviceResourceSummary: Codable, Sendable, Equatable {
     public var memoryTotalMB: Int?
     public var memoryUsedMB: Int?
     public var cpuLoadPercent: Double?
+    public var gpuPercent: Double?
+    public var temperatureC: Double?
+    public var cpuTemperatureC: Double?
+    public var gpuTemperatureC: Double?
+    public var diskTemperatureC: Double?
 
     public init(
         cpuCount: Int? = nil,
         memoryTotalMB: Int? = nil,
         memoryUsedMB: Int? = nil,
         cpuLoadPercent: Double? = nil,
+        gpuPercent: Double? = nil,
+        temperatureC: Double? = nil,
+        cpuTemperatureC: Double? = nil,
+        gpuTemperatureC: Double? = nil,
+        diskTemperatureC: Double? = nil,
     ) {
         self.cpuCount = cpuCount
         self.memoryTotalMB = memoryTotalMB
         self.memoryUsedMB = memoryUsedMB
         self.cpuLoadPercent = cpuLoadPercent
+        self.gpuPercent = gpuPercent
+        self.temperatureC = temperatureC
+        self.cpuTemperatureC = cpuTemperatureC
+        self.gpuTemperatureC = gpuTemperatureC
+        self.diskTemperatureC = diskTemperatureC
+    }
+
+    public init(from resources: ResourcesInfo) {
+        self.init(
+            cpuCount: resources.cpuCount,
+            memoryTotalMB: resources.memoryTotalMB,
+            memoryUsedMB: resources.memoryUsedMB,
+            cpuLoadPercent: resources.cpuLoadPercent,
+            gpuPercent: resources.gpuPercent,
+            temperatureC: resources.temperatureC,
+            cpuTemperatureC: resources.cpuTemperatureC,
+            gpuTemperatureC: resources.gpuTemperatureC,
+            diskTemperatureC: resources.diskTemperatureC,
+        )
     }
 
     public var freeMemoryMB: Int? {

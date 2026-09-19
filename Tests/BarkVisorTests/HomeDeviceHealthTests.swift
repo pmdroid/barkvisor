@@ -121,7 +121,12 @@ struct HomeDeviceHealthTests {
                 os: "macos", osVersion: "15.0", arch: "arm64", hostname: "desk",
             ),
             resources: ResourcesInfo(
-                cpuCount: 2, memoryTotalMB: 8_192, memoryUsedMB: 2_048, cpuLoadPercent: 4,
+                cpuCount: 2,
+                memoryTotalMB: 8_192,
+                memoryUsedMB: 2_048,
+                cpuLoadPercent: 4,
+                gpuPercent: 33,
+                gpuTemperatureC: 61,
             ),
             storage: [],
             networking: NetworkingInfo(interfaces: []),
@@ -156,6 +161,9 @@ struct HomeDeviceHealthTests {
         #expect(live.displayName == "desk")
         #expect(live.platform?.arch == "arm64")
         #expect(live.resources?.cpuCount == 2)
+        #expect(live.resources?.gpuPercent == 33)
+        #expect(live.resources?.gpuTemperatureC == 61)
+        #expect(live.resources?.cpuTemperatureC == nil)
         #expect(live.features?.kvmDevice == false)
         #expect(live.features?.bridgedNetworking == false)
         #expect(live.features?.usbPassthrough == false)

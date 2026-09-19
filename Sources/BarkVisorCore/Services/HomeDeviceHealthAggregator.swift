@@ -67,12 +67,7 @@ public enum HomeDeviceHealthAggregator {
                 os: inventory.platform.os,
                 arch: inventory.platform.arch,
             ),
-            resources: HomeDeviceResourceSummary(
-                cpuCount: inventory.resources.cpuCount,
-                memoryTotalMB: inventory.resources.memoryTotalMB,
-                memoryUsedMB: inventory.resources.memoryUsedMB,
-                cpuLoadPercent: inventory.resources.cpuLoadPercent,
-            ),
+            resources: HomeDeviceResourceSummary(from: inventory.resources),
             features: HomeDeviceFeatureSummary(from: inventory.virtualization.features),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,

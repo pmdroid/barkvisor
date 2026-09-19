@@ -195,11 +195,17 @@ public enum HostInventoryService {
     private static let sliceCache = MetricsSliceCache()
 
     private static func liveResources() -> ResourcesInfo {
-        ResourcesInfo(
+        let capture = HostMetricsCapture.live()
+        return ResourcesInfo(
             cpuCount: PlatformHost.cpuCount,
             memoryTotalMB: PlatformHost.physicalMemoryMB,
             memoryUsedMB: PlatformHost.memoryUsedMB,
             cpuLoadPercent: PlatformHost.cpuLoadPercent,
+            gpuPercent: PlatformGPU.utilizationPercent(),
+            temperatureC: capture.temperatureC,
+            cpuTemperatureC: capture.cpuTemperatureC,
+            gpuTemperatureC: capture.gpuTemperatureC,
+            diskTemperatureC: capture.diskTemperatureC,
         )
     }
 
