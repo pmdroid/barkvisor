@@ -2,9 +2,9 @@
 
 ## Sub-features
 
-- Device card grid (`.dev-rows` / `.ops-dev`) with health dots, CPU/MEM; this Device also shows temperature and volume used; polls every 5 s
+- Device card grid (`.dev-rows` / `.ops-dev`) with health dots, CPU/MEM; this Device also shows temperature and **Storage** used/total; polls every 5 s
 - **Add a {Device}** → jumps to `Settings → Pairing`
-- Device detail: reachability pill, CPU/Memory/GPU stat cards with sparklines, **Facts** sheet, per-Workload table with Start/Stop/Restart, failed-workload banner with inline **Start**
+- Device detail: reachability pill, CPU/Memory/GPU stat cards with sparklines (GPU card always renders; value may be **—**), **Facts** sheet, per-Workload table with Start/Stop/Restart, failed-workload banner **Start {name}** when exactly one workload is failed
 
 ## How to get to it (user POV)
 
@@ -22,7 +22,7 @@ For detail, take the self hostId from `GET /api/home/devices/health` (role `"sel
 Assertions:
 
 - At least one `.ops-dev` card (this page polls `/api/home/devices/health`; `.triage-home-dev` is Dashboard-only)
-- Detail page shows a Facts section listing Agent (from `/api/system/about`); stat cards labeled **CPU**, **Memory** (and **GPU** when present). Disk directory sheet is on this page, not Settings.
+- Detail page shows a Facts section listing Agent (from `/api/system/about`); stat cards labeled **CPU**, **Memory**, **GPU**. Disk directory sheet is on this page, not Settings. Empty workloads copy: **No workloads on this Device**.
 
 ## Gotchas
 

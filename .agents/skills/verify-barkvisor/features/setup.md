@@ -2,9 +2,9 @@
 
 ## Sub-features
 
-- **Welcome** — intro + **Continue** into create-Home setup. Joining an existing Home is CLI-only: `barkvisor join --code`
+- **Welcome** — Device name field (prefilled from hostname) + checkbox **Private single-user machine — skip sign-in on this computer** + **Continue**. Joining an existing Home is CLI-only: `barkvisor join --code`
 - Create path: **Add a passkey** (localhost or https hostname, not a raw IP) → **Image Library** folder pick → **Image Catalog** sync (or Skip) → **All Set!** → **Launch Dashboard**
-- Ops-checklist rail tracks 01–05; setup is forced until `/api/setup/status` says `complete`. `/api/setup/complete` rejects until a Library folder is saved.
+- Ops-checklist rail tracks 01–05; setup is forced until `/api/setup/status` says `complete`. `/api/setup/complete` rejects until an admin exists and a Library folder is saved.
 
 ## How to get to it (user POV)
 

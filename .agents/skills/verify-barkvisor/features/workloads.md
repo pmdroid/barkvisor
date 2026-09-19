@@ -4,10 +4,10 @@
 
 - List at `/vms` labeled **Workloads** (not Virtual Machines): health chips, empty state **No workloads yet**
 - **Create VM** magazine (existing) plus **Create App** magazine: Gallery → Configure
-- Gallery cards from the Home app catalog (Big Bear + LinuxServer). Cards can show Install disabled with `unsupportedReasons`
-- Configure: name, Device, FolderPicker paths, env, secrets, ports, PUID/PGID/TZ, optional GPU share, ingress toggle, Advanced extra env/mounts
-- Published compose ports bind `0.0.0.0`; Open UI uses the Device LAN IP
-- Workload detail `/vms/:id` for `kind: Application` uses compose logs (not guest console)
+- Gallery: **Search apps** + category chips, cards from the Home app catalog (Big Bear + LinuxServer). `unsupportedReasons` render on the card; the card stays clickable. **Apply** is what blocks
+- Configure: name, **Open through BarkVisor** (prefix ingress, default on), Device, ports, Extra binds, Advanced (UMASK / extra env / published-port override). PUID/PGID/TZ are catalog env fields, not dedicated widgets
+- Published compose ports bind `0.0.0.0`; Open UI uses the Device LAN IP, or `/go/<id>/` when prefix ingress is on
+- Workload detail `/vms/:id` for `kind: Application`: Overview, Terminal (admin `docker exec`), Logs (`ComposeLogsPanel`), Environment, Volumes. Not the guest console
 
 ## How to get to it (user POV)
 
@@ -17,7 +17,7 @@ Sidebar **Workloads** → `/vms`. Login still lands here. **Create App** on the 
 
 ```sh
 bun helpers/shot.mjs --base "$URL" --token "$TOKEN" \
-  --route /vms --out "evidence/run-apps/workloads.png"
+  --route /vms --wait-ms 3000 --out "evidence/run-apps/workloads.png"
 ```
 
 Create App magazine (gallery + first-card Configure, no apply):
@@ -27,16 +27,16 @@ bun helpers/create-app-flow.mjs --base "$URL" --token "$TOKEN" \
   --dir "evidence/run-apps"
 ```
 
-Asserts: **Create App** opens `.mag-frame` / heading Create App, gallery cards render, clicking a card reaches Configure. Closing without Create leaves `GET /api/vms` unchanged.
+Asserts: **Create App** opens `.mag-frame` / heading Create App, gallery cards render (search + category chips), clicking a card reaches Configure (**Open through BarkVisor**, Extra binds, Advanced). The helper does not close the magazine and does not diff `GET /api/vms`.
 
-Application logs on a created app (needs a compose-capable Device):
+Application detail on a created app (needs a compose-capable Device):
 
 ```sh
 bun helpers/shot.mjs --base "$URL" --token "$TOKEN" \
   --route "/vms/$ID" --out "evidence/run-apps/app-detail.png"
 ```
 
-Prefer the Logs tab / `ComposeLogsPanel` over guest Console.
+Prefer Overview / Logs (`ComposeLogsPanel`) over guest Console. Terminal is admin `docker exec` on this Device.
 
 ## Gotchas
 

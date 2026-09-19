@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { redactPage } from './redactPage.mjs'
 
 const args = process.argv.slice(2)
 function arg(name, fallback) {
@@ -65,6 +66,7 @@ try {
   })
   const shot = async (name) => {
     await applyScrubs(page)
+    await redactPage(page)
     const p = `${dir}/${name}.png`
     await page.screenshot({ path: p, fullPage: true })
     shots.push(p)

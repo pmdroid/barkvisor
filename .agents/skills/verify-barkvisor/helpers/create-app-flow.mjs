@@ -1,6 +1,7 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { redactPage } from './redactPage.mjs'
 
 const args = process.argv.slice(2)
 function arg(name, fallback) {
@@ -46,21 +47,8 @@ try {
   await page.getByRole('button', { name: 'Create App' }).first().click()
   await page.waitForSelector('.mag-frame, h2:has-text("Create App")', { timeout: 10_000 })
   await page.waitForTimeout(800)
-  await page.evaluate(() => {
-    const re = /[\w.-]+\.ts\.net/g
-    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-    const nodes = []
-    let node
-    while ((node = walk.nextNode())) nodes.push(node)
-    for (node of nodes) {
-      if (re.test(node.textContent)) {
-        re.lastIndex = 0
-        node.textContent = node.textContent.replace(re, 'device.local')
-      }
-      re.lastIndex = 0
-    }
-  })
   const gallery = join(dir, 'create-app-gallery.png')
+  await redactPage(page)
   await page.screenshot({ path: gallery, fullPage: true })
   const cards = page.locator('.mag-card')
   const n = await cards.count()
@@ -69,6 +57,7 @@ try {
     await cards.first().click()
     await page.waitForTimeout(800)
     configure = join(dir, 'create-app-configure.png')
+    await redactPage(page)
     await page.screenshot({ path: configure, fullPage: true })
   }
   const before = await fetch(`${base}/api/vms`, { headers: { Authorization: `Bearer ${token}` } })

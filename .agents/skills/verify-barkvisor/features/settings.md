@@ -7,18 +7,19 @@
 | `home` | Device URL picker + advertised hosts; **Save changes** |
 | `pairing` | **Add a Device** issues a pairing offer (short code + `barkvisor://` URI, not a pairing QR). Phone sign-in QR is separate. Re-pair paste box |
 | `library` | Library path + Browse folder picker, capacity |
-| `repositories` | Catalog URLs, per-Device sync, add/remove |
+| `repositories` | Catalog URLs, **Add repository** / **Sync** / **Remove**, per-Device `deviceSyncs` status |
+| `security` | Sign-in mode: **Require sign-in** / **Skip sign-in on this computer** / **Skip sign-in for my whole network** (`GET/PUT /api/settings/security`) |
 | `apikeys` (default) | Create/show-once/revoke API keys |
-| `sshkeys` | Add SSH key, Set Default/Delete |
+| `sshkeys` | **Add Key**, Set Default/Delete |
 | `passkeys` | Add/delete WebAuthn passkeys for this user |
 | `audit` | Audit entries filtered by action |
-| `updates` | Check/install in-app updates when the feature is on; otherwise an unavailable state |
+| `updates` | Check/install in-app updates when the feature is on; otherwise **In-app updates unavailable** |
 
-`?tab=disks` is not a Settings tab — the router sends you to **Devices**. Default VM disk directory lives on Device detail. Disk inventory is sidebar **Disks** (`/disks`). Tab clicks do not rewrite `?tab=` in the URL.
+`?tab=disks` is not a Settings tab — the router sends you to **Devices**. Default VM disk directory lives on Device detail. Disk inventory is sidebar **Disks** (`/disks`). Tab clicks do not rewrite `?tab=` in the URL. When the front door is bypassed, `apikeys` and `passkeys` remap to **Security** and those two tab buttons hide.
 
 ## How to get to it (user POV)
 
-Sidebar **Settings** → `/settings`. Tabs are deep-linkable: `/settings?tab=pairing` etc. Without a query you land on **API Keys**.
+Sidebar **Settings** → `/settings`. Tabs are deep-linkable: `/settings?tab=pairing` etc. Without a query you land on **API Keys** (or **Security** if sign-in is off).
 
 ## Driving it with Playwright
 

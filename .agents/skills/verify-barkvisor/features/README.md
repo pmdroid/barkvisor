@@ -12,7 +12,7 @@ Maintained verification source for the web console (Swift daemon + Vue SPA at `/
 | Ollama | `/models` | [ollama.md](ollama.md) |
 | Images | `/images` | [images.md](images.md) |
 | Disks | `/disks` | [disks.md](disks.md) |
-| Settings (9 tabs) | `/settings?tab=…` | [settings.md](settings.md) |
+| Settings (10 tabs) | `/settings?tab=…` | [settings.md](settings.md) |
 | Networks | `/networks` | [networks.md](networks.md) |
 | Logs live tail | `/logs` | [logs.md](logs.md) |
 

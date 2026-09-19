@@ -2,8 +2,8 @@
 
 ## Sub-features
 
-- Capacity bar for the Library folder
-- Table of ISOs / cloud images: Name · Type · Arch · Size · Location · Status (Ready / Downloading)
+- Capacity bar for the volume that contains the Library folder
+- **Images** / **Apps** tabs. Images table: Name · Type · Arch · Size · Location · Status (Ready / Downloading) + Delete. Apps tab is the Home catalog with **Search apps** and category chips
 - **Upload** (tus to `/api/images/tus`) and **Download** from a URL
 - Delete (confirm)
 
@@ -20,14 +20,15 @@ bun helpers/shot.mjs --base "$URL" --token "$TOKEN" \
 
 Assertions:
 
-- `h1` is Images; toolbar **Upload** and **Download**
-- Seeded instance has no images — empty state is expected
-- Click **Upload** → heading **Upload Image**; **Download** → **Download Image**
-- `GET /api/images` matches the table
+- `h1` is Images; toolbar **Upload** and **Download** (only when a non-default Library is saved)
+- Seeded instance has no images unless a prior Create VM Windows flow pulled VirtIO drivers — empty copy **No images yet**
+- Click **Upload** → heading **Upload Image**; **Download** → **Download Image** (Cancel to close; Escape leaves the overlay)
+- Apps tab: **Search apps** + category chips; empty copy **No apps yet** if catalogs have not synced
+- `GET /api/images` names match the Images table on a single Device
 
 Do not start a real URL download unless you intend to wait for it.
 
 ## Gotchas
 
-- Library folder must exist (setup already saved one). An unset Library shows a pick-folder prompt instead of the table.
+- Library folder must exist (setup already saved one). An unset default Library hides Upload/Download and the table — there is no pick-folder prompt on this page (folder pick is Setup / Settings → Library).
 - Downloads are real network fetches into the Library folder on the machine running the daemon.

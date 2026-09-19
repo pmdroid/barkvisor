@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
+import { redactPage } from './redactPage.mjs'
 
 const args = process.argv.slice(2)
 function arg(name, fallback) {
@@ -129,6 +130,7 @@ try {
   flowSteps.push('drawerBasics')
 
   shots.hostInterfaces = `${dir}/networks-host-interfaces.png`
+  await redactPage(page)
   await page.screenshot({ path: shots.hostInterfaces, fullPage: true })
 
   const dhcpInput = drawer.locator('input[placeholder="from router"]')
@@ -147,6 +149,7 @@ try {
     await additionalInputs.last().fill('10.20.30.41/24')
     flowSteps.push('editAdditional')
     shots.addressEditor = `${dir}/networks-address-editor.png`
+    await redactPage(page)
     await page.screenshot({ path: shots.addressEditor, fullPage: true })
   } else {
     flowSteps.push('editorReadOnly')
@@ -235,6 +238,15 @@ try {
     flowSteps.push('checkOk')
   }
 
+  const applyOverlay = page.locator('.modal-overlay')
+  if (await applyOverlay.count()) {
+    const cancelApply = applyOverlay.locator('button:has-text("Cancel")')
+    if (await cancelApply.count()) await cancelApply.click()
+    else await page.keyboard.press('Escape')
+    await applyOverlay.waitFor({ state: 'hidden', timeout: 10000 })
+    flowSteps.push('applyOverlayClosed')
+  }
+
   await vmTab.click()
   if (await vmTab.getAttribute('aria-selected') !== 'true') fail('VM networks tab did not activate')
 
@@ -256,6 +268,7 @@ try {
 
   await page.waitForSelector('.nrow', { timeout: 15000 })
   shots.vmNetworks = `${dir}/networks-vm-tab.png`
+  await redactPage(page)
   await page.screenshot({ path: shots.vmNetworks, fullPage: true })
 } finally {
   await browser.close()
