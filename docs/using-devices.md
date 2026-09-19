@@ -12,7 +12,7 @@ Each Device renders as a card with:
 - Temperature and storage readings
 - Reachability and workload totals in the header
 
-Cards refresh automatically, so state changes show up without a reload. Clicking a card opens the Device detail view.
+Cards refresh automatically, so state changes show up without a reload. Clicking a card opens the Device detail view. **Rename** on the card (or next to the name on Device details) sets the display name.
 
 ## Adding a Device
 
@@ -22,7 +22,7 @@ Cards refresh automatically, so state changes show up without a reload. Clicking
 
 The detail page for one Device has:
 
-- Connection status, platform, and architecture next to the Device name
+- Connection status, platform, and architecture next to the Device name, plus **Rename**
 - Stat cards **CPU** and **Memory** with sparklines, plus a GPU section
 - A **Facts** sheet — CPU, Memory, Storage, Temperature, Address, Uptime, Virtualization support
 - A **Workloads** table (Name, OS, CPU · Mem, Ports, Status) with per-row **Start** / **Stop** buttons and **Restart**, and a confirmation dialog before stopping (**Shutdown** vs **Force Stop**)

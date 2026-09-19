@@ -178,6 +178,8 @@ describe('PAS-82 Home terminology', () => {
     const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')
     expect(card).toContain("name: 'device-detail'")
     expect(card).toContain('Workloads')
+    expect(card).toContain('Rename')
+    expect(card).toContain('saveDeviceName')
   })
 
   test('setup ready copy names this device a Home', () => {

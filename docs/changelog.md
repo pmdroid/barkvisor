@@ -5,6 +5,7 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 ## Unreleased
 
 - The Linux `.deb` installs on Ubuntu 26.04, where the distro renamed `libxml2` to `libxml2-16`.
+- Devices list cards can rename a Device.
 
 ## 1.0.0-alpha.9 — 2026-09-16
 
