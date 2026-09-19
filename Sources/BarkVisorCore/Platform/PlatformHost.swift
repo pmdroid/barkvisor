@@ -196,7 +196,12 @@ public enum PlatformHost {
         #elseif os(macOS)
             HostSensorTemperatures(gpuC: PlatformGPU.temperatureC())
         #elseif os(Windows)
-            HostSensorTemperatures(gpuC: NVIDIAMetrics.reading().temperatureC)
+            HostSensorTemperatures(
+                gpuC: NVIDIAMetrics.combine(
+                    NVIDIAMetrics.reading().temperatureC,
+                    AMDMetrics.reading().temperatureC,
+                ),
+            )
         #else
             HostSensorTemperatures()
         #endif
@@ -290,10 +295,14 @@ public enum PlatformHost {
         private static func linuxTemperatures() -> HostSensorTemperatures {
             let cpu = linuxThermalCelsius()
             let nvidia = NVIDIAMetrics.reading()
+            let amd = AMDMetrics.reading()
             let hwmon = linuxHwmonTemps()
             return HostSensorTemperatures(
                 cpuC: cpu,
-                gpuC: nvidia.temperatureC ?? hwmon.gpuC,
+                gpuC: NVIDIAMetrics.combine(
+                    NVIDIAMetrics.combine(nvidia.temperatureC, amd.temperatureC),
+                    hwmon.gpuC,
+                ),
                 diskC: hwmon.diskC,
             )
         }

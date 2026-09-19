@@ -17,9 +17,15 @@ public enum PlatformGPU {
             linuxState.lock.lock()
             let drm = linuxBusyPercent(now: now, snapshot: linuxSnapshot(), state: &linuxState.last)
             linuxState.lock.unlock()
-            return NVIDIAMetrics.combine(drm, NVIDIAMetrics.reading(now: now).utilizationPercent)
+            return NVIDIAMetrics.combine(
+                NVIDIAMetrics.combine(drm, NVIDIAMetrics.reading(now: now).utilizationPercent),
+                AMDMetrics.reading(now: now).utilizationPercent,
+            )
         #else
-            return NVIDIAMetrics.reading(now: now).utilizationPercent
+            return NVIDIAMetrics.combine(
+                NVIDIAMetrics.reading(now: now).utilizationPercent,
+                AMDMetrics.reading(now: now).utilizationPercent,
+            )
         #endif
     }
 
@@ -27,7 +33,10 @@ public enum PlatformGPU {
         #if os(macOS)
             return darwinTemperatureC()
         #else
-            return NVIDIAMetrics.reading(now: now).temperatureC
+            return NVIDIAMetrics.combine(
+                NVIDIAMetrics.reading(now: now).temperatureC,
+                AMDMetrics.reading(now: now).temperatureC,
+            )
         #endif
     }
 

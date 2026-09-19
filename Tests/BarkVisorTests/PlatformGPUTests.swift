@@ -45,6 +45,31 @@ struct PlatformGPUTests {
         #expect(withUnits.temperatureC == 52)
     }
 
+    @Test func `rocm smi csv takes max gfx use and junction temp`() {
+        let reading = AMDMetrics.parseCSV("""
+        device,GPU use (%),Temperature (Sensor edge) (C)
+        card0,7,48.0
+        card1,91,79.0
+        """)
+        #expect(reading.utilizationPercent == 91)
+        #expect(reading.temperatureC == 79)
+    }
+
+    @Test func `amd smi metric csv ignores memory use`() {
+        let reading = AMDMetrics.parseCSV("""
+        gpu,gfx_activity,mem_usage,edge,junction
+        0,12,88,41,55
+        """)
+        #expect(reading.utilizationPercent == 12)
+        #expect(reading.temperatureC == 55)
+        let missing = AMDMetrics.parseCSV("""
+        gpu,gfx_activity,edge
+        0,N/A,N/A
+        """)
+        #expect(missing.utilizationPercent == nil)
+        #expect(missing.temperatureC == nil)
+    }
+
     @Test func `nvidia and drm busy combine to the hotter card`() {
         #expect(NVIDIAMetrics.combine(12, 80) == 80)
         #expect(NVIDIAMetrics.combine(nil, 41) == 41)
