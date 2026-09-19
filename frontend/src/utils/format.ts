@@ -16,6 +16,19 @@ export function formatTemperatureC(celsius: number | null | undefined): string |
   return `${Math.round(celsius)}°C`
 }
 
+export function formatHostSensorTemps(metrics: {
+  temperatureC?: number | null
+  cpuTemperatureC?: number | null
+  gpuTemperatureC?: number | null
+  diskTemperatureC?: number | null
+} | null | undefined): { cpu: string | null; gpu: string | null; disk: string | null; legacy: string | null } {
+  const cpu = formatTemperatureC(metrics?.cpuTemperatureC)
+  const gpu = formatTemperatureC(metrics?.gpuTemperatureC)
+  const disk = formatTemperatureC(metrics?.diskTemperatureC)
+  const legacy = cpu || gpu || disk ? null : formatTemperatureC(metrics?.temperatureC)
+  return { cpu, gpu, disk, legacy }
+}
+
 export function formatStorageSize(bytes: number): string {
   const gb = bytes / 1073741824
   if (gb >= 1024) return `${(gb / 1024).toFixed(1).replace(/\.0$/, '')} TB`

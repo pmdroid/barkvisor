@@ -758,6 +758,9 @@ export interface HostMetrics {
   memoryUsedMB: number
   storage: HostStorageMetric[]
   temperatureC: number | null
+  cpuTemperatureC?: number | null
+  gpuTemperatureC?: number | null
+  diskTemperatureC?: number | null
   uptimeSeconds: number
   agentHealthy: boolean
 }

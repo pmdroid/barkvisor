@@ -10,6 +10,18 @@ import Foundation
     import WinSDK
 #endif
 
+public struct HostSensorTemperatures: Sendable, Equatable {
+    public var cpuC: Double?
+    public var gpuC: Double?
+    public var diskC: Double?
+
+    public init(cpuC: Double? = nil, gpuC: Double? = nil, diskC: Double? = nil) {
+        self.cpuC = cpuC
+        self.gpuC = gpuC
+        self.diskC = diskC
+    }
+}
+
 /// Host CPU and memory metrics with macOS (sysctl/Mach) and Linux (/proc) backends.
 public enum PlatformHost {
     /// Logical CPU count.
@@ -178,16 +190,20 @@ public enum PlatformHost {
         ProcessInfo.processInfo.operatingSystemVersionString
     }
 
-    /// Best-effort host temperature in °C.
-    ///
-    /// Linux: thermal-zone sysfs (prefers cpu/pkg types). macOS: nil — SMC is
-    /// not a public API, and a missing sensor must not be reported as 0°C.
-    public static var temperatureCelsius: Double? {
+    public static var temperatures: HostSensorTemperatures {
         #if os(Linux)
-            linuxThermalCelsius()
+            linuxTemperatures()
+        #elseif os(macOS)
+            HostSensorTemperatures(gpuC: PlatformGPU.temperatureC())
+        #elseif os(Windows)
+            HostSensorTemperatures(gpuC: NVIDIAMetrics.reading().temperatureC)
         #else
-            nil
+            HostSensorTemperatures()
         #endif
+    }
+
+    public static var temperatureCelsius: Double? {
+        temperatures.cpuC
     }
 
     /// Parse a thermal-zone `temp` file (millidegree C). Returns nil if the
@@ -217,7 +233,97 @@ public enum PlatformHost {
         return nil
     }
 
+    public enum HwmonKind: Sendable {
+        case cpu
+        case gpu
+        case disk
+    }
+
+    public static func hwmonKind(_ name: String) -> HwmonKind? {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if n.contains("nvme") || n == "drivetemp" { return .disk }
+        if n.contains("nvidia") || n.contains("amdgpu") || n.contains("nouveau")
+            || n == "i915" || n == "xe" || n.contains("radeon") || n.contains("gpu") {
+            return .gpu
+        }
+        if n.contains("coretemp") || n.contains("k10temp") || n.contains("zenpower")
+            || n.contains("cpu") || n.contains("soc") {
+            return .cpu
+        }
+        return nil
+    }
+
+    public static func pickDiskCelsius(samples: [(label: String, celsius: Double)]) -> Double? {
+        if let composite = samples.first(where: { $0.label.lowercased().contains("composite") }) {
+            return composite.celsius
+        }
+        return samples.map(\.celsius).max()
+    }
+
+    public static func selectHwmonCelsius(
+        chips: [(name: String, samples: [(label: String, milli: String)])],
+        kind: HwmonKind,
+    ) -> Double? {
+        var values: [Double] = []
+        for chip in chips {
+            guard hwmonKind(chip.name) == kind else { continue }
+            if kind == .disk {
+                let parsed = chip.samples.compactMap { sample -> (label: String, celsius: Double)? in
+                    guard let celsius = parseThermalMilliCelsius(sample.milli) else { return nil }
+                    return (sample.label, celsius)
+                }
+                if let picked = pickDiskCelsius(samples: parsed) {
+                    values.append(picked)
+                }
+            } else {
+                for sample in chip.samples {
+                    if let celsius = parseThermalMilliCelsius(sample.milli) {
+                        values.append(celsius)
+                    }
+                }
+            }
+        }
+        return values.max()
+    }
+
     #if os(Linux)
+        private static func linuxTemperatures() -> HostSensorTemperatures {
+            let cpu = linuxThermalCelsius()
+            let nvidia = NVIDIAMetrics.reading()
+            let hwmon = linuxHwmonTemps()
+            return HostSensorTemperatures(
+                cpuC: cpu,
+                gpuC: nvidia.temperatureC ?? hwmon.gpuC,
+                diskC: hwmon.diskC,
+            )
+        }
+
+        private static func linuxHwmonTemps() -> (gpuC: Double?, diskC: Double?) {
+            let root = "/sys/class/hwmon"
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+            var chips: [(name: String, samples: [(label: String, milli: String)])] = []
+            for name in names.sorted() {
+                let base = "\(root)/\(name)"
+                let chipName = (try? String(contentsOfFile: "\(base)/name", encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                var samples: [(label: String, milli: String)] = []
+                let entries = (try? FileManager.default.contentsOfDirectory(atPath: base)) ?? []
+                for entry in entries where entry.hasPrefix("temp") && entry.hasSuffix("_input") {
+                    guard let milli = try? String(contentsOfFile: "\(base)/\(entry)", encoding: .utf8)
+                    else { continue }
+                    let labelFile = String(entry.dropLast("_input".count)) + "_label"
+                    let label = (try? String(contentsOfFile: "\(base)/\(labelFile)", encoding: .utf8))?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    samples.append((label, milli))
+                }
+                chips.append((chipName, samples))
+            }
+            return (
+                gpuC: selectHwmonCelsius(chips: chips, kind: .gpu),
+                diskC: selectHwmonCelsius(chips: chips, kind: .disk),
+            )
+        }
+
         private static func linuxThermalCelsius() -> Double? {
             let root = "/sys/class/thermal"
             let names = try? FileManager.default.contentsOfDirectory(atPath: root)

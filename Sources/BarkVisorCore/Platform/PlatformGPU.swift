@@ -15,11 +15,32 @@ public enum PlatformGPU {
             return darwinUtilization()
         #elseif os(Linux)
             linuxState.lock.lock()
-            defer { linuxState.lock.unlock() }
-            return linuxBusyPercent(now: now, snapshot: linuxSnapshot(), state: &linuxState.last)
+            let drm = linuxBusyPercent(now: now, snapshot: linuxSnapshot(), state: &linuxState.last)
+            linuxState.lock.unlock()
+            return NVIDIAMetrics.combine(drm, NVIDIAMetrics.reading(now: now).utilizationPercent)
         #else
-            return nil
+            return NVIDIAMetrics.reading(now: now).utilizationPercent
         #endif
+    }
+
+    public static func temperatureC(now: Date = Date()) -> Double? {
+        #if os(macOS)
+            return darwinTemperatureC()
+        #else
+            return NVIDIAMetrics.reading(now: now).temperatureC
+        #endif
+    }
+
+    public static func celsius(fromPerformanceStatistics stats: [String: Any]) -> Double? {
+        let keys = [
+            "Temperature",
+            "GPU Temperature",
+            "temperature",
+        ]
+        for key in keys {
+            if let value = number(stats[key]) { return normalizeGPUCelsius(value) }
+        }
+        return nil
     }
 
     /// Keys IOKit uses on Apple and Intel Macs.
@@ -121,6 +142,12 @@ public enum PlatformGPU {
         min(max(value, 0), 100)
     }
 
+    static func normalizeGPUCelsius(_ value: Double) -> Double? {
+        if value >= 1_000, value < 200_000 { return value / 1_000 }
+        if value >= -40, value <= 150 { return value }
+        return nil
+    }
+
     #if os(macOS)
         private static func darwinUtilization() -> Double? {
             var iterator: io_iterator_t = 0
@@ -141,13 +168,37 @@ public enum PlatformGPU {
             return best
         }
 
+        private static func darwinTemperatureC() -> Double? {
+            var iterator: io_iterator_t = 0
+            let matching = IOServiceMatching("IOAccelerator")
+            guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS
+            else { return nil }
+            defer { IOObjectRelease(iterator) }
+            var best: Double?
+            var service = IOIteratorNext(iterator)
+            while service != 0 {
+                let current = service
+                service = IOIteratorNext(iterator)
+                defer { IOObjectRelease(current) }
+                if let stats = performanceStatistics(forAccelerator: current),
+                   let celsius = celsius(fromPerformanceStatistics: stats) {
+                    best = max(best ?? celsius, celsius)
+                }
+            }
+            return best
+        }
+
         private static func utilization(forAccelerator service: io_object_t) -> Double? {
+            guard let stats = performanceStatistics(forAccelerator: service) else { return nil }
+            return percent(fromPerformanceStatistics: stats)
+        }
+
+        private static func performanceStatistics(forAccelerator service: io_object_t) -> [String: Any]? {
             let key = "PerformanceStatistics" as CFString
             guard let raw = IORegistryEntryCreateCFProperty(
                 service, key, kCFAllocatorDefault, 0,
             )?.takeRetainedValue() else { return nil }
-            guard let stats = raw as? [String: Any] else { return nil }
-            return percent(fromPerformanceStatistics: stats)
+            return raw as? [String: Any]
         }
     #endif
 }

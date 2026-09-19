@@ -24,6 +24,41 @@ struct PlatformGPUTests {
         #expect(PlatformGPU.percent(fromPerformanceStatistics: [:]) == nil)
     }
 
+    @Test func `nvidia smi csv takes max util and temp`() {
+        let reading = NVIDIAMetrics.parseCSV("""
+        12, 43
+        81, 67
+        """)
+        #expect(reading.utilizationPercent == 81)
+        #expect(reading.temperatureC == 67)
+    }
+
+    @Test func `nvidia smi n/a is unknown not zero`() {
+        let reading = NVIDIAMetrics.parseCSV("N/A, [N/A]\n")
+        #expect(reading.utilizationPercent == nil)
+        #expect(reading.temperatureC == nil)
+        let mixed = NVIDIAMetrics.parseCSV("0, 41")
+        #expect(mixed.utilizationPercent == 0)
+        #expect(mixed.temperatureC == 41)
+        let withUnits = NVIDIAMetrics.parseCSV("18 %, 52 C")
+        #expect(withUnits.utilizationPercent == 18)
+        #expect(withUnits.temperatureC == 52)
+    }
+
+    @Test func `nvidia and drm busy combine to the hotter card`() {
+        #expect(NVIDIAMetrics.combine(12, 80) == 80)
+        #expect(NVIDIAMetrics.combine(nil, 41) == 41)
+        #expect(NVIDIAMetrics.combine(9, nil) == 9)
+        #expect(NVIDIAMetrics.combine(nil, nil) == nil)
+    }
+
+    @Test func `ioaccelerator temperature keys parse celsius and millicelsius`() {
+        #expect(PlatformGPU.celsius(fromPerformanceStatistics: ["Temperature": 54]) == 54)
+        #expect(PlatformGPU.celsius(fromPerformanceStatistics: ["GPU Temperature": 47_000]) == 47)
+        #expect(PlatformGPU.celsius(fromPerformanceStatistics: ["Device Utilization %": 12]) == nil)
+        #expect(PlatformGPU.normalizeGPUCelsius(900) == nil)
+    }
+
     @Test func `linux nvidia busy percent is used as-is`() {
         var state: (ms: UInt64, at: Date)?
         let percent = PlatformGPU.linuxBusyPercent(
