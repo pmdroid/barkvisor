@@ -4,6 +4,10 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+## 1.0.0-alpha.11 — 2026-09-19
+
+- Device detail **Terminal** opens a full-window shell as a login account on that Device. BarkVisor admin is the credential. Root is not offered.
+
 ## 1.0.0-alpha.10 — 2026-09-19
 
 - Devices list cards can rename a Device.
