@@ -453,7 +453,7 @@ public enum ApplicationLifecycleService {
             expected: render.publishedPorts,
         )
         try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-        try await refreshCatalogDigest(vm: &vm, db: db)
+        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
         try await setState(&vm, state: "running", error: nil, db: db)
         await metricsCollector?.startApp(id: vm.id, project: project)
         progress?(1.0)
@@ -479,7 +479,7 @@ public enum ApplicationLifecycleService {
             []
         }
         try await persistRuntime(vm: &vm, namedVolumes: named, db: db, dataDir: dataDir)
-        try await refreshCatalogDigest(vm: &vm, db: db)
+        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
     }
 
     private static func downLocked(vm: VM, dataDir: URL) {
@@ -546,11 +546,24 @@ public enum ApplicationLifecycleService {
         vm = persisted
     }
 
-    private static func refreshCatalogDigest(vm: inout VM, db: DatabasePool) async throws {
+    private static func refreshCatalogDigest(vm: inout VM, db: DatabasePool, dataDir: URL) async throws {
         let image = vm.imageRef ?? ComposeAllowlist.firstImage(yaml: vm.composeYaml)
         guard let image, !image.isEmpty else { return }
-        guard let digest = ApplicationImageFacts.registryDigest(for: image) else { return }
-        vm.catalogDigest = digest
+        guard let snap = try? ApplicationImageFacts.snapshot(
+            id: vm.id,
+            project: projectName(vm),
+            image: image,
+            dataDir: dataDir,
+        ) else { return }
+        if !snap.image.isEmpty {
+            vm.imageRef = snap.image
+        }
+        if snap.catalogResolved {
+            if let digest = snap.digest {
+                vm.digest = digest
+            }
+            vm.catalogDigest = snap.catalogDigest
+        }
         vm.updatedAt = iso8601.string(from: Date())
         vm.syncSpecProjection(bumpGeneration: false)
         let persisted = vm

@@ -85,7 +85,9 @@ final class ApplicationUpdateKeepVolumesTests {
             var vm = try await insertApp()
             try await ApplicationLifecycleService.start(vm: &vm, db: dbPool, dataDir: dataDir)
             docker.inspectDigest = "sha256:bbb222ccc333"
+            docker.inspectConfig = "sha256:configbbbb"
             docker.manifestDigest = "sha256:bbb222ccc333"
+            docker.manifestConfig = "sha256:configbbbb"
             try await ApplicationLifecycleService.updateImages(vm: &vm, db: dbPool, dataDir: dataDir)
             let joined = runner.calls.map { $0.joined(separator: " ") }
             #expect(joined.contains { $0.contains("pull") })
@@ -122,8 +124,12 @@ final class ApplicationUpdateKeepVolumesTests {
             docker.manifestDigest = "sha256:fff999eee888"
             try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
             #expect(vm.updateAvailable)
-            #expect(vm.catalogDigest == "sha256:fff999eee888")
-            #expect(vm.digest == "sha256:aaa111bbb222")
+            #expect(vm.digest == "sha256:configaaaa")
+            #expect(vm.catalogDigest == "sha256:configbbbb")
+            docker.failManifest = true
+            try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: dbPool, dataDir: dataDir)
+            #expect(vm.catalogDigest == "sha256:configbbbb")
+            #expect(vm.updateAvailable)
         }
     }
 
@@ -220,18 +226,40 @@ private final class RecordingComposeRunner: ComposeCommandRunning, @unchecked Se
 
 private final class RecordingDockerRunner: DockerCommandRunning, @unchecked Sendable {
     var inspectDigest = "sha256:aaa111bbb222"
+    var inspectConfig = "sha256:configaaaa"
     var manifestDigest = "sha256:bbb222ccc333"
+    var manifestConfig = "sha256:configbbbb"
+    var failManifest = false
 
     func run(arguments: [String], timeout _: TimeInterval) throws -> CommandResult {
         if arguments.first == "inspect" {
+            let targets = Array(arguments.dropFirst())
+            let isImage = targets.contains { target in
+                let value = target.lowercased()
+                return value.hasPrefix("sha256:") || value.contains("/") || value.contains("@")
+            }
+            if isImage {
+                let json = """
+                [{"Id":"\(inspectConfig)","RepoTags":["lscr.io/linuxserver/qbittorrent:latest"],\
+                "RepoDigests":["lscr.io/linuxserver/qbittorrent@\(inspectDigest)"]}]
+                """
+                return CommandResult(exitCode: 0, stdout: Data(json.utf8), stderr: Data())
+            }
             let json = """
-            [{"Config":{"Image":"lscr.io/linuxserver/qbittorrent:latest"},\
-            "RepoDigests":["lscr.io/linuxserver/qbittorrent@\(inspectDigest)"]}]
+            [{"Id":"0123456789abcdef","Image":"\(inspectConfig)",\
+            "Config":{"Image":"lscr.io/linuxserver/qbittorrent:latest"},\
+            "State":{"Running":true}}]
             """
             return CommandResult(exitCode: 0, stdout: Data(json.utf8), stderr: Data())
         }
         if arguments.contains("manifest") {
-            let json = "{\"Descriptor\":{\"digest\":\"\(manifestDigest)\"}}"
+            if failManifest {
+                return CommandResult(exitCode: 1, stdout: Data(), stderr: Data("unavailable".utf8))
+            }
+            let json = """
+            {"Descriptor":{"digest":"\(manifestDigest)"},\
+            "SchemaV2Manifest":{"config":{"digest":"\(manifestConfig)"}}}
+            """
             return CommandResult(exitCode: 0, stdout: Data(json.utf8), stderr: Data())
         }
         return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
