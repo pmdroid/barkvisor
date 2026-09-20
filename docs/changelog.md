@@ -4,7 +4,13 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+## 1.0.0-alpha.13 — 2026-09-19
+
 - Windows zip packages compile.
+- Apps have their own list and detail pages.
+- OpenClaw is a deployable catalog app.
+- Editing an app keeps Compose environment files, empty list keys, and resource limits.
+- Deleting an app stops its containers first.
 
 ## 1.0.0-alpha.12 — 2026-09-19
 
