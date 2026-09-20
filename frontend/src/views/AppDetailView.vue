@@ -10,6 +10,7 @@ import { useToastStore } from '../stores/toast'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { deviceVmPath, deviceTaskPath, canCallDeviceAPI } from '../utils/homeDeviceApi'
 import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
+import { parseStartOnBoot, startOnBootLabel } from '../utils/workloadStartOnBoot'
 import { isSecretEnvKey, buildEnvSavePayload } from '../utils/appDetail'
 import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
 import { applyAppVolumeChange, appPortEditorRows, parseComposePortSlots, setComposePorts, isComposePortRow, type ComposeMountDraft, type ComposePortRow } from '../utils/composeEdit'
@@ -135,6 +136,21 @@ async function action(name: 'start' | 'stop' | 'restart' | 'update' | 'check-upd
   }
 }
 
+async function toggleStartOnBoot(enabled: boolean) {
+  if (!editable.value || !base.value) return
+  const path = base.value
+  const actionEpoch = epoch
+  busy.value = true
+  try {
+    await api.patch(path, { startOnBoot: enabled })
+    await refresh(actionEpoch)
+  } catch (e) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    busy.value = false
+  }
+}
+
 async function saveSpec(change: (spec: WorkloadSpec) => void): Promise<boolean> {
   if (!editable.value || saving.value || !base.value) return false
   saving.value = true
@@ -223,7 +239,11 @@ async function saveEnvironment() {
       <p v-if="error" class="app-error" role="alert">{{ error }}</p>
       <p v-if="loading">Loading app…</p>
       <template v-if="vm">
-        <div class="app-status"><span>{{ vm.state }}</span><span v-if="vm.pendingChanges">Configuration changed. Restart to apply.</span></div>
+        <div class="app-status">
+          <span>{{ vm.state }}</span>
+          <label><input type="checkbox" :checked="parseStartOnBoot(vm)" :disabled="!editable" @change="toggleStartOnBoot(($event.target as HTMLInputElement).checked)"> {{ startOnBootLabel() }}</label>
+          <span v-if="vm.pendingChanges">Configuration changed. Restart to apply.</span>
+        </div>
         <p v-if="vm.status?.healthError" class="app-error" role="alert">{{ vm.status.healthError }}</p>
         <nav class="app-tabs" aria-label="App sections">
           <button v-for="item in tabs" :key="item" type="button" :aria-current="tab === item ? 'page' : undefined" @click="tab = item">{{ item[0]?.toUpperCase() }}{{ item.slice(1) }}</button>
