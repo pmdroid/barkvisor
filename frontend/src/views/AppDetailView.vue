@@ -54,7 +54,6 @@ const portsValid = computed(() => portDraft.value.every(isComposePortRow))
 const envEditing = ref(false)
 const envDraft = ref<{ key: string; value: string }[]>([])
 const confirm = ref<'stop' | 'delete' | null>(null)
-const keepVolumes = ref(true)
 let epoch = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -123,7 +122,7 @@ async function action(name: 'start' | 'stop' | 'restart' | 'update' | 'check-upd
   try {
     if (name === 'delete' && vm.value?.state === 'running') await api.post(`${path}/stop`)
     const response = name === 'delete'
-      ? await api.delete(path, { params: { keepDisk: keepVolumes.value } })
+      ? await api.delete(path)
       : await api.post(`${path}/${name}`)
     if (response.data?.taskID) await poll(response.data.taskID, { path: deviceTaskPath(target, response.data.taskID) })
     if (actionEpoch !== epoch) return
@@ -299,8 +298,7 @@ async function saveEnvironment() {
     </AppModal>
     <ConfirmDialog v-if="confirm === 'stop'" title="Stop app" :message="`Stop ${vm?.name}? Its containers will stop and persistent data will be kept.`" confirm-label="Stop" :loading="busy" @confirm="action('stop')" @cancel="confirm = null" />
     <AppModal v-if="confirm === 'delete'" title="Delete app" @close="confirm = null">
-      <p>{{ vm?.state === 'running' ? 'Stop and delete' : 'Delete' }} {{ vm?.name }} and its containers?</p>
-      <label><input v-model="keepVolumes" type="checkbox"> Keep persistent data</label>
+      <p>{{ vm?.state === 'running' ? 'Stop and delete' : 'Delete' }} {{ vm?.name }} and its containers and persistent data?</p>
       <div class="editor-actions"><AppButton variant="danger" :loading="busy" @click="action('delete')">Delete app</AppButton></div>
     </AppModal>
   </div>
