@@ -20,8 +20,7 @@ export function setComposeEnvironment(compose: string, previous: Record<string, 
       else delete environment[key]
     }
     if (raw !== undefined) service.environment = environment
-    if (keepEnvFile) service.env_file = '.env'
-    else delete service.env_file
+    if (!keepEnvFile && service.env_file === '.env') delete service.env_file
   }
   return stringify(document)
 }

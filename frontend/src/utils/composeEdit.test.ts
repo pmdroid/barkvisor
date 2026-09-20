@@ -28,12 +28,14 @@ test('environment edits replace inline values and remove deleted overrides acros
   const compose = `services:
   web:
     image: example/web
+    env_file: .env
     environment:
       TZ: America/Los_Angeles
       OLD: old-value
       FIXED: web-only
   worker:
     image: example/worker
+    env_file: worker.env
     environment:
       - TZ=America/Los_Angeles
       - FIXED=worker-only
@@ -43,7 +45,9 @@ test('environment edits replace inline values and remove deleted overrides acros
   const changed = parse(setComposeEnvironment(compose, { TZ: 'America/Los_Angeles', OLD: 'old-value' }, { TZ: 'UTC', NEW: 'new-value' }))
   expect(changed.services.web.environment).toEqual({ TZ: 'UTC', FIXED: 'web-only' })
   expect(changed.services.worker.environment).toEqual({ TZ: 'UTC', FIXED: 'worker-only' })
-  for (const service of Object.values(changed.services) as Record<string, unknown>[]) expect(service.env_file).toBe('.env')
+  expect(changed.services.web.env_file).toBe('.env')
+  expect(changed.services.worker.env_file).toBe('worker.env')
+  expect(changed.services.plain.env_file).toBeUndefined()
   expect(changed.services.plain.environment).toBeUndefined()
 })
 
