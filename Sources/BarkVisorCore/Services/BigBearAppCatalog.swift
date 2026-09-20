@@ -23,7 +23,7 @@ public enum BigBearAppCatalog {
     private static let allowedServiceKeys: Set<String> = [
         "image", "ports", "environment", "env_file", "volumes", "restart", "user",
         "depends_on", "healthcheck", "command", "container_name", "labels",
-        "entrypoint", "working_dir", "hostname", "expose", "pull_policy", "init",
+        "entrypoint", "working_dir", "hostname", "expose", "pull_policy", "init", "deploy",
     ]
     private static let plexSlugs: Set<String> = ["plex"]
 
@@ -299,6 +299,11 @@ public enum BigBearAppCatalog {
 
     private static func serviceReasons(_ service: [String: Any], serviceName _: String) -> [String] {
         var reasons: [String] = []
+        do {
+            try ComposeResources.validate(service["deploy"])
+        } catch {
+            reasons.append("deploy")
+        }
         if isTruthy(service["privileged"]) { reasons.append("privileged") }
         if let mode = stringValue(service["network_mode"])?.lowercased() {
             if mode == "host" {

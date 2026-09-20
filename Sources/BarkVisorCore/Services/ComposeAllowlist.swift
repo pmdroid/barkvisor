@@ -214,9 +214,7 @@ public enum ComposeAllowlist {
         if service["gpus"] != nil {
             throw BarkVisorError.badRequest("unsupported compose feature: gpus")
         }
-        if let deploy = service["deploy"], !isEmptyValue(deploy) {
-            throw BarkVisorError.badRequest("unsupported compose feature: deploy")
-        }
+        try ComposeResources.validate(service["deploy"])
         if service["build"] != nil {
             throw BarkVisorError.badRequest("unsupported compose feature: build")
         }
