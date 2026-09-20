@@ -1,0 +1,24 @@
+{
+  "captured": "2026-09-19",
+  "repository": "pmdroid/barkvisor",
+  "proof": [
+    {
+      "file": "openclaw-telegram.png",
+      "prs": [
+        687,
+        688
+      ],
+      "behavior": "OpenClaw deployed through the local dashboard and reached Telegram token setup.",
+      "sha256": "f21c7e96f3fa940ac00e877c7cc16474db4720171ec7186176fcaf03a75f770f"
+    },
+    {
+      "file": "hermes-telegram.png",
+      "prs": [
+        688,
+        691
+      ],
+      "behavior": "Hermes deployed through the local dashboard and reached the Telegram bot-token prompt.",
+      "sha256": "5c40988069d0a10db1a0abd581facbe9f2b9f58592f7844b0c955df95d8ba690"
+    }
+  ]
+}
