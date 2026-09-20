@@ -216,7 +216,7 @@ function findListBlocks(lines: string[], key: string): ListBlock[] {
     if (!items.length && !m[2]) {
       const next = lines.slice(i + 1).find((r) => r.trim() !== '')
       const nextIndent = next?.match(/^(\s*)/)?.[1].length ?? 0
-      if (next && nextIndent >= keyIndent.length && !next.trim().startsWith('-')) continue
+      if (next && nextIndent > keyIndent.length && !next.trim().startsWith('-')) continue
     }
     blocks.push({ key: i, keyName: key, keyIndent, items, entryIndent, flow: Boolean(m[2]) })
   }

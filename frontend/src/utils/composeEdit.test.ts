@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { parse } from 'yaml'
 import { parseComposeMounts } from './composeMounts'
 import {
   addComposeMount,
@@ -598,4 +599,20 @@ test('edits daemon port lists with equal key and sequence indentation', () => {
   ])
   expect(changed).not.toContain('18789:18789')
   expect(changed).not.toContain('8080:80')
+})
+
+
+test('fills empty ports and volumes before a sibling key without duplicating keys', () => {
+  const yaml = `services:
+  gateway:
+    ports:
+    volumes:
+    image: example/gateway
+`
+  const withPorts = setComposePorts(yaml, [{ hostPort: 18889, containerPort: 18789, proto: 'tcp' }])
+  const changed = setComposeMounts(withPorts, [{ source: '/config', target: '/config', readOnly: false }])
+  const gateway = parse(changed).services.gateway
+  expect(gateway.ports).toEqual(['18889:18789'])
+  expect(gateway.volumes).toEqual(['/config:/config'])
+  expect(gateway.image).toBe('example/gateway')
 })
