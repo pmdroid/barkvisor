@@ -13,7 +13,7 @@ import { appOpenUrl, isApplicationWorkload } from '../utils/workloadKind'
 import { parseStartOnBoot, startOnBootLabel } from '../utils/workloadStartOnBoot'
 import { isSecretEnvKey, buildEnvSavePayload } from '../utils/appDetail'
 import { visibleAppMounts, type ComposeMount } from '../utils/composeMounts'
-import { applyAppVolumeChange, appPortEditorRows, parseComposePortSlots, setComposePorts, isComposePortRow, type ComposeMountDraft, type ComposePortRow } from '../utils/composeEdit'
+import { applyAppVolumeChange, appPortEditorRows, parseComposePortSlots, setComposePorts, setComposeEnvironment, isComposePortRow, type ComposeMountDraft, type ComposePortRow } from '../utils/composeEdit'
 import AppDetailOverview from '../components/AppDetailOverview.vue'
 import AppTerminalSessions from '../components/AppTerminalSessions.vue'
 import AppMountList from '../components/AppMountList.vue'
@@ -215,7 +215,10 @@ async function saveEnvironment() {
     return
   }
   if (await saveSpec(spec => {
-    spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, Object.fromEntries(envDraft.value.map(row => [row.key.trim(), row.value])))
+    const previous = Object.fromEntries(Object.entries(spec.spec.env ?? {}).filter(([key]) => !isSecretEnvKey(key)))
+    const next = Object.fromEntries(envDraft.value.map(row => [row.key.trim(), row.value]))
+    spec.spec.env = buildEnvSavePayload(spec.spec.env ?? {}, next)
+    spec.spec.compose = setComposeEnvironment(spec.spec.compose ?? '', previous, next, Object.keys(spec.spec.env).length > 0)
   })) envEditing.value = false
 }
 </script>

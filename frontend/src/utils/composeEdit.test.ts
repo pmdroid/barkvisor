@@ -21,7 +21,41 @@ import {
   retainUsedPaths,
   setComposeMounts,
   setComposePorts,
+  setComposeEnvironment,
 } from './composeEdit'
+
+test('environment edits replace inline values and remove deleted overrides across services', () => {
+  const compose = `services:
+  web:
+    image: example/web
+    environment:
+      TZ: America/Los_Angeles
+      OLD: old-value
+      FIXED: web-only
+  worker:
+    image: example/worker
+    environment:
+      - TZ=America/Los_Angeles
+      - FIXED=worker-only
+  plain:
+    image: example/plain
+`
+  const changed = parse(setComposeEnvironment(compose, { TZ: 'America/Los_Angeles', OLD: 'old-value' }, { TZ: 'UTC', NEW: 'new-value' }))
+  expect(changed.services.web.environment).toEqual({ TZ: 'UTC', FIXED: 'web-only' })
+  expect(changed.services.worker.environment).toEqual({ TZ: 'UTC', FIXED: 'worker-only' })
+  for (const service of Object.values(changed.services) as Record<string, unknown>[]) expect(service.env_file).toBe('.env')
+  expect(changed.services.plain.environment).toBeUndefined()
+})
+
+test('removing the last environment value drops the env file unless secrets remain', () => {
+  const compose = 'services:\n  app:\n    image: example/app\n    env_file: .env\n    environment:\n      TZ: UTC\n'
+  const removed = parse(setComposeEnvironment(compose, { TZ: 'UTC' }, {}))
+  expect(removed.services.app.env_file).toBeUndefined()
+  expect(removed.services.app.environment).toEqual({})
+  const secretsRemain = parse(setComposeEnvironment(compose, { TZ: 'UTC' }, {}, true))
+  expect(secretsRemain.services.app.env_file).toBe('.env')
+  expect(secretsRemain.services.app.environment).toEqual({})
+})
 
 const base = `services:
   whoami:

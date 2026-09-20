@@ -1,5 +1,30 @@
 import type { ComposeMount } from './composeMounts'
 import { parseComposeMounts } from './composeMounts'
+import { parse, stringify } from 'yaml'
+
+export function setComposeEnvironment(compose: string, previous: Record<string, string>, next: Record<string, string>, keepEnvFile = Object.keys(next).length > 0): string {
+  const document = parse(compose)
+  if (!document?.services || typeof document.services !== 'object') throw new Error('Compose must declare services.')
+  const edited = new Set([...Object.keys(previous), ...Object.keys(next)])
+  for (const service of Object.values(document.services) as Record<string, unknown>[]) {
+    const raw = service.environment
+    const environment: Record<string, unknown> = Array.isArray(raw)
+      ? Object.fromEntries(raw.map(String).map(value => {
+        const split = value.indexOf('=')
+        return split < 0 ? [value, null] : [value.slice(0, split), value.slice(split + 1)]
+      }))
+      : { ...(raw as Record<string, unknown> ?? {}) }
+    for (const key of Object.keys(environment)) {
+      if (!edited.has(key)) continue
+      if (Object.hasOwn(next, key)) environment[key] = next[key]
+      else delete environment[key]
+    }
+    if (raw !== undefined) service.environment = environment
+    if (keepEnvFile) service.env_file = '.env'
+    else delete service.env_file
+  }
+  return stringify(document)
+}
 
 export type ComposePortRow = {
   hostPort: number
