@@ -44,6 +44,20 @@ volumes:
     ])
   })
 
+  test('infers mount types accepted by the application spec renderer', () => {
+    expect(parseComposeMounts(`services:
+  app:
+    volumes:
+    - source: /data
+      target: /data
+    - source: app_config
+      target: /config
+`)).toEqual([
+      { kind: 'bind', source: '/data', target: '/data', readOnly: false },
+      { kind: 'volume', source: 'app_config', target: '/config', readOnly: false },
+    ])
+  })
+
   test('marks :ro binds read-only' , () => {
     const mounts = parseComposeMounts('      - /media:/media:ro\n')
     expect(mounts).toEqual([

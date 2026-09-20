@@ -25,8 +25,9 @@ export function parseComposeMounts(yaml: string): ComposeMount[] {
     if (entry && typeof entry === 'object') {
       const { source, target, type, read_only } = entry
       if (typeof source !== 'string' || typeof target !== 'string' || !target.startsWith('/')) continue
-      if (type !== 'bind' && type !== 'volume') continue
-      out.push({ kind: type, source, target, readOnly: read_only === true })
+      const kind = type ?? (source.startsWith('/') || source.startsWith('.') || source.startsWith('~') ? 'bind' : 'volume')
+      if (kind !== 'bind' && kind !== 'volume') continue
+      out.push({ kind, source, target, readOnly: read_only === true })
       continue
     }
     if (typeof entry !== 'string') continue
