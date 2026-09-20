@@ -23,7 +23,7 @@ public enum BigBearAppCatalog {
     private static let allowedServiceKeys: Set<String> = [
         "image", "ports", "environment", "env_file", "volumes", "restart", "user",
         "depends_on", "healthcheck", "command", "container_name", "labels",
-        "entrypoint", "working_dir", "hostname", "expose", "pull_policy",
+        "entrypoint", "working_dir", "hostname", "expose", "pull_policy", "init",
     ]
     private static let plexSlugs: Set<String> = ["plex"]
 
@@ -112,7 +112,10 @@ public enum BigBearAppCatalog {
         let id = stringValue(metadata["id"]) ?? slug
         let name = stringValue(metadata["name"]) ?? slug
         let rewritePlex = plexSlugs.contains(id) || plexSlugs.contains(slug)
-        let inspected = inspectCompose(composeText, rewritePlexHost: rewritePlex)
+        let inspected = inspectCompose(
+            id == "openclaw" ? openClawCompose(composeText) : composeText,
+            rewritePlexHost: rewritePlex,
+        )
         let arches = stringArray(technical["architectures"]).map {
             PlatformCapabilities.normalizedArch($0)
         }
@@ -153,6 +156,35 @@ public enum BigBearAppCatalog {
             timezone: prefill.timezone,
         )
         return entry
+    }
+
+    private static func openClawCompose(_ yaml: String) -> String {
+        guard let loaded = try? Yams.load(yaml: yaml),
+              var root = asObject(loaded),
+              let services = asObject(root["services"]),
+              var gateway = asObject(services["big-bear-openclaw"]),
+              let image = stringValue(gateway["image"]),
+              let volumes = gateway["volumes"]
+        else { return yaml }
+        gateway["environment"] = ["HOME": "/home/node", "TERM": "xterm-256color"]
+        gateway["command"] = [
+            "node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured",
+        ]
+        gateway["depends_on"] = ["openclaw-init": ["condition": "service_completed_successfully"]]
+        root["services"] = [
+            "big-bear-openclaw": gateway,
+            "openclaw-init": [
+                "image": image,
+                "user": "0:0",
+                "entrypoint": ["/bin/sh", "-c"],
+                "command": [
+                    "chown 1000:1000 /home/node/.openclaw /home/node/.openclaw/workspace && chmod 700 /home/node/.openclaw",
+                ],
+                "volumes": volumes,
+                "restart": "no",
+            ],
+        ]
+        return (try? Yams.dump(object: root, width: -1)) ?? yaml
     }
 
     private struct InspectedCompose {
