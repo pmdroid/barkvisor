@@ -22,6 +22,9 @@ const router = createRouter({
       component: () => import('../views/VMDetailView.vue'),
     },
     { path: '/vms', name: 'vms', component: () => import('../views/VMListView.vue') },
+    { path: '/apps', name: 'apps', component: () => import('../views/VMListView.vue'), props: { applications: true } },
+    { path: '/apps/:id', name: 'app-detail', component: () => import('../views/AppDetailView.vue') },
+    { path: '/devices/:hostId/apps/:id', name: 'device-app-detail', component: () => import('../views/AppDetailView.vue') },
     { path: '/vms/:id', name: 'vm-detail', component: () => import('../views/VMDetailView.vue') },
     {
       path: '/vms/:id/vnc',

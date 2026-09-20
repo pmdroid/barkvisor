@@ -1,5 +1,29 @@
 import type { ComposeMount } from './composeMounts'
 import { parseComposeMounts } from './composeMounts'
+import { parse, stringify } from 'yaml'
+
+export function setComposeEnvironment(compose: string, previous: Record<string, string>, next: Record<string, string>, keepEnvFile = Object.keys(next).length > 0): string {
+  const document = parse(compose)
+  if (!document?.services || typeof document.services !== 'object') throw new Error('Compose must declare services.')
+  const edited = new Set([...Object.keys(previous), ...Object.keys(next)])
+  for (const service of Object.values(document.services) as Record<string, unknown>[]) {
+    const raw = service.environment
+    const environment: Record<string, unknown> = Array.isArray(raw)
+      ? Object.fromEntries(raw.map(String).map(value => {
+        const split = value.indexOf('=')
+        return split < 0 ? [value, null] : [value.slice(0, split), value.slice(split + 1)]
+      }))
+      : { ...(raw as Record<string, unknown> ?? {}) }
+    for (const key of Object.keys(environment)) {
+      if (!edited.has(key)) continue
+      if (Object.hasOwn(next, key)) environment[key] = next[key]
+      else delete environment[key]
+    }
+    if (raw !== undefined) service.environment = environment
+    if (!keepEnvFile && service.env_file === '.env') delete service.env_file
+  }
+  return stringify(document)
+}
 
 export type ComposePortRow = {
   hostPort: number
@@ -143,13 +167,8 @@ function mountEntryText(mount: ComposeMountDraft): string {
 }
 
 function payloadMatches(payload: string, mount: ComposeMountDraft): boolean {
-  const text = unquote(payload)
-  const parts = text.split(':')
-  if (parts.length < 2 || parts.length > 3) return false
-  if (parts.length === 3 && !['ro', 'rw', 'z', 'Z'].includes(parts[2])) return false
-  if (parts[0] !== mount.source || parts[1] !== mount.target) return false
-  const ro = parts[2] === 'ro'
-  return ro === mount.readOnly
+  const parsed = parseComposeMounts(`- ${payload.replace(/\n/g, '\n  ')}`)[0]
+  return parsed?.source === mount.source && parsed.target === mount.target && parsed.readOnly === mount.readOnly
 }
 
 function parseMountPayload(payload: string): ComposeMountDraft | null {
@@ -194,11 +213,11 @@ function findListBlocks(lines: string[], key: string): ListBlock[] {
       if (!row.trim()) {
         const next = lines.slice(j + 1).find((r) => r.trim() !== '')
         const nextIndent = next?.match(/^(\s*)/)?.[1].length ?? 0
-        if (next && next.trim().startsWith('-') && nextIndent > keyIndent.length) continue
+        if (next && next.trim().startsWith('-') && nextIndent >= keyIndent.length) continue
         break
       }
       const indented = row.match(/^(\s*)-\s+(\S.*)$/)
-      if (indented && indented[1].length > keyIndent.length) {
+      if (indented && indented[1].length >= keyIndent.length) {
         if (!items.length) entryIndent = indented[1]
         const span = [j]
         let k = j + 1
@@ -717,7 +736,7 @@ export function applyComposeDocumentDrafts(
     mergeApplicationSharedPaths(
       extractApplicationSharedPaths(document),
       parseComposeMounts(compose),
-      drafts.mounts,
+      parseComposeMounts(extractComposeBlock(next) ?? ''),
     ),
   )
 }

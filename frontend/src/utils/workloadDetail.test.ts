@@ -21,6 +21,12 @@ describe('openRow (PAS-202)', () => {
     expect(workloadRowKey(row)).toBe('desk-1:vm-1')
   })
 
+  test('apps use their own local and member routes', () => {
+    const vm = { id: 'app/1', kind: 'Application' as const }
+    expect(workloadDetailPath({ hostId: 'desk', role: 'self', vm })).toBe('/apps/app%2F1')
+    expect(workloadDetailPath({ hostId: 'peer/1', role: 'member', vm })).toBe('/devices/peer%2F1/apps/app%2F1')
+  })
+
   test('a member row opens Workload detail, not a Device card', () => {
     const row = { hostId: 'orb', role: 'member', vm: { id: 'vm-2' } }
     expect(workloadDetailPath(row)).toBe('/devices/orb/vms/vm-2')

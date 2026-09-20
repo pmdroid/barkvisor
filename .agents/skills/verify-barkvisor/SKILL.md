@@ -66,7 +66,7 @@ Stable handles (prefer these, never coordinates):
 | Handle | Where |
 |---|---|
 | Login | **Sign in with passkey** on `.login-card` (no username/password). Helpers inject a JWT from `POST /api/auth/login` on headless instances. |
-| Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Workloads, Ollama, Images, Disks, Networks, Logs, Settings |
+| Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual machines, Apps, Ollama, Images, Disks, Networks, Logs, Settings |
 | Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|security\|apikeys\|sshkeys\|passkeys\|audit\|updates` (`?tab=disks` redirects to Devices) |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Create App**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |

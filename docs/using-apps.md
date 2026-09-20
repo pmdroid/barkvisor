@@ -1,14 +1,14 @@
 # Apps
 
-An App is a Docker Compose project running on a Device. **Workloads** lists Apps alongside VMs.
+An App is a Docker Compose project running on a Device. **Apps** lists Docker apps across your Devices.
 
 The Device needs Docker with Compose v2 installed. On macOS, BarkVisor can use OrbStack, Colima, or Docker Desktop. If Docker is missing, VM features still work.
 
-![Workloads list with a running App](img/apps-list.png)
+![Apps list with a running App](img/apps-list.png)
 
 ## Create an App
 
-Open **Workloads → Create App**. The wizard has two steps: **Gallery → Configure**.
+Open **Apps → Create App**. The wizard has two steps: **Gallery → Configure**.
 
 ### Gallery
 
@@ -22,13 +22,13 @@ Choose a Device and fill in the app's settings: name, folders, environment varia
 
 ![Create App configure](img/apps-configure.png)
 
-Click **Create** and follow progress in the Workloads list. Use **Start** if the app is stopped. Starting an app pulls any required container images.
+Click **Create** and follow progress in the Apps list. Use **Start** if the app is stopped. Starting an app pulls any required container images.
 
-Published ports are reachable through the Device's network address. **Open UI** opens the app's web interface when one is configured.
+Published ports are reachable through the Device's network address. **Open app** opens the app's web interface when one is configured.
 
 ## App details
 
-Open the App in **Workloads**. Available actions include **Start**, **Stop**, **Restart**, **Open UI**, **Update** when a newer catalog version is available, and **Delete**.
+Open the App in **Apps**. Available actions include **Start**, **Stop**, **Restart**, **Open app**, **Update image** when a newer catalog version is available, and **Delete**.
 
 ### Overview
 

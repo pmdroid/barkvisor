@@ -1,3 +1,5 @@
+import { parse } from 'yaml'
+
 export type ComposeMount = {
   kind: 'bind' | 'volume'
   source: string
@@ -7,17 +9,35 @@ export type ComposeMount = {
 
 export function parseComposeMounts(yaml: string): ComposeMount[] {
   if (!yaml.trim()) return []
+  let document
+  try {
+    document = parse(yaml)
+  } catch {
+    return []
+  }
+  const services = document?.services && typeof document.services === 'object'
+    ? Object.values(document.services) : [document]
+  const entries = typeof document === 'string' ? [document] : Array.isArray(document) ? document : services.flatMap((service: any) =>
+    Array.isArray(service?.volumes) ? service.volumes : [],
+  )
   const out: ComposeMount[] = []
-  for (const raw of yaml.split('\n')) {
-    const line = raw.trim().replace(/^-\s+/, '')
-    const unquoted = line.replace(/^["']|["']$/g, '')
-    const m = unquoted.match(/^([^:]+):(\/[^:]+)(?::(ro|rw|z|Z))?$/)
-    if (!m) continue
-    const source = m[1].trim()
-    const target = m[2].trim()
-    if (!source || source.includes(' ')) continue
+  for (const entry of entries) {
+    if (entry && typeof entry === 'object') {
+      const { source, target, type, read_only } = entry
+      if (typeof source !== 'string' || typeof target !== 'string' || !target.startsWith('/')) continue
+      const kind = type ?? (source.startsWith('/') || source.startsWith('.') || source.startsWith('~') ? 'bind' : 'volume')
+      if (kind !== 'bind' && kind !== 'volume') continue
+      out.push({ kind, source, target, readOnly: read_only === true })
+      continue
+    }
+    if (typeof entry !== 'string') continue
+    const match = entry.match(/^([^:]+):(\/[^:]+)(?::(ro|rw|z|Z))?$/)
+    if (!match) continue
+    const source = match[1].trim()
+    const target = match[2].trim()
+    if (!source || !target) continue
     const kind = source.startsWith('/') || source.startsWith('.') ? 'bind' : 'volume'
-    out.push({ kind, source, target, readOnly: m[3] === 'ro' })
+    out.push({ kind, source, target, readOnly: match[3] === 'ro' })
   }
   return out
 }
@@ -30,7 +50,7 @@ export function visibleAppMounts(input: {
   compose?: string | null
   sharedPaths?: string[] | null
 }): ComposeMount[] {
-  const fromCompose = parseComposeMounts(input.compose ?? '')
+  const fromCompose = [...new Map(parseComposeMounts(input.compose ?? '').map(mount => [mountKey(mount), mount])).values()]
   const fromShared = mountsFromSharedPaths(input.sharedPaths)
   if (!fromCompose.length) return fromShared
   const seen = new Set(fromCompose.map(mountKey))

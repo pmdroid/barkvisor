@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { parse } from 'yaml'
 import { parseComposeMounts } from './composeMounts'
 import {
   addComposeMount,
@@ -20,7 +21,45 @@ import {
   retainUsedPaths,
   setComposeMounts,
   setComposePorts,
+  setComposeEnvironment,
 } from './composeEdit'
+
+test('environment edits replace inline values and remove deleted overrides across services', () => {
+  const compose = `services:
+  web:
+    image: example/web
+    env_file: .env
+    environment:
+      TZ: America/Los_Angeles
+      OLD: old-value
+      FIXED: web-only
+  worker:
+    image: example/worker
+    env_file: worker.env
+    environment:
+      - TZ=America/Los_Angeles
+      - FIXED=worker-only
+  plain:
+    image: example/plain
+`
+  const changed = parse(setComposeEnvironment(compose, { TZ: 'America/Los_Angeles', OLD: 'old-value' }, { TZ: 'UTC', NEW: 'new-value' }))
+  expect(changed.services.web.environment).toEqual({ TZ: 'UTC', FIXED: 'web-only' })
+  expect(changed.services.worker.environment).toEqual({ TZ: 'UTC', FIXED: 'worker-only' })
+  expect(changed.services.web.env_file).toBe('.env')
+  expect(changed.services.worker.env_file).toBe('worker.env')
+  expect(changed.services.plain.env_file).toBeUndefined()
+  expect(changed.services.plain.environment).toBeUndefined()
+})
+
+test('removing the last environment value drops the env file unless secrets remain', () => {
+  const compose = 'services:\n  app:\n    image: example/app\n    env_file: .env\n    environment:\n      TZ: UTC\n'
+  const removed = parse(setComposeEnvironment(compose, { TZ: 'UTC' }, {}))
+  expect(removed.services.app.env_file).toBeUndefined()
+  expect(removed.services.app.environment).toEqual({})
+  const secretsRemain = parse(setComposeEnvironment(compose, { TZ: 'UTC' }, {}, true))
+  expect(secretsRemain.services.app.env_file).toBe('.env')
+  expect(secretsRemain.services.app.environment).toEqual({})
+})
 
 const base = `services:
   whoami:
@@ -401,6 +440,7 @@ environment:
     expect(next).toContain('source: /secret')
     expect(parseComposeMounts(next)).toEqual([
       { kind: 'bind', source: '/b', target: '/b', readOnly: false },
+      { kind: 'bind', source: '/secret', target: '/run/secret', readOnly: false },
     ])
   })
 
@@ -569,6 +609,48 @@ spec:
       ['/secret', '/data/config'],
       parseComposeMounts(extractComposeBlock(document)!),
       [{ source: '/media', target: '/media', readOnly: false }],
-    )).toEqual(['/secret', '/media'])
+    )).toEqual(['/media'])
   })
+})
+
+
+test('edits daemon port lists with equal key and sequence indentation', () => {
+  const yaml = `services:
+  gateway:
+    image: example/gateway
+    ports:
+    - 18789:18789
+  worker:
+    image: example/worker
+    ports:
+    - 8080:80
+`
+  const rows = parseComposePortSlots(yaml)
+  expect(rows).toEqual([
+    { hostPort: 18789, containerPort: 18789, proto: 'tcp', block: 0 },
+    { hostPort: 8080, containerPort: 80, proto: 'tcp', block: 1 },
+  ])
+  const changed = setComposePorts(yaml, rows.map(row => ({ ...row, hostPort: row.hostPort + 1 })))
+  expect(parseComposePortSlots(changed)).toEqual([
+    { hostPort: 18790, containerPort: 18789, proto: 'tcp', block: 0 },
+    { hostPort: 8081, containerPort: 80, proto: 'tcp', block: 1 },
+  ])
+  expect(changed).not.toContain('18789:18789')
+  expect(changed).not.toContain('8080:80')
+})
+
+
+test('fills empty ports and volumes before a sibling key without duplicating keys', () => {
+  const yaml = `services:
+  gateway:
+    ports:
+    volumes:
+    image: example/gateway
+`
+  const withPorts = setComposePorts(yaml, [{ hostPort: 18889, containerPort: 18789, proto: 'tcp' }])
+  const changed = setComposeMounts(withPorts, [{ source: '/config', target: '/config', readOnly: false }])
+  const gateway = parse(changed).services.gateway
+  expect(gateway.ports).toEqual(['18889:18789'])
+  expect(gateway.volumes).toEqual(['/config:/config'])
+  expect(gateway.image).toBe('example/gateway')
 })

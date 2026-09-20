@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
+import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useToastStore } from '../stores/toast'
@@ -26,7 +26,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { scopeRows } from '../utils/deviceScope'
-import { DEVICE_LABEL, WORKLOADS_NAV_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL } from '../utils/terminology'
 import { appOpenUrl, isApplicationWorkload, workloadKindLabel } from '../utils/workloadKind'
 import CreateAppDrawer from '../components/CreateAppDrawer.vue'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
@@ -37,6 +37,8 @@ import {
 } from '../utils/guestHome'
 import { formatCores, formatMemoryMB, formatPortForwards } from '../utils/format'
 
+const props = defineProps<{ applications?: boolean }>()
+const listLabel = computed(() => props.applications ? 'Apps' : 'Virtual machines')
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const createProgress = useCreateProgressStore()
@@ -64,6 +66,7 @@ const homeRows = computed(() => {
         reachable: true,
       }))
   return scopeRows(createProgress.mergeInto(rows), deviceScope.selectedHostId)
+    .filter((row) => isApplicationWorkload(row.vm) === Boolean(props.applications))
 })
 
 const visibleRows = computed(() => {
@@ -77,8 +80,8 @@ const listKind = computed(() =>
 
 const filteredEmptySubtitle = computed(() => {
   const filter = healthFilter.value
-  if (filter === 'all') return 'No matching workloads on Home.'
-  return `No ${healthLabel(filter)} workloads on Home.`
+  if (filter === 'all') return `No matching ${listLabel.value.toLowerCase()} on Home.`
+  return `No ${healthLabel(filter)} ${listLabel.value.toLowerCase()} on Home.`
 })
 
 const healthStrip = computed(() => {
@@ -132,7 +135,7 @@ async function fetchGuestInfo() {
   try {
     for (const row of homeRows.value) {
       const key = rowKey(row)
-      if (isPendingCreateId(row.vm.id)) {
+      if (isApplicationWorkload(row.vm) || isPendingCreateId(row.vm.id)) {
         delete guestInfoMap[key]
         continue
       }
@@ -162,10 +165,7 @@ onMounted(async () => {
   pollTimer = window.setInterval(() => {
     void refreshHomeWorkloads().then(fetchGuestInfo)
   }, 5000)
-  if (route.query.create) {
-    showCreate.value = true
-    router.replace({ path: '/vms' })
-  }
+
 })
 onUnmounted(() => clearInterval(pollTimer))
 
@@ -245,6 +245,20 @@ async function doRestart(row: HomeWorkloadRow) {
 
 const stopConfirm = ref<{ key: string; hostId: string; id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 
+watch(() => route.path, () => {
+  showCreate.value = false
+  showCreateApp.value = false
+  stopConfirm.value = null
+  healthFilter.value = 'all'
+})
+watch(() => route.query.create, (create) => {
+  if (!create) return
+  if (props.applications) showCreateApp.value = true
+  else showCreate.value = true
+  void router.replace({ path: route.path, query: { ...route.query, create: undefined } })
+}, { immediate: true })
+
+
 function requestStop(row: HomeWorkloadRow, method: 'acpi' | 'force') {
   stopConfirm.value = {
     key: rowKey(row),
@@ -276,11 +290,11 @@ async function doStop() {
 <template>
   <div class="ops-page">
   <div class="ops-toolbar">
-    <h1>{{ WORKLOADS_NAV_LABEL }}</h1>
-    <span class="ops-sub">{{ devicesStore.devices.length ? `${homeRows.length} across ${homeDeviceCount} ${homeDeviceCount === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}` : `${homeRows.length} workloads` }}</span>
+    <h1>{{ listLabel }}</h1>
+    <span class="ops-sub">{{ devicesStore.devices.length ? `${homeRows.length} across ${homeDeviceCount} ${homeDeviceCount === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}` : `${homeRows.length} ${listLabel.toLowerCase()}` }}</span>
     <div class="ops-actions">
-      <AppButton variant="primary" icon="plus" @click="showCreate = true">Create VM</AppButton>
-      <AppButton icon="plus" @click="showCreateApp = true">Create App</AppButton>
+      <AppButton v-if="!applications" variant="primary" icon="plus" @click="showCreate = true">Create VM</AppButton>
+      <AppButton v-else variant="primary" icon="plus" @click="showCreateApp = true">Create App</AppButton>
     </div>
   </div>
 
@@ -310,15 +324,15 @@ async function doStop() {
     </button>
   </div>
 
-  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" title="No workloads yet">
-    <AppButton variant="primary" @click="showCreate = true">Create VM</AppButton>
-    <AppButton @click="showCreateApp = true">Create App</AppButton>
+  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" :title="applications ? 'No apps yet' : 'No virtual machines yet'">
+    <AppButton v-if="!applications" variant="primary" @click="showCreate = true">Create VM</AppButton>
+    <AppButton v-else variant="primary" @click="showCreateApp = true">Create App</AppButton>
   </EmptyState>
 
   <EmptyState
     v-else-if="listKind === 'filtered'"
     icon="monitor"
-    title="No matching workloads"
+    :title="`No matching ${listLabel.toLowerCase()}`"
     :subtitle="filteredEmptySubtitle"
   />
 
@@ -328,8 +342,8 @@ async function doStop() {
         <tr>
           <th>Name</th>
           <th>Device</th>
-          <th>Type</th>
-          <th>CPU · Mem</th>
+          <th>{{ applications ? 'Image' : 'Type' }}</th>
+          <th v-if="!applications">CPU · Mem</th>
           <th>Ports</th>
           <th>Status</th>
           <th></th>
@@ -350,12 +364,14 @@ async function doStop() {
             {{ row.label }}
             <span v-if="!row.reachable" class="tag-amber">Unreachable</span>
           </td>
-          <td>{{ isApplicationWorkload(row.vm) ? 'App' : osLabel(row) }}</td>
-          <td class="num">
+          <td>{{ applications ? row.vm.image || '—' : osLabel(row) }}</td>
+          <td v-if="!applications" class="num">
             <template v-if="isApplicationWorkload(row.vm)">{{ formatPortForwards(vmPortForwards(row.vm)) || '—' }}</template>
             <template v-else>{{ formatCores(row.vm.cpuCount) }} · {{ formatMemoryMB(row.vm.memoryMB) }}</template>
           </td>
-          <td class="ports">{{ formatPortForwards(vmPortForwards(row.vm)) }}</td>
+          <td class="ports">{{ applications
+            ? (row.vm.publishedPorts ?? []).map((port) => `${port.hostPort} → ${port.containerPort}/${port.proto}`).join(', ') || '—'
+            : formatPortForwards(vmPortForwards(row.vm)) }}</td>
           <td>
             <span
               class="state status-pill"
@@ -406,9 +422,9 @@ async function doStop() {
 
   <ConfirmDialog
     v-if="stopConfirm"
-    :title="stopConfirm.method === 'force' ? 'Force Stop VM' : 'Shutdown VM'"
-    :message="`Are you sure you want to ${stopConfirm.method === 'force' ? 'force stop' : 'shut down'} ${stopConfirm.name}?${stopConfirm.method === 'force' ? ' This may cause data loss.' : ''}`"
-    :confirm-label="stopConfirm.method === 'force' ? 'Force Stop' : 'Shutdown'"
+    :title="applications ? 'Stop App' : stopConfirm.method === 'force' ? 'Force Stop VM' : 'Shutdown VM'"
+    :message="`Are you sure you want to ${applications ? 'stop' : stopConfirm.method === 'force' ? 'force stop' : 'shut down'} ${stopConfirm.name}?${stopConfirm.method === 'force' ? ' This may cause data loss.' : ''}`"
+    :confirm-label="applications ? 'Stop' : stopConfirm.method === 'force' ? 'Force Stop' : 'Shutdown'"
     :danger="stopConfirm.method === 'force'"
     :loading="actionLoading[stopConfirm.key]"
     @confirm="doStop"

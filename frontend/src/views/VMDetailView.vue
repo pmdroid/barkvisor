@@ -1405,6 +1405,11 @@ const guestMacCopy = computed(() =>
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 const isApp = computed(() => (vm.value ? isApplicationWorkload(vm.value) : false))
+watch([isApp, vmId, hostId], ([app]) => {
+  if (!app) return
+  const prefix = hostId.value ? `/devices/${encodeURIComponent(hostId.value)}` : ''
+  void router.replace({ path: `${prefix}/apps/${encodeURIComponent(vmId.value)}`, query: route.query })
+}, { immediate: true })
 const detailTabsList = computed(() => detailTabs({
   isApp: isApp.value,
   isAdmin: auth.isAdmin,
@@ -1865,7 +1870,7 @@ const healthBanner = computed(() => {
   <template v-else>
     <header v-if="isApp" class="app-detail-head">
       <nav class="crumb" aria-label="Breadcrumb">
-        <router-link to="/vms">{{ WORKLOADS_NAV_LABEL }}</router-link>
+        <router-link to="/apps">Apps</router-link>
         / {{ vm.name }}
       </nav>
       <div class="ops-toolbar app-toolbar">
