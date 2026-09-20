@@ -346,6 +346,7 @@ export interface Network {
 }
 
 export interface PublishedPort {
+  hostAddress?: string
   hostPort: number
   containerPort: number
   proto: string

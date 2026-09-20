@@ -7,7 +7,7 @@ import { useDeviceScopeStore } from './stores/deviceScope'
 import { useThemeStore } from './stores/theme'
 import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
 import { isReachabilityOk } from './utils/homeDeviceHealth'
-import { DEVICE_LABEL, HOME_LABEL, WORKLOADS_NAV_LABEL } from './utils/terminology'
+import { DEVICE_LABEL, HOME_LABEL } from './utils/terminology'
 import { authBannerText } from './utils/authMode'
 import ToastContainer from './components/ToastContainer.vue'
 
@@ -73,8 +73,9 @@ watch(() => route.path, () => { mobileMenuOpen.value = false })
 
 function isActive(path: string) {
   if (path === '/vms') return route.path === '/vms' || /\/vms(\/|$)/.test(route.path)
+  if (path === '/apps') return /\/apps(\/|$)/.test(route.path)
   if (path === '/devices') {
-    if (/\/vms(\/|$)/.test(route.path)) return false
+    if (/\/(vms|apps)(\/|$)/.test(route.path)) return false
     return route.path.startsWith('/devices')
   }
   return route.path.startsWith(path)
@@ -132,7 +133,13 @@ function isActive(path: string) {
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
           </svg>
-          <span class="nav-label">{{ WORKLOADS_NAV_LABEL }}</span>
+          <span class="nav-label">Virtual machines</span>
+        </router-link>
+        <router-link v-if="auth.isAdmin" to="/apps" :class="{ active: isActive('/apps') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <span class="nav-label">Apps</span>
         </router-link>
         <router-link v-if="auth.isAdmin || auth.isInference" to="/models" :class="{ active: isActive('/models') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

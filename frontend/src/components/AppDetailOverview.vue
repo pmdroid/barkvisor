@@ -67,7 +67,7 @@ const runtimeLabel = computed(() => {
 })
 const container = computed(() => composeProjectName(props.vm.id))
 const uptime = computed(() =>
-  props.vm.state === 'running' && props.vm.createdAt ? formatUptime(props.vm.createdAt) : '—',
+  props.vm.createdAt ? formatUptime(props.vm.createdAt) : '—',
 )
 const appRunning = computed(() => isAppRunning(props.vm))
 const usage = computed(() =>
@@ -89,7 +89,7 @@ const usage = computed(() =>
           <span class="k">Published</span>
           <span class="v">
             <a v-if="published" :href="published" target="_blank" rel="noopener">{{ published }}</a>
-            <span v-else class="dim">Start the app to open the UI</span>
+            <span v-else class="dim">No published web address</span>
           </span>
         </div>
         <div class="kv"><span class="k">Restart policy</span><span class="v">{{ restart }}</span></div>
@@ -132,7 +132,7 @@ const usage = computed(() =>
           </thead>
           <tbody>
             <tr v-for="p in ports" :key="`${p.hostPort}-${p.proto}`">
-              <td>0.0.0.0</td>
+              <td>{{ p.hostAddress || '—' }}</td>
               <td>{{ p.hostPort }}</td>
               <td class="arrow">→</td>
               <td>{{ p.containerPort }}</td>
@@ -195,8 +195,8 @@ const usage = computed(() =>
         <h2 id="app-section-runtime">Runtime</h2>
         <div class="kv"><span class="k">Device</span><span class="v">{{ deviceLabel || '—' }}</span></div>
         <div class="kv"><span class="k">Runtime</span><span class="v">{{ runtimeLabel }}</span></div>
-        <div class="kv"><span class="k">Container</span><span class="v mono">{{ container }}</span></div>
-        <div class="kv"><span class="k">Uptime</span><span class="v">{{ uptime }}</span></div>
+        <div class="kv"><span class="k">Compose project</span><span class="v mono">{{ container }}</span></div>
+        <div class="kv"><span class="k">Created ago</span><span class="v">{{ uptime }}</span></div>
       </section>
 
       <section class="panel" aria-labelledby="app-section-usage">
