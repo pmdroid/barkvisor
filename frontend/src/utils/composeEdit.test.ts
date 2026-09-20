@@ -401,6 +401,7 @@ environment:
     expect(next).toContain('source: /secret')
     expect(parseComposeMounts(next)).toEqual([
       { kind: 'bind', source: '/b', target: '/b', readOnly: false },
+      { kind: 'bind', source: '/secret', target: '/run/secret', readOnly: false },
     ])
   })
 
@@ -569,6 +570,32 @@ spec:
       ['/secret', '/data/config'],
       parseComposeMounts(extractComposeBlock(document)!),
       [{ source: '/media', target: '/media', readOnly: false }],
-    )).toEqual(['/secret', '/media'])
+    )).toEqual(['/media'])
   })
+})
+
+
+test('edits daemon port lists with equal key and sequence indentation', () => {
+  const yaml = `services:
+  gateway:
+    image: example/gateway
+    ports:
+    - 18789:18789
+  worker:
+    image: example/worker
+    ports:
+    - 8080:80
+`
+  const rows = parseComposePortSlots(yaml)
+  expect(rows).toEqual([
+    { hostPort: 18789, containerPort: 18789, proto: 'tcp', block: 0 },
+    { hostPort: 8080, containerPort: 80, proto: 'tcp', block: 1 },
+  ])
+  const changed = setComposePorts(yaml, rows.map(row => ({ ...row, hostPort: row.hostPort + 1 })))
+  expect(parseComposePortSlots(changed)).toEqual([
+    { hostPort: 18790, containerPort: 18789, proto: 'tcp', block: 0 },
+    { hostPort: 8081, containerPort: 80, proto: 'tcp', block: 1 },
+  ])
+  expect(changed).not.toContain('18789:18789')
+  expect(changed).not.toContain('8080:80')
 })

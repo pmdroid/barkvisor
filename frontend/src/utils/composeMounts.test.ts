@@ -23,7 +23,28 @@ services:
     ])
   })
 
-  test('marks :ro binds read-only', () => {
+  test('reads the long volume syntax returned by the daemon', () => {
+    expect(parseComposeMounts(`services:
+  app:
+    environment:
+      EXAMPLE: fake:/not-a-mount
+    volumes:
+    - source: app_data
+      target: /app/data
+      type: volume
+    - type: bind
+      source: /media files
+      target: /media
+      read_only: true
+volumes:
+  app_data: {}
+`)).toEqual([
+      { kind: 'volume', source: 'app_data', target: '/app/data', readOnly: false },
+      { kind: 'bind', source: '/media files', target: '/media', readOnly: true },
+    ])
+  })
+
+  test('marks :ro binds read-only' , () => {
     const mounts = parseComposeMounts('      - /media:/media:ro\n')
     expect(mounts).toEqual([
       { kind: 'bind', source: '/media', target: '/media', readOnly: true },
