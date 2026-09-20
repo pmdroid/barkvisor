@@ -121,6 +121,7 @@ async function action(name: 'start' | 'stop' | 'restart' | 'update' | 'check-upd
   const actionEpoch = epoch
   busy.value = true
   try {
+    if (name === 'delete' && vm.value?.state === 'running') await api.post(`${path}/stop`)
     const response = name === 'delete'
       ? await api.delete(path, { params: { keepDisk: keepVolumes.value } })
       : await api.post(`${path}/${name}`)
@@ -226,13 +227,13 @@ async function saveEnvironment() {
       <div><h1>{{ vm?.name || 'App' }}</h1><p class="ops-sub">{{ device ? devices.deviceLabel(device) : 'Loading device' }} · Docker Compose</p></div>
       <div v-if="vm" class="ops-actions">
         <a v-if="openUrl && vm.state === 'running'" :href="openUrl" target="_blank" rel="noopener">Open app</a>
-        <AppButton v-if="vm.state !== 'running'" :disabled="!editable" :loading="busy" @click="action('start')">Start</AppButton>
-        <template v-else>
+        <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" :disabled="!editable" :loading="busy" @click="action('start')">Start</AppButton>
+        <template v-else-if="vm.state === 'running'">
           <AppButton :disabled="!editable" @click="confirm = 'stop'">Stop</AppButton>
           <AppButton :disabled="!editable" :loading="busy" @click="action('restart')">Restart</AppButton>
         </template>
         <AppButton :disabled="!editable" :loading="busy" @click="action(vm.updateAvailable ? 'update' : 'check-update')">{{ vm.updateAvailable ? 'Update image' : 'Check for updates' }}</AppButton>
-        <AppButton variant="danger" :disabled="!editable" @click="confirm = 'delete'">Delete</AppButton>
+        <AppButton variant="danger" :disabled="!editable || !['running', 'stopped', 'error'].includes(vm.state)" @click="confirm = 'delete'">Delete</AppButton>
       </div>
     </div>
     <div class="ops-body">
@@ -295,7 +296,7 @@ async function saveEnvironment() {
     </AppModal>
     <ConfirmDialog v-if="confirm === 'stop'" title="Stop app" :message="`Stop ${vm?.name}? Its containers will stop and persistent data will be kept.`" confirm-label="Stop" :loading="busy" @confirm="action('stop')" @cancel="confirm = null" />
     <AppModal v-if="confirm === 'delete'" title="Delete app" @close="confirm = null">
-      <p>Delete {{ vm?.name }} and its containers?</p>
+      <p>{{ vm?.state === 'running' ? 'Stop and delete' : 'Delete' }} {{ vm?.name }} and its containers?</p>
       <label><input v-model="keepVolumes" type="checkbox"> Keep persistent data</label>
       <div class="editor-actions"><AppButton variant="danger" :loading="busy" @click="action('delete')">Delete app</AppButton></div>
     </AppModal>
