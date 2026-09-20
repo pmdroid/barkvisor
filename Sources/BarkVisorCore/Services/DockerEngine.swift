@@ -283,14 +283,21 @@ public enum DockerEngine {
         (try? FileManager.default.attributesOfItem(atPath: "/var/run/docker.sock")[.ownerAccountName]) as? String
     }
 
-    private static func importDockerConfig(into root: URL) {
-        let dest = root.appendingPathComponent("config.json")
-        if FileManager.default.fileExists(atPath: dest.path) { return }
-        for source in dockerConfigJSONCandidates() {
-            if FileManager.default.fileExists(atPath: source) {
-                try? FileManager.default.copyItem(atPath: source, toPath: dest.path)
-                return
+    static func importDockerConfig(
+        into root: URL,
+        candidates: [String] = dockerConfigJSONCandidates(),
+    ) {
+        let manager = FileManager.default
+        for path in candidates where manager.fileExists(atPath: path) {
+            let source = URL(fileURLWithPath: path).deletingLastPathComponent()
+            for name in ["config.json", "contexts"] {
+                let destination = root.appendingPathComponent(name)
+                let original = source.appendingPathComponent(name)
+                if !manager.fileExists(atPath: destination.path), manager.fileExists(atPath: original.path) {
+                    try? manager.copyItem(at: original, to: destination)
+                }
             }
+            return
         }
     }
 
