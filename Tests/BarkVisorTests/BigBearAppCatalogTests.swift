@@ -3,6 +3,54 @@ import Testing
 @testable import BarkVisorCore
 
 struct BigBearAppCatalogTests {
+    @Test func `openclaw starts an unconfigured gateway after preparing persistent storage`() throws {
+        let files = sample(
+            slug: "openclaw",
+            appJSON: appJSON(
+                id: "openclaw", name: "OpenClaw",
+                env: [["name": "OPENCLAW_GATEWAY_TOKEN", "required": true, "kind": "secret"]],
+            ),
+            compose: """
+            services:
+              big-bear-openclaw:
+                image: ghcr.io/openclaw/openclaw:2026.5.3-1
+                init: true
+                environment:
+                  - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:?Required}
+                volumes:
+                  - openclaw_config:/home/node/.openclaw
+                  - openclaw_workspace:/home/node/.openclaw/workspace
+                ports:
+                  - 18789:18789
+              big-bear-openclaw-cli:
+                image: ghcr.io/openclaw/openclaw:2026.5.3-1
+                stdin_open: true
+                tty: true
+                profiles: [tools]
+            volumes:
+              openclaw_config: {}
+              openclaw_workspace: {}
+            """,
+        )
+        let entry = try #require(BigBearAppCatalog.parse(files: files).apps.first)
+        #expect(entry.isInstallable)
+        #expect(!entry.compose.contains("big-bear-openclaw-cli"))
+        #expect(entry.compose.contains("service_completed_successfully"))
+        #expect(entry.compose.contains("--allow-unconfigured"))
+        #expect(entry.compose.contains("chown 1000:1000"))
+        let values = AppTemplate.seedValues(entry.fields ?? [], existing: ["openclaw_gateway_token": "test-token"])
+        let rendered = try AppTemplate.render(entry: entry, values: values)
+        #expect(rendered.env["OPENCLAW_GATEWAY_TOKEN"] == "test-token")
+        #expect(!rendered.compose.contains("test-token"))
+        let project = try ComposeAllowlist.render(
+            yaml: rendered.compose,
+            workloadID: "openclaw-test",
+            stateDir: URL(fileURLWithPath: "/tmp/openclaw-test"),
+        )
+        #expect(project.namedVolumes == ["openclaw_config", "openclaw_workspace"])
+        #expect(project.containerNames.count == 2)
+    }
+
     @Test func `whoami is installable with digest and tcp port`() throws {
         let files = sample(
             slug: "whoami",

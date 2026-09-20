@@ -3,6 +3,28 @@ import Testing
 @testable import BarkVisorCore
 
 struct DockerEngineTests {
+    @Test func `import includes contexts and repairs an existing config without overwriting it`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source")
+        let context = source.appendingPathComponent("contexts/meta/orbstack/meta.json")
+        let destination = root.appendingPathComponent("destination")
+        try FileManager.default.createDirectory(at: context.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data(#"{"currentContext":"orbstack"}"#.utf8).write(to: source.appendingPathComponent("config.json"))
+        try Data(#"{"Name":"orbstack"}"#.utf8).write(to: context)
+        let candidates = [source.appendingPathComponent("config.json").path]
+        DockerEngine.importDockerConfig(into: destination, candidates: candidates)
+        #expect(try Data(contentsOf: destination.appendingPathComponent("config.json")) ==
+            Data(contentsOf: source.appendingPathComponent("config.json")))
+        #expect(try Data(contentsOf: destination.appendingPathComponent("contexts/meta/orbstack/meta.json")) == Data(contentsOf: context))
+        try Data("existing".utf8).write(to: destination.appendingPathComponent("config.json"))
+        try FileManager.default.removeItem(at: destination.appendingPathComponent("contexts"))
+        DockerEngine.importDockerConfig(into: destination, candidates: candidates)
+        #expect(try String(contentsOf: destination.appendingPathComponent("config.json"), encoding: .utf8) == "existing")
+        #expect(try Data(contentsOf: destination.appendingPathComponent("contexts/meta/orbstack/meta.json")) == Data(contentsOf: context))
+    }
+
     @Test func `macos candidates include OrbStack and Docker Desktop`() {
         let paths = DockerEngine.candidatePaths(os: "macOS")
         #expect(paths.contains("/usr/local/bin/docker"))

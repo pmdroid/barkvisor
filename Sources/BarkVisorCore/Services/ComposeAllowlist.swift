@@ -33,7 +33,7 @@ public enum ComposeAllowlist {
     private static let allowedServiceKeys: Set<String> = [
         "image", "ports", "environment", "env_file", "volumes", "restart", "user",
         "depends_on", "healthcheck", "command", "container_name", "labels",
-        "entrypoint", "working_dir", "hostname", "expose", "pull_policy",
+        "entrypoint", "working_dir", "hostname", "expose", "pull_policy", "init",
     ]
 
     public static func render(
@@ -270,7 +270,7 @@ public enum ComposeAllowlist {
         }
         for (_, raw) in mapping {
             if let condition = stringValue(asObject(raw)?["condition"]) {
-                if condition != "service_started" {
+                if condition != "service_started", condition != "service_completed_successfully" {
                     throw BarkVisorError.badRequest("unsupported compose feature: depends_on")
                 }
             }
