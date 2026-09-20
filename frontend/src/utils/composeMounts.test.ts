@@ -119,6 +119,15 @@ describe('isManagedAppMount', () => {
 })
 
 describe('visibleAppMounts', () => {
+  test('shows a volume shared by an init container and app once', () => {
+    expect(visibleAppMounts({ compose: `services:
+  init:
+    volumes: [config:/config]
+  app:
+    volumes: [config:/config]
+` })).toEqual([{ kind: 'volume', source: 'config', target: '/config', readOnly: false }])
+  })
+
   test('keeps sharedPaths binds after compose gains a volume', () => {
     expect(visibleAppMounts({
       compose: '    volumes:\n      - /compose:/app\n',

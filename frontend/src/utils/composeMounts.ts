@@ -50,7 +50,7 @@ export function visibleAppMounts(input: {
   compose?: string | null
   sharedPaths?: string[] | null
 }): ComposeMount[] {
-  const fromCompose = parseComposeMounts(input.compose ?? '')
+  const fromCompose = [...new Map(parseComposeMounts(input.compose ?? '').map(mount => [mountKey(mount), mount])).values()]
   const fromShared = mountsFromSharedPaths(input.sharedPaths)
   if (!fromCompose.length) return fromShared
   const seen = new Set(fromCompose.map(mountKey))
