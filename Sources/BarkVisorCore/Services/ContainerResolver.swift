@@ -96,10 +96,19 @@ public enum ContainerResolver {
         guard let match = containers.first(where: { $0.service == service }) else {
             throw BarkVisorError.badRequest("Service is not part of this workload")
         }
-        guard DockerExecRequest.isSafeExecutableName(match.name) else {
+        guard isSafeExecutableName(match.name) else {
             throw BarkVisorError.badRequest("Container name is not exec-safe")
         }
         return match
+    }
+
+    public static func isSafeExecutableName(_ name: String) -> Bool {
+        guard !name.isEmpty, name.count <= 255 else { return false }
+        guard let first = name.unicodeScalars.first else { return false }
+        let letters = CharacterSet.letters.union(CharacterSet.decimalDigits)
+        guard letters.contains(first) else { return false }
+        let allowed = letters.union(CharacterSet(charactersIn: "._-"))
+        return name.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     /// Compose service-name grammar (restricted charset; also the picker key

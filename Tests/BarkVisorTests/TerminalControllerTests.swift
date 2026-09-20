@@ -262,6 +262,12 @@ struct TerminalControllerTests {
         #expect(throws: BarkVisorError.self) {
             _ = try ContainerResolver.resolve(containers: containers, service: "../evil")
         }
+        #expect(throws: BarkVisorError.self) {
+            _ = try ContainerResolver.resolve(
+                containers: [WorkloadContainer(service: "web", name: "-it", state: "running")],
+                service: "web",
+            )
+        }
     }
 
     @Test(arguments: ["web", "api_v2", "svc-1", "Web1"])
@@ -276,12 +282,12 @@ struct TerminalControllerTests {
 
     @Test(arguments: ["bv-web-1", "barkvisor-abc.1"])
     func `valid exec target names`(_ name: String) {
-        #expect(DockerExecRequest.isSafeExecutableName(name))
+        #expect(ContainerResolver.isSafeExecutableName(name))
     }
 
     @Test(arguments: ["", "-it", "a b", "$(rm)", "a;b", "/abs/path", ".."])
     func `unsafe exec target names are rejected`(_ name: String) {
-        #expect(!DockerExecRequest.isSafeExecutableName(name))
+        #expect(!ContainerResolver.isSafeExecutableName(name))
     }
 
     @Test func `exec arguments pin a color terminal identity`() {

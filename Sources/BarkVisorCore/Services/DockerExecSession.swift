@@ -89,12 +89,7 @@
         /// image-safe characters starting alphanumerically (blocks `-flag`
         /// injection, path traversal, and `..`-style names).
         public static func isSafeExecutableName(_ name: String) -> Bool {
-            guard !name.isEmpty, name.count <= 255 else { return false }
-            guard let first = name.unicodeScalars.first else { return false }
-            let letters = CharacterSet.letters.union(CharacterSet.decimalDigits)
-            guard letters.contains(first) else { return false }
-            let allowed = letters.union(CharacterSet(charactersIn: "._-"))
-            return name.unicodeScalars.allSatisfy { allowed.contains($0) }
+            ContainerResolver.isSafeExecutableName(name)
         }
     }
 
