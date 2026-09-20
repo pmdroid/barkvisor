@@ -43,7 +43,7 @@ try {
     localStorage.setItem('token', t)
     localStorage.setItem('userRole', 'admin')
   }, token)
-  await page.goto(`${base}/vms`, { waitUntil: 'networkidle' })
+  await page.goto(`${base}/apps`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Create App' }).first().click()
   await page.waitForSelector('.mag-frame, h2:has-text("Create App")', { timeout: 10_000 })
   await page.waitForTimeout(800)
