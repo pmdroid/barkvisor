@@ -19,6 +19,15 @@
       ],
       "behavior": "Hermes deployed through the local dashboard and reached the Telegram bot-token prompt.",
       "sha256": "5c40988069d0a10db1a0abd581facbe9f2b9f58592f7844b0c955df95d8ba690"
+    },
+    {
+      "file": "hermes-logs.png",
+      "prs": [
+        688,
+        691
+      ],
+      "behavior": "The Apps log view renders real container output.",
+      "sha256": "983b6e11f4e45438634bf458f070a0c7ad0314cab40898a95f40bc8431189052"
     }
   ]
 }
