@@ -1,6 +1,6 @@
 # Changelog
 
-Release notes for BarkVisor. The [user guides](using-overview.md) describe current behavior. Older notes about intermediate implementations are preserved in the [development archive](archive/earlier-development-notes.md).
+Release notes for BarkVisor. The [user guides](using-overview.md) describe current behavior.
 
 ## Unreleased
 
