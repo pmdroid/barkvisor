@@ -252,7 +252,6 @@ function fixLinks(body) {
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
-    .replace(/\]\(archive\/([^)]*)\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/archive/$1)')
     .replace(/\]\(\.\.\/CONTEXT\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/CONTEXT.md$1)')
     .replace(/\]\(\.\.\/\.github\/([^)]+)\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/.github/$1)')
     .replace(/\]\(\.\.\/packaging\/linux\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/linux)')
