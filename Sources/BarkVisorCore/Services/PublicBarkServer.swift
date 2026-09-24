@@ -145,12 +145,18 @@ public final class PublicBarkServer: @unchecked Sendable {
                 claim: request.claim,
             )
             if let rejection = result.rejection {
-                return PublicHTTP.json(status: 403, body: #"{"rejection":"\#(rejection)"}"#)
+                return PublicHTTP.json(
+                    status: 403,
+                    body: #"{"rejection":"\#(PublicHTTP.jsonString(rejection))"}"#,
+                )
             }
             let state = result.workloadState ?? ""
             return PublicHTTP.json(
                 status: 200,
-                body: #"{"operationId":"\#(result.operationId)","state":"\#(state)","phase":"\#(result.phase)"}"#,
+                body: """
+                {"operationId":"\(PublicHTTP.jsonString(result.operationId))","state":"\(PublicHTTP.jsonString(state))","phase":"\(PublicHTTP
+                    .jsonString(result.phase))"}
+                """,
             )
         }
 
@@ -295,6 +301,29 @@ public final class PublicBarkServer: @unchecked Sendable {
             }
         }
 
+        static func jsonString(_ value: String) -> String {
+            var escaped = ""
+            for scalar in value.unicodeScalars {
+                switch scalar {
+                case "\\":
+                    escaped += "\\\\"
+                case "\"":
+                    escaped += "\\\""
+                case "\n":
+                    escaped += "\\n"
+                case "\r":
+                    escaped += "\\r"
+                default:
+                    if scalar.value < 0x20 {
+                        escaped += String(format: "\\u%04x", scalar.value)
+                    } else {
+                        escaped.unicodeScalars.append(scalar)
+                    }
+                }
+            }
+            return escaped
+        }
+
         static func json(status: Int, body: String) -> String {
             """
             HTTP/1.1 \(status) \(status == 200 ? "OK" : "Forbidden")\r
@@ -352,7 +381,7 @@ public final class PublicBarkServer: @unchecked Sendable {
                 serialNumber: Certificate.SerialNumber(1),
                 publicKey: key.publicKey,
                 notValidBefore: Date().addingTimeInterval(-60),
-                notValidAfter: Date().addingTimeInterval(86_400),
+                notValidAfter: Date().addingTimeInterval(86_400 * 365 * 10),
                 issuer: name,
                 subject: name,
                 signatureAlgorithm: .ecdsaWithSHA256,
