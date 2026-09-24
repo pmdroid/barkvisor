@@ -25,7 +25,6 @@ public enum HostNetworkPendingReaper {
                     continue
                 }
                 try revertHost(pending, attached: attached)
-                try HostNetworkRecovery.revertExpired()
                 let still = try await pending.createdBridge
                     ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                     : 0
@@ -39,6 +38,7 @@ public enum HostNetworkPendingReaper {
                 continue
             }
         }
+        try? HostNetworkRecovery.revertExpired()
     }
 
     public static func settleExpired(
