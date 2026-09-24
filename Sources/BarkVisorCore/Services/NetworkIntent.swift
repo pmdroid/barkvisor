@@ -177,13 +177,12 @@ public enum NetworkIntentResolver {
     }
 
     public static func qemuHostfwd(_ publication: PortPublication) -> String {
-        let host: String
-        if publication.exposure == .wildcard, publication.family == .ipv4 {
-            host = ""
+        let host = if publication.exposure == .wildcard, publication.family == .ipv4 {
+            ""
         } else if publication.family == .ipv6 {
-            host = "[\(publication.bindAddress)]"
+            "[\(publication.bindAddress)]"
         } else {
-            host = publication.bindAddress
+            publication.bindAddress
         }
         return "hostfwd=\(publication.proto):\(host):\(publication.publishedPort)-:\(publication.targetPort)"
     }
@@ -296,11 +295,17 @@ public enum NetworkIntentBinding {
 }
 
 public enum PendingNetworkUsePolicy {
-    public static func attachmentConfirmsPending() -> Bool { false }
+    public static func attachmentConfirmsPending() -> Bool {
+        false
+    }
 
-    public static func usableWhileUnconfirmed() -> Bool { false }
+    public static func usableWhileUnconfirmed() -> Bool {
+        false
+    }
 
-    public static func expiredUnconfirmedReverts() -> Bool { true }
+    public static func expiredUnconfirmedReverts() -> Bool {
+        true
+    }
 
     public enum ExpiryAction: Equatable, Sendable {
         case keep

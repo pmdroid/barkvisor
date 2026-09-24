@@ -46,66 +46,65 @@ public enum PortClaimStore {
         workloadId: String,
         db: Database,
     ) throws {
-            let others = try listed(db: db).filter {
-                !($0.operationId == operationId && $0.workloadId == workloadId)
-            }
-            let configured = try PortRegistry.claims(db: db, excludingVM: workloadId)
-            for (index, reservation) in reservations.enumerated() {
-                for earlier in reservations.prefix(index) {
-                    if NetworkIntentBinding.overlaps(earlier.publication, reservation.publication) {
-                        throw BarkVisorError.portInUse(
-                            "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
-                                + "is claimed more than once by this operation",
-                        )
-                    }
-                }
-                if let owner = others.first(where: {
-                    NetworkIntentBinding.overlaps($0.publication, reservation.publication)
-                }) {
-                    throw BarkVisorError.portInUse(
-                        "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
-                            + "is already claimed by \(owner.workloadKind) \(owner.workloadId)",
-                    )
-                }
-                if let configuredOwner = configured.first(where: { claim in
-                    let publication = try? NetworkIntent.publication(
-                        bindAddress: claim.bindAddress,
-                        proto: claim.proto,
-                        publishedPort: claim.hostPort,
-                        targetPort: claim.hostPort,
-                    )
-                    guard let publication else { return false }
-                    return NetworkIntentBinding.overlaps(publication, reservation.publication)
-                }) {
-                    throw BarkVisorError.portInUse(
-                        "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
-                            + "is already claimed by \(configuredOwner.workloadKind) \"\(configuredOwner.workloadName)\"",
-                    )
-                }
-            }
-            try db.execute(
-                sql: "DELETE FROM port_claims WHERE operation_id = ? AND workload_id = ?",
-                arguments: [operationId, workloadId],
-            )
-            for reservation in reservations {
-                try db.execute(
-                    sql: """
-                    INSERT INTO port_claims (
-                      operation_id, workload_kind, workload_id, host_port, proto, family, bind_address, exposure
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    arguments: [
-                        reservation.operationId,
-                        reservation.workloadKind,
-                        reservation.workloadId,
-                        reservation.publication.publishedPort,
-                        reservation.publication.proto,
-                        reservation.publication.family.rawValue,
-                        reservation.publication.bindAddress,
-                        reservation.publication.exposure.rawValue,
-                    ],
+        let others = try listed(db: db).filter {
+            !($0.operationId == operationId && $0.workloadId == workloadId)
+        }
+        let configured = try PortRegistry.claims(db: db, excludingVM: workloadId)
+        for (index, reservation) in reservations.enumerated() {
+            for earlier in reservations.prefix(index)
+                where NetworkIntentBinding.overlaps(earlier.publication, reservation.publication) {
+                throw BarkVisorError.portInUse(
+                    "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
+                        + "is claimed more than once by this operation",
                 )
             }
+            if let owner = others.first(where: {
+                NetworkIntentBinding.overlaps($0.publication, reservation.publication)
+            }) {
+                throw BarkVisorError.portInUse(
+                    "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
+                        + "is already claimed by \(owner.workloadKind) \(owner.workloadId)",
+                )
+            }
+            if let configuredOwner = configured.first(where: { claim in
+                let publication = try? NetworkIntent.publication(
+                    bindAddress: claim.bindAddress,
+                    proto: claim.proto,
+                    publishedPort: claim.hostPort,
+                    targetPort: claim.hostPort,
+                )
+                guard let publication else { return false }
+                return NetworkIntentBinding.overlaps(publication, reservation.publication)
+            }) {
+                throw BarkVisorError.portInUse(
+                    "Host port \(reservation.publication.publishedPort)/\(reservation.publication.proto) "
+                        + "is already claimed by \(configuredOwner.workloadKind) \"\(configuredOwner.workloadName)\"",
+                )
+            }
+        }
+        try db.execute(
+            sql: "DELETE FROM port_claims WHERE operation_id = ? AND workload_id = ?",
+            arguments: [operationId, workloadId],
+        )
+        for reservation in reservations {
+            try db.execute(
+                sql: """
+                INSERT INTO port_claims (
+                  operation_id, workload_kind, workload_id, host_port, proto, family, bind_address, exposure
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    reservation.operationId,
+                    reservation.workloadKind,
+                    reservation.workloadId,
+                    reservation.publication.publishedPort,
+                    reservation.publication.proto,
+                    reservation.publication.family.rawValue,
+                    reservation.publication.bindAddress,
+                    reservation.publication.exposure.rawValue,
+                ],
+            )
+        }
     }
 
     @discardableResult
