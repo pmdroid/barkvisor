@@ -31,6 +31,7 @@ public actor LocalManagementSession {
     private var effects = 0
     private var bufferedEventBytes = 0
     private var sequence = 0
+    private var inFlight: Set<String> = []
 
     public init(
         policy: LocalManagementPolicy,
@@ -125,22 +126,24 @@ public actor LocalManagementSession {
             }
             return WorkloadSocketOperations.response(request: request, record: existing, events: existing.events)
         }
+        if inFlight.contains(request.operationId) {
+            return LocalManagementResponse(
+                requestId: request.requestId,
+                operationId: request.operationId,
+                accepted: true,
+                phase: "accepted",
+                effectCount: 0,
+                subject: subject,
+                workloadID: workloadID,
+                workloadState: "accepted",
+            )
+        }
         guard let workloadDriver else {
             return LocalManagementResponse.rejection(request: request, reason: .unknownOperation)
         }
+        inFlight.insert(request.operationId)
         sequence += 1
-        let reserved = DurableWorkloadOperation(
-            operationID: request.operationId,
-            workloadID: workloadID,
-            subject: subject,
-            kind: kind,
-            phase: "accepted",
-            state: "accepted",
-            runtime: "",
-            events: [],
-            sequence: sequence,
-        )
-        await operationStore?.save(reserved)
+        let reservedSequence = sequence
         let command = WorkloadSocketCommand(
             operationID: request.operationId,
             workloadID: workloadID,
@@ -159,8 +162,9 @@ public actor LocalManagementSession {
                 state: snapshot.state,
                 runtime: snapshot.runtime,
                 events: [event],
-                sequence: reserved.sequence,
+                sequence: reservedSequence,
             )
+            inFlight.remove(request.operationId)
             await operationStore?.save(completed)
             return WorkloadSocketOperations.response(
                 request: request,
@@ -177,8 +181,9 @@ public actor LocalManagementSession {
                 state: "failed",
                 runtime: "",
                 events: [error.localizedDescription],
-                sequence: reserved.sequence,
+                sequence: reservedSequence,
             )
+            inFlight.remove(request.operationId)
             await operationStore?.save(failed)
             return WorkloadSocketOperations.response(request: request, record: failed, events: failed.events)
         }

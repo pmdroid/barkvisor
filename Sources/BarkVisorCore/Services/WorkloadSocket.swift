@@ -182,17 +182,35 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
             try await vmManager.restart(vmID: vm.id)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "running", runtime: runtime)
         case "delete":
-            _ = try await VMLifecycleService.deleteVM(
+            let (taskID, _) = try await VMLifecycleService.deleteVM(
                 id: vm.id,
                 keepDisk: false,
                 vmManager: vmManager,
                 backgroundTasks: tasks,
                 db: db,
             )
+            try await waitForDelete(taskID)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "deleted", runtime: runtime)
         default:
             throw LocalManagementError.malformed
         }
+    }
+
+    private func waitForDelete(_ taskID: String) async throws {
+        for _ in 0 ..< 400 {
+            if let event = await tasks.status(taskID) {
+                switch event.status {
+                case .completed:
+                    return
+                case .failed, .cancelled:
+                    throw BarkVisorError.conflict(event.error ?? "Workload delete did not finish")
+                case .queued, .running:
+                    break
+                }
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw BarkVisorError.conflict("Workload delete did not finish")
     }
 }
 
