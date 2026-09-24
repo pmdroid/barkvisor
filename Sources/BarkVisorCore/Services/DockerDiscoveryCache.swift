@@ -39,8 +39,10 @@ public struct DockerFileStamp: Equatable, Sendable {
     private func stampModified(_ info: stat) -> Int64 {
         #if os(Linux)
             Int64(info.st_mtim.tv_sec)
+        #elseif os(macOS)
+            Int64(info.st_mtimespec.tv_sec)
         #else
-            Int64(info.st_mtime)
+            0
         #endif
     }
 #endif
