@@ -412,7 +412,7 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
     public func authorizeCertificate(
         hostId: String,
         fingerprint: String,
-        now: Date = Date(),
+        now _: Date = Date(),
     ) -> HomeMembershipDecision {
         guard Self.ledgerExists(dataDir: dataDir) else {
             return .allow
@@ -423,7 +423,6 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
                 ledger: ledger,
                 hostId: hostId,
                 fingerprint: fingerprint,
-                now: now,
             )
         } catch {
             return .deny("Membership ledger is unreadable")
@@ -698,7 +697,6 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         ledger: HomeMembershipLedger,
         hostId: String,
         fingerprint: String,
-        now: Date,
     ) -> HomeMembershipDecision {
         guard let record = member(hostId, in: ledger) else {
             return .deny("Certificate is not a committed Home member")
@@ -713,10 +711,6 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
             $0.caseInsensitiveCompare(fingerprint) == .orderedSame
         }) else {
             return .deny("Certificate key is not the admitted Device key")
-        }
-        if now.timeIntervalSince1970 > ledger.lastSnapshotAt
-            + HomeMembershipPolicy.maximumStaleAuthorizationWindow {
-            return .deny("Membership snapshot is stale")
         }
         return .allow
     }

@@ -20,7 +20,7 @@ Removal on a Device is a single ledger update: the member stays in the ledger as
 
 Peers learn a removal by importing a signed ledger snapshot. A snapshot from a member this Device has already removed is ignored. A snapshot cannot clear a removal or replace another member's key. It can mark members removed and refresh the sync clock.
 
-`HomeMembershipPolicy.maximumStaleAuthorizationWindow` is 24 hours. The Device that committed a removal denies it immediately. Another Device that has not imported that snapshot may still authorize the member until 24 hours after its last accepted snapshot or local membership commit. After that, peer authorization fails closed until a newer snapshot arrives. Local Workloads are outside that check.
+`HomeMembershipPolicy.maximumStaleAuthorizationWindow` is 24 hours. The Device that committed a removal denies that member's certificate, login token, and proxy immediately. Another Device that has not imported that snapshot may still authorize the member until 24 hours after its last accepted snapshot or local membership commit. After that, login tokens and proxy hops fail closed. An active member's certificate still opens the agent connection so the Devices can exchange a snapshot and recover; a snapshot that marks the member removed then denies the certificate. Local Workloads are outside that check.
 
 ## Existing Homes
 

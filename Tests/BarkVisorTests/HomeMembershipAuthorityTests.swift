@@ -176,6 +176,17 @@ struct HomeMembershipAuthorityTests {
                 hostId: "issuer",
                 fingerprint: issuer.deviceFingerprint,
                 now: stale,
+            ) == .allow,
+        )
+        #expect(
+            peerAuthority.authorizeLoginToken(
+                issuerHostId: "issuer",
+                subjectHostId: nil,
+                issuedAt: stale.addingTimeInterval(-60),
+                expiresAt: stale.addingTimeInterval(60),
+                membershipRevision: 1,
+                localHostId: "peer",
+                now: stale,
             ) == .deny("Membership snapshot is stale"),
         )
         _ = try peerAuthority.importSnapshot(snapshot, now: stale)
