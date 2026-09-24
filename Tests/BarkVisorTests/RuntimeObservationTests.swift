@@ -216,14 +216,43 @@ struct RuntimeObservationTests {
         #expect(observed.health == .unknown)
     }
 
-    @Test func `event process environment follows the same docker context`() {
-        var identity = sampleIdentity(context: "desktop")
-        identity.endpoint = "unix:///tmp/barkvisor-docker.sock"
-        let env = DockerEventEnvironment.make(identity: identity, base: ["PATH": "/usr/bin"])
-        #expect(env["DOCKER_HOST"] == "unix:///tmp/barkvisor-docker.sock")
-        #expect(env["DOCKER_CONTEXT"] == "desktop")
+    @Test func `event process environment matches the stats docker config`() {
+        let identity = sampleIdentity(context: "desktop")
+        let env = DockerEventEnvironment.make(
+            identity: identity,
+            base: ["PATH": "/usr/bin", "DOCKER_HOST": "unix:///keep.sock"],
+        )
         #expect(env["DOCKER_CONFIG"] != nil)
+        #expect(env["DOCKER_HOST"] == "unix:///keep.sock")
         #expect(env["PATH"] == "/usr/bin")
+        #expect(env["DOCKER_CONTEXT"] == nil)
+    }
+
+    @Test func `starting the event subscription snapshots containers that are already running`() async throws {
+        let lists = ListCounter(
+            rows: [
+                ContainerSnapshot(
+                    workloadID: "app-1",
+                    service: "web",
+                    containerID: "web1",
+                    state: "running",
+                    status: "Up (healthy)",
+                    name: "web",
+                ),
+            ],
+        )
+        let source = HoldingEventSource()
+        let service = RuntimeObservation(
+            identityProvider: { sampleIdentity(context: "default") },
+            listContainers: { lists.list() },
+        )
+        await service.ensureEvents(source: source, reconnect: false)
+        try await waitUntil { lists.count >= 1 }
+        let observed = try #require(await service.observation(for: "app-1"))
+        #expect(observed.phase == .running)
+        #expect(observed.health == .healthy)
+        #expect(observed.services.count == 1)
+        await service.stop()
     }
 
     @Test func `failed probes keep the last phase and do not invent success`() async {
@@ -370,9 +399,10 @@ struct RuntimeObservationTests {
         await service.ensureEvents(source: source, reconnect: false)
         try await waitUntil { await service.subscriptionOpenings() == 1 }
         let view = await service.connectPublic(capacity: 2)
+        let base = Int(Date().timeIntervalSince1970) + 5
         for index in 0 ..< 6 {
             try await service.ingest(line: eventLine(
-                action: "start", workload: "app-\(index)", service: "web", id: "c\(index)", time: 100 + index,
+                action: "start", workload: "app-\(index)", service: "web", id: "c\(index)", time: base + index,
             ))
         }
         #expect(await service.bufferedCount(for: view) == 1)
@@ -524,6 +554,29 @@ private func processSample() -> (ticks: Int, rssKB: Int) {
     let rssLine = status.split(whereSeparator: \.isNewline).first { $0.hasPrefix("VmRSS:") }
     let rssKB = rssLine?.split(separator: " ").compactMap { Int($0) }.first ?? 0
     return (utime + stime, rssKB)
+}
+
+private final class ListCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let rows: [ContainerSnapshot]
+    private var calls = 0
+
+    init(rows: [ContainerSnapshot]) {
+        self.rows = rows
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+
+    func list() -> ContainerListCollect {
+        lock.lock()
+        calls += 1
+        lock.unlock()
+        return .fresh(rows)
+    }
 }
 
 private final class IdentityBox: @unchecked Sendable {

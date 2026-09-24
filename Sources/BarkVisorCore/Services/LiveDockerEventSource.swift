@@ -10,14 +10,6 @@ public enum DockerEventEnvironment {
         for (key, value) in DockerEngine.cliEnvironment(dockerPath: dockerPath) {
             env[key] = value
         }
-        if identity.endpoint.hasPrefix("unix://")
-            || identity.endpoint.hasPrefix("tcp://")
-            || identity.endpoint.hasPrefix("ssh://") {
-            env["DOCKER_HOST"] = identity.endpoint
-        }
-        if !identity.contextName.isEmpty {
-            env["DOCKER_CONTEXT"] = identity.contextName
-        }
         return env
     }
 }

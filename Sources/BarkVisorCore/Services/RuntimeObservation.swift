@@ -311,6 +311,8 @@ public actor RuntimeObservation {
             let identity = identityProvider()
             subscribedIdentity = identity
             openings += 1
+            await resyncFromRuntime(force: true)
+            if eventGeneration != generation || Task.isCancelled { break }
             let subscription = source.open(identity: identity)
             let cancel = subscription.cancel
             await withTaskCancellationHandler {
