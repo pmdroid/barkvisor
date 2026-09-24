@@ -437,9 +437,24 @@ struct DaemonCommand: AsyncParsableCommand {
                 memberships: [],
                 resources: ResourcePolicy(allowedRoots: [], allowedMounts: [], allowedDevices: []),
             )
+            let database = try AppDatabase(path: Config.dbPath.path)
+            try database.migrate()
+            let manager = VMManager(dbPool: database.pool)
+            let tasks = BackgroundTaskManager()
+            let operations = try DurableOperationFile(
+                url: Config.dataDir.appendingPathComponent("socket-operations.json"),
+            )
             let server = LocalManagementSocketServer(
                 path: ManagementSocketPath.path(socketDir: Config.socketDir),
-                session: LocalManagementSession(policy: policy),
+                session: LocalManagementSession(
+                    policy: policy,
+                    operationStore: operations,
+                    workloadDriver: LiveWorkloadSocketDriver(
+                        db: database.pool,
+                        vmManager: manager,
+                        tasks: tasks,
+                    ),
+                ),
                 directoryMode: permissions.directoryMode,
                 socketMode: permissions.socketMode,
             )

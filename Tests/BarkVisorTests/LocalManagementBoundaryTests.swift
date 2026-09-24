@@ -498,6 +498,155 @@ struct LocalManagementBoundaryTests {
     }
 }
 
+actor MemoryOperationStore: DurableOperationStoring {
+    private var records: [String: DurableWorkloadOperation] = [:]
+
+    func find(operationID: String) -> DurableWorkloadOperation? {
+        records[operationID]
+    }
+
+    func latest(workloadID: String) -> DurableWorkloadOperation? {
+        records.values
+            .filter { $0.workloadID == workloadID && $0.phase == "completed" }
+            .max { $0.sequence < $1.sequence }
+    }
+
+    func save(_ record: DurableWorkloadOperation) {
+        records[record.operationID] = record
+    }
+}
+
+struct WorkloadSocketOperationTests {
+    private let peer = LocalPeerIdentity(uid: 1_000, gid: 1_000, pid: 7)
+
+    @Test func `socket operations hit the runtime once and survive a new session`() async {
+        let driver = RecordingWorkloadSocketDriver()
+        let store = MemoryOperationStore()
+        let first = LocalManagementSession(
+            policy: policy(),
+            operationStore: store,
+            workloadDriver: driver,
+        )
+        let started = await first.handle(peer: peer, request: operation("workload.start", "vm-1", "op-start"))
+        let repeated = await first.handle(peer: peer, request: operation("workload.start", "vm-1", "op-start"))
+        #expect(started.workloadState == "running")
+        #expect(started.marker == "qemu")
+        #expect(repeated.workloadState == "running")
+        #expect(driver.calls.count == 1)
+        let app = await first.handle(peer: peer, request: operation("workload.start", "app-1", "op-app"))
+        #expect(app.marker == "docker")
+        #expect(driver.states["app-1"] == "running:docker")
+        _ = await first.handle(peer: peer, request: operation("workload.stop", "vm-1", "op-stop"))
+        _ = await first.handle(peer: peer, request: operation("workload.update", "vm-1", "op-update"))
+        let deleted = await first.handle(peer: peer, request: operation("workload.delete", "vm-1", "op-delete"))
+        let deletedAgain = await first.handle(
+            peer: peer,
+            request: operation("workload.delete", "vm-1", "op-delete"),
+        )
+        #expect(deleted.workloadState == "deleted")
+        #expect(deletedAgain.phase == "completed")
+        #expect(driver.calls.count == 5)
+        let second = LocalManagementSession(
+            policy: policy(),
+            operationStore: store,
+            workloadDriver: driver,
+        )
+        let queried = await second.handle(peer: peer, request: operation("query", "vm-1", "op-start"))
+        #expect(queried.workloadState == "running")
+        #expect(driver.calls.count == 5)
+        let status = await second.handle(peer: peer, request: operation("workload.status", "app-1", "op-status"))
+        #expect(status.workloadState == "running")
+        let events = await second.handle(peer: peer, request: operation("workload.events", "app-1", "op-events"))
+        #expect(events.events?.isEmpty == false)
+        #expect(driver.calls.count == 5)
+    }
+
+    @Test func `rejected callers and a slow consumer do not run the workload twice`() async throws {
+        let driver = RecordingWorkloadSocketDriver()
+        let session = LocalManagementSession(
+            policy: policy(maxEventBytes: 4),
+            operationStore: MemoryOperationStore(),
+            workloadDriver: driver,
+        )
+        let forged = await session.handle(
+            peer: peer,
+            request: operation("workload.start", "vm-1", "op-forged", claim: "admin", token: nil),
+        )
+        #expect(forged.rejection == LocalRejection.forgedIdentity.rawValue)
+        let revoked = await session.handle(
+            peer: peer,
+            request: operation("workload.stop", "vm-1", "op-revoked", token: "token-revoked"),
+        )
+        #expect(revoked.rejection == LocalRejection.revokedMember.rawValue)
+        let path = await session.handle(
+            peer: peer,
+            request: operation("workload.start", "vm-1", "op-path", paths: ["/etc/passwd"]),
+        )
+        #expect(path.rejection == LocalRejection.invalidPath.rawValue)
+        let device = await session.handle(
+            peer: peer,
+            request: operation("workload.start", "vm-1", "op-device", devices: ["/dev/sda"]),
+        )
+        #expect(device.rejection == LocalRejection.unauthorizedDevice.rawValue)
+        #expect(driver.calls.isEmpty)
+        _ = await session.handle(peer: peer, request: operation("workload.start", "vm-9", "op-slow"))
+        let blocked = await session.handle(
+            peer: peer,
+            request: operation("workload.events", "vm-9", "op-read"),
+        )
+        #expect(blocked.rejection == LocalRejection.slowConsumer.rawValue)
+        _ = await session.handle(peer: peer, request: operation("workload.start", "vm-8", "op-other"))
+        #expect(driver.calls.map(\.workloadID) == ["vm-9", "vm-8"])
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let unit = try String(
+            contentsOf: root.appendingPathComponent("packaging/linux/barkvisor.service"),
+            encoding: .utf8,
+        )
+        #expect(unit.contains("ExecStart=/usr/local/bin/barkvisor\n"))
+        #expect(unit.contains("User=root"))
+    }
+
+    private func policy(maxEventBytes: Int = LocalManagementLimits.maxEventBytes) -> LocalManagementPolicy {
+        LocalManagementPolicy(
+            allowedPeerUIDs: [1_000],
+            memberships: [
+                MembershipFact(subject: "device-a", sessionToken: "token-a", revoked: false),
+                MembershipFact(subject: "device-b", sessionToken: "token-revoked", revoked: true),
+            ],
+            resources: ResourcePolicy(
+                allowedRoots: ["/var/lib/barkvisor"],
+                allowedMounts: ["/srv/vol"],
+                allowedDevices: ["/dev/net/tun"],
+            ),
+            maxEventBytes: maxEventBytes,
+        )
+    }
+
+    private func operation(
+        _ name: String,
+        _ workloadID: String,
+        _ operationID: String,
+        claim: String? = nil,
+        token: String? = "token-a",
+        paths: [String] = [],
+        devices: [String] = [],
+    ) -> LocalManagementRequest {
+        LocalManagementRequest(
+            requestId: "req-\(operationID)",
+            operationId: operationID,
+            name: name,
+            claimedUserId: claim,
+            sessionToken: token,
+            paths: paths,
+            devices: devices,
+            workloadID: workloadID,
+        )
+    }
+}
+
 #if !os(Windows)
     private func framed(_ payload: Data) -> Data {
         var data = Data()

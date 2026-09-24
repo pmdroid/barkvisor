@@ -24,19 +24,28 @@ public struct StoredOperation: Equatable, Sendable {
 
 public actor LocalManagementSession {
     private let policy: LocalManagementPolicy
+    private let operationStore: (any DurableOperationStoring)?
+    private let workloadDriver: (any WorkloadSocketDriving)?
     private var operations: [String: StoredOperation] = [:]
     private var decisionLog: [AuthorizationDecision] = []
     private var effects = 0
     private var bufferedEventBytes = 0
+    private var sequence = 0
 
-    public init(policy: LocalManagementPolicy) {
+    public init(
+        policy: LocalManagementPolicy,
+        operationStore: (any DurableOperationStoring)? = nil,
+        workloadDriver: (any WorkloadSocketDriving)? = nil,
+    ) {
         self.policy = policy
+        self.operationStore = operationStore
+        self.workloadDriver = workloadDriver
     }
 
     public func handle(
         peer: LocalPeerIdentity,
         request: LocalManagementRequest,
-    ) -> LocalManagementResponse {
+    ) async -> LocalManagementResponse {
         let decision = LocalManagementAuthorization.decide(
             peer: peer,
             request: request,
@@ -64,7 +73,10 @@ public actor LocalManagementSession {
             )
         }
         if request.name == "query" {
-            return query(request, subject: decision.subject ?? "")
+            return await query(request, subject: decision.subject ?? "")
+        }
+        if WorkloadSocketOperations.names.contains(request.name) {
+            return await workload(request, subject: decision.subject ?? "")
         }
         guard request.name == "applyMarker" || request.name == "validateResources"
             || request.name == "openTerminal"
@@ -94,10 +106,122 @@ public actor LocalManagementSession {
         bufferedEventBytes
     }
 
+    private func workload(
+        _ request: LocalManagementRequest,
+        subject: String,
+    ) async -> LocalManagementResponse {
+        guard let workloadID = request.workloadID else {
+            return LocalManagementResponse.rejection(request: request, reason: .invalidPath)
+        }
+        if request.name == "workload.status" || request.name == "workload.events" {
+            return await readWorkload(request, workloadID: workloadID)
+        }
+        guard let kind = WorkloadSocketOperations.kind(for: request.name) else {
+            return LocalManagementResponse.rejection(request: request, reason: .unknownOperation)
+        }
+        if let existing = await operationStore?.find(operationID: request.operationId) {
+            guard existing.subject == subject else {
+                return LocalManagementResponse.rejection(request: request, reason: .operationNotVisible)
+            }
+            return WorkloadSocketOperations.response(request: request, record: existing, events: existing.events)
+        }
+        guard let workloadDriver else {
+            return LocalManagementResponse.rejection(request: request, reason: .unknownOperation)
+        }
+        sequence += 1
+        let reserved = DurableWorkloadOperation(
+            operationID: request.operationId,
+            workloadID: workloadID,
+            subject: subject,
+            kind: kind,
+            phase: "accepted",
+            state: "accepted",
+            runtime: "",
+            events: [],
+            sequence: sequence,
+        )
+        await operationStore?.save(reserved)
+        let command = WorkloadSocketCommand(
+            operationID: request.operationId,
+            workloadID: workloadID,
+            kind: kind,
+        )
+        do {
+            let snapshot = try await workloadDriver.perform(command)
+            effects += 1
+            let event = "\(kind) \(workloadID) \(snapshot.state) \(snapshot.runtime)"
+            let completed = DurableWorkloadOperation(
+                operationID: request.operationId,
+                workloadID: workloadID,
+                subject: subject,
+                kind: kind,
+                phase: "completed",
+                state: snapshot.state,
+                runtime: snapshot.runtime,
+                events: [event],
+                sequence: reserved.sequence,
+            )
+            await operationStore?.save(completed)
+            return WorkloadSocketOperations.response(
+                request: request,
+                record: completed,
+                events: completed.events,
+            )
+        } catch {
+            let failed = DurableWorkloadOperation(
+                operationID: request.operationId,
+                workloadID: workloadID,
+                subject: subject,
+                kind: kind,
+                phase: "failed",
+                state: "failed",
+                runtime: "",
+                events: [error.localizedDescription],
+                sequence: reserved.sequence,
+            )
+            await operationStore?.save(failed)
+            return WorkloadSocketOperations.response(request: request, record: failed, events: failed.events)
+        }
+    }
+
+    private func readWorkload(
+        _ request: LocalManagementRequest,
+        workloadID: String,
+    ) async -> LocalManagementResponse {
+        guard let record = await operationStore?.latest(workloadID: workloadID) else {
+            return LocalManagementResponse(
+                requestId: request.requestId,
+                operationId: request.operationId,
+                accepted: false,
+                phase: "absent",
+                effectCount: 0,
+                workloadID: workloadID,
+            )
+        }
+        let events = request.name == "workload.events" ? record.events : nil
+        if let events {
+            let bytes = events.joined(separator: "\n").utf8.count
+            if noteEvent(bytes: bytes) != nil {
+                return LocalManagementResponse.rejection(request: request, reason: .slowConsumer)
+            }
+        }
+        return WorkloadSocketOperations.response(request: request, record: record, events: events)
+    }
+
     private func query(
         _ request: LocalManagementRequest,
         subject: String,
-    ) -> LocalManagementResponse {
+    ) async -> LocalManagementResponse {
+        if let durable = await operationStore?.find(operationID: request.operationId) {
+            guard durable.subject == subject else {
+                return LocalManagementResponse.rejection(request: request, reason: .operationNotVisible)
+            }
+            return WorkloadSocketOperations.response(
+                request: request,
+                record: durable,
+                events: durable.events,
+            )
+        }
         guard let stored = operations[request.operationId] else {
             return LocalManagementResponse(
                 requestId: request.requestId,

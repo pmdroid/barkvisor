@@ -251,6 +251,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
     public var devices: [String]
     public var terminalUID: UInt32?
     public var marker: String?
+    public var workloadID: String?
 
     public init(
         version: Int = LocalManagementLimits.version,
@@ -264,6 +265,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
         devices: [String] = [],
         terminalUID: UInt32? = nil,
         marker: String? = nil,
+        workloadID: String? = nil,
     ) {
         self.version = version
         self.requestId = requestId
@@ -276,6 +278,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
         self.devices = devices
         self.terminalUID = terminalUID
         self.marker = marker
+        self.workloadID = workloadID
     }
 }
 
@@ -289,6 +292,9 @@ public struct LocalManagementResponse: Codable, Equatable, Sendable {
     public var rejection: String?
     public var subject: String?
     public var marker: String?
+    public var workloadID: String?
+    public var workloadState: String?
+    public var events: [String]?
 
     public init(
         version: Int = LocalManagementLimits.version,
@@ -300,6 +306,9 @@ public struct LocalManagementResponse: Codable, Equatable, Sendable {
         rejection: String? = nil,
         subject: String? = nil,
         marker: String? = nil,
+        workloadID: String? = nil,
+        workloadState: String? = nil,
+        events: [String]? = nil,
     ) {
         self.version = version
         self.requestId = requestId
@@ -310,6 +319,9 @@ public struct LocalManagementResponse: Codable, Equatable, Sendable {
         self.rejection = rejection
         self.subject = subject
         self.marker = marker
+        self.workloadID = workloadID
+        self.workloadState = workloadState
+        self.events = events
     }
 
     public static func rejection(

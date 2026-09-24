@@ -39,3 +39,34 @@ Then("the boundary suite passes", function () {
     throw new Error(output.slice(-4000));
   }
 });
+
+let socketOutput = "";
+let socketStatus = 1;
+
+When("the socket operation suite runs", function () {
+  const result = spawnSync(
+    "mise",
+    ["exec", "--", "swift", "test", "--filter", "WorkloadSocketOperationTests"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  socketOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  socketStatus = result.status ?? 1;
+  if (socketStatus !== 0) {
+    throw new Error(socketOutput.slice(-4000));
+  }
+});
+
+Then("the socket operation suite passes", function () {
+  if (!socketOutput.includes("WorkloadSocketOperationTests")) {
+    throw new Error(socketOutput.slice(-4000));
+  }
+});

@@ -36,7 +36,25 @@ public enum LocalManagementAuthorization {
         if let resource = resourceRejection(request, policy: policy) {
             return deny(request, resource)
         }
+        if let workload = workloadRejection(request) {
+            return deny(request, workload)
+        }
         return allow(request, subject: membership.subject)
+    }
+
+    public static func workloadIDAllowed(_ workloadID: String) -> Bool {
+        guard (1 ... 64).contains(workloadID.count) else { return false }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-"))
+        return workloadID.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private static func workloadRejection(_ request: LocalManagementRequest) -> LocalRejection? {
+        guard request.name.hasPrefix("workload.") else { return nil }
+        guard WorkloadSocketOperations.names.contains(request.name) else { return .unknownOperation }
+        guard let workloadID = request.workloadID, workloadIDAllowed(workloadID) else {
+            return .invalidPath
+        }
+        return nil
     }
 
     public static func pathAllowed(_ path: String, roots: [String]) -> Bool {
