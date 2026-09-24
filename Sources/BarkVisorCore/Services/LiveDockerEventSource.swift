@@ -25,7 +25,7 @@ public struct LiveDockerEventSource: DockerEventProducing {
             )
         #else
             let cancelBox = StreamCancel()
-            let stream = AsyncStream<DockerEventDelivery>(bufferingPolicy: .bufferingNewest(256)) { continuation in
+            let stream = AsyncStream<DockerEventDelivery>(bufferingPolicy: .bufferingOldest(256)) { continuation in
                 let session = DockerEventProcess()
                 cancelBox.arm {
                     session.stop()
@@ -34,7 +34,11 @@ public struct LiveDockerEventSource: DockerEventProducing {
                 session.start(
                     identity: identity,
                     continuation: continuation,
-                    onGap: { continuation.yield(.gap) },
+                    onGap: {
+                        if case .dropped = continuation.yield(.gap) {
+                            continuation.finish()
+                        }
+                    },
                 )
                 continuation.onTermination = { _ in
                     session.stop()
@@ -130,7 +134,10 @@ private final class StreamCancel: @unchecked Sendable {
                         onGap()
                     }
                     if let line = buffer.waitLine(for: .milliseconds(200)) {
-                        continuation.yield(.line(line))
+                        if case .dropped = continuation.yield(.line(line)) {
+                            continuation.finish()
+                            break
+                        }
                     }
                 }
                 continuation.finish()
