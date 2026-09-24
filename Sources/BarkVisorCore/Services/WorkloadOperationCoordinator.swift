@@ -45,6 +45,17 @@ public struct WorkloadOperationLease: Sendable {
     public func isCancelRequested() async -> Bool {
         await operations.isCancelRequested(identity)
     }
+
+    public func atGeneration(_ generation: Int) -> WorkloadOperationLease {
+        WorkloadOperationLease(
+            identity: identity,
+            kind: kind,
+            generation: generation,
+            state: state,
+            mutationEpoch: mutationEpoch,
+            operations: operations,
+        )
+    }
 }
 
 public struct DeviceWorkloadControl: Sendable {

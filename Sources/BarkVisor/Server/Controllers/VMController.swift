@@ -391,7 +391,10 @@ struct VMController: RouteCollection {
                 vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: db)
                 if vm.isApplication {
                     try await ApplicationLifecycleService.syncProject(
-                        vm: &vm, db: db, operations: operations, lease: lease,
+                        vm: &vm,
+                        db: db,
+                        operations: operations,
+                        lease: lease.atGeneration(vm.specGeneration),
                     )
                 }
                 if let startOnBoot = body.startOnBoot, startOnBoot != vm.startOnBoot {
@@ -417,7 +420,10 @@ struct VMController: RouteCollection {
                 )
                 if vm.isApplication {
                     try await ApplicationLifecycleService.syncProject(
-                        vm: &vm, db: db, operations: operations, lease: lease,
+                        vm: &vm,
+                        db: db,
+                        operations: operations,
+                        lease: lease.atGeneration(vm.specGeneration),
                     )
                 }
             }
@@ -657,7 +663,10 @@ struct VMController: RouteCollection {
             var vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: db)
             if vm.isApplication {
                 try await ApplicationLifecycleService.syncProject(
-                    vm: &vm, db: db, operations: operations, lease: lease,
+                    vm: &vm,
+                    db: db,
+                    operations: operations,
+                    lease: lease.atGeneration(vm.specGeneration),
                 )
             }
             return vm
