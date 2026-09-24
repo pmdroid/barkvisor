@@ -720,6 +720,9 @@ public enum ApplicationLifecycleService {
         let current = try await WorkloadOperationCoordinator.observation(
             id: lease.identity.workloadID, db: db,
         )
+        if current.exists, current.state == "deleting", lease.kind != .delete {
+            throw BarkVisorError.conflict("Workload is deleting")
+        }
         guard await operations.allowsWrite(lease: lease, current: current) else {
             throw BarkVisorError.conflict(
                 "Workload \(lease.identity.workloadID) changed before the operation finished",
