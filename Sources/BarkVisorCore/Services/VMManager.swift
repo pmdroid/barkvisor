@@ -343,7 +343,7 @@ public actor VMManager: VMStateQuerying {
             )
             guard try await operations.allowsWrite(
                 lease: lease,
-                current: workloadObservation(vmID),
+                current: try await workloadObservation(vmID),
             ) else {
                 if process.isRunning {
                     kill(process.processIdentifier, SIGKILL)

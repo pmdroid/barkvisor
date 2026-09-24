@@ -748,7 +748,7 @@ public enum ApplicationLifecycleService {
             }
             guard try await operations.allowsWrite(
                 lease: lease,
-                current: WorkloadOperationCoordinator.observation(id: id, db: db),
+                current: try await WorkloadOperationCoordinator.observation(id: id, db: db),
             ) else { return }
             if observed == "running" {
                 await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
