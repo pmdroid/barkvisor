@@ -341,9 +341,10 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         let authority = HomeMembershipAuthority(dataDir: Config.dataDir)
         let credential: HomeManagementCredential
         do {
+            let publicKey = try authority.managementPublicKeyPEM()
             credential = try HomeManagementCredential.verify(
                 token: token,
-                managementPublicKeyPEM: try authority.managementPublicKeyPEM(),
+                managementPublicKeyPEM: publicKey,
             )
         } catch {
             throw Abort(.unauthorized, reason: "Invalid or expired token")

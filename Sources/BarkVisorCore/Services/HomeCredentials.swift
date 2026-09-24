@@ -238,9 +238,9 @@ private struct ManagementBody: Codable {
 }
 
 enum HomeCredentialCodec {
-    static func sign<Payload: Encodable>(
+    static func sign(
         prefix: String,
-        payload: Payload,
+        payload: some Encodable,
         privateKeyPEM: String,
     ) throws -> String {
         let data = try canonical(payload)
@@ -300,7 +300,7 @@ enum HomeCredentialCodec {
         }
     }
 
-    private static func canonical<Payload: Encodable>(_ payload: Payload) throws -> Data {
+    private static func canonical(_ payload: some Encodable) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(payload)

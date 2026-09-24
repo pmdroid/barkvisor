@@ -358,7 +358,7 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         var ledger = try loadOrEmptyLocked(now: now)
         let existing = index(of: target, in: ledger.members).map { ledger.members[$0] }
         let pinned = try pinStore.pin(forHostId: target)?.fingerprint
-        let fingerprints = existing?.keyFingerprints ?? [pinned].compactMap { $0 }
+        let fingerprints = existing?.keyFingerprints ?? [pinned].compactMap(\.self)
         ledger.revision += 1
         let removed = HomeMemberRecord(
             hostId: target,
@@ -462,9 +462,6 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
             }
             if member.status != "active" {
                 return .deny("Removed member login token")
-            }
-            if membershipRevision < member.revision && member.status == "removed" {
-                return .deny("Login token revision is revoked")
             }
             if now.timeIntervalSince1970 > ledger.lastSnapshotAt
                 + HomeMembershipPolicy.maximumStaleAuthorizationWindow {
@@ -811,7 +808,7 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         )
     }
 
-    private func canonical<T: Encodable>(_ value: T) throws -> Data {
+    private func canonical(_ value: some Encodable) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(value)

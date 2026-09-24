@@ -369,6 +369,7 @@ struct AgentLocalProxyController: RouteCollection {
             guard case .allow = decision else {
                 throw Abort(.unauthorized, reason: "Home membership denied this login token")
             }
+            let managementKey = try authority.managementKeyPEM()
             return try HomeManagementCredential.sign(
                 issuerHostId: Config.hostId,
                 subject: scoped.subject,
@@ -376,7 +377,7 @@ struct AgentLocalProxyController: RouteCollection {
                 role: scoped.role,
                 onBehalfOfHostId: peer.hostId,
                 membershipRevision: scoped.membershipRevision,
-                managementKeyPEM: try authority.managementKeyPEM(),
+                managementKeyPEM: managementKey,
             )
         }
         if HomeMembershipAuthority.ledgerExists(dataDir: Config.dataDir) {

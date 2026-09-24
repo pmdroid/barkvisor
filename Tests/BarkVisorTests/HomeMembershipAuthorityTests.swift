@@ -397,12 +397,13 @@ struct HomeMembershipAuthorityTests {
                 now: now,
             ) == .allow,
         )
+        let revision = try issuerAuthority.currentRevision()
         let scoped = try HomeScopedCredential.sign(
             issuerHostId: joinerId,
             subject: "admin",
             username: "pascal",
             role: "admin",
-            membershipRevision: try issuerAuthority.currentRevision(),
+            membershipRevision: revision,
             deviceKeyPEM: joiner.deviceKeyPEM,
             now: now,
         )
