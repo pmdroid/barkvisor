@@ -119,6 +119,27 @@ public struct VMStateEvent: Codable, Sendable {
     }
 }
 
+private final class StopRequestHandoff: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func succeed(_ continuation: CheckedContinuation<Void, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume()
+    }
+
+    func fail(_ continuation: CheckedContinuation<Void, Error>, _ error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume(throwing: error)
+    }
+}
+
 public actor VMManager: VMStateQuerying {
     public var runningVMs: [String: RunningVM] = [:]
     var startingVMs: Set<String> = [] // guards against concurrent start across await points
@@ -428,13 +449,40 @@ public actor VMManager: VMStateQuerying {
         let operationID = WorkloadOperationCoordinator.makeOperationID(
             supplied: operationID, action: "stop", workloadID: vmID,
         )
-        try await operations.perform(
-            workloadID: vmID,
-            operationID: operationID,
-            kind: .stop,
-            load: { try await self.workloadObservation(vmID) },
-        ) { lease in
-            try await self.stopWhileHeld(vmID: vmID, force: force, method: method, lease: lease)
+        if force || method == "force" {
+            try await operations.perform(
+                workloadID: vmID,
+                operationID: operationID,
+                kind: .stop,
+                load: { try await self.workloadObservation(vmID) },
+            ) { lease in
+                try await self.stopWhileHeld(vmID: vmID, force: true, method: method, lease: lease)
+            }
+            return
+        }
+        let handoff = StopRequestHandoff()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task {
+                do {
+                    try await self.operations.perform(
+                        workloadID: vmID,
+                        operationID: operationID,
+                        kind: .stop,
+                        load: { try await self.workloadObservation(vmID) },
+                    ) { lease in
+                        try await self.stopWhileHeld(
+                            vmID: vmID,
+                            force: false,
+                            method: method,
+                            lease: lease,
+                            onRequested: { handoff.succeed(continuation) },
+                        )
+                    }
+                    handoff.succeed(continuation)
+                } catch {
+                    handoff.fail(continuation, error)
+                }
+            }
         }
     }
 
@@ -443,6 +491,7 @@ public actor VMManager: VMStateQuerying {
         force: Bool,
         method: String = "acpi",
         lease: WorkloadOperationLease,
+        onRequested: (@Sendable () -> Void)? = nil,
     ) async throws {
         try await requireLease(vmID, lease)
         // Occupancy stays until handleTermination. ACPI/graceful stop leaves
@@ -472,10 +521,12 @@ public actor VMManager: VMStateQuerying {
             Log.vm.error(
                 "Graceful shutdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID,
             )
+            onRequested?()
             await hardKill(running: running, vmID: vmID, reason: "graceful shutdown failed")
             return
         }
 
+        onRequested?()
         let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout)
         while isProcessAlive(running), Date() < deadline {
             try? await Task.sleep(nanoseconds: 250_000_000)

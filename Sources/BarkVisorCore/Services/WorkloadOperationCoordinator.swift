@@ -79,14 +79,22 @@ public actor WorkloadOperationCoordinator {
         private let lock = NSLock()
         private var result: Result<AnySendable, Error>?
         private var waiters: [CheckedContinuation<Result<AnySendable, Error>, Never>] = []
+        private var finished = false
 
         init(kind: WorkloadOperationKind) {
             self.kind = kind
         }
 
+        var isFinished: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return finished
+        }
+
         func finish(_ result: Result<AnySendable, Error>) {
             lock.lock()
             self.result = result
+            finished = true
             let pending = waiters
             waiters = []
             lock.unlock()
@@ -115,6 +123,8 @@ public actor WorkloadOperationCoordinator {
 
     private var lanes: [String: Lane] = [:]
     private var outcomes: [String: Outcome] = [:]
+    private var finishedOrder: [String: [String]] = [:]
+    private let finishedOutcomeCap = 32
 
     public init() {}
 
@@ -173,7 +183,21 @@ public actor WorkloadOperationCoordinator {
         }
         let result = await task.value
         outcome.finish(result)
+        trimFinishedOutcomes(workloadID: workloadID, key: key)
         return try Self.unwrap(result, as: T.self)
+    }
+
+    private func trimFinishedOutcomes(workloadID: String, key: String) {
+        var order = finishedOrder[workloadID] ?? []
+        order.removeAll { $0 == key }
+        order.append(key)
+        while order.count > finishedOutcomeCap {
+            let dropped = order.removeFirst()
+            if outcomes[dropped]?.isFinished == true {
+                outcomes.removeValue(forKey: dropped)
+            }
+        }
+        finishedOrder[workloadID] = order
     }
 
     public func requestCancel(workloadID: String, operationID: String) {

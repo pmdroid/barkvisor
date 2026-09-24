@@ -960,7 +960,13 @@ public enum ApplicationLifecycleService {
             return true
         }
         if !applied {
-            throw BarkVisorError.conflict("Workload is deleting")
+            let state = try await db.read { try VM.fetchOne($0, key: persisted.id)?.state }
+            if state == "deleting" || state == nil {
+                throw BarkVisorError.conflict("Workload is deleting")
+            }
+            throw BarkVisorError.conflict(
+                "Workload \(persisted.id) changed before the operation finished",
+            )
         }
         vm = persisted
         if let error {
