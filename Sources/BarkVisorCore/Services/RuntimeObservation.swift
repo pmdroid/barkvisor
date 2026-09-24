@@ -193,10 +193,7 @@ public actor RuntimeObservation {
     public func applyReconcile(_ facts: [ReconcileFact], at: Date = Date()) {
         for fact in facts {
             var observation = observations[fact.workloadID] ?? .empty(fact.workloadID)
-            let servicePhase = observation.services.isEmpty
-                ? nil
-                : ObservationRollup.workloadPhase(observation.services)
-            if fact.phase == .exited || (servicePhase != nil && servicePhase != fact.phase) {
+            if fact.phase == .exited {
                 observation.services = []
                 observation.health = .unknown
             }

@@ -214,6 +214,15 @@ struct RuntimeObservationTests {
         #expect(observed.phase == .exited)
         #expect(observed.services.isEmpty)
         #expect(observed.health == .unknown)
+        try await service.ingest(line: eventLine(action: "restart", workload: "app-2", service: "web", id: "web2", time: 11))
+        await service.applyReconcile(
+            [ReconcileFact(workloadID: "app-2", phase: .running, detail: nil)],
+            at: Date(timeIntervalSince1970: 12),
+        )
+        let restarting = try #require(await service.observation(for: "app-2"))
+        #expect(restarting.phase == .running)
+        #expect(restarting.services.count == 1)
+        #expect(restarting.services[0].phase == .restarting)
     }
 
     @Test func `event process environment matches the stats docker config`() {
