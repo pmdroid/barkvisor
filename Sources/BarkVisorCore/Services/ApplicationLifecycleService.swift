@@ -774,10 +774,8 @@ public enum ApplicationLifecycleService {
             if vm.state != observed {
                 try? await setState(&vm, state: observed, error: nil, db: db, generation: lease.generation)
             }
-            guard try await operations.allowsWrite(
-                lease: lease,
-                current: try await WorkloadOperationCoordinator.observation(id: id, db: db),
-            ) else { return }
+            let fresh = try await WorkloadOperationCoordinator.observation(id: id, db: db)
+            guard await operations.allowsWrite(lease: lease, current: fresh) else { return }
             if observed == "running" {
                 await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
             } else {

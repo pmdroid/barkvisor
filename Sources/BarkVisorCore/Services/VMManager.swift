@@ -341,10 +341,8 @@ public actor VMManager: VMStateQuerying {
                 reconnected: false,
                 workloadID: vmID,
             )
-            guard try await operations.allowsWrite(
-                lease: lease,
-                current: try await workloadObservation(vmID),
-            ) else {
+            let current = try await workloadObservation(vmID)
+            guard await operations.allowsWrite(lease: lease, current: current) else {
                 if process.isRunning {
                     kill(process.processIdentifier, SIGKILL)
                 }
