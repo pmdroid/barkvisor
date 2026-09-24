@@ -22,7 +22,7 @@
   /* ── Typography ── */
   --text: #e4e4e2;
   --text-secondary: #b8b8b4;
-  --text-dim: #6e6e6c;
+  --text-dim: #878782;
 
   /* ── Accent: Blue ── */
   --accent: #0090f8;
@@ -108,7 +108,7 @@
 
   --text: #141618;
   --text-secondary: #4a4a48;
-  --text-dim: #8a8a88;
+  --text-dim: #70706e;
 
   --accent: #0078d4;
   --accent-hover: #006abc;
@@ -304,9 +304,15 @@ input:focus, select:focus, textarea:focus {
   border-color: rgba(167,139,250,0.5);
   box-shadow: 0 0 0 3px rgba(167,139,250,0.08), var(--glass-shine);
 }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 select { cursor: pointer; }
 textarea { resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--text-dim); }
+input, textarea { caret-color: var(--accent); }
+::selection { color: var(--text); background: var(--accent-muted); }
 
 /* ── Layout ── */
 .layout { display: flex; height: 100%; max-height: 100dvh; overflow: hidden; }
@@ -468,7 +474,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--text-dim);
   text-align: left;
   white-space: nowrap;
-  opacity: 0.75;
 }
 
 .mobile-menu-toggle {
@@ -753,7 +758,6 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   margin-left: auto;
   color: var(--text-dim);
   font-size: 10.5px;
-  opacity: 0.7;
 }
 
 .ops-banner {
@@ -1859,7 +1863,7 @@ tr.pending td:first-child { box-shadow: none; }
 }
 .line { display: flex; gap: 10px; padding: 1px 14px; white-space: nowrap; }
 .line:hover { background: var(--term-row-hover); }
-.lt { color: var(--text-dim); opacity: 0.7; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.lt { color: var(--text-dim); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .lv { flex-shrink: 0; width: 52px; font-weight: 700; }
 .lv.info { color: var(--text-dim); }
 .lv.warn { color: var(--amber); }

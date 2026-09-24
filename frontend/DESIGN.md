@@ -25,8 +25,8 @@ colors:
   text-light: "#141618"
   text-secondary: "#b8b8b4"
   text-secondary-light: "#4a4a48"
-  text-dim: "#6e6e6c"
-  text-dim-light: "#8a8a88"
+  text-dim: "#878782"
+  text-dim-light: "#70706e"
   line: rgba(255,255,255,0.07)
   line-light: rgba(0,0,0,0.08)
   border-glass: rgba(184,184,180,0.12)
@@ -287,14 +287,15 @@ filled blue; ghost buttons are outlined and quiet; danger buttons combine red
 text with a red outline. Warning buttons retain their fixed gold text, wash, and
 outline in both themes. Hover changes color or boundary, and disabled shared
 buttons use 0.4 opacity. Their state transitions last 120 ms. Shared buttons
-retain the browser's keyboard focus outline.
+use a two-pixel Signal Blue outline offset by two pixels for keyboard focus.
 
 ### Fields and selects
 
 Generic fields use inset surfaces, a fine border, and an inset highlight. Their
-focus treatment is a lavender border with a faint three-pixel halo. Compact
-selects use the action blue border and a two-pixel accent halo. Labels are
-small, uppercase, and tracked. Field transitions use the shared 200 ms easing.
+focus treatment is a lavender border with a faint three-pixel halo. Keyboard
+focus adds the shared blue outline. Compact selects use the action blue border
+and a two-pixel accent halo. Labels are small, uppercase, and tracked. Field
+transitions use the shared 200 ms easing.
 
 ### Navigation and tabs
 

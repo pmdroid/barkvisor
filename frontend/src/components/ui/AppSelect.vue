@@ -69,6 +69,11 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
   outline: none;
 }
 
+.app-select select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .app-select select:disabled {
   opacity: 0.4;
   pointer-events: none;

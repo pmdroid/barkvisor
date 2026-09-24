@@ -330,6 +330,20 @@
         "role": "neutral",
         "displayName": "Quiet Text",
         "tonalRamp": [
+          "oklch(15% 0.0074 106.61)",
+          "oklch(26.4% 0.0074 106.61)",
+          "oklch(37.9% 0.0074 106.61)",
+          "oklch(49.3% 0.0074 106.61)",
+          "oklch(60.7% 0.0074 106.61)",
+          "oklch(72.1% 0.0074 106.61)",
+          "oklch(83.6% 0.0074 106.61)",
+          "oklch(95% 0.0074 106.61)"
+        ]
+      },
+      "text-dim-light": {
+        "role": "neutral",
+        "displayName": "Quiet Text in Light Mode",
+        "tonalRamp": [
           "oklch(15% 0.0031 106.50)",
           "oklch(26.4% 0.0031 106.50)",
           "oklch(37.9% 0.0031 106.50)",
@@ -338,20 +352,6 @@
           "oklch(72.1% 0.0031 106.50)",
           "oklch(83.6% 0.0031 106.50)",
           "oklch(95% 0.0031 106.50)"
-        ]
-      },
-      "text-dim-light": {
-        "role": "neutral",
-        "displayName": "Quiet Text in Light Mode",
-        "tonalRamp": [
-          "oklch(15% 0.0029 106.48)",
-          "oklch(26.4% 0.0029 106.48)",
-          "oklch(37.9% 0.0029 106.48)",
-          "oklch(49.3% 0.0029 106.48)",
-          "oklch(60.7% 0.0029 106.48)",
-          "oklch(72.1% 0.0029 106.48)",
-          "oklch(83.6% 0.0029 106.48)",
-          "oklch(95% 0.0029 106.48)"
         ]
       },
       "line": {
@@ -764,7 +764,7 @@
       "refersTo": "button-primary",
       "description": "Shared AppButton primary variant.",
       "html": "<button type=\"button\" class=\"ds-button ds-button-primary\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><line x1=\"12\" y1=\"5\" x2=\"12\" y2=\"19\"/><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"/></svg>Create VM</button>",
-      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: auto; } .ds-button-primary { background: var(--accent); color: var(--accent-text); } .ds-button-primary:hover:not(:disabled) { background: var(--accent-hover); }"
+      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-button-primary { background: var(--accent); color: var(--accent-text); } .ds-button-primary:hover:not(:disabled) { background: var(--accent-hover); }"
     },
     {
       "name": "Ghost Button",
@@ -772,7 +772,7 @@
       "refersTo": "button-ghost",
       "description": "Shared AppButton ghost variant.",
       "html": "<button type=\"button\" class=\"ds-button ds-button-ghost\">Customize</button>",
-      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: auto; } .ds-button-ghost { background: transparent; color: var(--text-dim); border-color: var(--line); } .ds-button-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--border); }"
+      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-button-ghost { background: transparent; color: var(--text-dim); border-color: var(--line); } .ds-button-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--border); }"
     },
     {
       "name": "Danger Button",
@@ -780,7 +780,7 @@
       "refersTo": "button-danger",
       "description": "Shared AppButton danger variant.",
       "html": "<button type=\"button\" class=\"ds-button ds-button-danger\">Delete</button>",
-      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: auto; } .ds-button-danger { background: transparent; color: var(--red); border-color: rgba(248,113,113,0.45); } .ds-button-danger:hover:not(:disabled) { background: rgba(248,113,113,0.12); border-color: var(--red); }"
+      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-button-danger { background: transparent; color: var(--red); border-color: rgba(248,113,113,0.45); } .ds-button-danger:hover:not(:disabled) { background: rgba(248,113,113,0.12); border-color: var(--red); }"
     },
     {
       "name": "Warning Button",
@@ -788,7 +788,7 @@
       "refersTo": "button-warning",
       "description": "Shared AppButton warning variant.",
       "html": "<button type=\"button\" class=\"ds-button ds-button-warning\">Force Stop</button>",
-      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: auto; } .ds-button-warning { background: rgba(251,191,36,0.15); color: #fbbf24; border-color: rgba(251,191,36,0.3); } .ds-button-warning:hover:not(:disabled) { background: rgba(251,191,36,0.25); border-color: rgba(251,191,36,0.5); }"
+      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-button-warning { background: rgba(251,191,36,0.15); color: #fbbf24; border-color: rgba(251,191,36,0.3); } .ds-button-warning:hover:not(:disabled) { background: rgba(251,191,36,0.25); border-color: rgba(251,191,36,0.5); }"
     },
     {
       "name": "Text Field",
@@ -796,7 +796,7 @@
       "refersTo": "text-field",
       "description": "Generic labeled field with the existing lavender focus halo.",
       "html": "<label class=\"ds-field\">Name<input class=\"ds-input\" placeholder=\"e.g. media-server\" /></label>",
-      "css": ".ds-field { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); } .ds-input { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; margin-top: 6px; width: 100%; box-sizing: border-box; font-size: 13px; font-weight: 400; letter-spacing: normal; text-transform: none; padding: 10px 14px; border: 1px solid var(--border-glass); border-radius: var(--radius-sm); background: var(--bg-input); backdrop-filter: var(--glass-blur); color: var(--text); outline: none; box-shadow: var(--glass-shine); transition: border-color var(--transition), box-shadow var(--transition); } .ds-input::placeholder { color: var(--text-dim); } .ds-input:focus, .ds-input:focus-visible { border-color: rgba(167,139,250,0.5); box-shadow: 0 0 0 3px rgba(167,139,250,0.08), var(--glass-shine); } @media (max-width: 768px) { .ds-input { font-size: 16px; } }"
+      "css": ".ds-field { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); } .ds-input { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; margin-top: 6px; width: 100%; box-sizing: border-box; font-size: 13px; font-weight: 400; letter-spacing: normal; text-transform: none; padding: 10px 14px; border: 1px solid var(--border-glass); border-radius: var(--radius-sm); background: var(--bg-input); backdrop-filter: var(--glass-blur); color: var(--text); outline: none; box-shadow: var(--glass-shine); transition: border-color var(--transition), box-shadow var(--transition); } .ds-input::placeholder { color: var(--text-dim); } .ds-input:focus, .ds-input:focus-visible { border-color: rgba(167,139,250,0.5); box-shadow: 0 0 0 3px rgba(167,139,250,0.08), var(--glass-shine); outline: 2px solid var(--accent); outline-offset: 2px; } @media (max-width: 768px) { .ds-input { font-size: 16px; } }"
     },
     {
       "name": "Sidebar Navigation",
@@ -804,7 +804,7 @@
       "refersTo": "navigation-item",
       "description": "Selected link with a blue wash and a thin leading marker.",
       "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-link ds-selected\" href=\"#dashboard\" aria-current=\"page\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/></svg>Dashboard</a><a class=\"ds-nav-link\" href=\"#devices\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/></svg>Devices</a></nav>",
-      "css": ".ds-nav { background: var(--sidebar-bg); padding: 10px 8px; } .ds-nav-link { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; gap: 9px; padding: 6px 8px; margin-bottom: 1px; border-radius: var(--radius-md); color: var(--text-dim); font-size: 12.5px; font-weight: 500; line-height: 1.5; text-decoration: none; position: relative; transition: all var(--transition); } .ds-nav-link:hover { background: var(--bg-hover); color: var(--text); } .ds-nav-link:focus-visible { outline: auto; } .ds-nav-link.ds-selected { background: rgba(0,144,248,0.14); color: var(--text); } .ds-selected::before { content: ''; position: absolute; left: -8px; top: 4px; bottom: 4px; width: 2px; background: var(--accent); }"
+      "css": ".ds-nav { background: var(--sidebar-bg); padding: 10px 8px; } .ds-nav-link { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; gap: 9px; padding: 6px 8px; margin-bottom: 1px; border-radius: var(--radius-md); color: var(--text-dim); font-size: 12.5px; font-weight: 500; line-height: 1.5; text-decoration: none; position: relative; transition: all var(--transition); } .ds-nav-link:hover { background: var(--bg-hover); color: var(--text); } .ds-nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-nav-link.ds-selected { background: rgba(0,144,248,0.14); color: var(--text); } .ds-selected::before { content: ''; position: absolute; left: -8px; top: 4px; bottom: 4px; width: 2px; background: var(--accent); }"
     },
     {
       "name": "Running Status",
@@ -820,7 +820,7 @@
       "refersTo": "device-card",
       "description": "Flat Device control with a selected boundary and edge marker.",
       "html": "<button type=\"button\" class=\"ds-device ds-device-selected\"><span class=\"ds-device-name\">media-server</span><span class=\"ds-device-meta\">Linux · x86_64</span></button>",
-      "css": ".ds-device { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; width: 100%; box-sizing: border-box; text-align: left; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 12px; font-size: 13px; line-height: 1.5; cursor: pointer; transition: border-color 0.12s, background 0.12s; } .ds-device:hover { border-color: rgba(255,255,255,0.16); } :host-context([data-theme=\"light\"]) .ds-device:hover { border-color: rgba(0,0,0,0.2); } .ds-device:focus-visible { outline: auto; } .ds-device-selected { background: rgba(0,144,248,0.09); border-color: rgba(0,144,248,0.55); box-shadow: inset 2px 0 0 var(--accent); } .ds-device-name { display: block; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; } .ds-device-meta { display: block; color: var(--text-dim); font-size: 11.5px; margin: 4px 0 9px; }"
+      "css": ".ds-device { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: block; width: 100%; box-sizing: border-box; text-align: left; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 12px; font-size: 13px; line-height: 1.5; cursor: pointer; transition: border-color 0.12s, background 0.12s; } .ds-device:hover { border-color: rgba(255,255,255,0.16); } :host-context([data-theme=\"light\"]) .ds-device:hover { border-color: rgba(0,0,0,0.2); } .ds-device:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-device-selected { background: rgba(0,144,248,0.09); border-color: rgba(0,144,248,0.55); box-shadow: inset 2px 0 0 var(--accent); } .ds-device-name { display: block; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; } .ds-device-meta { display: block; color: var(--text-dim); font-size: 11.5px; margin: 4px 0 9px; }"
     },
     {
       "name": "Gallery Card",
@@ -836,7 +836,7 @@
       "refersTo": "modal-frame",
       "description": "Shared modal surface, title rule, and action row.",
       "html": "<section class=\"ds-modal\"><h2 class=\"ds-modal-title\">Create API Key</h2><div class=\"ds-modal-body\">Choose a name and expiration.</div><div class=\"ds-modal-actions\"><button type=\"button\" class=\"ds-button ds-modal-cancel\">Cancel</button><button type=\"button\" class=\"ds-button ds-modal-create\">Create</button></div></section>",
-      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: auto; } .ds-modal { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; background: var(--modal-surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.55); font-size: 13px; line-height: 1.5; } .ds-modal-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 0; padding: 16px 18px 10px; border-bottom: 1px solid var(--line); } .ds-modal-body { margin: 14px 18px 16px; } .ds-modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); } .ds-modal-cancel { background: transparent; color: var(--text-dim); border-color: var(--line); } .ds-modal-cancel:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); } .ds-modal-create { background: var(--accent); color: var(--accent-text); } .ds-modal-create:hover { background: var(--accent-hover); }"
+      "css": ".ds-button { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); box-sizing: border-box; padding: 0 14px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; white-space: nowrap; transition: border-color 0.12s, background 0.12s, color 0.12s; } .ds-button:disabled { opacity: 0.4; pointer-events: none; } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-modal { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; background: var(--modal-surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.55); font-size: 13px; line-height: 1.5; } .ds-modal-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 0; padding: 16px 18px 10px; border-bottom: 1px solid var(--line); } .ds-modal-body { margin: 14px 18px 16px; } .ds-modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); } .ds-modal-cancel { background: transparent; color: var(--text-dim); border-color: var(--line); } .ds-modal-cancel:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); } .ds-modal-create { background: var(--accent); color: var(--accent-text); } .ds-modal-create:hover { background: var(--accent-hover); }"
     }
   ],
   "narrative": {
