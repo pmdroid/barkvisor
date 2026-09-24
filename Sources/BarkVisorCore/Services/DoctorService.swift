@@ -233,8 +233,8 @@ public struct LiveDoctorFactSource: DoctorFactSource {
             composeVersion: docker.composeVersion,
             composeOK: docker.composeOK,
             qemuProcesses: qemuProcesses,
-            kvmPresent: HostInventoryService.kvmDevicePresent(),
-            kvmAccessible: FileManager.default.isReadableFile(atPath: "/dev/kvm"),
+            kvmPresent: FileManager.default.fileExists(atPath: WorkloadDeviceAccess.kvmPath),
+            kvmAccessible: WorkloadDeviceAccess.liveLinuxKVM(),
             swtpmPath: (try? BundleResolver.helper("swtpm"))?.path,
             swtpmRequired: true,
             healthURL: healthURL.absoluteString,
@@ -676,7 +676,7 @@ public enum DoctorService {
             return DoctorCheck(
                 id: "kvm",
                 status: .warn,
-                detail: "/dev/kvm exists but is not readable.",
+                detail: "/dev/kvm exists but the workload identity cannot open it.",
             )
         }
         return DoctorCheck(id: "kvm", status: .ok, detail: "/dev/kvm is present.")

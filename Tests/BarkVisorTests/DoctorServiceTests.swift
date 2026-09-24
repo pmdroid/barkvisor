@@ -254,6 +254,7 @@ struct DoctorServiceTests {
     @Test func `unreadable kvm warns on linux`() {
         let report = DoctorService.assemble(from: inputs(kvmPresent: true, kvmAccessible: false))
         #expect(check(report, "kvm").status == .warn)
+        #expect(check(report, "kvm").detail.contains("workload identity"))
         #expect(report.ok)
     }
 
