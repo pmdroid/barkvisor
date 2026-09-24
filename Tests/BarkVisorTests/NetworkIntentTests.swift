@@ -230,6 +230,14 @@ struct NetworkIntentTests {
         }
         try HostNetworkRecovery.requireConfirmation(
             pending: pending,
+            requestedOperationId: nil,
+            requestedGeneration: nil,
+            authorized: true,
+            now: Date(),
+            dataDir: root,
+        )
+        try HostNetworkRecovery.requireConfirmation(
+            pending: pending,
             requestedOperationId: "op-new",
             requestedGeneration: 4,
             authorized: true,

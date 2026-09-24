@@ -237,7 +237,7 @@ public enum NetworkIntentBinding {
 
     public static func isWildcard(_ address: String) -> Bool {
         switch normalize(address) {
-        case "", "0.0.0.0", "::", "::0", "https://example.net/id/garnet", "*":
+        case "", "0.0.0.0", "::", "::0", "0:0:0:0:0:0:0:0", "*":
             return true
         default:
             return false
@@ -457,12 +457,14 @@ public enum HostNetworkRecovery {
             throw BarkVisorError.conflict("Host network operation \(storedOperation) is already reverting")
         }
         if record.phase == HostNetworkRecoveryPhase.confirmed { return }
-        guard requestedOperationId == storedOperation else {
+        let operationId = requestedOperationId ?? storedOperation
+        let generation = requestedGeneration ?? record.generation
+        guard operationId == storedOperation else {
             throw BarkVisorError.conflict(
                 "Confirmation does not match pending host network operation \(storedOperation)",
             )
         }
-        guard requestedGeneration == record.generation else {
+        guard generation == record.generation else {
             throw BarkVisorError.conflict(
                 "Stale confirmation cannot commit host network operation \(storedOperation)",
             )
