@@ -471,6 +471,7 @@ public enum DoctorService {
         var lines = [
             "BarkVisor doctor",
             "ok=\(report.ok) privileged=\(report.privileged)",
+            ApplianceUnits.doctorLine,
             "",
         ]
         for check in report.checks {

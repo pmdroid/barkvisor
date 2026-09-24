@@ -168,20 +168,35 @@ fi
 getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor || true
 if getent group disk >/dev/null 2>&1; then
   usermod -aG disk barkvisor || true
-  for unit in barkvisor.service barkvisor-agent.service; do
+  for unit in barkvisor-daemon.service barkvisor-agent.service; do
     mkdir -p /etc/systemd/system/${unit}.d
     printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
       >/etc/systemd/system/${unit}.d/disk.conf
   done
 fi
+schema_file=/var/lib/barkvisor/schema-version
+if [ -f "$schema_file" ]; then
+  on_disk=$(tr -cd '0-9' < "$schema_file" || true)
+  if [ -n "$on_disk" ] && [ "$on_disk" -gt 1 ]; then
+    echo "unsupported downgrade: schema $on_disk" >&2
+    exit 1
+  fi
+fi
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+if [ ! -f "$schema_file" ]; then
+  printf '1\n' > "$schema_file"
+  chown barkvisor:barkvisor "$schema_file" 2>/dev/null || true
+fi
 install -d -m 0755 /etc/qemu
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
-  systemctl enable barkvisor.service
-  systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  systemctl enable barkvisor-daemon.service
+  systemctl enable barkvisor-server.service
+  systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
-  echo "Start with: systemctl start barkvisor.service"
+  echo "Start with: systemctl start barkvisor-daemon.service barkvisor-server.service"
   echo "API-only Device: systemctl enable --now barkvisor-agent.service"
 fi
 echo "Installed. UI: http://$(hostname -I 2>/dev/null | awk '{print $1}'):7777"

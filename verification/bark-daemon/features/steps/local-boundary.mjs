@@ -115,6 +115,37 @@ When("the daemon recovery suite runs", function () {
   }
 });
 
+let applianceOutput = "";
+let applianceStatus = 1;
+
+When("the appliance unit suite runs", function () {
+  const result = spawnSync(
+    "mise",
+    ["exec", "--", "swift", "test", "--filter", "ApplianceUnitTests"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  applianceOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  applianceStatus = result.status ?? 1;
+  if (applianceStatus !== 0) {
+    throw new Error(applianceOutput.slice(-4000));
+  }
+});
+
+Then("the appliance unit suite passes", function () {
+  if (!applianceOutput.includes("ApplianceUnitTests")) {
+    throw new Error(applianceOutput.slice(-4000));
+  }
+});
+
 Then("the daemon recovery suite passes", function () {
   if (!recoveryOutput.includes("DaemonRecoveryTests")) {
     throw new Error(recoveryOutput.slice(-4000));

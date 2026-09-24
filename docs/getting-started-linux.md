@@ -25,7 +25,7 @@ Download the `.deb` for your architecture from [Releases](https://github.com/pmd
 
 ```sh
 sudo apt install ./barkvisor_<version>_amd64.deb
-sudo systemctl enable --now barkvisor.service
+sudo systemctl enable --now barkvisor-daemon.service barkvisor-server.service
 ```
 
 Replace the filename with the one you downloaded. Use the `arm64` package on an ARM64 Device. APT supports [installing a local package](https://wiki.debian.org/AptCLI) and its dependencies.

@@ -48,10 +48,12 @@ class Barkvisor < Formula
     (pkgshare/"postinstall").write (buildpath/"packaging/homebrew/postinstall.sh").read
     chmod 0755, pkgshare/"postinstall"
 
-    plist = (buildpath/"packaging/homebrew/homebrew.mxcl.barkvisor.plist").read
-    plist = plist.gsub("@PROGRAM@", (opt_bin/"barkvisor").to_s)
-    plist = plist.gsub("@HOMEBREW_PREFIX@", HOMEBREW_PREFIX.to_s)
-    (prefix/"homebrew.mxcl.barkvisor.plist").write plist
+    %w[barkvisor barkvisor-daemon barkvisor-server].each do |label|
+      plist = (buildpath/"packaging/homebrew/homebrew.mxcl.#{label}.plist").read
+      plist = plist.gsub("@PROGRAM@", (opt_bin/"barkvisor").to_s)
+      plist = plist.gsub("@HOMEBREW_PREFIX@", HOMEBREW_PREFIX.to_s)
+      (prefix/"homebrew.mxcl.#{label}.plist").write plist
+    end
   end
 
   def post_install
@@ -73,7 +75,7 @@ class Barkvisor < Formula
   # Do not set `run` here: brew services would regenerate the plist and drop
   # that key. The keg ships homebrew.mxcl.barkvisor.plist instead.
   service do
-    name macos: "homebrew.mxcl.barkvisor"
+    name macos: "homebrew.mxcl.barkvisor-daemon"
     require_root true
   end
 
@@ -107,8 +109,11 @@ class Barkvisor < Formula
     assert_path_exists bin/"barkvisor-agent"
     assert_path_exists share/"barkvisor/templates.json"
     assert_path_exists libexec/"barkvisor"
-    plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
+    plist = (prefix/"homebrew.mxcl.barkvisor-daemon.plist").read
     assert_match "AbandonProcessGroup", plist
+    server = (prefix/"homebrew.mxcl.barkvisor-server.plist").read
+    assert_match "bark-server", server
+    assert_match "UserName", server
     refute_match "_barkvisor", plist
     refute_match "UserName", plist
     assert_match "BARKVISOR_DATA_DIR", plist

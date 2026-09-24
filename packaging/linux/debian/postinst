@@ -18,13 +18,25 @@ case "$1" in
     fi
     if getent group disk >/dev/null 2>&1; then
       usermod -aG disk barkvisor 2>/dev/null || true
-      for unit in barkvisor.service barkvisor-agent.service; do
+      for unit in barkvisor-daemon.service barkvisor-agent.service; do
         mkdir -p /etc/systemd/system/${unit}.d
         printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
           >/etc/systemd/system/${unit}.d/disk.conf
       done
     fi
+    schema_file="$DATA_DIR/schema-version"
+    if [ -f "$schema_file" ]; then
+      on_disk=$(tr -cd '0-9' < "$schema_file" || true)
+      if [ -n "$on_disk" ] && [ "$on_disk" -gt 1 ]; then
+        echo "unsupported downgrade: schema $on_disk" >&2
+        exit 1
+      fi
+    fi
     install -d -o barkvisor -g barkvisor -m 0755 "$DATA_DIR" "$RUN_DIR"
+    if [ ! -f "$schema_file" ]; then
+      printf '1\n' > "$schema_file"
+      chown barkvisor:barkvisor "$schema_file" 2>/dev/null || true
+    fi
     # Apply writes /etc/qemu/bridge.conf. The dir must exist before the unit
     # starts or systemd ignores ReadWritePaths=-/etc/qemu (ProtectSystem=strict).
     install -d -m 0755 /etc/qemu
@@ -64,9 +76,12 @@ case "$1" in
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true
       if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then
-        systemctl enable barkvisor.service >/dev/null 2>&1 || true
+        systemctl disable barkvisor.service >/dev/null 2>&1 || true
+        systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
+        systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
       fi
-      systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+      systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
+      systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
       systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
     fi
     ;;

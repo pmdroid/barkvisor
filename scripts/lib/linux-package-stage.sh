@@ -150,6 +150,8 @@ barkvisor_stage_install_tree() {
   fi
 
   install -m 0644 "$pkg_root/barkvisor.service" "$stage/usr/lib/systemd/system/barkvisor.service"
+  install -m 0644 "$pkg_root/barkvisor-daemon.service" "$stage/usr/lib/systemd/system/barkvisor-daemon.service"
+  install -m 0644 "$pkg_root/barkvisor-server.service" "$stage/usr/lib/systemd/system/barkvisor-server.service"
   install -m 0644 "$pkg_root/barkvisor-agent.service" "$stage/usr/lib/systemd/system/barkvisor-agent.service"
   install -m 0644 "$pkg_root/udev/99-barkvisor-vfio.rules" "$stage/usr/local/share/barkvisor/udev/99-barkvisor-vfio.rules"
   install -m 0755 "$pkg_root/install-vfio-udev.sh" "$stage/usr/local/libexec/barkvisor/install-vfio-udev.sh"

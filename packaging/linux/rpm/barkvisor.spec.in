@@ -38,6 +38,8 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 /usr/local/share/barkvisor
 /usr/local/lib/barkvisor
 /usr/lib/systemd/system/barkvisor.service
+/usr/lib/systemd/system/barkvisor-daemon.service
+/usr/lib/systemd/system/barkvisor-server.service
 /usr/lib/systemd/system/barkvisor-agent.service
 /usr/local/libexec/barkvisor/install-vfio-udev.sh
 %config(noreplace) /etc/barkvisor/barkvisor.env
@@ -53,10 +55,22 @@ getent group disk >/dev/null 2>&1 && usermod -aG disk barkvisor 2>/dev/null || t
 exit 0
 
 %post
+schema_file=/var/lib/barkvisor/schema-version
+if [ -f "$schema_file" ]; then
+  on_disk=$(tr -cd '0-9' < "$schema_file" || true)
+  if [ -n "$on_disk" ] && [ "$on_disk" -gt 1 ]; then
+    echo "unsupported downgrade: schema $on_disk" >&2
+    exit 1
+  fi
+fi
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+if [ ! -f "$schema_file" ]; then
+  printf '1\n' > "$schema_file"
+  chown barkvisor:barkvisor "$schema_file" 2>/dev/null || true
+fi
 install -d -m 0755 /etc/qemu
 if getent group disk >/dev/null 2>&1; then
-  for unit in barkvisor.service barkvisor-agent.service; do
+  for unit in barkvisor-daemon.service barkvisor-agent.service; do
     mkdir -p /etc/systemd/system/${unit}.d
     printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
       >/etc/systemd/system/${unit}.d/disk.conf
@@ -68,8 +82,11 @@ if command -v udevadm >/dev/null 2>&1; then
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl enable barkvisor.service >/dev/null 2>&1 || true
-  systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
 fi
 exit 0
@@ -78,6 +95,10 @@ exit 0
 if [ "$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
   systemctl stop barkvisor.service >/dev/null 2>&1 || true
   systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  systemctl stop barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl stop barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor-server.service >/dev/null 2>&1 || true
   systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
   systemctl disable barkvisor-agent.service >/dev/null 2>&1 || true
 fi
