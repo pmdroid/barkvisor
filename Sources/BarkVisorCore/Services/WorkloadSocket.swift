@@ -197,7 +197,7 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
     }
 
     private func waitForDelete(_ taskID: String) async throws {
-        for _ in 0 ..< 400 {
+        for _ in 0 ..< 2_400 {
             if let event = await tasks.status(taskID) {
                 switch event.status {
                 case .completed:
