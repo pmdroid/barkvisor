@@ -64,10 +64,22 @@ public struct SocketVmnetApplyProbe: Sendable, Equatable {
 public struct SocketVmnetApplyRequest: Sendable, Equatable {
     public var action: SocketVmnetApplyAction
     public var interface: String?
+    public var operationId: String?
+    public var generation: Int?
+    public var authorized: Bool
 
-    public init(action: SocketVmnetApplyAction, interface: String? = nil) {
+    public init(
+        action: SocketVmnetApplyAction,
+        interface: String? = nil,
+        operationId: String? = nil,
+        generation: Int? = nil,
+        authorized: Bool = true,
+    ) {
         self.action = action
         self.interface = interface
+        self.operationId = operationId
+        self.generation = generation
+        self.authorized = authorized
     }
 }
 

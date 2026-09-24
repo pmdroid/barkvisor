@@ -15,6 +15,7 @@ public struct PortClaim: Sendable, Equatable {
     public var workloadKind: String
     public var workloadId: String
     public var workloadName: String
+    public var bindAddress: String
 
     public init(
         hostPort: Int,
@@ -22,12 +23,14 @@ public struct PortClaim: Sendable, Equatable {
         workloadKind: String,
         workloadId: String,
         workloadName: String,
+        bindAddress: String = "0.0.0.0",
     ) {
         self.hostPort = hostPort
         self.proto = proto
         self.workloadKind = workloadKind
         self.workloadId = workloadId
         self.workloadName = workloadName
+        self.bindAddress = bindAddress
     }
 }
 
@@ -56,6 +59,7 @@ public enum PortRegistry {
                         workloadKind: vm.isApplication ? "workload" : "vm",
                         workloadId: vm.id,
                         workloadName: vm.name,
+                        bindAddress: rule.host ?? "0.0.0.0",
                     ),
                 )
             }
@@ -71,14 +75,24 @@ public enum PortRegistry {
     ) throws {
         try assertUnique(rules)
         guard !rules.isEmpty else { return }
-        var occupied: [String: PortClaim] = [:]
-        for claim in try claims(db: db, excludingVM: excludingVM) {
-            let key = claimKey(port: claim.hostPort, proto: claim.proto)
-            if occupied[key] == nil { occupied[key] = claim }
-        }
+        let occupied = try claims(db: db, excludingVM: excludingVM)
         for rule in rules {
             let proto = normalizedProtocol(rule.protocol)
-            if let occupant = occupied[claimKey(port: rule.hostPort, proto: proto)] {
+            let requested = try NetworkIntent.publication(
+                bindAddress: rule.host ?? "0.0.0.0",
+                proto: proto,
+                publishedPort: rule.hostPort,
+                targetPort: rule.guestPort,
+            )
+            if let occupant = occupied.first(where: { claim in
+                guard let held = try? NetworkIntent.publication(
+                    bindAddress: claim.bindAddress,
+                    proto: claim.proto,
+                    publishedPort: claim.hostPort,
+                    targetPort: claim.hostPort,
+                ) else { return false }
+                return NetworkIntentBinding.overlaps(held, requested)
+            }) {
                 throw BarkVisorError.portInUse(
                     "Host port \(rule.hostPort)/\(proto) is already claimed by "
                         + "\(occupant.workloadKind) \"\(occupant.workloadName)\". "
@@ -143,16 +157,21 @@ public enum PortRegistry {
 
     /// Same hostPort+proto twice in one request is also a conflict.
     public static func assertUnique(_ rules: [PortForwardRule]) throws {
-        var seen: Set<String> = []
+        var seen: [PortPublication] = []
         for rule in rules {
             let proto = normalizedProtocol(rule.protocol)
-            let key = claimKey(port: rule.hostPort, proto: proto)
-            if seen.contains(key) {
+            let publication = try NetworkIntent.publication(
+                bindAddress: rule.host ?? "0.0.0.0",
+                proto: proto,
+                publishedPort: rule.hostPort,
+                targetPort: rule.guestPort,
+            )
+            if seen.contains(where: { NetworkIntentBinding.overlaps($0, publication) }) {
                 throw BarkVisorError.portInUse(
                     "Host port \(rule.hostPort)/\(proto) is claimed more than once on this VM.",
                 )
             }
-            seen.insert(key)
+            seen.append(publication)
         }
     }
 
@@ -168,10 +187,6 @@ public enum PortRegistry {
 
     public static func normalizedProtocol(_ proto: String) -> String {
         proto.lowercased()
-    }
-
-    private static func claimKey(port: Int, proto: String) -> String {
-        "\(port)/\(proto)"
     }
 
     private static var streamSockType: Int32 {

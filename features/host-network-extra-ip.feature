@@ -26,9 +26,9 @@ Feature: Extra IPs on a Linux NIC
     Then the extra IP is gone
     And no VM network named after the NIC was deleted
 
-  Scenario: Create Bridge auto-revert keeps the bridge if a VM attached during the window
+  Scenario: Create Bridge auto-revert does not treat an attached Workload as Keep
     When I Create Bridge br9
     And a Workload attaches to Bridged (br9) before Keep
     And the Keep window expires
-    Then br9 is still present
-    And the Workload network still exists
+    Then the unconfirmed bridge change is reverted
+    And attaching the Workload did not confirm it

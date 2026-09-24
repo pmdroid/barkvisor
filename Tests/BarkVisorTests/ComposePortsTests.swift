@@ -82,7 +82,7 @@ struct ComposePortsTests {
         #expect(empty != nil)
     }
 
-    @Test func `inspect IPv6 any HostIp is accepted`() throws {
+    @Test func `inspect IPv6 any HostIp matches an IPv6 wildcard plan`() throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"::","HostPort":"8080"}]}}}]
@@ -91,10 +91,21 @@ struct ComposePortsTests {
         let bindings = try ComposePorts.parseInspectBindings(data)
         try ComposePorts.requireLANHostIP(
             bindings,
-            bindHost: "0.0.0.0",
-            expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+            bindHost: "::",
+            expected: [
+                PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp", hostAddress: "::"),
+            ],
             allowWildcard: false,
         )
+        let mismatch = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                bindings,
+                bindHost: "0.0.0.0",
+                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+                allowWildcard: false,
+            )
+        }
+        #expect(mismatch != nil)
     }
 
     @Test func `inspect with no expected ports does not require a bind host`() throws {

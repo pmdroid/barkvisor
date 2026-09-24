@@ -32,7 +32,13 @@ public enum SocketVmnetApplyLive {
                 throw BarkVisorError.forbidden("socket_vmnet start/stop runs on a macOS Device.")
             }
         #endif
+        let operationId = mutator == nil
+            ? try prepareSocketRecovery(request: request, probe: resolved)
+            : nil
         try writer.apply(request: request, probe: resolved, plan: plan)
+        if let operationId {
+            try? HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.awaitingConfirmation)
+        }
         plan.applied = true
         switch request.action {
         case .stop:
@@ -45,6 +51,29 @@ public enum SocketVmnetApplyLive {
             break
         }
         return plan
+    }
+
+    private static func prepareSocketRecovery(
+        request: SocketVmnetApplyRequest,
+        probe: SocketVmnetApplyProbe,
+    ) throws -> String? {
+        guard request.action != .check else { return nil }
+        guard request.authorized else {
+            throw BarkVisorError.unauthorized("socket_vmnet changes are not authorized")
+        }
+        let operationId = request.operationId ?? UUID().uuidString
+        if HostNetworkRecovery.load(operationId: operationId) != nil {
+            return operationId
+        }
+        let interface = probe.interface
+        _ = try HostNetworkRecovery.begin(
+            operationId: operationId,
+            generation: request.generation ?? 1,
+            target: interface.isEmpty ? "socket_vmnet" : interface,
+            snapshot: HostNetworkRecovery.capture(paths: [probe.ownedPlistPath]),
+            deadline: Date().addingTimeInterval(TimeInterval(HostNetworkPendingCommitService.rollbackSeconds)),
+        )
+        return operationId
     }
 }
 

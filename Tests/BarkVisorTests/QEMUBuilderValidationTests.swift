@@ -137,6 +137,33 @@ struct QEMUBuilderValidationTests {
         #expect(args.contains { $0.contains("hostfwd=tcp::8080-:80") })
     }
 
+    @Test func `explicit loopback hostfwd keeps the bind address`() throws {
+        let spec = netSpec(
+            mode: "nat",
+            forwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1")],
+        )
+        let (args, _) = try QEMUBuilder.networkArgs(spec: spec, network: nil)
+        #expect(args.contains { $0.contains("hostfwd=tcp:127.0.0.1:8080-:80") })
+    }
+
+    @Test func `guest DNS is not an upstream resolver`() throws {
+        let net = Network(
+            id: "nat-1", name: "NAT", mode: "nat",
+            bridge: nil, macAddress: nil, dnsServer: "1.1.1.1",
+            autoCreated: false, isDefault: false,
+        )
+        let (args, _) = try QEMUBuilder.networkArgs(spec: netSpec(mode: "nat"), network: net)
+        #expect(args.contains { $0.contains("dns=1.1.1.1") })
+        let rejected = #expect(throws: BarkVisorError.self) {
+            _ = try NetworkIntentResolver.resolve(
+                NetworkIntent(publications: [], upstreamResolver: "9.9.9.9", guestDNS: "1.1.1.1"),
+                runtime: .qemu,
+                mode: .nat,
+            )
+        }
+        #expect(rejected != nil)
+    }
+
     // MARK: - MAC Address Validation
 
     @Test func `valid MAC`() {

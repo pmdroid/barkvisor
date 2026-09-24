@@ -114,7 +114,9 @@
                   "properties": {
                     "hostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "guestPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                    "proto": { "type": "string", "enum": ["tcp", "udp"] }
+                    "proto": { "type": "string", "enum": ["tcp", "udp"] },
+                    "host": { "type": ["string", "null"] },
+                    "host": { "type": ["string", "null"] }
                   }
                 }
               }

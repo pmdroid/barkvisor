@@ -245,11 +245,36 @@ public struct WorkloadPortForward: Codable, Equatable, Sendable {
     public var hostPort: Int
     public var guestPort: Int
     public var proto: String
+    public var host: String?
 
-    public init(hostPort: Int, guestPort: Int, proto: String) {
+    public init(hostPort: Int, guestPort: Int, proto: String, host: String? = nil) {
         self.hostPort = hostPort
         self.guestPort = guestPort
         self.proto = proto
+        self.host = host
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case hostPort
+        case guestPort
+        case proto
+        case host
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hostPort = try container.decode(Int.self, forKey: .hostPort)
+        guestPort = try container.decode(Int.self, forKey: .guestPort)
+        proto = try container.decode(String.self, forKey: .proto)
+        host = try container.decodeIfPresent(String.self, forKey: .host)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(hostPort, forKey: .hostPort)
+        try container.encode(guestPort, forKey: .guestPort)
+        try container.encode(proto, forKey: .proto)
+        try container.encodeIfPresent(host, forKey: .host)
     }
 }
 

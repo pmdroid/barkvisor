@@ -187,7 +187,9 @@ public enum EffectiveWorkloadPipeline {
             disks.append(WorkloadDisk(role: "cdrom", imageId: iso))
         }
         let forwards = (portForwards ?? []).map {
-            WorkloadPortForward(hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol)
+            WorkloadPortForward(
+                hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol, host: $0.host,
+            )
         }
         let network = WorkloadNetwork(
             mode: networkId == nil ? NetworkMode.nat.rawValue : nil,

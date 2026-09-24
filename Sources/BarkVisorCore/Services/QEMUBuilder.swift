@@ -513,25 +513,49 @@ public enum QEMUBuilder {
         case .isolated:
             // Private: slirp with restrict=on — no host, LAN, or internet.
             netdevArgs = "user,id=net0,restrict=on"
-            if let dns = network?.dnsServer, !dns.isEmpty {
-                try validateIPv4(dns)
-                netdevArgs += ",dns=\(dns)"
-            }
+            netdevArgs += try userNetDNS(network: network, forwards: [], mode: mode)
         case .nat:
             netdevArgs = "user,id=net0"
-            if let dns = network?.dnsServer, !dns.isEmpty {
-                try validateIPv4(dns)
-                netdevArgs += ",dns=\(dns)"
-            }
-            for rule in forwards {
-                try validateProtocol(rule.proto)
-                try validatePort(rule.hostPort)
-                try validatePort(rule.guestPort)
-                netdevArgs += ",hostfwd=\(rule.proto)::\(rule.hostPort)-:\(rule.guestPort)"
-            }
+            netdevArgs += try userNetDNS(network: network, forwards: forwards, mode: mode)
         }
 
         return (["-netdev", netdevArgs, "-device", deviceArgs], needsSocketVmnetWrap)
+    }
+
+    private static func userNetDNS(
+        network: Network?,
+        forwards: [WorkloadPortForward],
+        mode: NetworkMode,
+    ) throws -> String {
+        let guest = network?.dnsServer?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let publications = try forwards.map { rule in
+            try NetworkIntent.publication(
+                bindAddress: rule.host ?? "0.0.0.0",
+                proto: rule.proto,
+                publishedPort: rule.hostPort,
+                targetPort: rule.guestPort,
+            )
+        }
+        let plan = try NetworkIntentResolver.resolve(
+            NetworkIntent(
+                publications: publications,
+                guestDNS: (guest?.isEmpty == false) ? guest : nil,
+            ),
+            runtime: .qemu,
+            mode: mode,
+        )
+        var suffix = ""
+        if let dns = plan.guestDNS {
+            try validateIPv4(dns)
+            suffix += ",dns=\(dns)"
+        }
+        for publication in plan.publications {
+            try validateProtocol(publication.proto)
+            try validatePort(publication.publishedPort)
+            try validatePort(publication.targetPort)
+            suffix += ",\(NetworkIntentResolver.qemuHostfwd(publication))"
+        }
+        return suffix
     }
 
     /// Serial, VNC, QMP, guest-agent, and optional qemu-vdagent (VNC clipboard).

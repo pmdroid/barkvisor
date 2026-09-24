@@ -4123,6 +4123,10 @@ components:
         httpPath:
           type: string
           nullable: true
+        host:
+          type: string
+          nullable: true
+          description: Bind address for this publish. Absent means every IPv4 interface.
 
     USBDevice:
       type: object

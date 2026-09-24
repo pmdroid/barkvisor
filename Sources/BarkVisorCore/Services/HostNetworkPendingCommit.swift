@@ -13,6 +13,8 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
     public var createdBridge: Bool
     public var netplanPid: Int32?
     public var helperModes: [String: Int]?
+    public var operationId: String?
+    public var generation: Int?
 
     public init(
         target: String,
@@ -21,6 +23,8 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         createdBridge: Bool = false,
         netplanPid: Int32? = nil,
         helperModes: [String: Int]? = nil,
+        operationId: String? = nil,
+        generation: Int? = nil,
     ) {
         self.target = target
         self.commitDeadline = commitDeadline
@@ -28,10 +32,13 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         self.createdBridge = createdBridge
         self.netplanPid = netplanPid
         self.helperModes = helperModes
+        self.operationId = operationId
+        self.generation = generation
     }
 
     enum CodingKeys: String, CodingKey {
         case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid, helperModes
+        case operationId, generation
     }
 
     public init(from decoder: Decoder) throws {
@@ -42,6 +49,20 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
         netplanPid = try c.decodeIfPresent(Int32.self, forKey: .netplanPid)
         helperModes = try c.decodeIfPresent([String: Int].self, forKey: .helperModes)
+        operationId = try c.decodeIfPresent(String.self, forKey: .operationId)
+        generation = try c.decodeIfPresent(Int.self, forKey: .generation)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(target, forKey: .target)
+        try c.encode(commitDeadline, forKey: .commitDeadline)
+        try c.encode(rollbackSeconds, forKey: .rollbackSeconds)
+        try c.encode(createdBridge, forKey: .createdBridge)
+        try c.encodeIfPresent(netplanPid, forKey: .netplanPid)
+        try c.encodeIfPresent(helperModes, forKey: .helperModes)
+        try c.encodeIfPresent(operationId, forKey: .operationId)
+        try c.encodeIfPresent(generation, forKey: .generation)
     }
 
     public var expired: Bool {
@@ -340,6 +361,8 @@ public enum HostNetworkPendingCommitService {
         createdBridge: Bool = false,
         netplanPid: Int32? = nil,
         helperModes: [String: Int]? = nil,
+        operationId: String? = nil,
+        generation: Int? = nil,
     ) -> HostNetworkPendingCommit {
         HostNetworkPendingCommit(
             target: target,
@@ -348,6 +371,8 @@ public enum HostNetworkPendingCommitService {
             createdBridge: createdBridge,
             netplanPid: netplanPid,
             helperModes: helperModes,
+            operationId: operationId,
+            generation: generation,
         )
     }
 }

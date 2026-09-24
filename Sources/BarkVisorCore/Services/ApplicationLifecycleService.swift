@@ -275,7 +275,12 @@ public enum ApplicationLifecycleService {
 
     public static func portRules(_ ports: [PublishedPort]) -> [PortForwardRule] {
         ports.map {
-            PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.containerPort)
+            PortForwardRule(
+                protocol: $0.proto,
+                hostPort: $0.hostPort,
+                guestPort: $0.containerPort,
+                host: $0.hostAddress,
+            )
         }
     }
 
@@ -290,7 +295,7 @@ public enum ApplicationLifecycleService {
             bindings,
             bindHost: bindHost,
             expected: expected,
-            allowWildcard: true,
+            allowWildcard: false,
         )
     }
 

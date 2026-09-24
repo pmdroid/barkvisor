@@ -43,27 +43,50 @@ enum ComposePorts {
             }
             return Rewrite(mapping: [], published: [])
         }
-        _ = bindHost
-        let host = "0.0.0.0"
+        let publications = try parsed.map { port in
+            try NetworkIntent.publication(
+                bindAddress: port.hostAddress ?? bindHost ?? "0.0.0.0",
+                proto: port.proto,
+                publishedPort: port.hostPort,
+                targetPort: port.containerPort,
+            )
+        }
+        let plan = try NetworkIntentResolver.resolve(
+            NetworkIntent(publications: publications),
+            runtime: .compose,
+            mode: .nat,
+        )
         var mapping: [[String: Any]] = []
         var published: [PublishedPort] = []
-        for port in parsed {
+        for port in plan.publications {
             mapping.append([
-                "target": port.containerPort,
-                "published": port.hostPort,
+                "target": port.targetPort,
+                "published": port.publishedPort,
                 "protocol": port.proto,
-                "host_ip": host,
+                "host_ip": port.bindAddress,
             ])
             published.append(
                 PublishedPort(
-                    hostPort: port.hostPort,
-                    containerPort: port.containerPort,
+                    hostPort: port.publishedPort,
+                    containerPort: port.targetPort,
                     proto: port.proto,
-                    hostAddress: host,
+                    hostAddress: port.bindAddress,
                 ),
             )
         }
         return Rewrite(mapping: mapping, published: published)
+    }
+
+    static func serviceDNS(upstreamResolver: String?, guestDNS: String?) throws -> [String] {
+        try NetworkIntentResolver.resolve(
+            NetworkIntent(
+                publications: [],
+                upstreamResolver: upstreamResolver,
+                guestDNS: guestDNS,
+            ),
+            runtime: .compose,
+            mode: .nat,
+        ).upstreamResolvers
     }
 
     static func parseInspectBindings(_ data: Data) throws -> [ComposePortBinding] {
@@ -126,18 +149,29 @@ enum ComposePorts {
         allowWildcard: Bool,
     ) throws {
         if expected.isEmpty { return }
-        _ = bindHost
-        _ = allowWildcard
-        for port in expected {
-            let proto = port.proto.lowercased()
-            let found = bindings.contains {
-                $0.hostPort == port.hostPort && $0.proto == proto
-            }
-            if !found {
-                throw BarkVisorError.internalError(
-                    "docker inspect missing \(port.hostPort)/\(proto)",
-                )
-            }
+        let planned = try expected.map { port in
+            try NetworkIntent.publication(
+                bindAddress: port.hostAddress ?? bindHost,
+                proto: port.proto,
+                publishedPort: port.hostPort,
+                targetPort: port.containerPort,
+            )
+        }
+        let observed = bindings.map {
+            ObservedPortBinding(
+                hostIP: $0.hostIP,
+                hostPort: $0.hostPort,
+                targetPort: $0.containerPort,
+                proto: $0.proto,
+            )
+        }
+        let problems = NetworkIntentResolver.mismatches(
+            planned: planned,
+            observed: observed,
+            allowWildcard: allowWildcard,
+        )
+        if let problem = problems.first {
+            throw BarkVisorError.internalError(problem)
         }
     }
 
@@ -194,8 +228,14 @@ enum ComposePorts {
                 else {
                     throw BarkVisorError.badRequest("unsupported compose feature: ports")
                 }
+                let host = stringValue(object["host_ip"]) ?? stringValue(object["host"])
                 result.append(
-                    PublishedPort(hostPort: published, containerPort: target, proto: proto),
+                    PublishedPort(
+                        hostPort: published,
+                        containerPort: target,
+                        proto: proto,
+                        hostAddress: host,
+                    ),
                 )
                 continue
             }
@@ -213,28 +253,40 @@ enum ComposePorts {
         }
         if raw.hasPrefix("[") {
             guard let close = raw.firstIndex(of: "]") else { return nil }
-            raw = String(raw[raw.index(after: close)...])
-            if raw.hasPrefix(":") { raw = String(raw.dropFirst()) }
+            let bind = String(raw[raw.index(after: raw.startIndex) ..< close])
+            var rest = String(raw[raw.index(after: close)...])
+            if rest.hasPrefix(":") { rest = String(rest.dropFirst()) }
+            let parts = rest.split(separator: ":").map(String.init)
+            guard parts.count == 2, let host = Int(parts[0]), let container = Int(parts[1]),
+                  (1 ... 65_535).contains(host), (1 ... 65_535).contains(container)
+            else { return nil }
+            return PublishedPort(
+                hostPort: host, containerPort: container, proto: proto, hostAddress: bind,
+            )
         }
         let parts = raw.split(separator: ":").map(String.init)
         let host: Int?
         let container: Int?
+        let bind: String?
         switch parts.count {
         case 1:
             host = Int(parts[0])
             container = host
+            bind = nil
         case 2:
             host = Int(parts[0])
             container = Int(parts[1])
+            bind = nil
         case 3:
             host = Int(parts[1])
             container = Int(parts[2])
+            bind = parts[0]
         default:
             return nil
         }
         guard let host, let container, (1 ... 65_535).contains(host), (1 ... 65_535).contains(container)
         else { return nil }
-        return PublishedPort(hostPort: host, containerPort: container, proto: proto)
+        return PublishedPort(hostPort: host, containerPort: container, proto: proto, hostAddress: bind)
     }
 
     private static func asObject(_ value: Any?) -> [String: Any]? {

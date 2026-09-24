@@ -65,11 +65,15 @@ public enum LinuxHostBridgeApplyLive {
                 ?? HostNetworkPendingCommitService.makePending(
                     target: target,
                     createdBridge: createdNow,
+                    operationId: request.operationId,
+                    generation: request.generation,
                 )
             plan.pendingCommit = true
             plan.commitDeadline = pending.commitDeadline
             plan.rollbackSeconds = pending.rollbackSeconds
             plan.createdBridge = createdNow
+            plan.operationId = pending.operationId
+            plan.generation = pending.generation
             plan.message =
                 "Applied \(appliedOn) via \(plan.backend). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
         case .commit:
@@ -190,12 +194,16 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 else {
                     throw BarkVisorError.badRequest("No pending host network apply for \(target).")
                 }
-                if pending.expired {
-                    throw BarkVisorError.badRequest(
-                        "Pending apply expired. Network may have auto-reverted — run Revert to clean up.",
-                    )
-                }
+                try HostNetworkRecovery.requireConfirmation(
+                    pending: pending,
+                    requestedOperationId: request.operationId,
+                    requestedGeneration: request.generation,
+                    authorized: request.authorized,
+                )
                 try confirmNetplanKeep(pending: pending, target: target, probe: probe)
+                if let operationId = pending.operationId {
+                    try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.confirmed)
+                }
                 try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: target), "")
                 try? FileManager.default.removeItem(
                     atPath: HostNetworkPendingCommitService.keepingPath(target),
@@ -226,6 +234,25 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 try persistAddresses(request: request, probe: probe, plan: plan)
                 return
             }
+            let operationId = request.operationId ?? UUID().uuidString
+            let generation = request.generation ?? 1
+            let snapshot = HostNetworkRecovery.capture(
+                paths: [
+                    LinuxHostBridgeApply.netplanPath(bridge: request.bridge),
+                    LinuxHostBridgeApply.networkdNetdevPath,
+                    LinuxHostBridgeApply.networkdNetworkPath,
+                ],
+                aclContents: probe.aclContents,
+            )
+            _ = try HostNetworkRecovery.begin(
+                operationId: operationId,
+                generation: generation,
+                target: request.bridge,
+                snapshot: snapshot,
+                deadline: Date().addingTimeInterval(
+                    TimeInterval(HostNetworkPendingCommitService.rollbackSeconds),
+                ),
+            )
             var pendingNetplan: Process?
             switch probe.backend {
             case .netplan:
@@ -269,10 +296,13 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 ),
                 netplanPid: pendingNetplan.map { Int32($0.processIdentifier) },
                 helperModes: helperModes.isEmpty ? nil : helperModes,
+                operationId: operationId,
+                generation: generation,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
             try setuidHelpers(helperModes)
             try startRollbackTimer(bridge: request.bridge)
+            try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.awaitingConfirmation)
         }
 
         private func persistAddresses(
@@ -294,6 +324,30 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 interface: iface,
                 cidrs: desired,
                 backend: probe.backend,
+            )
+            let operationId = request.operationId ?? UUID().uuidString
+            let generation = request.generation ?? 1
+            var snapshotFiles: [String: String] = [:]
+            var absent: [String] = []
+            for file in files {
+                if let text = try? String(contentsOfFile: file.path, encoding: .utf8) {
+                    snapshotFiles[file.path] = text
+                } else {
+                    absent.append(file.path)
+                }
+            }
+            _ = try HostNetworkRecovery.begin(
+                operationId: operationId,
+                generation: generation,
+                target: nic,
+                snapshot: HostNetworkSnapshot(
+                    files: snapshotFiles,
+                    absentPaths: absent,
+                    aclContents: probe.aclContents,
+                ),
+                deadline: Date().addingTimeInterval(
+                    TimeInterval(HostNetworkPendingCommitService.rollbackSeconds),
+                ),
             )
             let persistRestore: [(String, String?)] = files.map { file in
                 if FileManager.default.fileExists(atPath: file.path) {
@@ -347,6 +401,8 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             let pending = HostNetworkPendingCommitService.makePending(
                 target: nic,
                 createdBridge: false,
+                operationId: operationId,
+                generation: generation,
             )
             try HostNetworkPendingCommitService.writeLinux(pending)
             do {
@@ -359,6 +415,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                     persistRestore: persistRestore,
                     nmConnection: nmConnection,
                 )
+                try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.awaitingConfirmation)
             } catch {
                 try? revertAddresses(request: request, probe: probe)
                 throw error
@@ -485,7 +542,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             request: LinuxHostBridgeApplyRequest,
             probe: LinuxHostBridgeApplyProbe,
         ) throws {
-            if request.attachedWorkloadCount > 0 {
+            if request.attachedDeleteIsRefused {
                 throw BarkVisorError.conflict(
                     "Cannot delete \(request.bridge): \(request.attachedWorkloadCount) Workload(s) still reference it.",
                 )
