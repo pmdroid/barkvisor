@@ -101,6 +101,48 @@ public enum HomeMemberHop {
             ttl: ttl,
         )
     }
+
+    public static func localManagementToken(
+        dataDir: URL,
+        localHostId: String,
+        peerHostId: String,
+        peerCertificatePEM: String,
+        scopedToken: String,
+        now: Date = Date(),
+    ) throws -> String {
+        let scoped = try HomeScopedCredential.verify(
+            token: scopedToken,
+            issuerCertificatePEM: peerCertificatePEM,
+            now: now,
+        )
+        guard scoped.issuerHostId.caseInsensitiveCompare(peerHostId) == .orderedSame else {
+            throw BarkVisorError.unauthorized("Hop credential is not bound to the presented Device")
+        }
+        let authority = HomeMembershipAuthority(dataDir: dataDir)
+        let decision = authority.authorizeLoginToken(
+            issuerHostId: scoped.issuerHostId,
+            subjectHostId: nil,
+            issuedAt: scoped.issuedAt,
+            expiresAt: scoped.expiresAt,
+            membershipRevision: scoped.membershipRevision,
+            localHostId: localHostId,
+            now: now,
+        )
+        guard case .allow = decision else {
+            throw BarkVisorError.unauthorized("Home membership denied this login token")
+        }
+        let managementKey = try authority.managementKeyPEM()
+        return try HomeManagementCredential.sign(
+            issuerHostId: localHostId,
+            subject: scoped.subject,
+            username: scoped.username,
+            role: scoped.role,
+            onBehalfOfHostId: peerHostId,
+            membershipRevision: scoped.membershipRevision,
+            managementKeyPEM: managementKey,
+            now: now,
+        )
+    }
 }
 
 extension HomeScopedCredential {

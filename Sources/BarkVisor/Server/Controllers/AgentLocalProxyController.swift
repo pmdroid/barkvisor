@@ -350,35 +350,17 @@ struct AgentLocalProxyController: RouteCollection {
             guard let certificate = req.mtlsPeerCertificatePEM else {
                 throw Abort(.unauthorized, reason: "Client certificate required")
             }
-            let scoped = try HomeScopedCredential.verify(
-                token: token,
-                issuerCertificatePEM: certificate,
-            )
-            guard scoped.issuerHostId.caseInsensitiveCompare(peer.hostId) == .orderedSame else {
-                throw Abort(.unauthorized, reason: "Hop credential is not bound to the presented Device")
+            do {
+                return try HomeMemberHop.localManagementToken(
+                    dataDir: Config.dataDir,
+                    localHostId: Config.hostId,
+                    peerHostId: peer.hostId,
+                    peerCertificatePEM: certificate,
+                    scopedToken: token,
+                )
+            } catch let error as BarkVisorError {
+                throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
             }
-            let authority = HomeMembershipAuthority(dataDir: Config.dataDir)
-            let decision = authority.authorizeLoginToken(
-                issuerHostId: scoped.issuerHostId,
-                subjectHostId: nil,
-                issuedAt: scoped.issuedAt,
-                expiresAt: scoped.expiresAt,
-                membershipRevision: scoped.membershipRevision,
-                localHostId: Config.hostId,
-            )
-            guard case .allow = decision else {
-                throw Abort(.unauthorized, reason: "Home membership denied this login token")
-            }
-            let managementKey = try authority.managementKeyPEM()
-            return try HomeManagementCredential.sign(
-                issuerHostId: Config.hostId,
-                subject: scoped.subject,
-                username: scoped.username,
-                role: scoped.role,
-                onBehalfOfHostId: peer.hostId,
-                membershipRevision: scoped.membershipRevision,
-                managementKeyPEM: managementKey,
-            )
         }
         if HomeMembershipAuthority.ledgerExists(dataDir: Config.dataDir) {
             throw Abort(

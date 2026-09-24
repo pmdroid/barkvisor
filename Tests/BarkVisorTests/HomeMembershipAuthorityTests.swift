@@ -561,6 +561,55 @@ struct HomeMembershipAuthorityTests {
         #expect(!ForwardedIdentity.rejects(headerNames: ["Accept"]))
     }
 
+    @Test func `join commits the issuer after startup migration`() async throws {
+        let issuerDir = try isolatedDir()
+        let joinerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        try HomeMembershipAuthority.migrateExistingHome(dataDir: joinerDir, localHostId: joinerId)
+        let issued = try HomeCAService.issueDeviceCert(
+            hostId: joinerId,
+            csrPEM: HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM),
+            material: issuer,
+        )
+        let response = PairingRedeemResponse(
+            hostId: issuerId,
+            deviceCertificatePEM: issuer.deviceCertificatePEM,
+            deviceFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: issuer.caCertificatePEM,
+            caFingerprint: issuer.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            agentPort: 7_778,
+        )
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.168.0.8",
+            port: 7_777,
+            agentPort: 7_778,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        _ = try await PairingService.applyTrust(
+            response: response,
+            expected: payload,
+            dataDir: joinerDir,
+            localHostId: joinerId,
+        )
+        #expect(
+            HomeMembershipAuthority(dataDir: joinerDir).authorizeCertificate(
+                hostId: issuerId,
+                fingerprint: issuer.deviceFingerprint,
+            ) == .allow,
+        )
+    }
+
     @Test func `revocation closes active privileged streams`() async {
         let closed = LockedFlag()
         let id = await PrivilegedStreamGate.shared.register(memberHostId: "peer") {
