@@ -554,7 +554,7 @@ public enum ApplicationLifecycleService {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             vm.setPortForwards(nil)
-            try? await setState(&vm, state: "error", error: message, db: db, generation: lease.generation)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -574,7 +574,7 @@ public enum ApplicationLifecycleService {
             await metricsCollector?.stop(vmID: vm.id)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            try? await setState(&vm, state: "error", error: message, db: db, generation: lease.generation)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -616,7 +616,7 @@ public enum ApplicationLifecycleService {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             vm.setPortForwards(nil)
-            try? await setState(&vm, state: "error", error: message, db: db, generation: lease.generation)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -710,6 +710,34 @@ public enum ApplicationLifecycleService {
             Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
         }
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
+    }
+
+    private static func recordLifecycleError(
+        _ vm: inout VM,
+        message: String,
+        db: DatabasePool,
+        generation: Int,
+    ) async {
+        do {
+            try await setState(&vm, state: "error", error: message, db: db, generation: generation)
+        } catch {
+            let now = iso8601.string(from: Date())
+            let id = vm.id
+            let wrote = try? await db.write { db -> Bool in
+                try db.execute(
+                    sql: """
+                    UPDATE vms SET state = 'error', updatedAt = ?
+                    WHERE id = ? AND state IN ('starting', 'stopping', 'provisioning')
+                    """,
+                    arguments: [now, id],
+                )
+                return db.changesCount > 0
+            }
+            guard wrote == true else { return }
+            vm.state = "error"
+            vm.updatedAt = now
+            setLastError(id: id, message)
+        }
     }
 
     private static func requireCurrent(
