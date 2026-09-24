@@ -105,4 +105,42 @@ struct ComposePortsTests {
             allowWildcard: false,
         )
     }
+
+    @Test func `explicit loopback publish is not rewritten to every interface`() throws {
+        let rewritten = try ComposePorts.rewritePublishedPorts(
+            ["127.0.0.1:8080:80"],
+            bindHost: "0.0.0.0",
+        )
+        #expect(rewritten.published.count == 1)
+        #expect(rewritten.published[0].hostAddress == "127.0.0.1")
+        #expect(rewritten.published[0].hostPort == 8_080)
+        #expect(rewritten.published[0].containerPort == 80)
+        let hostIP = rewritten.mapping.first?["host_ip"] as? String
+        #expect(hostIP == "127.0.0.1")
+    }
+
+    @Test func `observed wildcard does not satisfy a loopback plan`() throws {
+        let data = Data(
+            """
+            [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
+            """.utf8,
+        )
+        let bindings = try ComposePorts.parseInspectBindings(data)
+        let error = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                bindings,
+                bindHost: "127.0.0.1",
+                expected: [
+                    PublishedPort(
+                        hostPort: 8_080,
+                        containerPort: 80,
+                        proto: "tcp",
+                        hostAddress: "127.0.0.1",
+                    ),
+                ],
+                allowWildcard: false,
+            )
+        }
+        #expect(error != nil)
+    }
 }
