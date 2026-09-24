@@ -186,6 +186,9 @@ else
   if [[ -d "$COMPAT_DST" ]]; then
     chown -R root:root "$COMPAT_DST"
   fi
+  if [[ ! -f "$schema_file" ]]; then
+    printf '1\n' > "$schema_file"
+  fi
 fi
 
 # Environment file (override port / data / frontend without editing the unit)

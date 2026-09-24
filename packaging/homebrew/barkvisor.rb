@@ -53,6 +53,9 @@ class Barkvisor < Formula
       plist = plist.gsub("@PROGRAM@", (opt_bin/"barkvisor").to_s)
       plist = plist.gsub("@HOMEBREW_PREFIX@", HOMEBREW_PREFIX.to_s)
       (prefix/"homebrew.mxcl.#{label}.plist").write plist
+      if label == "barkvisor-server"
+        (pkgshare/"homebrew.mxcl.barkvisor-server.plist").write plist
+      end
     end
   end
 

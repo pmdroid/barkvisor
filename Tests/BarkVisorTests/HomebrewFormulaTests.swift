@@ -89,7 +89,8 @@ struct HomebrewFormulaTests {
         #expect(script.contains("/var/lib/barkvisor"))
         #expect(script.contains("/var/run/barkvisor"))
         #expect(script.contains("/var/log/barkvisor"))
-        #expect(!script.contains("launchctl bootstrap"))
+        #expect(script.contains("homebrew.mxcl.barkvisor-server.plist"))
+        #expect(!script.contains("launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist"))
         #expect(!script.contains("brew install barkvisor"))
 
         let formula = try read("packaging/homebrew/barkvisor.rb")
@@ -131,7 +132,8 @@ struct HomebrewFormulaTests {
         #expect(script.contains("/Library/LaunchDaemons/dev.barkvisor.helper.plist"))
         #expect(script.contains("/Library/PrivilegedHelperTools/dev.barkvisor.helper"))
         #expect(script.contains("/usr/local/libexec/dev.barkvisor.helper"))
-        #expect(!script.contains("launchctl bootstrap"))
+        #expect(script.contains("homebrew.mxcl.barkvisor-server.plist"))
+        #expect(!script.contains("launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist"))
         let formula = try read("packaging/homebrew/barkvisor.rb")
         #expect(!formula.contains("dev.barkvisor.helper"))
     }

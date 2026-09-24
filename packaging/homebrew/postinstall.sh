@@ -50,6 +50,14 @@ if [ ! -f "$schema" ]; then
   printf '1\n' > "$schema"
 fi
 
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+server_src="$script_dir/homebrew.mxcl.barkvisor-server.plist"
+server_dst=/Library/LaunchDaemons/homebrew.mxcl.barkvisor-server.plist
+if [ -f "$server_src" ]; then
+  cp "$server_src" "$server_dst"
+  launchctl bootstrap system "$server_dst" 2>/dev/null || true
+fi
+
 # Drop leftover privileged helper from older installs (PAS-294).
 # A loaded leftover reconnects ~15s and logs XPC invalidation to Device stderr.
 launchctl bootout system/dev.barkvisor.helper 2>/dev/null || true
