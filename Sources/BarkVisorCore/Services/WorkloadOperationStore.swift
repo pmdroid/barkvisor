@@ -17,8 +17,9 @@ public enum WorkloadOperationKind {
 
 public enum WorkloadOperationDedup {
     public static let policy = """
-    The same idempotency key returns the stored operation, including after it \
-    finishes, and does not start another side effect. A different key is rejected \
+    The same idempotency key returns the stored operation for that workload and \
+    kind, including after it finishes, and does not start another side effect. \
+    The same key for a different workload or kind is rejected. A different key is rejected \
     while that workload and kind already have an open operation. A request with no \
     key replays only an open operation; after the open operation finishes, a missing \
     key starts a new one.
@@ -123,6 +124,11 @@ public enum WorkloadOperationStore {
                let existing = try WorkloadOperationRecord
                .filter(Column("idempotencyKey") == idempotencyKey)
                .fetchOne(db) {
+                if existing.workloadID != workloadID || existing.kind != kind {
+                    throw BarkVisorError.conflict(
+                        "Idempotency key \(idempotencyKey) is already bound to another workload operation",
+                    )
+                }
                 return WorkloadOperationAcceptance(record: existing, started: false)
             }
             if let open = try openRecord(db: db, workloadID: workloadID, kind: kind) {

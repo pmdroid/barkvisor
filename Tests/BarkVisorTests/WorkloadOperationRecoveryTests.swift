@@ -31,6 +31,26 @@ struct WorkloadOperationRecoveryTests {
         #expect(WorkloadOperationDedup.policy.contains("idempotency key"))
     }
 
+    @Test func `an idempotency key cannot be reused for another workload`() async throws {
+        let db = try makeDB()
+        _ = try await WorkloadOperationStore.accept(
+            db: db.pool,
+            idempotencyKey: "shared-key",
+            workloadID: "vm-1",
+            kind: WorkloadOperationKind.appUpdate,
+            requestedGeneration: 1,
+        )
+        await #expect(throws: BarkVisorError.self) {
+            try await WorkloadOperationStore.accept(
+                db: db.pool,
+                idempotencyKey: "shared-key",
+                workloadID: "vm-2",
+                kind: WorkloadOperationKind.appUpdate,
+                requestedGeneration: 1,
+            )
+        }
+    }
+
     @Test func `a second key is rejected while an operation is open`() async throws {
         let db = try makeDB()
         _ = try await WorkloadOperationStore.accept(
