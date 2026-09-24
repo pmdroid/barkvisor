@@ -308,7 +308,7 @@ public actor MetricsCollector {
         await observation?.refreshIdentity()
         let outcome = await DockerStats.collectManaged(workloadIDs: ids)
         await observation?.recordStats(outcome, workloadIDs: ids)
-        guard case .fresh(let totals) = outcome else { return }
+        guard case let .fresh(totals) = outcome else { return }
         for id in ids {
             guard let snapshot = totals[id], snapshot.containerCount > 0 else { continue }
             let prevRx = prevNetRx[id] ?? snapshot.networkRxBytes

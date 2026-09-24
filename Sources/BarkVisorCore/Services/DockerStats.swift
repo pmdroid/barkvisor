@@ -178,7 +178,7 @@ public enum DockerStats {
 
     public static func collectManagedNow(workloadIDs: Set<String>) -> ManagedStatsCollect {
         let listed = listManagedResult()
-        guard case .fresh(let rows) = listed else { return .failed }
+        guard case let .fresh(rows) = listed else { return .failed }
         let wanted = rows.filter { workloadIDs.contains($0.workloadID) }
         if wanted.isEmpty { return .fresh([:]) }
         do {

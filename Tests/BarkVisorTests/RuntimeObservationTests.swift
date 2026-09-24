@@ -105,7 +105,7 @@ struct RuntimeObservationTests {
         #expect(partial.phase == .running)
         #expect(partial.health == .unknown)
         #expect(partial.configurationGeneration == 4)
-        await service.ingest(line: try eventLine(
+        try await service.ingest(line: eventLine(
             action: "health_status: healthy", workload: "app-1", service: "db", id: "db1", time: 14,
         ))
         let healthyApp = try #require(await service.observation(for: "app-1"))
@@ -123,7 +123,7 @@ struct RuntimeObservationTests {
         await service.ingest(line: restart)
         #expect(await service.observation(for: "app-1")?.phase == .restarting)
         await service.ingest(line: died)
-        await service.ingest(line: try eventLine(action: "die", workload: "app-1", service: "db", id: "db1", time: 17))
+        try await service.ingest(line: eventLine(action: "die", workload: "app-1", service: "db", id: "db1", time: 17))
         #expect(await service.observation(for: "app-1")?.phase == .exited)
         await service.noteConfiguration(workloadID: "app-1", generation: 3)
         #expect(await service.observation(for: "app-1")?.configurationGeneration == 4)
@@ -139,7 +139,7 @@ struct RuntimeObservationTests {
 
     @Test func `missed event history converges from a full snapshot`() async throws {
         let service = RuntimeObservation(listContainers: { .fresh([]) })
-        await service.ingest(line: try eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 30))
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 30))
         #expect(await service.observation(for: "app-1")?.phase == .running)
         let snapshotAt = Date(timeIntervalSince1970: 40)
         await service.noteMissedHistory(
@@ -158,9 +158,9 @@ struct RuntimeObservationTests {
         let converged = try #require(await service.observation(for: "app-1"))
         #expect(converged.phase == .exited)
         #expect(converged.freshness == .fresh)
-        await service.ingest(line: try eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 40))
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 40))
         #expect(await service.observation(for: "app-1")?.phase == .exited)
-        await service.ingest(line: try eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 41))
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 41))
         #expect(await service.observation(for: "app-1")?.phase == .running)
         await service.noteEventStreamEnded(at: Date(timeIntervalSince1970: 50))
         #expect(await service.observation(for: "app-1")?.freshness == .stale)
@@ -234,7 +234,7 @@ struct RuntimeObservationTests {
         #expect(await service.observation(for: "app-9")?.phase == .unknown)
     }
 
-    @Test func `stats batch attributes every service to its application`() async {
+    @Test func `stats batch attributes every service to its application`() {
         let rows = [
             ContainerSnapshot(
                 workloadID: "app-1", service: "web", containerID: "aaa", state: "running", status: "Up (healthy)", name: "web",
@@ -276,16 +276,16 @@ struct RuntimeObservationTests {
             runner.calls.removeAll()
             let one = DockerStats.collectManagedNow(workloadIDs: ["app-1"])
             let oneCalls = runner.calls.count
-            let oneStats = runner.calls.filter { $0 == "stats" }.count
+            let oneStats = runner.calls.count(where: { $0 == "stats" })
             runner.calls.removeAll()
             let several = DockerStats.collectManagedNow(workloadIDs: ["app-1", "app-2"])
-            return (one, oneCalls, several, oneStats + runner.calls.filter { $0 == "stats" }.count)
+            return (one, oneCalls, several, oneStats + runner.calls.count(where: { $0 == "stats" }))
         }
-        guard case .fresh(let oneTotals) = counts.0 else {
+        guard case let .fresh(oneTotals) = counts.0 else {
             Issue.record("expected fresh stats")
             return
         }
-        guard case .fresh(let severalTotals) = counts.2 else {
+        guard case let .fresh(severalTotals) = counts.2 else {
             Issue.record("expected fresh stats")
             return
         }
@@ -344,7 +344,7 @@ struct RuntimeObservationTests {
         try await waitUntil { await service.subscriptionOpenings() == 1 }
         let view = await service.connectPublic(capacity: 2)
         for index in 0 ..< 6 {
-            await service.ingest(line: try eventLine(
+            try await service.ingest(line: eventLine(
                 action: "start", workload: "app-\(index)", service: "web", id: "c\(index)", time: 100 + index,
             ))
         }
@@ -369,8 +369,8 @@ struct RuntimeObservationTests {
         #expect(buffer.count == 4)
         #expect(buffer.takeDropped())
         let service = RuntimeObservation(listContainers: { .fresh([]) })
-        await service.ingest(line: try eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 3))
-        let encoded = try JSONEncoder().encode(try #require(await service.observation(for: "app-1")))
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 3))
+        let encoded = try JSONEncoder().encode(#require(await service.observation(for: "app-1")))
         let text = String(decoding: encoded, as: UTF8.self)
         #expect(!text.contains("docker.sock"))
         #expect(!text.contains("socketPath"))
@@ -412,7 +412,7 @@ struct RuntimeObservationTests {
         let service = RuntimeObservation(listContainers: { .fresh([]) })
         let clock = ContinuousClock()
         let began = clock.now
-        await service.ingest(line: try eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 9))
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 9))
         let latency = began.duration(to: clock.now)
         let before = processSample()
         try await Task.sleep(for: .milliseconds(200))
@@ -501,7 +501,9 @@ private func processSample() -> (ticks: Int, rssKB: Int) {
 
 private final class IdentityBox: @unchecked Sendable {
     var current: DockerRuntimeIdentity
-    init(current: DockerRuntimeIdentity) { self.current = current }
+    init(current: DockerRuntimeIdentity) {
+        self.current = current
+    }
 }
 
 private final class StartFlag: @unchecked Sendable {

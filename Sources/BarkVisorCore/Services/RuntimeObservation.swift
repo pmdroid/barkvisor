@@ -103,7 +103,7 @@ public actor RuntimeObservation {
 
     public func ingest(delivery: DockerEventDelivery) async {
         switch delivery {
-        case .line(let line):
+        case let .line(line):
             ingest(line: line)
         case .gap:
             await resyncFromRuntime(force: true)
@@ -248,7 +248,7 @@ public actor RuntimeObservation {
         switch collect {
         case .failed:
             noteProbeFailure(detail: "docker stats failed", workloadIDs: workloadIDs, at: at)
-        case .fresh(let totals):
+        case let .fresh(totals):
             for id in workloadIDs {
                 var observation = observations[id] ?? .empty(id)
                 if let total = totals[id] {
@@ -268,7 +268,7 @@ public actor RuntimeObservation {
         let list = listContainers
         let collected = await Task.detached(operation: { list() }).value
         switch collected {
-        case .fresh(let rows):
+        case let .fresh(rows):
             applySnapshot(rows, force: force)
         case .failed:
             noteProbeFailure(detail: "container list failed")
