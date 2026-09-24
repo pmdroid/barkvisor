@@ -9,6 +9,7 @@ public enum ServiceProcessRole: String, Sendable, Equatable, Codable {
 public enum ServiceProcessRoleError: Error, Equatable, Sendable {
     case serverCannotOpenAuthoritativeState
     case serverRefusesRoot
+    case handshakeRejected
     case unavailable
 }
 
@@ -16,6 +17,12 @@ public enum BarkServerStartup {
     public static func refuseRoot(euid: UInt32) throws {
         if euid == 0 {
             throw ServiceProcessRoleError.serverRefusesRoot
+        }
+    }
+
+    public static func requireHandshake(_ response: LocalManagementResponse) throws {
+        if !response.accepted {
+            throw ServiceProcessRoleError.handshakeRejected
         }
     }
 }

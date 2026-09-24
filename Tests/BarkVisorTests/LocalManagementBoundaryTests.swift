@@ -53,6 +53,26 @@ struct LocalManagementBoundaryTests {
             try BarkServerStartup.refuseRoot(euid: 0)
         }
         try BarkServerStartup.refuseRoot(euid: 1_000)
+        let rejected = LocalManagementResponse(
+            requestId: "startup",
+            operationId: "startup",
+            accepted: false,
+            phase: "rejected",
+            effectCount: 0,
+            rejection: LocalRejection.peerNotAllowed.rawValue,
+        )
+        #expect(throws: ServiceProcessRoleError.handshakeRejected) {
+            try BarkServerStartup.requireHandshake(rejected)
+        }
+        try BarkServerStartup.requireHandshake(
+            LocalManagementResponse(
+                requestId: "startup",
+                operationId: "startup",
+                accepted: true,
+                phase: "completed",
+                effectCount: 0,
+            ),
+        )
     }
 
     @Test func `forged revoked and foreign peers are rejected before an effect`() async {

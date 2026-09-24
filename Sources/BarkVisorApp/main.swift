@@ -348,7 +348,7 @@ func runDaemon() async {
 
 nonisolated(unsafe) var managementSignalFDs: [Int32] = [0, 0]
 
-func waitForManagementShutdown() async {
+func armManagementShutdown() {
     #if !os(Windows)
         var created = [Int32](repeating: 0, count: 2)
         pipe(&created)
@@ -361,12 +361,57 @@ func waitForManagementShutdown() async {
             var byte: UInt8 = 1
             write(managementSignalFDs[1], &byte, 1)
         }
+    #endif
+}
+
+func signalManagementShutdown() {
+    #if !os(Windows)
+        guard managementSignalFDs.count == 2 else { return }
+        var byte: UInt8 = 1
+        _ = write(managementSignalFDs[1], &byte, 1)
+    #endif
+}
+
+func waitForManagementShutdown() async {
+    #if !os(Windows)
+        let readFD = managementSignalFDs[0]
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             DispatchQueue.global().async {
                 var byte: UInt8 = 0
-                _ = read(managementSignalFDs[0], &byte, 1)
+                _ = read(readFD, &byte, 1)
                 cont.resume()
             }
+        }
+    #endif
+}
+
+func superviseUntilSignal(
+    run: @escaping @Sendable () async throws -> Void,
+    stop: @escaping @Sendable () -> Void,
+) async throws {
+    #if os(Windows)
+        try await run()
+    #else
+        armManagementShutdown()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await run()
+            }
+            group.addTask {
+                await waitForManagementShutdown()
+                stop()
+            }
+            do {
+                try await group.next()
+            } catch {
+                stop()
+                signalManagementShutdown()
+                group.cancelAll()
+                throw error
+            }
+            stop()
+            signalManagementShutdown()
+            group.cancelAll()
         }
     #endif
 }
@@ -398,10 +443,11 @@ struct DaemonCommand: AsyncParsableCommand {
                 directoryMode: permissions.directoryMode,
                 socketMode: permissions.socketMode,
             )
-            let task = Task { try await server.run() }
-            await waitForManagementShutdown()
-            server.stop()
-            try await task.value
+            try await superviseUntilSignal {
+                try await server.run()
+            } stop: {
+                server.stop()
+            }
         #endif
     }
 }
@@ -418,7 +464,7 @@ struct ServerCommand: AsyncParsableCommand {
         #else
             setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkServer.rawValue, 1)
             try BarkServerStartup.refuseRoot(euid: WorkloadPrivilegeDrop.currentEUID())
-            _ = try LocalManagementSocketClient.exchange(
+            let handshake = try LocalManagementSocketClient.exchange(
                 path: ManagementSocketPath.path(socketDir: Config.socketDir),
                 request: LocalManagementRequest(
                     requestId: "startup",
@@ -426,6 +472,8 @@ struct ServerCommand: AsyncParsableCommand {
                     name: "protocolVersion",
                 ),
             )
+            try BarkServerStartup.requireHandshake(handshake)
+            armManagementShutdown()
             await waitForManagementShutdown()
         #endif
     }

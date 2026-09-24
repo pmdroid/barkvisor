@@ -1,5 +1,5 @@
 [Unit]
-Description=BarkServer public listeners
+Description=BarkServer
 Documentation=https://github.com/pmdroid/barkvisor
 After=barkvisor-daemon.service
 Requires=barkvisor-daemon.service
