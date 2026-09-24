@@ -199,6 +199,33 @@ struct RuntimeObservationTests {
         #expect(await service.observation(for: "app-1")?.observationSequence == (first ?? 0) + 1)
     }
 
+    @Test func `reconcile drops service rows that disagree with the workload phase`() async throws {
+        let service = RuntimeObservation(listContainers: { .fresh([]) })
+        try await service.ingest(line: eventLine(action: "start", workload: "app-1", service: "web", id: "web1", time: 8))
+        try await service.ingest(
+            line: eventLine(action: "health_status: healthy", workload: "app-1", service: "web", id: "web1", time: 9),
+        )
+        #expect(await service.observation(for: "app-1")?.services.count == 1)
+        await service.applyReconcile(
+            [ReconcileFact(workloadID: "app-1", phase: .exited, detail: "compose project is missing on the Device")],
+            at: Date(timeIntervalSince1970: 10),
+        )
+        let observed = try #require(await service.observation(for: "app-1"))
+        #expect(observed.phase == .exited)
+        #expect(observed.services.isEmpty)
+        #expect(observed.health == .unknown)
+    }
+
+    @Test func `event process environment follows the same docker context`() {
+        var identity = sampleIdentity(context: "desktop")
+        identity.endpoint = "unix:///tmp/barkvisor-docker.sock"
+        let env = DockerEventEnvironment.make(identity: identity, base: ["PATH": "/usr/bin"])
+        #expect(env["DOCKER_HOST"] == "unix:///tmp/barkvisor-docker.sock")
+        #expect(env["DOCKER_CONTEXT"] == "desktop")
+        #expect(env["DOCKER_CONFIG"] != nil)
+        #expect(env["PATH"] == "/usr/bin")
+    }
+
     @Test func `failed probes keep the last phase and do not invent success`() async {
         let service = RuntimeObservation(listContainers: { .failed })
         let unseen = await service.observation(for: "missing")

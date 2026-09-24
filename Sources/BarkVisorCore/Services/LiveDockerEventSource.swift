@@ -1,9 +1,31 @@
 import Foundation
 
+public enum DockerEventEnvironment {
+    public static func make(
+        identity: DockerRuntimeIdentity,
+        base: [String: String] = ProcessInfo.processInfo.environment,
+    ) -> [String: String] {
+        var env = base
+        let dockerPath = identity.executablePath.isEmpty ? nil : identity.executablePath
+        for (key, value) in DockerEngine.cliEnvironment(dockerPath: dockerPath) {
+            env[key] = value
+        }
+        if identity.endpoint.hasPrefix("unix://")
+            || identity.endpoint.hasPrefix("tcp://")
+            || identity.endpoint.hasPrefix("ssh://") {
+            env["DOCKER_HOST"] = identity.endpoint
+        }
+        if !identity.contextName.isEmpty {
+            env["DOCKER_CONTEXT"] = identity.contextName
+        }
+        return env
+    }
+}
+
 public struct LiveDockerEventSource: DockerEventProducing {
     public init() {}
 
-    public func open(identity _: DockerRuntimeIdentity) -> DockerEventSubscription {
+    public func open(identity: DockerRuntimeIdentity) -> DockerEventSubscription {
         #if os(Windows)
             return DockerEventSubscription(
                 stream: AsyncStream<DockerEventDelivery> { $0.finish() },
@@ -17,7 +39,11 @@ public struct LiveDockerEventSource: DockerEventProducing {
                     session.stop()
                     continuation.finish()
                 }
-                session.start(continuation: continuation, onGap: { continuation.yield(.gap) })
+                session.start(
+                    identity: identity,
+                    continuation: continuation,
+                    onGap: { continuation.yield(.gap) },
+                )
                 continuation.onTermination = { _ in
                     session.stop()
                 }
@@ -58,6 +84,7 @@ private final class StreamCancel: @unchecked Sendable {
         private let chunks = ChunkLines()
 
         func start(
+            identity: DockerRuntimeIdentity,
             continuation: AsyncStream<DockerEventDelivery>.Continuation,
             onGap: @escaping @Sendable () -> Void,
         ) {
@@ -75,6 +102,7 @@ private final class StreamCancel: @unchecked Sendable {
                 "--filter", "type=container",
                 "--format", "{{json .}}",
             ]
+            process.environment = DockerEventEnvironment.make(identity: identity)
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = Pipe()
