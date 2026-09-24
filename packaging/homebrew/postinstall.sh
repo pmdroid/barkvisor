@@ -13,6 +13,18 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+if ! id barkvisor >/dev/null 2>&1; then
+  next_id=$(dscl . -list /Users UniqueID | awk '{print $2}' | sort -n | tail -1)
+  next_id=$((next_id + 1))
+  dscl . -create /Groups/barkvisor
+  dscl . -create /Groups/barkvisor PrimaryGroupID "$next_id"
+  dscl . -create /Users/barkvisor
+  dscl . -create /Users/barkvisor UserShell /usr/bin/false
+  dscl . -create /Users/barkvisor UniqueID "$next_id"
+  dscl . -create /Users/barkvisor PrimaryGroupID "$next_id"
+  dscl . -create /Groups/barkvisor GroupMembership barkvisor
+fi
+
 # brew services require_root runs as root and still cannot mkdir these before
 # first start. The daemon exits if /var/run/barkvisor is missing rather than
 # swallowing mkdir.

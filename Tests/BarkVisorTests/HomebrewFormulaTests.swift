@@ -85,7 +85,7 @@ struct HomebrewFormulaTests {
     @Test func `postinstall creates data dirs as root without _barkvisor`() throws {
         let script = try read("packaging/homebrew/postinstall.sh")
         #expect(!script.contains("_barkvisor"))
-        #expect(!script.contains("dscl"))
+        #expect(script.contains("/Users/barkvisor"))
         #expect(script.contains("/var/lib/barkvisor"))
         #expect(script.contains("/var/run/barkvisor"))
         #expect(script.contains("/var/log/barkvisor"))
