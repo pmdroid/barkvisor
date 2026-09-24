@@ -409,6 +409,11 @@ struct HomeDevicesController: RouteCollection {
             headers.append(("Accept", accept))
         }
         headers.append((APIContract.versionHeaderName, String(APIContract.version)))
+        if let operation = WorkloadOperationCoordinator.operationHeader(
+            from: req.headers.first(name: WorkloadOperationCoordinator.operationHeaderName),
+        ) {
+            headers.append(operation)
+        }
 
         var hop = client
         if Self.usesLongMemberTimeout(method: req.method.rawValue, url: url) {

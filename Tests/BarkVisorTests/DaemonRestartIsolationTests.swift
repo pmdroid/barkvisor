@@ -138,6 +138,7 @@ struct DaemonRestartIsolationTests {
             swtpmProcess: nil,
             reconnected: true,
             swtpmPid: 22,
+            workloadID: "vm-reconnect",
         )
         #expect(running.swtpmPid == 22)
         #expect(running.swtpmProcess == nil)

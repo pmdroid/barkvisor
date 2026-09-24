@@ -67,7 +67,9 @@ public enum WorkloadAutostart {
                 if var app = try await db.read({ db in
                     try VM.fetchOne(db, key: vmID)
                 }), app.isApplication {
-                    try await ApplicationLifecycleService.start(vm: &app, db: db)
+                    try await ApplicationLifecycleService.start(
+                        vm: &app, db: db, operations: vmManager.operations,
+                    )
                 } else {
                     try await vmManager.start(vmID: vmID)
                 }

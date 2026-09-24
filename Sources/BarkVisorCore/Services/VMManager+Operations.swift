@@ -181,16 +181,54 @@ extension VMManager {
 
     // MARK: - State & DB Helpers
 
-    public func updateState(vmID: String, state: String, error: String? = nil) async throws {
-        try await dbPool.write { db in
+    public func updateState(
+        vmID: String,
+        state: String,
+        error: String? = nil,
+        expectedGeneration: Int? = nil,
+    ) async throws {
+        let wrote = try await dbPool.write { db -> Bool in
+            guard try VM.fetchOne(db, key: vmID) != nil else { return false }
+            if let expectedGeneration {
+                try db.execute(
+                    sql: """
+                    UPDATE vms SET state = ?, updatedAt = ?
+                    WHERE id = ? AND specGeneration = ? AND state != 'deleting'
+                    """,
+                    arguments: [state, iso8601.string(from: Date()), vmID, expectedGeneration],
+                )
+                return db.changesCount > 0
+            }
             try db.execute(
                 sql: "UPDATE vms SET state = ?, updatedAt = ? WHERE id = ?",
                 arguments: [state, iso8601.string(from: Date()), vmID],
             )
+            return true
+        }
+        if !wrote {
+            if expectedGeneration != nil {
+                throw BarkVisorError.conflict(
+                    "Workload \(vmID) changed before the operation finished",
+                )
+            }
+            return
         }
 
         let event = VMStateEvent(id: vmID, state: state, error: error)
         await stateStreamService?.broadcast(event: event)
+    }
+
+    func workloadObservation(_ vmID: String) async throws -> WorkloadObservation {
+        try await WorkloadOperationCoordinator.observation(id: vmID, db: dbPool)
+    }
+
+    func requireLease(_ vmID: String, _ lease: WorkloadOperationLease) async throws {
+        let current = try await workloadObservation(vmID)
+        guard await operations.allowsWrite(lease: lease, current: current) else {
+            throw BarkVisorError.conflict(
+                "Workload \(vmID) changed before the operation finished",
+            )
+        }
     }
 
     func loadVM(id: String) async throws -> VMLoadResult {

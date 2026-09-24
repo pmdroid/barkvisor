@@ -75,7 +75,9 @@ public final class VaporServer: @unchecked Sendable {
 
         let services = await createServices(app: app, database: database)
         await services.processMonitor.reconnectOrCleanup()
-        await ApplicationLifecycleService.reconcile(db: database.pool)
+        await ApplicationLifecycleService.reconcile(
+            db: database.pool, operations: services.manager.operations,
+        )
         await WorkloadAutostart.startEligible(db: database.pool, vmManager: services.manager)
 
         app.middleware.use(RequestLogMiddleware())
@@ -85,11 +87,13 @@ public final class VaporServer: @unchecked Sendable {
             backgroundTasks: services.backgroundTasks,
             imageDownloader: services.downloader,
             syncService: services.syncService,
+            operations: services.manager.operations,
         )
         await schedulePeriodicTasks(
             pool: database.pool,
             backgroundTasks: services.backgroundTasks,
             vmManager: services.manager,
+            operations: services.manager.operations,
             imageDownloader: services.downloader,
             stateStreamService: services.stateStreamService,
             syncService: services.syncService,
@@ -124,6 +128,7 @@ public final class VaporServer: @unchecked Sendable {
                 keys: keys,
                 imageDownloader: services.downloader,
                 vmManager: services.manager,
+                operations: services.manager.operations,
                 consoleBuffers: services.consoleBuffers,
                 qmpDiskService: services.qmpDiskService,
                 syncService: services.syncService,
@@ -377,7 +382,8 @@ public final class VaporServer: @unchecked Sendable {
 
         let stateStreamService = VMStateStreamService()
 
-        let manager = VMManager(dbPool: pool)
+        let control = DeviceWorkloadControl(dbPool: pool)
+        let manager = control.vmManager
         vmManager = manager
 
         let qmpDiskService = QMPDiskService(vmManager: manager, dbPool: pool)
@@ -429,6 +435,7 @@ public final class VaporServer: @unchecked Sendable {
         backgroundTasks: BackgroundTaskManager,
         imageDownloader: ImageDownloader,
         syncService: RepositorySyncService,
+        operations: WorkloadOperationCoordinator,
     ) async {
         await AuditService.pruneOldEntries(db: pool)
         await AuditService.logSystem(action: "app.start", db: pool)
@@ -465,7 +472,9 @@ public final class VaporServer: @unchecked Sendable {
             backgroundTasks: backgroundTasks,
             db: pool,
         )
-        await ApplicationLifecycleService.resumePending(db: pool, backgroundTasks: backgroundTasks)
+        await ApplicationLifecycleService.resumePending(
+            db: pool, backgroundTasks: backgroundTasks, operations: operations,
+        )
         await BuiltInCatalogSync.submitStartup(
             backgroundTasks: backgroundTasks,
             syncService: syncService,
@@ -476,6 +485,7 @@ public final class VaporServer: @unchecked Sendable {
         pool: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
         vmManager: VMManager,
+        operations: WorkloadOperationCoordinator,
         imageDownloader: ImageDownloader,
         stateStreamService: VMStateStreamService,
         syncService: RepositorySyncService,
@@ -522,7 +532,7 @@ public final class VaporServer: @unchecked Sendable {
         await backgroundTasks.schedulePeriodicTask(
             id: "application-reconcile", interval: 5 * 1_000_000_000,
         ) {
-            await ApplicationLifecycleService.reconcile(db: pool)
+            await ApplicationLifecycleService.reconcile(db: pool, operations: operations)
         }
         let ollamaRefreshNs = UInt64(OllamaHomeMap.refreshInterval * 1_000_000_000)
         await backgroundTasks.schedulePeriodicTask(id: "ollama-map", interval: ollamaRefreshNs) {
@@ -555,6 +565,7 @@ public final class VaporServer: @unchecked Sendable {
         await ApplicationDigestSync.scheduleDaily(
             backgroundTasks: backgroundTasks,
             db: pool,
+            operations: operations,
         )
     }
 

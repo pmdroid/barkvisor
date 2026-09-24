@@ -5,6 +5,7 @@ import Vapor
 /// `POST /api/workloads/apply` and `GET /api/workloads/:id/spec` (PAS-80).
 struct WorkloadApplyController: RouteCollection {
     let backgroundTasks: BackgroundTaskManager
+    let operations: WorkloadOperationCoordinator
 
     func boot(routes: any RoutesBuilder) throws {
         let workloads = routes.grouped("api", "workloads")
@@ -26,6 +27,7 @@ struct WorkloadApplyController: RouteCollection {
             dryRun: dryRun,
             db: req.db,
             backgroundTasks: backgroundTasks,
+            operations: operations,
         )
         let action = switch result.op {
         case .created: "workload.apply.create"

@@ -193,6 +193,7 @@ public enum VMLifecycleService {
         vmManager: VMManager,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        operationID: String? = nil,
     ) async throws -> (taskID: String, vmName: String) {
         let vm = try await db.read { db in try VM.fetchOne(db, key: id) }
         guard let vm else { throw BarkVisorError.notFound() }
@@ -215,10 +216,20 @@ public enum VMLifecycleService {
         }
 
         let taskID = "vm-delete:\(id)"
+        let deleteOperationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "delete", workloadID: id,
+        )
         await backgroundTasks.submit(taskID, kind: .vmDelete) { @Sendable in
             do {
-                try await deleteVMResources(vm: vm, keepDisk: keepDisk, db: db)
-                _ = try await db.write { db in try VM.deleteOne(db, key: id) }
+                try await vmManager.operations.perform(
+                    workloadID: id,
+                    operationID: deleteOperationID,
+                    kind: .delete,
+                    load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+                ) { _ in
+                    try await deleteVMResources(vm: vm, keepDisk: keepDisk, db: db, holdingSlot: true)
+                    _ = try await db.write { db in try VM.deleteOne(db, key: id) }
+                }
                 return nil
             } catch {
                 await handleDeleteFailure(vmID: id, db: db, error: error)

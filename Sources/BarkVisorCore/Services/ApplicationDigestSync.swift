@@ -8,16 +8,21 @@ public enum ApplicationDigestSync {
     public static func scheduleDaily(
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        operations: WorkloadOperationCoordinator? = nil,
     ) async {
         await backgroundTasks.schedulePeriodicTask(
             id: periodicTaskID,
             interval: intervalNanoseconds,
         ) {
-            await refreshAll(db: db)
+            await refreshAll(db: db, operations: operations)
         }
     }
 
-    public static func refreshAll(db: DatabasePool, dataDir: URL = Config.dataDir) async {
+    public static func refreshAll(
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+    ) async {
         let apps: [VM]
         do {
             apps = try await db.read { db in
@@ -33,6 +38,7 @@ public enum ApplicationDigestSync {
                     vm: &vm,
                     db: db,
                     dataDir: dataDir,
+                    operations: operations,
                 )
             } catch {
                 Log.vm.warning(
