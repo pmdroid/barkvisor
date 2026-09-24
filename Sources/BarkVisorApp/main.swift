@@ -138,7 +138,14 @@ struct BarkVisorCLI: AsyncParsableCommand {
             abstract: role.serveFrontend
                 ? "BarkVisor Device daemon"
                 : "BarkVisor Device daemon (API-only, no SPA)",
-            subcommands: [Serve.self, Join.self, Doctor.self, HostnetExpire.self],
+            subcommands: [
+                Serve.self,
+                Join.self,
+                Doctor.self,
+                HostnetExpire.self,
+                DaemonCommand.self,
+                ServerCommand.self,
+            ],
             defaultSubcommand: Serve.self,
         )
     }()
@@ -337,4 +344,89 @@ func runDaemon() async {
         close(signalPipeFDs[0])
         close(signalPipeFDs[1])
     #endif
+}
+
+nonisolated(unsafe) var managementSignalFDs: [Int32] = [0, 0]
+
+func waitForManagementShutdown() async {
+    #if !os(Windows)
+        var created = [Int32](repeating: 0, count: 2)
+        pipe(&created)
+        managementSignalFDs = created
+        signal(SIGTERM) { _ in
+            var byte: UInt8 = 1
+            write(managementSignalFDs[1], &byte, 1)
+        }
+        signal(SIGINT) { _ in
+            var byte: UInt8 = 1
+            write(managementSignalFDs[1], &byte, 1)
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                var byte: UInt8 = 0
+                _ = read(managementSignalFDs[0], &byte, 1)
+                cont.resume()
+            }
+        }
+    #endif
+}
+
+struct DaemonCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "daemon",
+        abstract: "Run BarkDaemon on the local management socket.",
+    )
+
+    func run() async throws {
+        #if os(Windows)
+            throw ServiceProcessRoleError.unavailable
+        #else
+            setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkDaemon.rawValue, 1)
+            let euid = WorkloadPrivilegeDrop.currentEUID()
+            let permissions = SocketPermissionPlan.forDaemonEUID(euid)
+            let policy = LocalManagementPolicy(
+                allowedPeerUIDs: LocalManagementPeers.allowlist(
+                    daemonEUID: euid,
+                    serverUID: WorkloadPrivilegeDrop.uid(forUser: "barkvisor"),
+                ),
+                memberships: [],
+                resources: ResourcePolicy(allowedRoots: [], allowedMounts: [], allowedDevices: []),
+            )
+            let server = LocalManagementSocketServer(
+                path: ManagementSocketPath.path(socketDir: Config.socketDir),
+                session: LocalManagementSession(policy: policy),
+                directoryMode: permissions.directoryMode,
+                socketMode: permissions.socketMode,
+            )
+            let task = Task { try await server.run() }
+            await waitForManagementShutdown()
+            server.stop()
+            try await task.value
+        #endif
+    }
+}
+
+struct ServerCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "server",
+        abstract: "Run BarkServer. Refuses root and does not open the management database.",
+    )
+
+    func run() async throws {
+        #if os(Windows)
+            throw ServiceProcessRoleError.unavailable
+        #else
+            setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkServer.rawValue, 1)
+            try BarkServerStartup.refuseRoot(euid: WorkloadPrivilegeDrop.currentEUID())
+            _ = try LocalManagementSocketClient.exchange(
+                path: ManagementSocketPath.path(socketDir: Config.socketDir),
+                request: LocalManagementRequest(
+                    requestId: "startup",
+                    operationId: "startup",
+                    name: "protocolVersion",
+                ),
+            )
+            await waitForManagementShutdown()
+        #endif
+    }
 }

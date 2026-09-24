@@ -1,0 +1,4 @@
+{
+  "paths": ["features/local-boundary.feature"],
+  "import": ["features/steps/local-boundary.mjs"]
+}

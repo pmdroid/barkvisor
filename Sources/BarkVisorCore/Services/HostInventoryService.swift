@@ -157,10 +157,9 @@ public enum HostInventoryService {
         )
     }
 
-    /// Linux: `/dev/kvm` present. Other platforms: false.
     public static func kvmDevicePresent() -> Bool {
         #if os(Linux)
-            FileManager.default.fileExists(atPath: "/dev/kvm")
+            WorkloadDeviceAccess.liveLinuxKVM()
         #else
             false
         #endif

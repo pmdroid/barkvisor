@@ -35,7 +35,7 @@ public enum WorkloadSpecResolver {
         public static var current: HostCapabilities {
             HostCapabilities(
                 platform: .current,
-                kvmPresent: FileManager.default.fileExists(atPath: "/dev/kvm"),
+                kvmPresent: WorkloadDeviceAccess.liveLinuxKVM(),
                 hugepagesPresent: FileManager.default.fileExists(atPath: "/dev/hugepages"),
             )
         }

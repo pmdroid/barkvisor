@@ -1,0 +1,8 @@
+{
+  "name": "bark-daemon-boundary",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cucumber/cucumber": "11.2.0"
+  }
+}

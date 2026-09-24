@@ -81,17 +81,11 @@ public enum PlatformCapabilities {
         }
     }
 
-    /// QEMU accelerator name for this host.
-    /// Linux uses KVM when `/dev/kvm` is present; otherwise falls back to TCG
-    /// (common in nested VMs such as OrbStack without nested virt).
     public static var accelerator: String {
         #if os(macOS)
             return "hvf"
         #elseif os(Linux)
-            if FileManager.default.fileExists(atPath: "/dev/kvm") {
-                return "kvm"
-            }
-            return "tcg"
+            return WorkloadDeviceAccess.linuxAccelerator()
         #elseif os(Windows)
             return whpxPresent() ? "whpx" : "tcg"
         #else
