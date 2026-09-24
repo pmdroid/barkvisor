@@ -133,6 +133,7 @@ public struct PrivilegeBoundary: Equatable, Sendable {
 
 public enum LocalManagementLimits {
     public static let version = 1
+    public static let schemaVersion = 1
     public static let maxPayloadBytes = 1_048_576
     public static let maxEventBytes = 262_144
     public static let maxIdentifierLength = 128
@@ -258,6 +259,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
     public var terminalUID: UInt32?
     public var marker: String?
     public var workloadID: String?
+    public var schemaVersion: Int?
 
     public init(
         version: Int = LocalManagementLimits.version,
@@ -272,6 +274,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
         terminalUID: UInt32? = nil,
         marker: String? = nil,
         workloadID: String? = nil,
+        schemaVersion: Int? = nil,
     ) {
         self.version = version
         self.requestId = requestId
@@ -285,6 +288,7 @@ public struct LocalManagementRequest: Codable, Equatable, Sendable {
         self.terminalUID = terminalUID
         self.marker = marker
         self.workloadID = workloadID
+        self.schemaVersion = schemaVersion
     }
 }
 

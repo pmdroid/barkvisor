@@ -444,16 +444,40 @@ struct DaemonCommand: AsyncParsableCommand {
             let operations = try DurableOperationFile(
                 url: Config.dataDir.appendingPathComponent("socket-operations.json"),
             )
+            let driver = LiveWorkloadSocketDriver(
+                db: database.pool,
+                vmManager: manager,
+                tasks: tasks,
+            )
+            let facts = try await DaemonRecovery.facts(db: database.pool)
+            let plan = await DaemonRecovery.reconcile(
+                records: operations.all(),
+                running: facts.running,
+                present: facts.present,
+            )
+            for record in plan.records {
+                await operations.save(record)
+            }
+            for command in plan.commands {
+                guard let current = await operations.find(operationID: command.operationID) else { continue }
+                var finished = current
+                do {
+                    let snapshot = try await driver.perform(command)
+                    finished.phase = "completed"
+                    finished.state = snapshot.state
+                    finished.runtime = snapshot.runtime
+                } catch {
+                    finished.phase = "failed"
+                    finished.state = "failed"
+                }
+                await operations.save(finished)
+            }
             let server = LocalManagementSocketServer(
                 path: ManagementSocketPath.path(socketDir: Config.socketDir),
                 session: LocalManagementSession(
                     policy: policy,
                     operationStore: operations,
-                    workloadDriver: LiveWorkloadSocketDriver(
-                        db: database.pool,
-                        vmManager: manager,
-                        tasks: tasks,
-                    ),
+                    workloadDriver: driver,
                 ),
                 directoryMode: permissions.directoryMode,
                 socketMode: permissions.socketMode,

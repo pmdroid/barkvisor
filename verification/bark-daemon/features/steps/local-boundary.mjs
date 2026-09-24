@@ -90,6 +90,37 @@ When("the public listener suite runs", function () {
   }
 });
 
+let recoveryOutput = "";
+let recoveryStatus = 1;
+
+When("the daemon recovery suite runs", function () {
+  const result = spawnSync(
+    "mise",
+    ["exec", "--", "swift", "test", "--filter", "DaemonRecoveryTests"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  recoveryOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  recoveryStatus = result.status ?? 1;
+  if (recoveryStatus !== 0) {
+    throw new Error(recoveryOutput.slice(-4000));
+  }
+});
+
+Then("the daemon recovery suite passes", function () {
+  if (!recoveryOutput.includes("DaemonRecoveryTests")) {
+    throw new Error(recoveryOutput.slice(-4000));
+  }
+});
+
 Then("the public listener suite passes", function () {
   if (!publicOutput.includes("PublicListenerTests")) {
     throw new Error(publicOutput.slice(-4000));

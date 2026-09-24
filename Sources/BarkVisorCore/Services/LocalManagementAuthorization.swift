@@ -9,6 +9,9 @@ public enum LocalManagementAuthorization {
         if !LocalManagementCompatibility.accepts(version: request.version) {
             return deny(request, .unsupportedProtocol)
         }
+        if let schema = request.schemaVersion, schema != LocalManagementLimits.schemaVersion {
+            return deny(request, .unsupportedProtocol)
+        }
         if !identifiersFit(request) {
             return deny(request, .malformed)
         }

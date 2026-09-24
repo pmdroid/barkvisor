@@ -144,6 +144,18 @@ public actor LocalManagementSession {
         inFlight.insert(request.operationId)
         sequence += 1
         let reservedSequence = sequence
+        let accepted = DurableWorkloadOperation(
+            operationID: request.operationId,
+            workloadID: workloadID,
+            subject: subject,
+            kind: kind,
+            phase: "accepted",
+            state: "accepted",
+            runtime: "",
+            events: [],
+            sequence: reservedSequence,
+        )
+        await operationStore?.save(accepted)
         let command = WorkloadSocketCommand(
             operationID: request.operationId,
             workloadID: workloadID,

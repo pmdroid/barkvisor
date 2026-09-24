@@ -2,7 +2,8 @@
   "paths": [
     "features/local-boundary.feature",
     "features/socket-operations.feature",
-    "features/public-listeners.feature"
+    "features/public-listeners.feature",
+    "features/daemon-recovery.feature"
   ],
   "import": ["features/steps/local-boundary.mjs"]
 }

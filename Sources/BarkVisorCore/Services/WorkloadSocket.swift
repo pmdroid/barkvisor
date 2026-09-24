@@ -89,6 +89,10 @@ public actor DurableOperationFile: DurableOperationStoring {
         records[operationID]
     }
 
+    public func all() -> [DurableWorkloadOperation] {
+        Array(records.values)
+    }
+
     public func latest(workloadID: String) -> DurableWorkloadOperation? {
         records.values
             .filter { $0.workloadID == workloadID && $0.phase == "completed" }
