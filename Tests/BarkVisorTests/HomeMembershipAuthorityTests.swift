@@ -201,6 +201,27 @@ struct HomeMembershipAuthorityTests {
         #expect(removed?.status == "removed")
     }
 
+    @Test func `this Device stays authorized after an empty migration`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try HomeMembershipAuthority.migrateExistingHome(dataDir: dir, localHostId: "self")
+        let authority = HomeMembershipAuthority(dataDir: dir)
+        #expect(
+            authority.authorizeCertificate(
+                hostId: "self",
+                fingerprint: "local",
+                localHostId: "self",
+            ) == .allow,
+        )
+        #expect(
+            authority.authorizeCertificate(
+                hostId: "peer",
+                fingerprint: "aa",
+                localHostId: "self",
+            ) == .deny("Certificate is not a committed Home member"),
+        )
+    }
+
     @Test func `local workloads ignore membership reachability`() {
         let authority = HomeMembershipAuthority(
             dataDir: URL(fileURLWithPath: "/tmp/unused-membership-\(UUID().uuidString)"),

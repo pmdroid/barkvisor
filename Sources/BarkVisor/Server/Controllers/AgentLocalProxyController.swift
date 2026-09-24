@@ -334,6 +334,7 @@ struct AgentLocalProxyController: RouteCollection {
         let decision = HomeMembershipAuthority(dataDir: Config.dataDir).authorizeCertificate(
             hostId: peer.hostId,
             fingerprint: peer.fingerprint,
+            localHostId: Config.hostId,
         )
         guard case .allow = decision else {
             throw Abort(.unauthorized, reason: "Home membership denied this Device")

@@ -412,8 +412,12 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
     public func authorizeCertificate(
         hostId: String,
         fingerprint: String,
+        localHostId: String? = nil,
         now _: Date = Date(),
     ) -> HomeMembershipDecision {
+        if let localHostId, hostId.caseInsensitiveCompare(localHostId) == .orderedSame {
+            return .allow
+        }
         guard Self.ledgerExists(dataDir: dataDir) else {
             return .allow
         }

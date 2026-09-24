@@ -59,6 +59,7 @@ struct MTLSMiddleware: AsyncMiddleware {
             let membership = HomeMembershipAuthority(dataDir: dataDir).authorizeCertificate(
                 hostId: hostId,
                 fingerprint: fingerprint,
+                localHostId: Config.hostId,
             )
             guard case .allow = membership else {
                 throw Abort(.unauthorized, reason: "Home membership denied this Device")

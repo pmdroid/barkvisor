@@ -312,6 +312,7 @@ public final class AgentTLSServer: @unchecked Sendable {
             let membership = HomeMembershipAuthority(dataDir: dataDir).authorizeCertificate(
                 hostId: hostId,
                 fingerprint: fingerprint,
+                localHostId: Config.hostId,
             )
             guard case .allow = membership else {
                 promise.succeed(.failed)
