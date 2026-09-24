@@ -7,8 +7,6 @@ import Foundation
 /// pairing trust relationship. Validate both files before changing either so
 /// a corrupt local file cannot leave a half-removed member behind.
 public enum HomeDeviceMembership {
-    private static let lock = NSLock()
-
     public static func remove(
         hostId: String,
         localHostId: String,
@@ -24,16 +22,11 @@ public enum HomeDeviceMembership {
             throw BarkVisorError.forbidden("This Device cannot remove itself from the Home")
         }
 
-        let directory = devices ?? DeviceRegistry(dataDir: dataDir)
-        let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
-        lock.lock()
-        defer { lock.unlock() }
-
-        // Preflight makes the normal removal path all-or-nothing even if an
-        // on-disk store is corrupt. Both removals are idempotent.
-        _ = try directory.load()
-        _ = try pinStore.load()
-        try pinStore.unpin(hostId: target)
-        try directory.remove(hostId: target)
+        try HomeMembershipAuthority(dataDir: dataDir).removeMember(
+            hostId: target,
+            localHostId: localHostId,
+            devices: devices,
+            pins: pins,
+        )
     }
 }

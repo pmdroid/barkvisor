@@ -99,7 +99,7 @@ struct PairingIdentityTests {
             issuerHostId: issuerId,
             joinerHostId: joinerId,
         )
-        #expect(identity.jwtSecret == "issuer-hmac-secret")
+        #expect(identity.jwtSecret.isEmpty)
         #expect(identity.adminUser == admin)
         let encoded = try JSONEncoder().encode(remote)
         let json = try #require(String(data: encoded, encoding: .utf8))
@@ -109,7 +109,7 @@ struct PairingIdentityTests {
         #expect(!json.contains("\"password\""))
     }
 
-    @Test func `redeem loads jwt secret from issuer data dir`() throws {
+    @Test func `redeem leaves the issuer session key on the issuer`() throws {
         let issuerDir = try isolatedDir("iss-file")
         let joinerDir = try isolatedDir("join-file")
         defer {
@@ -149,18 +149,10 @@ struct PairingIdentityTests {
             ),
             offers: offers,
         )
-        let seal = try #require(remote.identitySeal)
-        let identity = try PairingIdentitySealing.open(
-            seal,
-            joinerDeviceKeyPEM: joiner.deviceKeyPEM,
-            issuerCertificatePEM: remote.deviceCertificatePEM,
-            issuerHostId: issuerId,
-            joinerHostId: joiner.hostId,
-        )
-        #expect(identity.jwtSecret == "from-disk-secret")
-        #expect(identity.adminUser == nil)
+        #expect(remote.identitySeal == nil)
         #expect(remote.jwtSecret == nil)
         #expect(remote.adminUser == nil)
+        #expect(Config.loadJWTSecret(from: issuerDir) == "from-disk-secret")
     }
 
     @Test func `applyTrust replaces jwt secret upserts admin and reloads hmac`() async throws {
@@ -584,7 +576,7 @@ struct PairingIdentityTests {
             keys: keys,
         )
         #expect(result.peerHostId == issuerId)
-        #expect(Config.loadJWTSecret(from: joinerDir) == "home-jwt")
+        #expect(Config.loadJWTSecret(from: joinerDir) == nil)
         let copied = try await joinerDB.read { db in
             try User.filter(User.Columns.username == "pascal").fetchOne(db)
         }
