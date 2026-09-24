@@ -488,8 +488,14 @@ struct ServerCommand: AsyncParsableCommand {
                 ),
             )
             try BarkServerStartup.requireHandshake(handshake)
-            armManagementShutdown()
-            await waitForManagementShutdown()
+            let publicServer = PublicBarkServer(
+                socketPath: ManagementSocketPath.path(socketDir: Config.socketDir),
+            )
+            try await superviseUntilSignal {
+                try await publicServer.run(httpPort: Config.port, deviceTLSPort: Config.agentPort)
+            } stop: {
+                publicServer.stop()
+            }
         #endif
     }
 }

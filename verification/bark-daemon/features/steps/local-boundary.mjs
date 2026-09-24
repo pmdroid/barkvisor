@@ -65,6 +65,37 @@ When("the socket operation suite runs", function () {
   }
 });
 
+let publicOutput = "";
+let publicStatus = 1;
+
+When("the public listener suite runs", function () {
+  const result = spawnSync(
+    "mise",
+    ["exec", "--", "swift", "test", "--filter", "PublicListenerTests"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  publicOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  publicStatus = result.status ?? 1;
+  if (publicStatus !== 0) {
+    throw new Error(publicOutput.slice(-4000));
+  }
+});
+
+Then("the public listener suite passes", function () {
+  if (!publicOutput.includes("PublicListenerTests")) {
+    throw new Error(publicOutput.slice(-4000));
+  }
+});
+
 Then("the socket operation suite passes", function () {
   if (!socketOutput.includes("WorkloadSocketOperationTests")) {
     throw new Error(socketOutput.slice(-4000));

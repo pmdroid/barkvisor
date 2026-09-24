@@ -27,6 +27,12 @@ public enum BarkServerStartup {
     }
 }
 
+public enum VaporListenerGate {
+    public static func authoritativeStartAllowed(role: ServiceProcessRole) -> Bool {
+        role == .combined
+    }
+}
+
 public struct ListenerPlan: Equatable, Sendable {
     public var publicHTTP: Bool
     public var deviceTLS: Bool
