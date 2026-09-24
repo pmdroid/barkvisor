@@ -38,7 +38,7 @@ public enum WorkloadFactStore {
         freshness: String,
         enforcedCpu: Int?,
         enforcedMemoryMb: Int?,
-        services: [WorkloadServiceObservation],
+        services: [WorkloadServiceObservation]? = nil,
         basedOnSequence: Int? = nil,
     ) throws -> WorkloadObservation {
         let existing = try WorkloadObservation.fetchOne(db, key: workloadId)
@@ -65,7 +65,7 @@ public enum WorkloadFactStore {
             freshness: freshness,
             enforcedCpu: enforcedCpu ?? existing?.enforcedCpu,
             enforcedMemoryMb: enforcedMemoryMb ?? existing?.enforcedMemoryMb,
-            servicesJson: WorkloadObservation.encodeServices(services) ?? existing?.servicesJson,
+            servicesJson: services.flatMap(WorkloadObservation.encodeServices) ?? existing?.servicesJson,
         )
         if existing == nil {
             try row.insert(db)

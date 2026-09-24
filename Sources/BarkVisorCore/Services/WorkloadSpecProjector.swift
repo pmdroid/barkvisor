@@ -109,8 +109,7 @@ public enum WorkloadSpecProjector {
             appliedGeneration: observation?.appliedGeneration,
         )
         let enforced: WorkloadResources? = if let cpu = observation?.enforcedCpu,
-                                              let memory = observation?.enforcedMemoryMb
-        {
+                                              let memory = observation?.enforcedMemoryMb {
             WorkloadResources(cpu: cpu, memoryMb: memory)
         } else {
             nil

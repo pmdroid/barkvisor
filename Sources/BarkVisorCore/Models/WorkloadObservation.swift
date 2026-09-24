@@ -30,8 +30,7 @@ public struct WorkloadServiceObservation: Codable, Equatable, Sendable {
 }
 
 public struct WorkloadObservation: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord,
-    TableRecord
-{
+    TableRecord {
     public static let databaseTableName = "workload_observations"
 
     public var id: String
@@ -84,7 +83,7 @@ public struct WorkloadObservation: Codable, Equatable, Sendable, FetchableRecord
     }
 
     public static func encodeServices(_ services: [WorkloadServiceObservation]) -> String? {
-        guard !services.isEmpty, let data = try? JSONEncoder().encode(services) else { return nil }
+        guard let data = try? JSONEncoder().encode(services) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 }

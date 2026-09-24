@@ -68,7 +68,7 @@ public enum DockerServiceHealth {
                 cpus.append(max(1, nano / 1_000_000_000))
             }
             if let bytes = intValue(host["Memory"]), bytes > 0 {
-                memories.append(max(1, bytes / (1024 * 1024)))
+                memories.append(max(1, bytes / (1_024 * 1_024)))
             }
         }
         let cpu = Set(cpus).count == 1 ? cpus[0] : nil

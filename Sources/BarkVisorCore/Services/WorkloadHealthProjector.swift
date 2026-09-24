@@ -292,6 +292,9 @@ public enum WorkloadHealthProjector {
         signals: WorkloadHealthSignals,
         services: [WorkloadServiceObservation],
     ) -> (WorkloadHealth, String?) {
+        if state == .stopped || state == .deleting {
+            return (.stopped, nil)
+        }
         if state == .error {
             return (.failed, signals.lastError ?? "application entered error state")
         }
@@ -330,7 +333,7 @@ public enum WorkloadHealthProjector {
         longRunning: [WorkloadServiceObservation],
         oneShots: [WorkloadServiceObservation],
     ) -> Bool {
-        if longRunning.isEmpty && oneShots.isEmpty { return false }
+        if longRunning.isEmpty, oneShots.isEmpty { return false }
         let oneShotsDone = oneShots.allSatisfy { !$0.running && $0.exitCode == 0 }
         if !oneShotsDone { return false }
         if longRunning.isEmpty { return true }
@@ -352,9 +355,8 @@ public enum WorkloadHealthProjector {
         let running = processUp || state == .starting
         let ready = processUp && signals.qmp != false && !signals.probesFailed
             && (signals.probesPassed || isGuestAgentFresh(signals, now: now) || !signals.probesConfigured)
-        let condition: String = if state == .error || signals.qemuProcess == false || signals.qmp == false
-            || signals.probesFailed
-        {
+        let condition = if state == .error || signals.qemuProcess == false || signals.qmp == false
+            || signals.probesFailed {
             "unhealthy"
         } else if isGuestAgentFresh(signals, now: now) || signals.probesPassed {
             "healthy"
@@ -378,6 +380,17 @@ public enum WorkloadHealthProjector {
     ) -> (running: Bool, readiness: String, condition: String) {
         let longRunning = services.filter { $0.role != WorkloadServiceObservation.roleOneShot }
         let oneShots = services.filter { $0.role == WorkloadServiceObservation.roleOneShot }
+        if state == .stopped || state == .deleting || state == .error {
+            let oneShotOnly = longRunning.isEmpty && !oneShots.isEmpty
+                && oneShots.allSatisfy { !$0.running && $0.exitCode == 0 }
+            if state == .error {
+                return (false, "not_ready", "unhealthy")
+            }
+            if oneShotOnly {
+                return (false, "ready", "healthy")
+            }
+            return (false, "unknown", "unknown")
+        }
         let running = if services.isEmpty {
             state == .running || state == .starting
         } else {

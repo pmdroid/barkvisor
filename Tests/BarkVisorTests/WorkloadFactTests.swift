@@ -70,9 +70,9 @@ struct WorkloadFactTests {
             Issue.record("older applied generation was accepted")
         } catch is BarkVisorError {}
         let stored = try queue.read { db in
-            (
-                try VM.fetchOne(db, key: "app-1"),
-                try WorkloadObservation.fetchOne(db, key: "app-1"),
+            try (
+                VM.fetchOne(db, key: "app-1"),
+                WorkloadObservation.fetchOne(db, key: "app-1"),
             )
         }
         #expect(stored.0?.cpuCount == 4)
@@ -80,6 +80,92 @@ struct WorkloadFactTests {
         #expect(stored.0?.startOnBoot == true)
         #expect(stored.1?.appliedGeneration == 2)
         #expect(stored.1?.processState == "running")
+    }
+
+    @Test func `an empty service observation clears the previous containers`() throws {
+        let queue = try migratedQueue()
+        try insertApplication(queue, id: "app-clear", generation: 1, cpu: 1, memory: 128)
+        let web = WorkloadServiceObservation(
+            name: "web",
+            role: WorkloadServiceObservation.roleLongRunning,
+            running: true,
+            health: "healthy",
+        )
+        try queue.write { db in
+            _ = try WorkloadFactStore.recordObservation(
+                db: db,
+                workloadId: "app-clear",
+                appliedGeneration: 1,
+                runtimeIdentity: nil,
+                processState: "running",
+                readiness: "ready",
+                condition: "healthy",
+                observedAt: "2026-09-24T00:00:00Z",
+                error: nil,
+                freshness: "fresh",
+                enforcedCpu: nil,
+                enforcedMemoryMb: nil,
+                services: [web],
+            )
+            _ = try WorkloadFactStore.recordObservation(
+                db: db,
+                workloadId: "app-clear",
+                appliedGeneration: 1,
+                runtimeIdentity: nil,
+                processState: "stopped",
+                readiness: "unknown",
+                condition: "unknown",
+                observedAt: "2026-09-24T00:00:01Z",
+                error: nil,
+                freshness: "fresh",
+                enforcedCpu: nil,
+                enforcedMemoryMb: nil,
+            )
+        }
+        let kept = try queue.read { try WorkloadObservation.fetchOne($0, key: "app-clear") }
+        #expect(kept?.services == [web])
+        #expect(kept?.processState == "stopped")
+        try queue.write { db in
+            _ = try WorkloadFactStore.recordObservation(
+                db: db,
+                workloadId: "app-clear",
+                appliedGeneration: 1,
+                runtimeIdentity: nil,
+                processState: "stopped",
+                readiness: "not_ready",
+                condition: "unknown",
+                observedAt: "2026-09-24T00:00:02Z",
+                error: nil,
+                freshness: "fresh",
+                enforcedCpu: nil,
+                enforcedMemoryMb: nil,
+                services: [],
+            )
+        }
+        let stored = try queue.read { try WorkloadObservation.fetchOne($0, key: "app-clear") }
+        #expect(stored?.services.isEmpty == true)
+        #expect(stored?.processState == "stopped")
+        let status = WorkloadHealthProjector.project(
+            state: .stopped,
+            updatedAt: "2026-09-24T00:00:01Z",
+            kind: WorkloadSpec.kindApplication,
+            services: stored?.services ?? [web],
+            observedAt: "2026-09-24T00:00:01Z",
+            freshness: "fresh",
+        )
+        #expect(status.condition != "healthy")
+        #expect(status.running == false)
+        let staleHealthy = WorkloadHealthProjector.project(
+            state: .stopped,
+            updatedAt: "2026-09-24T00:00:02Z",
+            kind: WorkloadSpec.kindApplication,
+            services: [web],
+            observedAt: "2026-09-24T00:00:02Z",
+            freshness: "fresh",
+        )
+        #expect(staleHealthy.health == .stopped)
+        #expect(staleHealthy.condition != "healthy")
+        #expect(staleHealthy.running == false)
     }
 
     @Test func `stale observation sequence cannot overwrite`() throws {
@@ -339,7 +425,7 @@ struct WorkloadFactTests {
         #expect(!replaced.yaml.contains("1G"))
     }
 
-    @Test func `inspect reports container health instead of qemu`() throws {
+    @Test func `inspect reports container health instead of qemu`() {
         let json = Data(#"""
         [{
           "Name": "/bv-app-1-web",
@@ -380,9 +466,9 @@ struct WorkloadFactTests {
         }
         try queue.write { db in try M023_WorkloadObservations.migrate(db) }
         let stored = try queue.read { db in
-            (
-                try VM.fetchOne(db, key: "kept"),
-                try WorkloadObservation.fetchOne(db, key: "kept"),
+            try (
+                VM.fetchOne(db, key: "kept"),
+                WorkloadObservation.fetchOne(db, key: "kept"),
             )
         }
         let vm = try #require(stored.0)
@@ -400,7 +486,7 @@ struct WorkloadFactTests {
     }
 
     @Test func `api projections keep both workload kinds compatible`() throws {
-        let vm = application(id: "vm-kind", generation: 2, cpu: 2, memory: 1024)
+        let vm = application(id: "vm-kind", generation: 2, cpu: 2, memory: 1_024)
         var virtual = vm
         virtual.kind = WorkloadSpec.kindVirtualMachine
         virtual.vmType = "linux-arm64"

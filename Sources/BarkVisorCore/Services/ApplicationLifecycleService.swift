@@ -253,8 +253,21 @@ public enum ApplicationLifecycleService {
             if vm.state == "deleting" { continue }
             let observed = labeled[vm.id]
             if let observed {
-                if vm.state != observed {
-                    try? await setState(&vm, state: observed, error: nil, db: db)
+                let services = serviceObservations(
+                    containerNames: DockerServiceHealth.containerNames(
+                        workloadID: vm.id,
+                        composeYaml: vm.composeYaml,
+                    ),
+                    composeYaml: vm.composeYaml,
+                )
+                if vm.state != observed || services != nil {
+                    try? await setState(
+                        &vm,
+                        state: observed,
+                        error: nil,
+                        db: db,
+                        services: services,
+                    )
                 }
                 if observed == "running" {
                     await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
@@ -382,6 +395,7 @@ public enum ApplicationLifecycleService {
                 ),
                 enforcedCpu: limits.cpu,
                 enforcedMemoryMb: limits.memoryMb,
+                claimApplied: true,
             )
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
@@ -444,6 +458,7 @@ public enum ApplicationLifecycleService {
                 ),
                 enforcedCpu: limits.cpu,
                 enforcedMemoryMb: limits.memoryMb,
+                claimApplied: true,
             )
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
@@ -493,6 +508,7 @@ public enum ApplicationLifecycleService {
             ),
             enforcedCpu: limits.cpu,
             enforcedMemoryMb: limits.memoryMb,
+            claimApplied: true,
         )
         await metricsCollector?.startApp(id: vm.id, project: project)
         progress?(1.0)
@@ -705,8 +721,8 @@ public enum ApplicationLifecycleService {
     private static func serviceObservations(
         containerNames: [String],
         composeYaml: String?,
-    ) -> [WorkloadServiceObservation] {
-        guard let data = try? DockerInspect.json(containerNames) else { return [] }
+    ) -> [WorkloadServiceObservation]? {
+        guard let data = try? DockerInspect.json(containerNames) else { return nil }
         return DockerServiceHealth.observations(
             inspectJSON: data,
             roles: DockerServiceHealth.roles(composeYaml: composeYaml),
@@ -718,9 +734,10 @@ public enum ApplicationLifecycleService {
         state: String,
         error: String?,
         db: DatabasePool,
-        services: [WorkloadServiceObservation] = [],
+        services: [WorkloadServiceObservation]? = nil,
         enforcedCpu: Int? = nil,
         enforcedMemoryMb: Int? = nil,
+        claimApplied: Bool = false,
     ) async throws {
         let now = iso8601.string(from: Date())
         let workloadID = vm.id
@@ -743,20 +760,36 @@ public enum ApplicationLifecycleService {
             current.updatedAt = now
             current.portForwards = portForwards
             try current.update(db)
+            let storedObservation = try WorkloadObservation.fetchOne(db, key: workloadID)
+            let observedServices = if claimApplied {
+                services ?? []
+            } else {
+                services ?? storedObservation?.services ?? []
+            }
+            let storedServicePayload: [WorkloadServiceObservation]? = if claimApplied {
+                services ?? []
+            } else {
+                services
+            }
+            let appliedGeneration = if claimApplied {
+                current.specGeneration
+            } else {
+                storedObservation?.appliedGeneration ?? current.specGeneration
+            }
             let projected = WorkloadHealthProjector.project(
                 state: VMState.parse(state),
                 signals: WorkloadHealthSignals(lastError: error),
                 updatedAt: now,
                 kind: kind,
-                services: services,
+                services: observedServices,
                 observedAt: now,
                 freshness: "fresh",
-                appliedGeneration: current.specGeneration,
+                appliedGeneration: appliedGeneration,
             )
             _ = try WorkloadFactStore.recordObservation(
                 db: db,
                 workloadId: current.id,
-                appliedGeneration: current.specGeneration,
+                appliedGeneration: appliedGeneration,
                 runtimeIdentity: identity,
                 processState: state,
                 readiness: projected.readiness ?? "unknown",
@@ -766,7 +799,7 @@ public enum ApplicationLifecycleService {
                 freshness: "fresh",
                 enforcedCpu: enforcedCpu,
                 enforcedMemoryMb: enforcedMemoryMb,
-                services: services,
+                services: storedServicePayload,
             )
             return current
         }
