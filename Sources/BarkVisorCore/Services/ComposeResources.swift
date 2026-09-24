@@ -1,6 +1,28 @@
 import Foundation
 
 enum ComposeResources {
+    static func validateAccepted(cpu: Int, memoryMb: Int) throws {
+        if cpu == 0, memoryMb == 0 { return }
+        if cpu < 1 || !(128 ... 1_048_576).contains(memoryMb) {
+            throw BarkVisorError.badRequest(
+                "accepted cpu/memory cannot be enforced by the runtime",
+            )
+        }
+    }
+
+    static func enforce(_ service: inout [String: Any], cpu: Int, memoryMb: Int) throws {
+        if cpu == 0, memoryMb == 0 { return }
+        try validateAccepted(cpu: cpu, memoryMb: memoryMb)
+        var deploy = service["deploy"] as? [String: Any] ?? [:]
+        var resources = deploy["resources"] as? [String: Any] ?? [:]
+        var limits = resources["limits"] as? [String: Any] ?? [:]
+        limits["cpus"] = String(cpu)
+        limits["memory"] = "\(memoryMb)M"
+        resources["limits"] = limits
+        deploy["resources"] = resources
+        service["deploy"] = deploy
+    }
+
     static func validate(_ value: Any?) throws {
         guard let value else { return }
         guard let deployment = value as? [String: Any],

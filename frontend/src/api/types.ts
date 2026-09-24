@@ -59,11 +59,20 @@ export interface WorkloadHealthCheck {
   message?: string | null
 }
 
+export type WorkloadReadiness = 'unknown' | 'ready' | 'not_ready'
+export type WorkloadCondition = 'unknown' | 'healthy' | 'unhealthy'
+export type WorkloadObservationFreshness = 'unknown' | 'fresh' | 'stale'
+
 export interface WorkloadHealthStatus {
   health: WorkloadHealth
   checks: WorkloadHealthCheck[]
   updatedAt: string
   lastError?: string | null
+  running?: boolean | null
+  readiness?: WorkloadReadiness | string | null
+  condition?: WorkloadCondition | string | null
+  observation?: WorkloadObservationFreshness | string | null
+  appliedGeneration?: number | null
 }
 
 export interface WorkloadHealthSummaryItem {
@@ -72,6 +81,10 @@ export interface WorkloadHealthSummaryItem {
   kind: string
   health: WorkloadHealth
   lastError?: string | null
+  running?: boolean | null
+  readiness?: WorkloadReadiness | string | null
+  condition?: WorkloadCondition | string | null
+  observation?: WorkloadObservationFreshness | string | null
 }
 
 export interface WorkloadHealthSummary {
@@ -241,6 +254,13 @@ export interface VMRuntimeStatus {
   backend?: VMRuntimeBackend | null
   /** PAS-258: start after Device boot. Host-only. */
   startOnBoot?: boolean | null
+  running?: boolean | null
+  readiness?: WorkloadReadiness | string | null
+  condition?: WorkloadCondition | string | null
+  observation?: WorkloadObservationFreshness | string | null
+  appliedGeneration?: number | null
+  acceptedResources?: WorkloadResources | null
+  enforcedResources?: WorkloadResources | null
 }
 
 export interface VM {

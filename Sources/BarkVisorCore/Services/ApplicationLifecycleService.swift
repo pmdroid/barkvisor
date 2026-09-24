@@ -89,6 +89,7 @@ public enum ApplicationLifecycleService {
             dataDir: dataDir,
             allowedBinds: vm.decodedSharedPaths,
             gpuShare: gpuShare,
+            acceptedResources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
         )
     }
 
@@ -99,6 +100,7 @@ public enum ApplicationLifecycleService {
         dataDir: URL = Config.dataDir,
         allowedBinds: [String] = [],
         gpuShare: GPUShareAttach = .empty,
+        acceptedResources: WorkloadResources? = nil,
     ) throws -> ComposeRender {
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -109,6 +111,7 @@ public enum ApplicationLifecycleService {
             bindHost: nil,
             allowedBinds: allowedBinds,
             gpuShare: gpuShare,
+            acceptedResources: acceptedResources,
         )
         for name in render.namedVolumes {
             let volume = dir
@@ -367,7 +370,19 @@ public enum ApplicationLifecycleService {
                 expected: render.publishedPorts,
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
+            let limits = enforcedLimits(vm)
+            try await setState(
+                &vm,
+                state: "running",
+                error: nil,
+                db: db,
+                services: serviceObservations(
+                    containerNames: render.containerNames,
+                    composeYaml: vm.composeYaml,
+                ),
+                enforcedCpu: limits.cpu,
+                enforcedMemoryMb: limits.memoryMb,
+            )
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
@@ -417,7 +432,19 @@ public enum ApplicationLifecycleService {
                 expected: render.publishedPorts,
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
+            let limits = enforcedLimits(vm)
+            try await setState(
+                &vm,
+                state: "running",
+                error: nil,
+                db: db,
+                services: serviceObservations(
+                    containerNames: render.containerNames,
+                    composeYaml: vm.composeYaml,
+                ),
+                enforcedCpu: limits.cpu,
+                enforcedMemoryMb: limits.memoryMb,
+            )
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
@@ -454,7 +481,19 @@ public enum ApplicationLifecycleService {
         )
         try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
         try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
-        try await setState(&vm, state: "running", error: nil, db: db)
+        let limits = enforcedLimits(vm)
+        try await setState(
+            &vm,
+            state: "running",
+            error: nil,
+            db: db,
+            services: serviceObservations(
+                containerNames: render.containerNames,
+                composeYaml: vm.composeYaml,
+            ),
+            enforcedCpu: limits.cpu,
+            enforcedMemoryMb: limits.memoryMb,
+        )
         await metricsCollector?.startApp(id: vm.id, project: project)
         progress?(1.0)
     }
@@ -528,22 +567,27 @@ public enum ApplicationLifecycleService {
         }
         let now = iso8601.string(from: Date())
         vm.updatedAt = now
-        vm.syncSpecProjection(bumpGeneration: false)
-        let persisted = vm
-        let applied = try await db.write { db -> Bool in
-            guard let current = try VM.fetchOne(db, key: persisted.id) else {
+        let snapshot = vm
+        let applied = try await db.write { db -> VM? in
+            guard let current = try VM.fetchOne(db, key: snapshot.id) else {
                 throw BarkVisorError.notFound()
             }
-            if current.state == "deleting" {
-                return false
+            if current.state == "deleting" { return nil }
+            guard var merged = WorkloadFactStore.mergingRuntimeSnapshot(
+                current: current, snapshot: snapshot,
+            ) else {
+                throw BarkVisorError.conflict(
+                    "configuration generation \(current.specGeneration) is newer than \(snapshot.specGeneration)",
+                )
             }
-            try persisted.update(db)
-            return true
+            merged.syncSpecProjection(bumpGeneration: false)
+            try merged.update(db)
+            return merged
         }
-        if !applied {
+        guard let applied else {
             throw BarkVisorError.conflict("Workload is deleting")
         }
-        vm = persisted
+        vm = applied
     }
 
     private static func refreshCatalogDigest(vm: inout VM, db: DatabasePool, dataDir: URL) async throws {
@@ -565,22 +609,27 @@ public enum ApplicationLifecycleService {
             vm.catalogDigest = snap.catalogDigest
         }
         vm.updatedAt = iso8601.string(from: Date())
-        vm.syncSpecProjection(bumpGeneration: false)
-        let persisted = vm
-        let applied = try await db.write { db -> Bool in
-            guard let current = try VM.fetchOne(db, key: persisted.id) else {
+        let snapshot = vm
+        let applied = try await db.write { db -> VM? in
+            guard let current = try VM.fetchOne(db, key: snapshot.id) else {
                 throw BarkVisorError.notFound()
             }
-            if current.state == "deleting" {
-                return false
+            if current.state == "deleting" { return nil }
+            guard var merged = WorkloadFactStore.mergingRuntimeSnapshot(
+                current: current, snapshot: snapshot,
+            ) else {
+                throw BarkVisorError.conflict(
+                    "configuration generation \(current.specGeneration) is newer than \(snapshot.specGeneration)",
+                )
             }
-            try persisted.update(db)
-            return true
+            merged.syncSpecProjection(bumpGeneration: false)
+            try merged.update(db)
+            return merged
         }
-        if !applied {
+        guard let applied else {
             throw BarkVisorError.conflict("Workload is deleting")
         }
-        vm = persisted
+        vm = applied
     }
 
     private static func applyPublishedPorts(
@@ -646,37 +695,86 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    private static func setState(
+    private static func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
+        if vm.cpuCount >= 1, (128 ... 1_048_576).contains(vm.memoryMb) {
+            return (vm.cpuCount, vm.memoryMb)
+        }
+        return (nil, nil)
+    }
+
+    private static func serviceObservations(
+        containerNames: [String],
+        composeYaml: String?,
+    ) -> [WorkloadServiceObservation] {
+        guard let data = try? DockerInspect.json(containerNames) else { return [] }
+        return DockerServiceHealth.observations(
+            inspectJSON: data,
+            roles: DockerServiceHealth.roles(composeYaml: composeYaml),
+        )
+    }
+
+    static func setState(
         _ vm: inout VM,
         state: String,
         error: String?,
         db: DatabasePool,
+        services: [WorkloadServiceObservation] = [],
+        enforcedCpu: Int? = nil,
+        enforcedMemoryMb: Int? = nil,
     ) async throws {
         let now = iso8601.string(from: Date())
-        var next = vm
-        next.state = state
-        next.updatedAt = now
-        setLastError(id: next.id, error)
-        next.syncSpecProjection(bumpGeneration: false)
-        let persisted = next
-        let applied = try await db.write { db -> Bool in
-            guard let current = try VM.fetchOne(db, key: persisted.id) else {
+        let workloadID = vm.id
+        let snapshotGeneration = vm.specGeneration
+        let identity = vm.runtimeWorkloadId ?? vm.composeProject
+        let kind = vm.kind
+        let portForwards = vm.portForwards
+        setLastError(id: workloadID, error)
+        let applied = try await db.write { db -> VM? in
+            guard var current = try VM.fetchOne(db, key: workloadID) else {
                 throw BarkVisorError.notFound()
             }
-            if current.state == "deleting" {
-                return false
+            if current.state == "deleting" { return nil }
+            if snapshotGeneration != current.specGeneration {
+                throw BarkVisorError.conflict(
+                    "configuration generation \(current.specGeneration) is newer than \(snapshotGeneration)",
+                )
             }
-            try persisted.update(db)
-            try VM.filter(key: persisted.id).updateAll(
-                db,
-                Column("portForwards").set(to: persisted.portForwards),
+            current.state = state
+            current.updatedAt = now
+            current.portForwards = portForwards
+            try current.update(db)
+            let projected = WorkloadHealthProjector.project(
+                state: VMState.parse(state),
+                signals: WorkloadHealthSignals(lastError: error),
+                updatedAt: now,
+                kind: kind,
+                services: services,
+                observedAt: now,
+                freshness: "fresh",
+                appliedGeneration: current.specGeneration,
             )
-            return true
+            _ = try WorkloadFactStore.recordObservation(
+                db: db,
+                workloadId: current.id,
+                appliedGeneration: current.specGeneration,
+                runtimeIdentity: identity,
+                processState: state,
+                readiness: projected.readiness ?? "unknown",
+                condition: projected.condition ?? "unknown",
+                observedAt: now,
+                error: error,
+                freshness: "fresh",
+                enforcedCpu: enforcedCpu,
+                enforcedMemoryMb: enforcedMemoryMb,
+                services: services,
+            )
+            return current
         }
-        if !applied {
+        guard let applied else {
             throw BarkVisorError.conflict("Workload is deleting")
         }
-        vm = persisted
+        vm.state = applied.state
+        vm.updatedAt = applied.updatedAt
         if let error {
             Log.vm.warning("Application \(vm.id) \(state): \(error)", vm: vm.id)
         }

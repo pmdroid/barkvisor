@@ -48,13 +48,21 @@ extension VMController {
         let overlays = try await pendingOverlays(vmIDs: [vm.id], db: db)
         let overlay = overlays[vm.id]
         let lastProgress = await lastProgress(for: overlays)
-        return await vmResponse(vm, signals: signals, overlay: overlay, lastProgressMap: lastProgress)
+        let observation = try await observation(for: vm, db: db)
+        return await vmResponse(
+            vm,
+            signals: signals,
+            overlay: overlay,
+            lastProgressMap: lastProgress,
+            observation: observation,
+        )
     }
 
     func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
         let lastSeen = try await GuestHealthStore.lastSeen(ids: vms.map(\.id), db: db)
         let overlays = try await pendingOverlays(vmIDs: vms.map(\.id), db: db)
         let lastProgress = await lastProgress(for: overlays)
+        let observations = try await observations(for: vms.map(\.id), db: db)
         var responses: [VMResponse] = []
         responses.reserveCapacity(vms.count)
         for vm in vms {
@@ -68,6 +76,7 @@ extension VMController {
                 signals: signals,
                 overlay: overlay,
                 lastProgressMap: lastProgress,
+                observation: observations[vm.id],
             )
             responses.append(response)
         }
@@ -90,6 +99,7 @@ extension VMController {
         signals: WorkloadHealthSignals,
         overlay: PendingVMImageOverlay?,
         lastProgressMap: [String: ImageProgressEvent],
+        observation: WorkloadObservation? = nil,
     ) async -> VMResponse {
         let progress = overlay.flatMap { lastProgressMap[$0.pendingImageId] }
         let task = await provisionTask(for: vm.id)
@@ -110,6 +120,7 @@ extension VMController {
             imageStatus: overlay?.imageStatus,
             updateTaskID: published.taskID,
             updateProgress: published.progress,
+            observation: observation,
         )
     }
 
@@ -132,11 +143,40 @@ extension VMController {
 
     private func projectHealth(_ vm: VM, db: DatabasePool) async throws -> WorkloadHealthStatus {
         let signals = try await healthSignals(for: vm, db: db)
+        let stored = try await observation(for: vm, db: db)
+        let services = liveServices(for: vm) ?? stored?.services ?? []
         return WorkloadHealthProjector.project(
             state: VMState.parse(vm.state),
             signals: signals,
             updatedAt: vm.updatedAt,
+            kind: vm.kind,
+            services: services,
+            observedAt: stored?.observedAt,
+            freshness: stored?.freshness ?? (services.isEmpty ? "unknown" : "fresh"),
+            appliedGeneration: stored?.appliedGeneration,
         )
+    }
+
+    private func observation(for vm: VM, db: DatabasePool) async throws -> WorkloadObservation? {
+        try await db.read { db in try WorkloadObservation.fetchOne(db, key: vm.id) }
+    }
+
+    private func observations(for ids: [String], db: DatabasePool) async throws -> [String: WorkloadObservation] {
+        if ids.isEmpty { return [:] }
+        let rows = try await db.read { db in
+            try WorkloadObservation.filter(ids.contains(Column("id"))).fetchAll(db)
+        }
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+    }
+
+    private func liveServices(for vm: VM) -> [WorkloadServiceObservation]? {
+        guard vm.isApplication else { return nil }
+        let names = DockerServiceHealth.containerNames(workloadID: vm.id, composeYaml: vm.composeYaml)
+        guard !names.isEmpty else { return nil }
+        guard let data = try? DockerInspect.json(names) else { return nil }
+        let roles = DockerServiceHealth.roles(composeYaml: vm.composeYaml)
+        let services = DockerServiceHealth.observations(inspectJSON: data, roles: roles)
+        return services.isEmpty ? nil : services
     }
 
     private func healthSignals(for vm: VM, db: DatabasePool) async throws -> WorkloadHealthSignals {

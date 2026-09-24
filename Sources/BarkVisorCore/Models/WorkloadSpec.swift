@@ -570,6 +570,13 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
     public var backend: VMRuntimeBackend
     /// PAS-258: start after Device boot. Host-only, not part of the portable spec.
     public var startOnBoot: Bool
+    public var running: Bool?
+    public var readiness: String?
+    public var condition: String?
+    public var observation: String?
+    public var appliedGeneration: Int?
+    public var acceptedResources: WorkloadResources?
+    public var enforcedResources: WorkloadResources?
 
     public init(
         state: VMState,
@@ -581,6 +588,13 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         healthError: String? = nil,
         backend: VMRuntimeBackend,
         startOnBoot: Bool = false,
+        running: Bool? = nil,
+        readiness: String? = nil,
+        condition: String? = nil,
+        observation: String? = nil,
+        appliedGeneration: Int? = nil,
+        acceptedResources: WorkloadResources? = nil,
+        enforcedResources: WorkloadResources? = nil,
     ) {
         self.state = state
         self.pendingChanges = pendingChanges
@@ -591,6 +605,13 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         self.healthError = healthError
         self.backend = backend
         self.startOnBoot = startOnBoot
+        self.running = running
+        self.readiness = readiness
+        self.condition = condition
+        self.observation = observation
+        self.appliedGeneration = appliedGeneration
+        self.acceptedResources = acceptedResources
+        self.enforcedResources = enforcedResources
     }
 }
 

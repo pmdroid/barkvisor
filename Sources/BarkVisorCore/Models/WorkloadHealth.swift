@@ -98,17 +98,32 @@ public struct WorkloadHealthStatus: Codable, Equatable, Sendable {
     public var checks: [WorkloadHealthCheck]
     public var updatedAt: String
     public var lastError: String?
+    public var running: Bool?
+    public var readiness: String?
+    public var condition: String?
+    public var observation: String?
+    public var appliedGeneration: Int?
 
     public init(
         health: WorkloadHealth,
         checks: [WorkloadHealthCheck],
         updatedAt: String,
         lastError: String? = nil,
+        running: Bool? = nil,
+        readiness: String? = nil,
+        condition: String? = nil,
+        observation: String? = nil,
+        appliedGeneration: Int? = nil,
     ) {
         self.health = health
         self.checks = checks
         self.updatedAt = updatedAt
         self.lastError = lastError
+        self.running = running
+        self.readiness = readiness
+        self.condition = condition
+        self.observation = observation
+        self.appliedGeneration = appliedGeneration
     }
 }
 
@@ -118,6 +133,10 @@ public struct WorkloadHealthSummaryItem: Codable, Equatable, Sendable {
     public var kind: String
     public var health: WorkloadHealth
     public var lastError: String?
+    public var running: Bool?
+    public var readiness: String?
+    public var condition: String?
+    public var observation: String?
 
     public init(
         id: String,
@@ -125,12 +144,20 @@ public struct WorkloadHealthSummaryItem: Codable, Equatable, Sendable {
         kind: String = "vm",
         health: WorkloadHealth,
         lastError: String? = nil,
+        running: Bool? = nil,
+        readiness: String? = nil,
+        condition: String? = nil,
+        observation: String? = nil,
     ) {
         self.id = id
         self.name = name
         self.kind = kind
         self.health = health
         self.lastError = lastError
+        self.running = running
+        self.readiness = readiness
+        self.condition = condition
+        self.observation = observation
     }
 }
 

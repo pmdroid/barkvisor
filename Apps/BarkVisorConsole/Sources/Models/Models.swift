@@ -576,6 +576,11 @@ struct WorkloadRuntimeStatus: Decodable, Hashable {
     var health: String?
     var healthError: String?
     var startOnBoot: Bool?
+    var running: Bool?
+    var readiness: String?
+    var condition: String?
+    var observation: String?
+    var appliedGeneration: Int?
 }
 
 enum WorkloadHealth {

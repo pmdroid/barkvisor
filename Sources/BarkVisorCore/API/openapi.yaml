@@ -3337,6 +3337,20 @@ components:
         lastError:
           type: string
           nullable: true
+        running:
+          type: boolean
+        readiness:
+          type: string
+          enum: [unknown, ready, not_ready]
+        condition:
+          type: string
+          enum: [unknown, healthy, unhealthy]
+        observation:
+          type: string
+          enum: [unknown, fresh, stale]
+        appliedGeneration:
+          type: integer
+          description: Configuration generation the runtime last applied.
 
     WorkloadHealthSummary:
       type: object
@@ -3368,6 +3382,18 @@ components:
         lastError:
           type: string
           nullable: true
+        running:
+          type: boolean
+          description: Process is up. Independent of readiness and health.
+        readiness:
+          type: string
+          enum: [unknown, ready, not_ready]
+        condition:
+          type: string
+          enum: [unknown, healthy, unhealthy]
+        observation:
+          type: string
+          enum: [unknown, fresh, stale]
 
     WorkloadHealthSpec:
       type: object
@@ -3438,6 +3464,37 @@ components:
         startOnBoot:
           type: boolean
           description: Start after Device boot (host-only, not in the portable spec).
+        running:
+          type: boolean
+        readiness:
+          type: string
+          enum: [unknown, ready, not_ready]
+        condition:
+          type: string
+          enum: [unknown, healthy, unhealthy]
+        observation:
+          type: string
+          enum: [unknown, fresh, stale]
+        appliedGeneration:
+          type: integer
+          description: Generation actually applied. Older than generation when a deploy has not caught up.
+        acceptedResources:
+          type: object
+          required: [cpu, memoryMb]
+          properties:
+            cpu:
+              type: integer
+            memoryMb:
+              type: integer
+        enforcedResources:
+          type: object
+          description: Limits the runtime is enforcing. Absent when none were applied.
+          required: [cpu, memoryMb]
+          properties:
+            cpu:
+              type: integer
+            memoryMb:
+              type: integer
 
     VMRuntimeBackend:
       type: object

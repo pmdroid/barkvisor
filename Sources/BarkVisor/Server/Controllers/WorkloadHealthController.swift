@@ -18,6 +18,10 @@ struct WorkloadHealthController: RouteCollection {
             try VM.fetchAll(db)
         }
         let lastSeen = try await GuestHealthStore.lastSeen(ids: vms.map(\.id), db: req.db)
+        let observations = try await req.db.read { db in
+            try WorkloadObservation.fetchAll(db)
+        }
+        let byID = Dictionary(uniqueKeysWithValues: observations.map { ($0.id, $0) })
         var items: [WorkloadHealthSummaryItem] = []
         items.reserveCapacity(vms.count)
         for vm in vms {
@@ -25,18 +29,28 @@ struct WorkloadHealthController: RouteCollection {
             let signals = await vmManager.healthSignals(
                 for: vm, lastSeenAt: lastSeen[vm.id], probes: probes,
             )
+            let stored = byID[vm.id]
             let status = WorkloadHealthProjector.project(
                 state: VMState.parse(vm.state),
                 signals: signals,
                 updatedAt: vm.updatedAt,
+                kind: vm.kind,
+                services: stored?.services ?? [],
+                observedAt: stored?.observedAt,
+                freshness: stored?.freshness ?? "unknown",
+                appliedGeneration: stored?.appliedGeneration,
             )
             items.append(
                 WorkloadHealthSummaryItem(
                     id: vm.id,
                     name: vm.name,
-                    kind: "vm",
+                    kind: vm.kind,
                     health: status.health,
                     lastError: status.lastError,
+                    running: status.running,
+                    readiness: status.readiness,
+                    condition: status.condition,
+                    observation: status.observation,
                 ),
             )
         }
