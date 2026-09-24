@@ -140,6 +140,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M022_RemoveWorkloadClass.identifier) { db in
             try M022_RemoveWorkloadClass.migrate(db)
         }
+        migrator.registerMigration(M023_WorkloadOperations.identifier) { db in
+            try M023_WorkloadOperations.migrate(db)
+        }
     }
 }
 

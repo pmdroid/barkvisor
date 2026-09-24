@@ -17,7 +17,12 @@ struct TaskController: RouteCollection {
         guard let taskID = req.parameters.get("taskID") else {
             throw Abort(.badRequest)
         }
-        guard let event = await backgroundTasks.status(taskID) else {
+        let event: BackgroundTaskManager.TaskEvent
+        if let live = await backgroundTasks.status(taskID) {
+            event = live
+        } else if let stored = try await WorkloadOperationStore.fetch(db: req.db, id: taskID) {
+            event = stored.taskEvent()
+        } else {
             throw Abort(.notFound, reason: "Task not found")
         }
         let data = try JSONEncoder().encode(event)

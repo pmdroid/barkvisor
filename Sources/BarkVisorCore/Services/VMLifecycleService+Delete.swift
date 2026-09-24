@@ -37,7 +37,7 @@ extension VMLifecycleService {
         db: DatabasePool,
     ) async throws {
         if vm.isApplication {
-            await ApplicationLifecycleService.down(vm: vm)
+            await ApplicationLifecycleService.down(vm: vm, db: db)
         }
         if let bootDiskId = vm.bootDiskId, !bootDiskId.isEmpty {
             try await deleteOrDetachBootDisk(

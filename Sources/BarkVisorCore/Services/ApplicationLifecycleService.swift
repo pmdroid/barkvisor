@@ -178,12 +178,21 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
+        operation: WorkloadOperationRecord? = nil,
+        dataMigration: DataMigrationDecision? = nil,
         progress: (@Sendable (Double) -> Void)? = nil,
     ) async throws {
         let snapshot = vm
         vm = try await serial.run { () -> VM in
             var current = snapshot
-            try await updateImagesLocked(vm: &current, db: db, dataDir: dataDir, progress: progress)
+            try await updateImagesLocked(
+                vm: &current,
+                db: db,
+                dataDir: dataDir,
+                operation: operation,
+                dataMigration: dataMigration,
+                progress: progress,
+            )
             return current
         }
     }
@@ -215,11 +224,19 @@ public enum ApplicationLifecycleService {
         return try ComposeRuntime.followLogs(id: vm.id, project: project, tail: tail, dataDir: dataDir)
     }
 
-    public static func down(vm: VM, dataDir: URL = Config.dataDir) async {
+    public static func down(
+        vm: VM,
+        db: DatabasePool? = nil,
+        dataDir: URL = Config.dataDir,
+    ) async {
         try? await serial.run {
-            downLocked(vm: vm, dataDir: dataDir)
+            await downLocked(vm: vm, db: db, dataDir: dataDir)
         }
         await metricsCollector?.stop(vmID: vm.id)
+    }
+
+    static func noteAppRunning(id: String, project: String) async {
+        await metricsCollector?.startApp(id: id, project: project)
     }
 
     public static func refreshState(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
@@ -349,9 +366,8 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let gpuShare = try await shareAttach(for: vm, db: db)
-        let catalog = await catalogEntry(for: vm, db: db)
-        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
+        let inputs = try await ApplicationDeployment.prepareInputs(vm: vm, db: db, dataDir: dataDir)
+        let render = inputs.render
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             if vm.state == "provisioning" {
@@ -367,6 +383,7 @@ public enum ApplicationLifecycleService {
                 expected: render.publishedPorts,
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
+            try await ApplicationDeployment.recordCurrent(vm: vm, inputs: inputs, db: db, dataDir: dataDir)
             try await setState(&vm, state: "running", error: nil, db: db)
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
@@ -404,9 +421,8 @@ public enum ApplicationLifecycleService {
         try await refuseDeleting(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
-        let gpuShare = try await shareAttach(for: vm, db: db)
-        let catalog = await catalogEntry(for: vm, db: db)
-        let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
+        let inputs = try await ApplicationDeployment.prepareInputs(vm: vm, db: db, dataDir: dataDir)
+        let render = inputs.render
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
@@ -417,6 +433,7 @@ public enum ApplicationLifecycleService {
                 expected: render.publishedPorts,
             )
             try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
+            try await ApplicationDeployment.recordCurrent(vm: vm, inputs: inputs, db: db, dataDir: dataDir)
             try await setState(&vm, state: "running", error: nil, db: db)
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
@@ -432,31 +449,18 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        operation: WorkloadOperationRecord?,
+        dataMigration: DataMigrationDecision?,
         progress: (@Sendable (Double) -> Void)?,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
-        try await requireRunning(id: vm.id, db: db)
-        try DockerEngine.requireDeviceRuntime()
-        let project = projectName(vm)
-        let render = try renderProject(vm: vm, dataDir: dataDir)
-        try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
-        progress?(0.2)
-        try await refuseDeleting(id: vm.id, db: db)
-        try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
-        progress?(0.6)
-        try await refuseDeleting(id: vm.id, db: db)
-        try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
-        progress?(0.85)
-        try verifyInspectedBinds(
-            containerNames: render.containerNames,
-            bindHost: render.bindHost,
-            expected: render.publishedPorts,
+        try await ApplicationDeployment.performImageUpdate(
+            vm: &vm,
+            db: db,
+            dataDir: dataDir,
+            operation: operation,
+            dataMigration: dataMigration,
+            progress: progress,
         )
-        try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
-        try await setState(&vm, state: "running", error: nil, db: db)
-        await metricsCollector?.startApp(id: vm.id, project: project)
-        progress?(1.0)
     }
 
     private static func refreshImageFactsLocked(
@@ -482,32 +486,80 @@ public enum ApplicationLifecycleService {
         try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
     }
 
-    private static func downLocked(vm: VM, dataDir: URL) {
+    private static func downLocked(vm: VM, db: DatabasePool?, dataDir: URL) async {
         let project = projectName(vm)
+        guard let db else {
+            do {
+                try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+                try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+                ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
+            } catch {
+                let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
+                Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
+            }
+            return
+        }
         do {
-            try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+            if let failed = try await WorkloadOperationStore.failedOperations(db: db).first(where: {
+                $0.workloadID == vm.id && $0.kind == WorkloadOperationKind.appTeardown
+            }) {
+                try await ApplicationDeployment.retry(db: db, operationID: failed.id, dataDir: dataDir)
+                return
+            }
+            let decision = try await WorkloadOperationStore.accept(
+                db: db,
+                idempotencyKey: nil,
+                workloadID: vm.id,
+                kind: WorkloadOperationKind.appTeardown,
+                requestedGeneration: vm.specGeneration,
+                projectPath: ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir).path,
+            )
+            if !decision.started { return }
+            do {
+                try await ApplicationDeployment.continueTeardown(
+                    record: decision.record,
+                    vm: vm,
+                    db: db,
+                    dataDir: dataDir,
+                    finishCleanup: true,
+                )
+            } catch is WorkloadOperationInterrupted {
+                return
+            } catch {
+                let phase = try await WorkloadOperationStore.fetch(db: db, id: decision.record.id)?.phase
+                    ?? "before_container_stop"
+                _ = try await WorkloadOperationStore.fail(
+                    db: db,
+                    operationID: decision.record.id,
+                    attemptID: decision.record.attemptID,
+                    phase: phase,
+                    recoveryOutcome: ApplicationReadiness.outcomeCleanupIncomplete,
+                    error: (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription,
+                )
+            }
+        } catch is WorkloadOperationInterrupted {
+            return
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
         }
-        ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
-    private static func refuseDeleting(id: String, db: DatabasePool) async throws {
+    static func refuseDeleting(id: String, db: DatabasePool) async throws {
         let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
         if state == "deleting" {
             throw BarkVisorError.conflict("Workload is deleting")
         }
     }
 
-    private static func requireRunning(id: String, db: DatabasePool) async throws {
+    static func requireRunning(id: String, db: DatabasePool) async throws {
         let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
         if state != "running" {
             throw BarkVisorError.conflict("Application must be running to update images")
         }
     }
 
-    private static func persistRuntime(
+    static func persistRuntime(
         vm: inout VM,
         namedVolumes: [String],
         db: DatabasePool,
@@ -546,7 +598,7 @@ public enum ApplicationLifecycleService {
         vm = persisted
     }
 
-    private static func refreshCatalogDigest(vm: inout VM, db: DatabasePool, dataDir: URL) async throws {
+    static func refreshCatalogDigest(vm: inout VM, db: DatabasePool, dataDir: URL) async throws {
         let image = vm.imageRef ?? ComposeAllowlist.firstImage(yaml: vm.composeYaml)
         guard let image, !image.isEmpty else { return }
         guard let snap = try? ApplicationImageFacts.snapshot(
@@ -583,7 +635,7 @@ public enum ApplicationLifecycleService {
         vm = persisted
     }
 
-    private static func applyPublishedPorts(
+    static func applyPublishedPorts(
         _ ports: [PublishedPort],
         to vm: inout VM,
         db: DatabasePool,
@@ -593,7 +645,7 @@ public enum ApplicationLifecycleService {
         vm.setPortForwards(rules.isEmpty ? nil : rules)
     }
 
-    private static func catalogEntry(for vm: VM, db: DatabasePool) async -> AppCatalogEntryDTO? {
+    static func catalogEntry(for vm: VM, db: DatabasePool) async -> AppCatalogEntryDTO? {
         let labels = WorkloadSpecJSON.decode(vm.specJson)?.metadata.labels ?? [:]
         guard let slug = labels["catalog"], !slug.isEmpty else { return nil }
         let source = labels["catalog-source"]
@@ -602,7 +654,7 @@ public enum ApplicationLifecycleService {
         }
     }
 
-    private static func decodeEnv(
+    static func decodeEnv(
         _ vm: VM,
         dataDir: URL,
         catalog: AppCatalogEntryDTO? = nil,
@@ -636,7 +688,7 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    private static func shareAttach(for vm: VM, db: DatabasePool) async throws -> GPUShareAttach {
+    static func shareAttach(for vm: VM, db: DatabasePool) async throws -> GPUShareAttach {
         let selected = WorkloadSpecJSON.decode(vm.specJson)?.spec.gpuShare ?? []
         if selected.isEmpty { return .empty }
         let vms = try await db.read { db in try VM.fetchAll(db) }
@@ -646,7 +698,7 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    private static func setState(
+    static func setState(
         _ vm: inout VM,
         state: String,
         error: String?,

@@ -60,16 +60,31 @@ struct ApplicationOpsController: RouteCollection {
         if vm.state != "running" {
             throw BarkVisorError.conflict("Application must be running to update images")
         }
-        let taskID = ApplicationLifecycleService.taskID(forUpdate: vm.id)
         let db = req.db
         let workloadID = vm.id
-        let submitted = await backgroundTasks.submit(taskID, kind: .appUpdate) {
+        let idempotencyKey = req.headers.first(name: "Idempotency-Key")
+        let acceptance = try await WorkloadOperationStore.accept(
+            db: db,
+            idempotencyKey: idempotencyKey,
+            workloadID: workloadID,
+            kind: WorkloadOperationKind.appUpdate,
+            requestedGeneration: vm.specGeneration,
+        )
+        if !acceptance.started {
+            return try Response.json(TaskAcceptedResponse(taskID: acceptance.record.id), status: .accepted)
+        }
+        let operation = acceptance.record
+        let submitted = await backgroundTasks.submit(operation.id, kind: .appUpdate) {
             guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
                 throw BarkVisorError.notFound("Workload \(workloadID) not found")
             }
-            try await ApplicationLifecycleService.updateImages(vm: &live, db: db) { value in
+            try await ApplicationLifecycleService.updateImages(
+                vm: &live,
+                db: db,
+                operation: operation,
+            ) { value in
                 Task {
-                    await backgroundTasks.reportProgress(taskID, progress: value)
+                    await backgroundTasks.reportProgress(operation.id, progress: value)
                 }
             }
             return workloadID
@@ -88,9 +103,17 @@ struct ApplicationOpsController: RouteCollection {
     func checkUpdate(req: Request) async throws -> VMResponse {
         var vm = try await requireApplication(req)
         try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: req.db)
-        let published = await ApplicationLifecycleService.publishedUpdate(
+        var published = await ApplicationLifecycleService.publishedUpdate(
             event: backgroundTasks.status(ApplicationLifecycleService.taskID(forUpdate: vm.id)),
         )
+        if published.taskID == nil,
+           let open = try await WorkloadOperationStore.openOperation(
+               db: req.db,
+               workloadID: vm.id,
+               kind: WorkloadOperationKind.appUpdate,
+           ) {
+            published = (open.id, open.progress)
+        }
         return VMResponse(
             from: vm,
             updateTaskID: published.taskID,
