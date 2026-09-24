@@ -42,6 +42,7 @@ public actor QMPEventListener {
     private var nextGeneration: UInt64 = 0
     private weak var vmManager: VMManager?
     private var stateStreamService: VMStateStreamService?
+    private var observation: RuntimeObservation?
     private let dbPool: DatabasePool
 
     public init(dbPool: DatabasePool) {
@@ -54,6 +55,10 @@ public actor QMPEventListener {
 
     public func setStateStreamService(_ service: VMStateStreamService) {
         stateStreamService = service
+    }
+
+    public func setObservation(_ observation: RuntimeObservation?) {
+        self.observation = observation
     }
 
     // MARK: - Lifecycle
@@ -161,11 +166,22 @@ public actor QMPEventListener {
         }
     }
 
-    // MARK: - Event Handlers
+    private func forwardObservation(vmID: String, eventType: String) async {
+        let kind: QMPObservationKind? = switch eventType {
+        case "SHUTDOWN": .shutdown
+        case "GUEST_PANICKED": .guestPanicked
+        case "RESET": .reset
+        default: nil
+        }
+        if let kind {
+            await observation?.applyQMP(workloadID: vmID, event: kind)
+        }
+    }
 
     private func handleEvent(vmID: String, generation: UInt64, event: [String: Any]) async {
         guard let eventType = event["event"] as? String else { return }
         guard isCurrent(vmID: vmID, generation: generation) else { return }
+        await forwardObservation(vmID: vmID, eventType: eventType)
         let data = event["data"] as? [String: Any]
 
         switch eventType {

@@ -2,6 +2,7 @@ import Foundation
 
 public struct DockerStatsSample: Sendable, Equatable {
     public var name: String
+    public var id: String
     public var cpuPercent: Double
     public var memoryUsedBytes: Int64
     public var memoryLimitBytes: Int64
@@ -15,6 +16,7 @@ public struct DockerStatsSample: Sendable, Equatable {
         memoryLimitBytes: Int64,
         networkRxBytes: Int64,
         networkTxBytes: Int64,
+        id: String = "",
     ) {
         self.name = name
         self.cpuPercent = cpuPercent
@@ -22,6 +24,7 @@ public struct DockerStatsSample: Sendable, Equatable {
         self.memoryLimitBytes = memoryLimitBytes
         self.networkRxBytes = networkRxBytes
         self.networkTxBytes = networkTxBytes
+        self.id = id
     }
 }
 
@@ -92,6 +95,7 @@ public enum DockerStats {
             memoryLimitBytes: memory.1,
             networkRxBytes: net.0,
             networkTxBytes: net.1,
+            id: json["ID"] as? String ?? "",
         )
     }
 
@@ -150,5 +154,77 @@ public enum DockerStats {
         case "T", "TIB": 1_099_511_627_776
         default: 1
         }
+    }
+
+    public static let managedListFormat =
+        "{{.ID}}\t{{.Label \"barkvisor.workload\"}}\t{{.Label \"com.docker.compose.service\"}}\t{{.State}}\t{{.Status}}\t{{.Names}}"
+
+    public static func listManagedResult() -> ContainerListCollect {
+        do {
+            let result = try DockerCLI.run(
+                arguments: [
+                    "ps", "-a",
+                    "--filter", "label=\(ComposeAllowlist.workloadLabelKey)",
+                    "--format", managedListFormat,
+                ],
+                timeout: 20,
+            )
+            guard result.succeeded else { return .failed }
+            return .fresh(DockerEventDecoding.parseList(result.stdoutString))
+        } catch {
+            return .failed
+        }
+    }
+
+    public static func collectManagedNow(workloadIDs: Set<String>) -> ManagedStatsCollect {
+        let listed = listManagedResult()
+        guard case .fresh(let rows) = listed else { return .failed }
+        let wanted = rows.filter { workloadIDs.contains($0.workloadID) }
+        if wanted.isEmpty { return .fresh([:]) }
+        do {
+            let result = try DockerCLI.run(
+                arguments: ["stats", "--no-stream", "--format", "json"] + wanted.map(\.containerID).sorted(),
+                timeout: 20,
+            )
+            guard result.succeeded else { return .failed }
+            return .fresh(attribute(samples: parse(output: result.stdoutString), containers: wanted))
+        } catch {
+            return .failed
+        }
+    }
+
+    public static func collectManaged(
+        workloadIDs: Set<String>,
+        gate: BoundedCommandGate = .docker,
+        timeout: Duration = .seconds(20),
+    ) async -> ManagedStatsCollect {
+        do {
+            return try await gate.run(timeout: timeout) {
+                collectManagedNow(workloadIDs: workloadIDs)
+            }
+        } catch {
+            return .failed
+        }
+    }
+
+    public static func attribute(
+        samples: [DockerStatsSample],
+        containers: [ContainerSnapshot],
+    ) -> [String: DockerStatsTotals] {
+        var grouped: [String: [DockerStatsSample]] = [:]
+        for sample in samples {
+            guard let container = containers.first(where: { matches(sample: sample, container: $0) }) else {
+                continue
+            }
+            grouped[container.workloadID, default: []].append(sample)
+        }
+        return grouped.mapValues(totals)
+    }
+
+    static func matches(sample: DockerStatsSample, container: ContainerSnapshot) -> Bool {
+        if !sample.id.isEmpty, !container.containerID.isEmpty {
+            return sample.id.hasPrefix(container.containerID) || container.containerID.hasPrefix(sample.id)
+        }
+        return sample.name == container.name
     }
 }

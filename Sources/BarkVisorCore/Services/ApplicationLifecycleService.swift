@@ -11,9 +11,14 @@ public enum ApplicationLifecycleService {
     private static let serial = Serial()
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
     private nonisolated(unsafe) static var metricsCollector: MetricsCollector?
+    private nonisolated(unsafe) static var observation: RuntimeObservation?
 
     public static func setMetricsCollector(_ collector: MetricsCollector?) {
         metricsCollector = collector
+    }
+
+    public static func setObservation(_ observation: RuntimeObservation?) {
+        self.observation = observation
     }
 
     public static func lastError(for id: String) -> String? {
@@ -246,10 +251,18 @@ public enum ApplicationLifecycleService {
             Log.vm.warning("Application reconcile list failed: \(error.localizedDescription)")
             return
         }
+        var facts: [ReconcileFact] = []
         for var vm in apps {
             if vm.state == "deleting" { continue }
             let observed = labeled[vm.id]
             if let observed {
+                facts.append(
+                    ReconcileFact(
+                        workloadID: vm.id,
+                        phase: observed == "running" ? .running : .exited,
+                        detail: nil,
+                    ),
+                )
                 if vm.state != observed {
                     try? await setState(&vm, state: observed, error: nil, db: db)
                 }
@@ -261,6 +274,13 @@ public enum ApplicationLifecycleService {
                 continue
             }
             if vm.state == "running" {
+                facts.append(
+                    ReconcileFact(
+                        workloadID: vm.id,
+                        phase: .exited,
+                        detail: "compose project is missing on the Device",
+                    ),
+                )
                 try? await setState(
                     &vm,
                     state: "error",
@@ -271,6 +291,7 @@ public enum ApplicationLifecycleService {
             await metricsCollector?.stopApp(vm.id)
             _ = dataDir
         }
+        await observation?.applyReconcile(facts)
     }
 
     public static func portRules(_ ports: [PublishedPort]) -> [PortForwardRule] {

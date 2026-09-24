@@ -164,7 +164,9 @@ public actor MetricsCollector {
 
     private var buffers: [String: [MetricSample]] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    private var appTasks: [String: Task<Void, Never>] = [:]
+    private var appProjects: [String: String] = [:]
+    private var appBatchTask: Task<Void, Never>?
+    private var observation: RuntimeObservation?
     private var continuations: [String: [String: AsyncStream<MetricSample>.Continuation]] = [:]
 
     // Previous values for delta computation
@@ -231,11 +233,15 @@ public actor MetricsCollector {
         tasks[vmID] = task
     }
 
+    public func setRuntimeObservation(_ observation: RuntimeObservation?) {
+        self.observation = observation
+    }
+
     public func stop(vmID: String) {
         tasks[vmID]?.cancel()
         tasks.removeValue(forKey: vmID)
-        appTasks[vmID]?.cancel()
-        appTasks.removeValue(forKey: vmID)
+        appProjects.removeValue(forKey: vmID)
+        stopAppBatchIfIdle()
         buffers.removeValue(forKey: vmID)
         prevDiskRead.removeValue(forKey: vmID)
         prevDiskWrite.removeValue(forKey: vmID)
@@ -253,12 +259,12 @@ public actor MetricsCollector {
     }
 
     public func isCollectingApp(_ id: String) -> Bool {
-        appTasks[id] != nil
+        appProjects[id] != nil
     }
 
     public func stopApp(_ id: String) {
-        appTasks[id]?.cancel()
-        appTasks.removeValue(forKey: id)
+        appProjects.removeValue(forKey: id)
+        stopAppBatchIfIdle()
         buffers.removeValue(forKey: id)
         prevNetRx.removeValue(forKey: id)
         prevNetTx.removeValue(forKey: id)
@@ -271,49 +277,58 @@ public actor MetricsCollector {
     }
 
     public func startApp(id: String, project: String) {
-        guard tasks[id] == nil, appTasks[id] == nil else { return }
+        guard tasks[id] == nil, appProjects[id] == nil else { return }
 
+        appProjects[id] = project
         buffers[id] = []
-        let task = Task { [weak self] in
-            if let self {
-                await self.pollApp(id: id, project: project)
-            }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.pollInterval)
-                if let self {
-                    await self.pollApp(id: id, project: project)
-                }
-            }
-        }
-        appTasks[id] = task
+        startAppBatchIfNeeded()
     }
 
-    private func pollApp(id: String, project: String) async {
-        guard appTasks[id] != nil else { return }
+    private func startAppBatchIfNeeded() {
+        guard appBatchTask == nil else { return }
+        appBatchTask = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self {
+                    await self.pollApps()
+                }
+                try? await Task.sleep(nanoseconds: Self.pollInterval)
+            }
+        }
+    }
 
-        let snapshot: DockerStatsTotals? = await Task.detached {
-            DockerStats.snapshot(id: id, project: project)
-        }.value
-        guard let snapshot, snapshot.containerCount > 0 else { return }
+    private func stopAppBatchIfIdle() {
+        guard appProjects.isEmpty else { return }
+        appBatchTask?.cancel()
+        appBatchTask = nil
+    }
 
-        let prevRx = prevNetRx[id] ?? snapshot.networkRxBytes
-        let prevTx = prevNetTx[id] ?? snapshot.networkTxBytes
-        prevNetRx[id] = snapshot.networkRxBytes
-        prevNetTx[id] = snapshot.networkTxBytes
-
-        appendSample(
-            id: id,
-            sample: MetricSample(
-                timestamp: iso8601.string(from: Date()),
-                cpuPercent: max(snapshot.cpuPercent, 0),
-                memoryUsedMB: Int(snapshot.memoryUsedBytes / (1_024 * 1_024)),
-                diskReadBytes: 0,
-                diskWriteBytes: 0,
-                networkRxBytes: max(snapshot.networkRxBytes - prevRx, 0),
-                networkTxBytes: max(snapshot.networkTxBytes - prevTx, 0),
-                memoryLimitMB: Int(snapshot.memoryLimitBytes / (1_024 * 1_024)),
-            ),
-        )
+    private func pollApps() async {
+        let ids = Set(appProjects.keys)
+        guard !ids.isEmpty else { return }
+        await observation?.refreshIdentity()
+        let outcome = await DockerStats.collectManaged(workloadIDs: ids)
+        await observation?.recordStats(outcome, workloadIDs: ids)
+        guard case .fresh(let totals) = outcome else { return }
+        for id in ids {
+            guard let snapshot = totals[id], snapshot.containerCount > 0 else { continue }
+            let prevRx = prevNetRx[id] ?? snapshot.networkRxBytes
+            let prevTx = prevNetTx[id] ?? snapshot.networkTxBytes
+            prevNetRx[id] = snapshot.networkRxBytes
+            prevNetTx[id] = snapshot.networkTxBytes
+            appendSample(
+                id: id,
+                sample: MetricSample(
+                    timestamp: iso8601.string(from: Date()),
+                    cpuPercent: max(snapshot.cpuPercent, 0),
+                    memoryUsedMB: Int(snapshot.memoryUsedBytes / (1_024 * 1_024)),
+                    diskReadBytes: 0,
+                    diskWriteBytes: 0,
+                    networkRxBytes: max(snapshot.networkRxBytes - prevRx, 0),
+                    networkTxBytes: max(snapshot.networkTxBytes - prevTx, 0),
+                    memoryLimitMB: Int(snapshot.memoryLimitBytes / (1_024 * 1_024)),
+                ),
+            )
+        }
     }
 
     private func appendSample(id: String, sample: MetricSample) {
