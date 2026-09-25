@@ -1075,7 +1075,9 @@ public enum ApplicationLifecycleService {
             roles: DockerServiceHealth.roles(composeYaml: composeYaml),
         )
     }
+}
 
+extension ApplicationLifecycleService {
     static func setState(
         _ vm: inout VM,
         state: String,
