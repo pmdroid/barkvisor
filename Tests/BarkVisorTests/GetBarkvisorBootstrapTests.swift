@@ -48,7 +48,7 @@ struct GetBarkvisorBootstrapTests {
         for needle in [
             "uname -m",
             "dpkg -i",
-            "systemctl enable --now barkvisor.service",
+            "systemctl enable --now barkvisor-daemon.service barkvisor-server.service",
             "installer -pkg",
             "-target /",
             "/api/health",
@@ -83,7 +83,7 @@ struct GetBarkvisorBootstrapTests {
         ])
         #expect(out.0 == 0, "dry-run exit \(out.0): \(out.1)")
         #expect(out.1.contains("DRY_RUN: dpkg -i"))
-        #expect(out.1.contains("systemctl enable --now barkvisor.service"))
+        #expect(out.1.contains("systemctl enable --now barkvisor-daemon.service barkvisor-server.service"))
         #expect(out.1.contains("/api/health"))
         #expect(out.1.contains("DRY_RUN OK"))
         #expect(!out.1.contains("brew install"))
@@ -208,7 +208,7 @@ struct GetBarkvisorBootstrapTests {
         #expect(out.0 != 0, "dead health port should fail: \(out.1)")
         #expect(out.1.contains("checksum OK"))
         #expect(out.1.contains("SKIP_INSTALL: dpkg -i"))
-        #expect(out.1.contains("systemctl enable --now barkvisor.service"))
+        #expect(out.1.contains("systemctl enable --now barkvisor-daemon.service barkvisor-server.service"))
         #expect(out.1.contains("did not answer"))
         #expect(out.1.contains("/api/health"))
         #expect(!out.1.contains("cluster"))

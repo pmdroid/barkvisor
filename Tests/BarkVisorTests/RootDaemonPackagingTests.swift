@@ -46,7 +46,7 @@ struct RootDaemonPackagingTests {
         let postinst = try read("packaging/linux/debian/postinst")
         #expect(postinst.contains("install -d -m 0755 /etc/qemu"))
         let qemuDir = try #require(postinst.range(of: "install -d -m 0755 /etc/qemu"))
-        let restart = try #require(postinst.range(of: "try-restart barkvisor.service"))
+        let restart = try #require(postinst.range(of: "try-restart barkvisor-daemon.service"))
         #expect(qemuDir.lowerBound < restart.lowerBound)
 
         let spec = try read("packaging/linux/rpm/barkvisor.spec.in")
@@ -113,7 +113,7 @@ struct RootDaemonPackagingTests {
         #expect(postinst.contains("uname -m"))
         #expect(!postinst.contains("/usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu"))
         let shim = try #require(postinst.range(of: "libxml2.so.2"))
-        let restart = try #require(postinst.range(of: "try-restart barkvisor.service"))
+        let restart = try #require(postinst.range(of: "try-restart barkvisor-daemon.service"))
         #expect(shim.lowerBound < restart.lowerBound)
     }
 

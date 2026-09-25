@@ -11,7 +11,10 @@ public protocol DatabaseMigration {
 public final class AppDatabase: Sendable {
     public let pool: DatabasePool
 
-    public init(path: String) throws {
+    public init(path: String, role: ServiceProcessRole = .combined) throws {
+        if role == .barkServer {
+            throw ServiceProcessRoleError.serverCannotOpenAuthoritativeState
+        }
         var config = Configuration()
         config.prepareDatabase { db in
             try db.execute(sql: "PRAGMA foreign_keys = ON")

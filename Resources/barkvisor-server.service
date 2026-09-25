@@ -1,0 +1,40 @@
+[Unit]
+Description=BarkServer
+Documentation=https://github.com/pmdroid/barkvisor
+After=barkvisor-daemon.service
+Requires=barkvisor-daemon.service
+
+[Service]
+Type=simple
+User=barkvisor
+Group=barkvisor
+WorkingDirectory=/var/lib/barkvisor
+Environment=HOME=/var/lib/barkvisor
+Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
+Environment=BARKVISOR_SOCKET_DIR=/var/run/barkvisor
+Environment=BARKVISOR_PROCESS_ROLE=bark-server
+Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/swift:/usr/local/lib/barkvisor/compat
+EnvironmentFile=-/etc/barkvisor/barkvisor.env
+ExecStart=/usr/local/bin/barkvisor server
+Restart=on-failure
+RestartSec=3
+KillMode=process
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/dev/kvm
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

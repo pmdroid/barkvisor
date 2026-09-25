@@ -13,6 +13,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
     public var createdBridge: Bool
     public var netplanPid: Int32?
     public var helperModes: [String: Int]?
+    public var operationID: String?
 
     public init(
         target: String,
@@ -21,6 +22,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         createdBridge: Bool = false,
         netplanPid: Int32? = nil,
         helperModes: [String: Int]? = nil,
+        operationID: String? = nil,
     ) {
         self.target = target
         self.commitDeadline = commitDeadline
@@ -28,10 +30,11 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         self.createdBridge = createdBridge
         self.netplanPid = netplanPid
         self.helperModes = helperModes
+        self.operationID = operationID
     }
 
     enum CodingKeys: String, CodingKey {
-        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid, helperModes
+        case target, commitDeadline, rollbackSeconds, createdBridge, netplanPid, helperModes, operationID
     }
 
     public init(from decoder: Decoder) throws {
@@ -42,6 +45,7 @@ public struct HostNetworkPendingCommit: Codable, Sendable, Equatable {
         createdBridge = try c.decodeIfPresent(Bool.self, forKey: .createdBridge) ?? false
         netplanPid = try c.decodeIfPresent(Int32.self, forKey: .netplanPid)
         helperModes = try c.decodeIfPresent([String: Int].self, forKey: .helperModes)
+        operationID = try c.decodeIfPresent(String.self, forKey: .operationID)
     }
 
     public var expired: Bool {

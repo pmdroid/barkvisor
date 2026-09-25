@@ -138,7 +138,14 @@ struct BarkVisorCLI: AsyncParsableCommand {
             abstract: role.serveFrontend
                 ? "BarkVisor Device daemon"
                 : "BarkVisor Device daemon (API-only, no SPA)",
-            subcommands: [Serve.self, Join.self, Doctor.self, HostnetExpire.self],
+            subcommands: [
+                Serve.self,
+                Join.self,
+                Doctor.self,
+                HostnetExpire.self,
+                DaemonCommand.self,
+                ServerCommand.self,
+            ],
             defaultSubcommand: Serve.self,
         )
     }()
@@ -337,4 +344,182 @@ func runDaemon() async {
         close(signalPipeFDs[0])
         close(signalPipeFDs[1])
     #endif
+}
+
+nonisolated(unsafe) var managementSignalFDs: [Int32] = [0, 0]
+
+func armManagementShutdown() {
+    #if !os(Windows)
+        var created = [Int32](repeating: 0, count: 2)
+        pipe(&created)
+        managementSignalFDs = created
+        signal(SIGTERM) { _ in
+            var byte: UInt8 = 1
+            write(managementSignalFDs[1], &byte, 1)
+        }
+        signal(SIGINT) { _ in
+            var byte: UInt8 = 1
+            write(managementSignalFDs[1], &byte, 1)
+        }
+    #endif
+}
+
+func signalManagementShutdown() {
+    #if !os(Windows)
+        guard managementSignalFDs.count == 2 else { return }
+        var byte: UInt8 = 1
+        _ = write(managementSignalFDs[1], &byte, 1)
+    #endif
+}
+
+func waitForManagementShutdown() async {
+    #if !os(Windows)
+        let readFD = managementSignalFDs[0]
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                var byte: UInt8 = 0
+                _ = read(readFD, &byte, 1)
+                cont.resume()
+            }
+        }
+    #endif
+}
+
+func superviseUntilSignal(
+    run: @escaping @Sendable () async throws -> Void,
+    stop: @escaping @Sendable () -> Void,
+) async throws {
+    #if os(Windows)
+        try await run()
+    #else
+        armManagementShutdown()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await run()
+            }
+            group.addTask {
+                await waitForManagementShutdown()
+                stop()
+            }
+            do {
+                try await group.next()
+            } catch {
+                stop()
+                signalManagementShutdown()
+                group.cancelAll()
+                throw error
+            }
+            stop()
+            signalManagementShutdown()
+            group.cancelAll()
+        }
+    #endif
+}
+
+struct DaemonCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "daemon",
+        abstract: "Run BarkDaemon on the local management socket.",
+    )
+
+    func run() async throws {
+        #if os(Windows)
+            throw ServiceProcessRoleError.unavailable
+        #else
+            setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkDaemon.rawValue, 1)
+            let euid = WorkloadPrivilegeDrop.currentEUID()
+            let permissions = SocketPermissionPlan.forDaemonEUID(euid)
+            let policy = LocalManagementPolicy(
+                allowedPeerUIDs: LocalManagementPeers.allowlist(
+                    daemonEUID: euid,
+                    serverUID: WorkloadPrivilegeDrop.uid(forUser: "barkvisor"),
+                ),
+                memberships: [],
+                resources: ResourcePolicy(allowedRoots: [], allowedMounts: [], allowedDevices: []),
+            )
+            let database = try AppDatabase(path: Config.dbPath.path)
+            try database.migrate()
+            let manager = VMManager(dbPool: database.pool)
+            let tasks = BackgroundTaskManager()
+            let operations = try DurableOperationFile(
+                url: Config.dataDir.appendingPathComponent("socket-operations.json"),
+            )
+            let driver = LiveWorkloadSocketDriver(
+                db: database.pool,
+                vmManager: manager,
+                tasks: tasks,
+            )
+            let facts = try await DaemonRecovery.facts(db: database.pool)
+            let plan = await DaemonRecovery.reconcile(
+                records: operations.all(),
+                running: facts.running,
+                present: facts.present,
+            )
+            for record in plan.records {
+                await operations.save(record)
+            }
+            for command in plan.commands {
+                guard let current = await operations.find(operationID: command.operationID) else { continue }
+                var finished = current
+                do {
+                    let snapshot = try await driver.perform(command)
+                    finished.phase = "completed"
+                    finished.state = snapshot.state
+                    finished.runtime = snapshot.runtime
+                } catch {
+                    finished.phase = "failed"
+                    finished.state = "failed"
+                }
+                await operations.save(finished)
+            }
+            let server = LocalManagementSocketServer(
+                path: ManagementSocketPath.path(socketDir: Config.socketDir),
+                session: LocalManagementSession(
+                    policy: policy,
+                    operationStore: operations,
+                    workloadDriver: driver,
+                ),
+                directoryMode: permissions.directoryMode,
+                socketMode: permissions.socketMode,
+            )
+            try await superviseUntilSignal {
+                try await server.run()
+            } stop: {
+                server.stop()
+            }
+        #endif
+    }
+}
+
+struct ServerCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "server",
+        abstract: "Run BarkServer. Refuses root and does not open the management database.",
+    )
+
+    func run() async throws {
+        #if os(Windows)
+            throw ServiceProcessRoleError.unavailable
+        #else
+            setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkServer.rawValue, 1)
+            try BarkServerStartup.refuseRoot(euid: WorkloadPrivilegeDrop.currentEUID())
+            let handshake = try LocalManagementSocketClient.exchange(
+                path: ManagementSocketPath.path(socketDir: Config.socketDir),
+                request: LocalManagementRequest(
+                    requestId: "startup",
+                    operationId: "startup",
+                    name: "protocolVersion",
+                ),
+            )
+            try BarkServerStartup.requireHandshake(handshake)
+            let publicServer = PublicBarkServer(
+                socketPath: ManagementSocketPath.path(socketDir: Config.socketDir),
+            )
+            try await superviseUntilSignal {
+                try await publicServer.run(httpPort: Config.port, deviceTLSPort: Config.agentPort)
+            } stop: {
+                publicServer.stop()
+            }
+        #endif
+    }
 }

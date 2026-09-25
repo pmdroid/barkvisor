@@ -28,8 +28,19 @@ public final class VaporServer: @unchecked Sendable {
         self.keys = JWTKeyCollection()
     }
 
+    public static func ownsPublicListeners(role: ServiceProcessRole) -> Bool {
+        let plan = ListenerPlan.forRole(role)
+        return plan.publicHTTP && plan.deviceTLS && !plan.tcpManagement
+    }
+
     public func start() async throws {
-        // Add HMAC key for signing JWTs
+        if let pointer = getenv("BARKVISOR_PROCESS_ROLE") {
+            let raw = String(cString: pointer)
+            if let role = ServiceProcessRole(rawValue: raw),
+               !VaporListenerGate.authoritativeStartAllowed(role: role) {
+                throw ServiceProcessRoleError.serverCannotOpenAuthoritativeState
+            }
+        }
         await keys.add(hmac: .init(from: Config.jwtSecret), digestAlgorithm: .sha256)
 
         let app = try await Vapor.Application.make(.production)

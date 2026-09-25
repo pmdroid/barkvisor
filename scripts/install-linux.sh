@@ -37,6 +37,8 @@ SHARE_DST="${PREFIX}/share/barkvisor"
 FRONTEND_DST="${SHARE_DST}/frontend/dist"
 COMPAT_DST="${PREFIX}/lib/barkvisor/compat"
 UNIT_DST="/usr/local/lib/systemd/system/barkvisor.service"
+DAEMON_UNIT_DST="/usr/local/lib/systemd/system/barkvisor-daemon.service"
+SERVER_UNIT_DST="/usr/local/lib/systemd/system/barkvisor-server.service"
 AGENT_UNIT_DST="/usr/local/lib/systemd/system/barkvisor-agent.service"
 ENV_DIR="/etc/barkvisor"
 ENV_FILE="${ENV_DIR}/barkvisor.env"
@@ -150,6 +152,15 @@ else
   barkvisor_ensure_swift_compat || true
 fi
 
+schema_file="${DATA_DIR}/schema-version"
+if [[ -f "$schema_file" ]]; then
+  on_disk="$(tr -cd '0-9' < "$schema_file" || true)"
+  if [[ -n "$on_disk" && "$on_disk" -gt 1 ]]; then
+    echo "unsupported downgrade: schema $on_disk" >&2
+    exit 1
+  fi
+fi
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: create system user barkvisor if missing"
   echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
@@ -162,7 +173,7 @@ else
   getent group vfio &>/dev/null && usermod -aG vfio barkvisor || true
   if getent group disk &>/dev/null; then
     usermod -aG disk barkvisor || true
-    for unit in barkvisor.service barkvisor-agent.service; do
+    for unit in barkvisor-daemon.service barkvisor-agent.service; do
       mkdir -p /etc/systemd/system/${unit}.d
       printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
         >/etc/systemd/system/${unit}.d/disk.conf
@@ -174,6 +185,9 @@ else
   fi
   if [[ -d "$COMPAT_DST" ]]; then
     chown -R root:root "$COMPAT_DST"
+  fi
+  if [[ ! -f "$schema_file" ]]; then
+    printf '1\n' > "$schema_file"
   fi
 fi
 
@@ -206,38 +220,25 @@ EOF
 fi
 
 run install -m 0644 "$ROOT/Resources/barkvisor.service" "$UNIT_DST"
+run install -m 0644 "$ROOT/Resources/barkvisor-daemon.service" "$DAEMON_UNIT_DST"
+run install -m 0644 "$ROOT/Resources/barkvisor-server.service" "$SERVER_UNIT_DST"
 run install -m 0644 "$ROOT/Resources/barkvisor-agent.service" "$AGENT_UNIT_DST"
-
-if [[ "$SKIP_FRONTEND" == "1" ]]; then
-  ENABLE_UNIT="barkvisor-agent.service"
-  DISABLE_UNIT="barkvisor.service"
-else
-  ENABLE_UNIT="barkvisor.service"
-  DISABLE_UNIT="barkvisor-agent.service"
-fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: systemctl daemon-reload"
-  echo "DRY_RUN: systemctl disable --now $DISABLE_UNIT || true"
-  if [[ "$SKIP_START" != "1" ]]; then
-    echo "DRY_RUN: systemctl enable --now $ENABLE_UNIT"
-    echo "DRY_RUN: systemctl status $ENABLE_UNIT"
-  else
-    echo "DRY_RUN: SKIP_START=1 — would not enable/start"
-  fi
+  echo "DRY_RUN: systemctl disable --now barkvisor.service || true"
+  echo "DRY_RUN: systemctl enable barkvisor-daemon.service barkvisor-server.service"
 else
   systemctl daemon-reload
-  systemctl disable --now "$DISABLE_UNIT" >/dev/null 2>&1 || true
-  if systemctl is-active --quiet "$ENABLE_UNIT"; then
-    systemctl try-restart "$ENABLE_UNIT" || true
-  elif [[ "$SKIP_START" != "1" ]]; then
-    systemctl enable --now "$ENABLE_UNIT"
-    systemctl --no-pager --full status "$ENABLE_UNIT" || true
-  else
-    systemctl enable "$ENABLE_UNIT"
-    echo "Installed unit (not started). Start with: systemctl start $ENABLE_UNIT"
+  systemctl disable --now barkvisor.service >/dev/null 2>&1 || true
+  systemctl enable barkvisor-daemon.service
+  systemctl enable barkvisor-server.service
+  if [[ "$SKIP_START" != "1" ]]; then
+    systemctl try-restart barkvisor-daemon.service || true
+    systemctl try-restart barkvisor-server.service || true
   fi
 fi
+ENABLE_UNIT="barkvisor-daemon.service"
 
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 echo

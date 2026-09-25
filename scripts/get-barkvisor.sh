@@ -358,11 +358,11 @@ install_linux() {
   local pkg="$1"
   if [[ "$SKIP_INSTALL" == "1" ]]; then
     echo "SKIP_INSTALL: dpkg -i $pkg"
-    echo "SKIP_INSTALL: systemctl enable --now barkvisor.service"
+    echo "SKIP_INSTALL: systemctl enable --now barkvisor-daemon.service barkvisor-server.service"
     return 0
   fi
   as_root dpkg -i "$pkg" || as_root apt-get install -f -y
-  as_root systemctl enable --now barkvisor.service
+  as_root systemctl enable --now barkvisor-daemon.service barkvisor-server.service
 }
 
 install_macos() {
@@ -411,7 +411,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: channel=${CHANNEL} arch=$(host_arch) suffix=${ASSET_SUFFIX}"
   if [[ "$CHANNEL" == "linux" ]]; then
     echo "DRY_RUN: dpkg -i <release-deb>"
-    echo "DRY_RUN: systemctl enable --now barkvisor.service"
+    echo "DRY_RUN: systemctl enable --now barkvisor-daemon.service barkvisor-server.service"
   else
     echo "DRY_RUN: installer -pkg <release-pkg> -target /"
     print_macos_runtime_hint
