@@ -108,43 +108,38 @@ struct TemplateCatalogListTests {
     @Test func `deploy rejects missing docker engine`() async throws {
         let shared = DockerDiscoveryCache.shared
         let identity = DockerRuntimeIdentity.detectFromEnvironment()
-        _ = shared.resolve(identity: identity) {
-            DockerEngineSnapshot(
-                os: PlatformHost.platformName, composeOK: true, composePlugin: true,
-            )
-        }
-        let previousProvider = DockerEngine.snapshotProvider
-        DockerEngine.snapshotProvider = {
-            DockerEngineSnapshot(os: PlatformHost.platformName, composeOK: false)
-        }
-        defer {
-            DockerEngine.snapshotProvider = previousProvider
-            shared.invalidate()
-        }
+        let cachedDocker = DockerEngineSnapshot(
+            os: PlatformHost.platformName, composeOK: true, composePlugin: true,
+        )
+        _ = shared.resolve(identity: identity) { cachedDocker }
+        defer { shared.invalidate() }
 
         let harness = try await TemplateListHarness.make()
+        let missingDocker = DockerEngineSnapshot(os: PlatformHost.platformName, composeOK: false)
         do {
-            var parameters = harness.getRequest().parameters
-            parameters.set("id", to: harness.dockerId)
-            let dryRunRequest = harness.getRequest()
-            dryRunRequest.parameters = parameters
-            let report = try await harness.controller.dryRun(req: dryRunRequest)
-            #expect(!report.compatible)
-            #expect(report.missingFeatures == ["dockerEngine"])
-            #expect(report.reasons.contains { $0.code == "feature_missing" })
+            try await DockerEngine.$snapshotOverride.withValue(missingDocker) {
+                var parameters = harness.getRequest().parameters
+                parameters.set("id", to: harness.dockerId)
+                let dryRunRequest = harness.getRequest()
+                dryRunRequest.parameters = parameters
+                let report = try await harness.controller.dryRun(req: dryRunRequest)
+                #expect(!report.compatible)
+                #expect(report.missingFeatures == ["dockerEngine"])
+                #expect(report.reasons.contains { $0.code == "feature_missing" })
 
-            do {
-                _ = try await TemplateDeployService.deploy(
-                    options: DeployOptions(
-                        templateId: harness.dockerId, vmName: "needs-docker-vm", inputs: [:],
-                    ),
-                    imageDownloader: harness.downloader,
-                    backgroundTasks: harness.tasks,
-                    db: harness.database.pool,
-                )
-                Issue.record("deploy accepted a host without dockerEngine")
-            } catch let BarkVisorError.badRequest(message) {
-                #expect(message.contains("dockerEngine"))
+                do {
+                    _ = try await TemplateDeployService.deploy(
+                        options: DeployOptions(
+                            templateId: harness.dockerId, vmName: "needs-docker-vm", inputs: [:],
+                        ),
+                        imageDownloader: harness.downloader,
+                        backgroundTasks: harness.tasks,
+                        db: harness.database.pool,
+                    )
+                    Issue.record("deploy accepted a host without dockerEngine")
+                } catch let BarkVisorError.badRequest(message) {
+                    #expect(message.contains("dockerEngine"))
+                }
             }
             try await harness.app.asyncShutdown()
         } catch {
