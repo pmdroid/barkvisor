@@ -256,7 +256,10 @@ struct RuntimeObservationTests {
             listContainers: { lists.list() },
         )
         await service.ensureEvents(source: source, reconnect: false)
-        try await waitUntil { lists.count >= 1 }
+        try await waitUntil {
+            guard lists.count >= 1 else { return false }
+            return await service.observation(for: "app-1") != nil
+        }
         let observed = try #require(await service.observation(for: "app-1"))
         #expect(observed.phase == .running)
         #expect(observed.health == .healthy)
