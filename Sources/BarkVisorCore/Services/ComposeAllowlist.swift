@@ -45,6 +45,7 @@ public enum ComposeAllowlist {
         gpuShare: GPUShareAttach = .empty,
         upstreamResolver: String? = nil,
         guestDNS: String? = nil,
+        acceptedResources: WorkloadResources? = nil,
     ) throws -> ComposeRender {
         let trimmed = yaml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -112,6 +113,13 @@ public enum ComposeAllowlist {
                 try validateDependsOn(depends)
             }
             try injectGPUShare(&service, gpuShare: gpuShare)
+            if let acceptedResources {
+                try ComposeResources.enforce(
+                    &service,
+                    cpu: acceptedResources.cpu,
+                    memoryMb: acceptedResources.memoryMb,
+                )
+            }
             services[name] = service
         }
         root["services"] = services

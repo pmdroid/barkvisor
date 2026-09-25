@@ -103,6 +103,11 @@ public struct VMStateEvent: Codable, Sendable {
     public let error: String?
     public let pendingImageId: String?
     public let downloadPercent: Int?
+    public var running: Bool?
+    public var readiness: String?
+    public var condition: String?
+    public var observation: String?
+    public var appliedGeneration: Int?
 
     public init(
         id: String,
@@ -110,12 +115,22 @@ public struct VMStateEvent: Codable, Sendable {
         error: String?,
         pendingImageId: String? = nil,
         downloadPercent: Int? = nil,
+        running: Bool? = nil,
+        readiness: String? = nil,
+        condition: String? = nil,
+        observation: String? = nil,
+        appliedGeneration: Int? = nil,
     ) {
         self.id = id
         self.state = state
         self.error = error
         self.pendingImageId = pendingImageId
         self.downloadPercent = downloadPercent
+        self.running = running
+        self.readiness = readiness
+        self.condition = condition
+        self.observation = observation
+        self.appliedGeneration = appliedGeneration
     }
 }
 

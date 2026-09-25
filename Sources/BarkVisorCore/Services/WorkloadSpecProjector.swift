@@ -98,12 +98,24 @@ public enum WorkloadSpecProjector {
     public static func status(
         from vm: VM,
         signals: WorkloadHealthSignals = .unobserved,
+        observation: WorkloadObservation? = nil,
     ) -> VMRuntimeStatus {
         let health = WorkloadHealthProjector.project(
             state: VMState.parse(vm.state),
             signals: signals,
             updatedAt: vm.updatedAt,
+            kind: vm.kind,
+            services: observation?.services ?? [],
+            observedAt: observation?.observedAt,
+            freshness: observation?.freshness ?? "unknown",
+            appliedGeneration: observation?.appliedGeneration,
         )
+        let enforced: WorkloadResources? = if let cpu = observation?.enforcedCpu,
+                                              let memory = observation?.enforcedMemoryMb {
+            WorkloadResources(cpu: cpu, memoryMb: memory)
+        } else {
+            nil
+        }
         return VMRuntimeStatus(
             state: VMState.parse(vm.state),
             pendingChanges: vm.pendingChanges,
@@ -114,6 +126,13 @@ public enum WorkloadSpecProjector {
             healthError: health.lastError,
             backend: WorkloadBackendProjector.project(vm: vm),
             startOnBoot: vm.startOnBoot,
+            running: health.running,
+            readiness: health.readiness,
+            condition: health.condition,
+            observation: health.observation,
+            appliedGeneration: health.appliedGeneration,
+            acceptedResources: WorkloadResources(cpu: vm.cpuCount, memoryMb: vm.memoryMb),
+            enforcedResources: enforced,
         )
     }
 
@@ -302,6 +321,10 @@ public enum WorkloadSpecProjector {
     }
 
     private static func applyApplication(_ spec: WorkloadSpec, to vm: inout VM) throws {
+        try ComposeResources.validateAccepted(
+            cpu: spec.spec.resources.cpu,
+            memoryMb: spec.spec.resources.memoryMb,
+        )
         vm.name = spec.metadata.name
         vm.description = spec.metadata.description
         vm.kind = WorkloadSpec.kindApplication

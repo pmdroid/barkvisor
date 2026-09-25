@@ -132,6 +132,7 @@ public enum VMLifecycleService {
         spec: WorkloadSpec,
         db: DatabasePool,
         hostDevices: [HostUSBDevice]? = nil,
+        expectedGeneration: Int? = nil,
     ) async throws -> VM {
         try WorkloadSpecProjector.validate(spec, existingID: id)
         var normalized = spec
@@ -152,6 +153,11 @@ public enum VMLifecycleService {
         return try await db.write { db in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
+            }
+            if let expectedGeneration, vm.specGeneration != expectedGeneration {
+                throw BarkVisorError.conflict(
+                    "configuration generation \(vm.specGeneration) is newer than \(expectedGeneration)",
+                )
             }
             var spec = spec
             if vm.isApplication {

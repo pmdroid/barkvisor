@@ -174,6 +174,45 @@ describe('API contract (PAS-78)', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     }
     expect(vm.spec?.apiVersion).toBe('barkvisor.dev/v1')
+    const vmFacts: VM = {
+      ...vm,
+      kind: 'VirtualMachine',
+      status: {
+        ...vm.status!,
+        running: false,
+        readiness: 'not_ready',
+        condition: 'unknown',
+        observation: 'fresh',
+        appliedGeneration: 1,
+        acceptedResources: { cpu: 2, memoryMb: 1024 },
+        enforcedResources: null,
+      },
+    }
+    const appFacts: VM = {
+      ...vm,
+      id: 'app-1',
+      kind: 'Application',
+      vmType: 'application',
+      bootDiskId: null,
+      status: {
+        ...vm.status!,
+        state: 'running',
+        health: 'degraded',
+        running: true,
+        readiness: 'not_ready',
+        condition: 'unhealthy',
+        observation: 'fresh',
+        appliedGeneration: 4,
+        acceptedResources: { cpu: 1, memoryMb: 128 },
+        enforcedResources: { cpu: 1, memoryMb: 128 },
+      },
+    }
+    expect(vmFacts.status?.condition).toBe('unknown')
+    expect(vmFacts.status?.appliedGeneration).toBe(vmFacts.status?.generation)
+    expect(appFacts.kind).toBe('Application')
+    expect(appFacts.status?.running).toBe(true)
+    expect(appFacts.status?.condition).toBe('unhealthy')
+    expect(appFacts.status?.health).not.toBe('running')
     expect(disk.format).toBe('qcow2')
     expect(network.mode).toBe('nat')
     expect(image.arch).toBe('arm64')

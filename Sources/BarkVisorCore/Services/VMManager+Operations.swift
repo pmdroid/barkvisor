@@ -123,8 +123,6 @@ extension VMManager {
         if vm.isApplication {
             let composeError = ApplicationLifecycleService.lastError(for: vm.id)
             return WorkloadHealthSignals(
-                qemuProcess: vm.state == "running",
-                qmp: vm.state == "running",
                 lastError: composeError ?? lastHealthErrors[vm.id],
                 http: probes.http,
                 tcp: probes.tcp,
@@ -187,34 +185,61 @@ extension VMManager {
         error: String? = nil,
         expectedGeneration: Int? = nil,
     ) async throws {
-        let wrote = try await dbPool.write { db -> Bool in
-            guard try VM.fetchOne(db, key: vmID) != nil else { return false }
-            if let expectedGeneration {
+        let now = iso8601.string(from: Date())
+        let projected: WorkloadHealthStatus? = try await dbPool.write { db in
+            guard var vm = try VM.fetchOne(db, key: vmID) else {
                 try db.execute(
-                    sql: """
-                    UPDATE vms SET state = ?, updatedAt = ?
-                    WHERE id = ? AND specGeneration = ? AND state != 'deleting'
-                    """,
-                    arguments: [state, iso8601.string(from: Date()), vmID, expectedGeneration],
+                    sql: "UPDATE vms SET state = ?, updatedAt = ? WHERE id = ?",
+                    arguments: [state, now, vmID],
                 )
-                return db.changesCount > 0
+                return nil
             }
-            try db.execute(
-                sql: "UPDATE vms SET state = ?, updatedAt = ? WHERE id = ?",
-                arguments: [state, iso8601.string(from: Date()), vmID],
-            )
-            return true
-        }
-        if !wrote {
-            if expectedGeneration != nil {
+            if let expectedGeneration,
+               vm.specGeneration != expectedGeneration || vm.state == "deleting" {
                 throw BarkVisorError.conflict(
                     "Workload \(vmID) changed before the operation finished",
                 )
             }
-            return
+            vm.state = state
+            vm.updatedAt = now
+            try vm.update(db)
+            let existing = try WorkloadObservation.fetchOne(db, key: vmID)
+            let services = existing?.services ?? []
+            let status = WorkloadHealthProjector.project(
+                state: VMState.parse(state),
+                signals: WorkloadHealthSignals(lastError: error),
+                updatedAt: now,
+                kind: vm.kind,
+                services: services,
+                observedAt: now,
+                freshness: "fresh",
+                appliedGeneration: existing?.appliedGeneration ?? vm.specGeneration,
+            )
+            _ = try WorkloadFactStore.recordObservation(
+                db: db,
+                workloadId: vmID,
+                appliedGeneration: existing?.appliedGeneration ?? vm.specGeneration,
+                runtimeIdentity: vm.runtimeWorkloadId,
+                processState: state,
+                readiness: status.readiness ?? "unknown",
+                condition: status.condition ?? "unknown",
+                observedAt: now,
+                error: error,
+                freshness: "fresh",
+                enforcedCpu: nil,
+                enforcedMemoryMb: nil,
+                services: services,
+            )
+            return status
         }
-
-        let event = VMStateEvent(id: vmID, state: state, error: error)
+        var event = VMStateEvent(id: vmID, state: state, error: error)
+        if let projected {
+            event.running = projected.running
+            event.readiness = projected.readiness
+            event.condition = projected.condition
+            event.observation = projected.observation
+            event.appliedGeneration = projected.appliedGeneration
+        }
         await stateStreamService?.broadcast(event: event)
     }
 

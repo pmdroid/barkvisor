@@ -144,7 +144,12 @@ public enum WorkloadApplyService {
                 diff: WorkloadApplyDiff(before: before, after: after),
             )
         }
-        var vm = try await VMLifecycleService.updateVMSpec(id: existing.id, spec: merged, db: db)
+        var vm = try await VMLifecycleService.updateVMSpec(
+            id: existing.id,
+            spec: merged,
+            db: db,
+            expectedGeneration: existing.specGeneration,
+        )
         if vm.isApplication {
             try await ApplicationLifecycleService.syncProject(vm: &vm, db: db, operations: operations)
         }
@@ -216,6 +221,10 @@ public enum WorkloadApplyService {
         operations: WorkloadOperationCoordinator? = nil,
     ) async throws -> WorkloadApplyResult {
         try WorkloadSpecProjector.validate(spec)
+        try ComposeResources.validateAccepted(
+            cpu: spec.spec.resources.cpu,
+            memoryMb: spec.spec.resources.memoryMb,
+        )
         try DockerEngine.requireDeviceRuntime()
         let requested = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let id = requested.isEmpty ? UUID().uuidString : requested

@@ -62,9 +62,10 @@ struct VMResponse: Content {
         imageStatus: String? = nil,
         updateTaskID: String? = nil,
         updateProgress: Double? = nil,
+        observation: WorkloadObservation? = nil,
     ) {
         self.spec = AppTemplate.redact(WorkloadSpecProjector.fromVM(vm))
-        let status = WorkloadSpecProjector.status(from: vm, signals: signals)
+        let status = WorkloadSpecProjector.status(from: vm, signals: signals, observation: observation)
         self.status = status
         self.id = vm.id
         self.name = vm.name

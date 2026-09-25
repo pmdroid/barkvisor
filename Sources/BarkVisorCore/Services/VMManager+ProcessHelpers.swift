@@ -47,19 +47,56 @@ extension VMManager {
         await guestAgentInventory?.stop(vmID: vmID)
         await qmpEventListener?.stop(vmID: vmID)
 
+        let projected: WorkloadHealthStatus?
         do {
-            try await dbPool.write { db in
-                try db.execute(
-                    sql: "UPDATE vms SET state = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [newState, iso8601.string(from: Date()), vmID],
+            let now = iso8601.string(from: Date())
+            projected = try await dbPool.write { db in
+                guard var vm = try VM.fetchOne(db, key: vmID) else { return nil }
+                vm.state = newState
+                vm.updatedAt = now
+                try vm.update(db)
+                let existing = try WorkloadObservation.fetchOne(db, key: vmID)
+                let services = existing?.services ?? []
+                let status = WorkloadHealthProjector.project(
+                    state: VMState.parse(newState),
+                    signals: WorkloadHealthSignals(lastError: errorMsg),
+                    updatedAt: now,
+                    kind: vm.kind,
+                    services: services,
+                    observedAt: now,
+                    freshness: "fresh",
+                    appliedGeneration: existing?.appliedGeneration ?? vm.specGeneration,
                 )
+                _ = try WorkloadFactStore.recordObservation(
+                    db: db,
+                    workloadId: vmID,
+                    appliedGeneration: existing?.appliedGeneration ?? vm.specGeneration,
+                    runtimeIdentity: vm.runtimeWorkloadId,
+                    processState: newState,
+                    readiness: status.readiness ?? "unknown",
+                    condition: status.condition ?? "unknown",
+                    observedAt: now,
+                    error: errorMsg,
+                    freshness: "fresh",
+                    enforcedCpu: nil,
+                    enforcedMemoryMb: nil,
+                    services: services,
+                )
+                return status
             }
         } catch {
+            projected = nil
             Log.vm.error("Failed to update DB state for terminated VM \(vmID): \(error)", vm: vmID)
         }
 
-        // Notify SSE listeners
-        let event = VMStateEvent(id: vmID, state: newState, error: errorMsg)
+        var event = VMStateEvent(id: vmID, state: newState, error: errorMsg)
+        if let projected {
+            event.running = projected.running
+            event.readiness = projected.readiness
+            event.condition = projected.condition
+            event.observation = projected.observation
+            event.appliedGeneration = projected.appliedGeneration
+        }
         await stateStreamService?.broadcast(event: event)
     }
 
