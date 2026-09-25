@@ -89,6 +89,10 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
     public var confirm: Bool
     public var deleteBridge: Bool
     public var attachedWorkloadCount: Int
+    public var unconfirmedExpiry: Bool
+    public var operationId: String?
+    public var generation: Int?
+    public var authorized: Bool
 
     public init(
         action: LinuxHostBridgeApplyAction,
@@ -102,6 +106,10 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         confirm: Bool = false,
         deleteBridge: Bool = false,
         attachedWorkloadCount: Int = 0,
+        unconfirmedExpiry: Bool = false,
+        operationId: String? = nil,
+        generation: Int? = nil,
+        authorized: Bool = true,
     ) {
         self.action = action
         self.bridge = bridge
@@ -114,6 +122,14 @@ public struct LinuxHostBridgeApplyRequest: Sendable, Equatable {
         self.confirm = confirm
         self.deleteBridge = deleteBridge
         self.attachedWorkloadCount = attachedWorkloadCount
+        self.unconfirmedExpiry = unconfirmedExpiry
+        self.operationId = operationId
+        self.generation = generation
+        self.authorized = authorized
+    }
+
+    public var attachedDeleteIsRefused: Bool {
+        attachedWorkloadCount > 0 && !unconfirmedExpiry
     }
 }
 
@@ -132,6 +148,8 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
     public var refused: Bool
     public var conflict: Bool
     public var createdBridge: Bool
+    public var operationId: String?
+    public var generation: Int?
 
     public init(
         success: Bool,
@@ -148,6 +166,8 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         refused: Bool = false,
         conflict: Bool = false,
         createdBridge: Bool = false,
+        operationId: String? = nil,
+        generation: Int? = nil,
     ) {
         self.success = success
         self.applied = applied
@@ -163,6 +183,8 @@ public struct LinuxHostBridgeApplyResult: Sendable, Equatable, Codable {
         self.refused = refused
         self.conflict = conflict
         self.createdBridge = createdBridge
+        self.operationId = operationId
+        self.generation = generation
     }
 }
 
@@ -1259,7 +1281,7 @@ extension LinuxHostBridgeApply {
                 message: "Refuse delete of foreign \(request.bridge). Revert strips BarkVisor files only.",
             )
         }
-        if request.attachedWorkloadCount > 0 {
+        if request.attachedDeleteIsRefused {
             let n = request.attachedWorkloadCount
             return LinuxHostBridgeApplyResult(
                 success: false,

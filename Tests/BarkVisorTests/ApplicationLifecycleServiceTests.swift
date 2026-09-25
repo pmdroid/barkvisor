@@ -287,7 +287,7 @@ final class ApplicationLifecycleServiceTests {
 
         try await DockerInspectTestGate.withStub({ names in
             let ports: [String: Any] = [
-                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58081"]],
+                "80/tcp": [["HostIp": "0.0.0.0", "HostPort": "58081"]],
             ]
             let objects: [[String: Any]] = names.map { _ in
                 ["NetworkSettings": ["Ports": ports]]
@@ -485,7 +485,7 @@ final class ApplicationLifecycleServiceTests {
         let tasks = BackgroundTaskManager()
         try await DockerInspectTestGate.withStub({ names in
             let ports: [String: Any] = [
-                "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58082"]],
+                "80/tcp": [["HostIp": "0.0.0.0", "HostPort": "58082"]],
             ]
             let objects: [[String: Any]] = names.map { _ in
                 ["NetworkSettings": ["Ports": ports]]
@@ -726,8 +726,8 @@ private final class RestartInspect: @unchecked Sendable {
     func data(for names: [String]) throws -> Data {
         if fail { return Data("[]".utf8) }
         let ports: [String: Any] = [
-            "80/tcp": [["HostIp": "192.168.8.10", "HostPort": "58080"]],
-            "1900/udp": [["HostIp": "192.168.8.10", "HostPort": "51900"]],
+            "80/tcp": [["HostIp": "0.0.0.0", "HostPort": "58080"]],
+            "1900/udp": [["HostIp": "0.0.0.0", "HostPort": "51900"]],
         ]
         let objects: [[String: Any]] = names.map { _ in
             ["NetworkSettings": ["Ports": ports]]

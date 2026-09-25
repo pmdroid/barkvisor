@@ -18,12 +18,10 @@ public enum HostNetworkPendingReaper {
                 let attached = try await pending.createdBridge
                     ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                     : 0
-                if attached > 0 {
-                    keepNetplanTry(pending)
-                    try HostNetworkPendingCommitService.keepNow(target: pending.target)
+                if try await settleExpired(pending, db: db) {
                     continue
                 }
-                if try await settleExpired(pending, db: db) {
+                guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
                     continue
                 }
                 try revertHost(pending, attached: attached)
@@ -40,6 +38,7 @@ public enum HostNetworkPendingReaper {
                 continue
             }
         }
+        try? HostNetworkRecovery.revertExpired()
     }
 
     public static func settleExpired(
@@ -79,14 +78,6 @@ public enum HostNetworkPendingReaper {
         #endif
     }
 
-    private static func keepNetplanTry(_ pending: HostNetworkPendingCommit) {
-        #if os(Linux)
-            guard let pid = pending.netplanPid, pid > 0 else { return }
-            guard LinuxHostBridgeApply.isNetplanProcess(pid: pid) else { return }
-            _ = kill(pid_t(pid), SIGUSR1)
-        #endif
-    }
-
     public static func revertHost(_ pending: HostNetworkPendingCommit, attached: Int = 0) throws {
         let action: LinuxHostBridgeApplyAction = pending.createdBridge ? .delete : .revert
         let nic = LinuxHostBridgeApply.readOwnerMarker(bridge: pending.target)?.uplink
@@ -97,6 +88,9 @@ public enum HostNetworkPendingReaper {
             nic: nic,
             confirm: true,
             attachedWorkloadCount: attached,
+            unconfirmedExpiry: true,
+            operationId: pending.operationId,
+            generation: pending.generation,
         )
         #if os(Linux)
             _ = try LinuxHostBridgeApplyLive.run(request: request)

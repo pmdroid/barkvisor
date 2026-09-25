@@ -183,6 +183,8 @@ struct SystemBridgeController: RouteCollection {
             changes: result.changes,
             warnings: result.warnings,
             commands: result.commands,
+            operationId: result.operationId,
+            generation: result.generation,
         )
     }
 
@@ -270,6 +272,9 @@ struct SystemBridgeController: RouteCollection {
             addresses: addresses,
             confirm: body.confirm == true,
             deleteBridge: body.deleteBridge == true,
+            operationId: body.operationId,
+            generation: body.generation,
+            authorized: true,
         )
     }
 
@@ -313,7 +318,12 @@ struct SystemBridgeController: RouteCollection {
         let action = parseSocketAction(body, default: defaultAction)
         let iface = body.interface ?? req.parameters.get("interface")
         let result = try SocketVmnetApplyLive.run(
-            request: SocketVmnetApplyRequest(action: action, interface: iface),
+            request: SocketVmnetApplyRequest(
+                action: action,
+                interface: iface,
+                operationId: body.operationId,
+                generation: body.generation,
+            ),
         )
         if result.applied {
             await BridgeSyncService.syncOnce(db: req.db)

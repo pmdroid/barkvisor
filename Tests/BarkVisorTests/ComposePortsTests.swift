@@ -82,7 +82,7 @@ struct ComposePortsTests {
         #expect(empty != nil)
     }
 
-    @Test func `inspect IPv6 any HostIp is accepted`() throws {
+    @Test func `inspect IPv6 any HostIp matches an IPv6 wildcard plan`() throws {
         let data = Data(
             """
             [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"::","HostPort":"8080"}]}}}]
@@ -91,10 +91,21 @@ struct ComposePortsTests {
         let bindings = try ComposePorts.parseInspectBindings(data)
         try ComposePorts.requireLANHostIP(
             bindings,
-            bindHost: "0.0.0.0",
-            expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+            bindHost: "::",
+            expected: [
+                PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp", hostAddress: "::"),
+            ],
             allowWildcard: false,
         )
+        let mismatch = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                bindings,
+                bindHost: "0.0.0.0",
+                expected: [PublishedPort(hostPort: 8_080, containerPort: 80, proto: "tcp")],
+                allowWildcard: false,
+            )
+        }
+        #expect(mismatch != nil)
     }
 
     @Test func `inspect with no expected ports does not require a bind host`() throws {
@@ -104,5 +115,43 @@ struct ComposePortsTests {
             expected: [],
             allowWildcard: false,
         )
+    }
+
+    @Test func `explicit loopback publish is not rewritten to every interface`() throws {
+        let rewritten = try ComposePorts.rewritePublishedPorts(
+            ["127.0.0.1:8080:80"],
+            bindHost: "0.0.0.0",
+        )
+        #expect(rewritten.published.count == 1)
+        #expect(rewritten.published[0].hostAddress == "127.0.0.1")
+        #expect(rewritten.published[0].hostPort == 8_080)
+        #expect(rewritten.published[0].containerPort == 80)
+        let hostIP = rewritten.mapping.first?["host_ip"] as? String
+        #expect(hostIP == "127.0.0.1")
+    }
+
+    @Test func `observed wildcard does not satisfy a loopback plan`() throws {
+        let data = Data(
+            """
+            [{"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]}}}]
+            """.utf8,
+        )
+        let bindings = try ComposePorts.parseInspectBindings(data)
+        let error = #expect(throws: BarkVisorError.self) {
+            try ComposePorts.requireLANHostIP(
+                bindings,
+                bindHost: "127.0.0.1",
+                expected: [
+                    PublishedPort(
+                        hostPort: 8_080,
+                        containerPort: 80,
+                        proto: "tcp",
+                        hostAddress: "127.0.0.1",
+                    ),
+                ],
+                allowWildcard: false,
+            )
+        }
+        #expect(error != nil)
     }
 }

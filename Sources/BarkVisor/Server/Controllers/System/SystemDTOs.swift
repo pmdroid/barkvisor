@@ -50,6 +50,8 @@ struct BridgeRequest: Content {
     var confirm: Bool?
     var dryRun: Bool?
     var deleteBridge: Bool?
+    var operationId: String?
+    var generation: Int?
 
     init() {}
 }
@@ -67,6 +69,8 @@ struct BridgeActionResponse: Content {
     var changes: [String]?
     var warnings: [String]?
     var commands: [String]?
+    var operationId: String?
+    var generation: Int?
 }
 
 struct NextBridgeResponse: Content {

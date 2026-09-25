@@ -43,6 +43,8 @@ public enum ComposeAllowlist {
         bindHost: String? = nil,
         allowedBinds: [String] = [],
         gpuShare: GPUShareAttach = .empty,
+        upstreamResolver: String? = nil,
+        guestDNS: String? = nil,
     ) throws -> ComposeRender {
         let trimmed = yaml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -95,6 +97,13 @@ public enum ComposeAllowlist {
                 service["ports"] = ports.mapping
             }
             published.append(contentsOf: ports.published)
+            let resolvers = try ComposePorts.serviceDNS(
+                upstreamResolver: upstreamResolver,
+                guestDNS: guestDNS,
+            )
+            if !resolvers.isEmpty {
+                service["dns"] = resolvers
+            }
             let cname = containerName(workloadID: workloadID, service: name)
             service["container_name"] = cname
             containers.append(cname)

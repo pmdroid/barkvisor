@@ -307,7 +307,7 @@ import Foundation
             if !created {
                 return refuse("Refuse delete of foreign \(request.bridge). Revert strips BarkVisor files only.")
             }
-            if request.attachedWorkloadCount > 0 {
+            if request.attachedDeleteIsRefused {
                 let n = request.attachedWorkloadCount
                 return LinuxHostBridgeApplyResult(
                     success: false,
@@ -426,9 +426,26 @@ import Foundation
                     guard let service = resolved.serviceName else {
                         throw BarkVisorError.preconditionFailed("No networksetup service for \(resolved.device).")
                     }
+                    let operationId = request.operationId ?? UUID().uuidString
+                    let generation = request.generation ?? 1
+                    let plist = SocketVmnetLaunchd.plistURL(interface: resolved.device).path
+                    _ = try HostNetworkRecovery.begin(
+                        operationId: operationId,
+                        generation: generation,
+                        target: resolved.device,
+                        snapshot: HostNetworkRecovery.capture(paths: [plist]),
+                        deadline: Date().addingTimeInterval(
+                            TimeInterval(HostNetworkPendingCommitService.rollbackSeconds),
+                        ),
+                    )
                     if MacHostBridgeApply.isSyntheticBridgeName(request.bridge) {
                         let socket = try SocketVmnetApplyLive.run(
-                            request: SocketVmnetApplyRequest(action: .setup, interface: resolved.device),
+                            request: SocketVmnetApplyRequest(
+                                action: .setup,
+                                interface: resolved.device,
+                                operationId: operationId,
+                                generation: generation,
+                            ),
                             probe: resolved.socketProbe,
                         )
                         if !socket.success {
@@ -460,10 +477,16 @@ import Foundation
                     let pending = HostNetworkPendingCommitService.makePending(
                         target: resolved.device,
                         createdBridge: createdNow,
+                        operationId: operationId,
+                        generation: generation,
                     )
                     do {
                         try HostNetworkPendingCommitService.writeMac(pending)
                         try HostNetworkRollbackLaunchd.arm(target: resolved.device)
+                        try HostNetworkRecovery.mark(
+                            operationId,
+                            phase: HostNetworkRecoveryPhase.awaitingConfirmation,
+                        )
                     } catch {
                         HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                         HostNetworkPendingCommitService.clearMac(device: resolved.device)
@@ -479,6 +502,8 @@ import Foundation
                     plan.commitDeadline = pending.commitDeadline
                     plan.rollbackSeconds = pending.rollbackSeconds
                     plan.createdBridge = createdNow
+                    plan.operationId = pending.operationId
+                    plan.generation = pending.generation
                     plan.message =
                         "Applied Device addresses on \(service) (\(resolved.device)). Keep changes within \(pending.rollbackSeconds)s or they auto-revert."
                 }
@@ -494,10 +519,14 @@ import Foundation
                     guard let pending = HostNetworkPendingCommitService.readMac(device: resolved.device) else {
                         throw BarkVisorError.badRequest("No pending host network apply for \(resolved.device).")
                     }
-                    if pending.expired {
-                        throw BarkVisorError.badRequest(
-                            "Pending apply expired. Run Revert to restore the saved network profile.",
-                        )
+                    try HostNetworkRecovery.requireConfirmation(
+                        pending: pending,
+                        requestedOperationId: request.operationId,
+                        requestedGeneration: request.generation,
+                        authorized: request.authorized,
+                    )
+                    if let operationId = pending.operationId {
+                        try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.confirmed)
                     }
                     try FileManager.default.createDirectory(
                         at: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device))

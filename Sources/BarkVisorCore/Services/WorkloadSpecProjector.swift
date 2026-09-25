@@ -50,7 +50,9 @@ public enum WorkloadSpecProjector {
             WorkloadDisk(role: "cdrom", imageId: $0)
         }
         let forwards = vm.decodedPortForwards.map {
-            WorkloadPortForward(hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol)
+            WorkloadPortForward(
+                hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol, host: $0.host,
+            )
         }
         let network = WorkloadNetwork(
             // Implicit NAT when no networkId. Attached records project mode from
