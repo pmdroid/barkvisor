@@ -14,6 +14,7 @@ struct ComposeLogLine: Content {
 
 struct ApplicationOpsController: RouteCollection {
     let backgroundTasks: BackgroundTaskManager
+    let operations: WorkloadOperationCoordinator
 
     func boot(routes: any RoutesBuilder) throws {
         let vms = routes.grouped("api", "vms")
@@ -63,13 +64,27 @@ struct ApplicationOpsController: RouteCollection {
         let taskID = ApplicationLifecycleService.taskID(forUpdate: vm.id)
         let db = req.db
         let workloadID = vm.id
+        let operations = operations
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: req.headers.first(name: WorkloadOperationCoordinator.operationHeaderName),
+            action: "update",
+            workloadID: workloadID,
+        )
         let submitted = await backgroundTasks.submit(taskID, kind: .appUpdate) {
             guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
                 throw BarkVisorError.notFound("Workload \(workloadID) not found")
             }
-            try await ApplicationLifecycleService.updateImages(vm: &live, db: db) { value in
+            try await withTaskCancellationHandler {
+                try await ApplicationLifecycleService.updateImages(
+                    vm: &live, db: db, operations: operations, operationID: operationID,
+                ) { value in
+                    Task {
+                        await backgroundTasks.reportProgress(taskID, progress: value)
+                    }
+                }
+            } onCancel: {
                 Task {
-                    await backgroundTasks.reportProgress(taskID, progress: value)
+                    await operations.requestCancel(workloadID: workloadID, operationID: operationID)
                 }
             }
             return workloadID
@@ -87,7 +102,9 @@ struct ApplicationOpsController: RouteCollection {
     @Sendable
     func checkUpdate(req: Request) async throws -> VMResponse {
         var vm = try await requireApplication(req)
-        try await ApplicationLifecycleService.refreshImageFacts(vm: &vm, db: req.db)
+        try await ApplicationLifecycleService.refreshImageFacts(
+            vm: &vm, db: req.db, operations: operations,
+        )
         let published = await ApplicationLifecycleService.publishedUpdate(
             event: backgroundTasks.status(ApplicationLifecycleService.taskID(forUpdate: vm.id)),
         )

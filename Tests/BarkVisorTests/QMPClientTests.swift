@@ -381,7 +381,7 @@ import Testing
                 process: nil, pid: getpid(),
                 serialSocketPath: "", vncSocketPath: "",
                 qmpSocketPath: qmpServer.path, qmpEventSocketPath: "",
-                swtpmProcess: nil, reconnected: true,
+                swtpmProcess: nil, reconnected: true, workloadID: vmID,
             )
             let method = try await manager.requestGracefulShutdown(running: running, vmID: vmID)
             #expect(method == "acpi-powerdown")

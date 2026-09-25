@@ -17,6 +17,7 @@ public struct RunningVM: @unchecked Sendable {
     /// PID of swtpm when this VM was adopted (`process` / `swtpmProcess` are nil).
     public let swtpmPid: Int32?
     public let reconnected: Bool // true = adopted from previous app session
+    public let workloadID: String
 
     public init(
         process: Process?,
@@ -28,6 +29,7 @@ public struct RunningVM: @unchecked Sendable {
         swtpmProcess: Process?,
         reconnected: Bool,
         swtpmPid: Int32? = nil,
+        workloadID: String,
     ) {
         self.process = process
         self.pid = pid
@@ -44,6 +46,7 @@ public struct RunningVM: @unchecked Sendable {
         } else {
             self.swtpmPid = nil
         }
+        self.workloadID = workloadID
     }
 }
 
@@ -116,12 +119,34 @@ public struct VMStateEvent: Codable, Sendable {
     }
 }
 
+private final class StopRequestHandoff: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func succeed(_ continuation: CheckedContinuation<Void, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume()
+    }
+
+    func fail(_ continuation: CheckedContinuation<Void, Error>, _ error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume(throwing: error)
+    }
+}
+
 public actor VMManager: VMStateQuerying {
     public var runningVMs: [String: RunningVM] = [:]
     var startingVMs: Set<String> = [] // guards against concurrent start across await points
     /// Last QEMU/start error per VM (PAS-79). Not persisted — Wave 0 signal cache.
     var lastHealthErrors: [String: String] = [:]
     public let dbPool: DatabasePool
+    public nonisolated let operations: WorkloadOperationCoordinator
     public let pidsDir: URL
     public private(set) var consoleBuffers: ConsoleBufferManager?
     public private(set) var metricsCollector: MetricsCollector?
@@ -130,8 +155,9 @@ public actor VMManager: VMStateQuerying {
     public private(set) var processMonitor: VMProcessMonitor?
     public private(set) var qmpEventListener: QMPEventListener?
 
-    public init(dbPool: DatabasePool) {
+    public init(dbPool: DatabasePool, operations: WorkloadOperationCoordinator = WorkloadOperationCoordinator()) {
         self.dbPool = dbPool
+        self.operations = operations
         self.pidsDir = Config.dataDir.appendingPathComponent("pids")
         try? FileManager.default.createDirectory(at: pidsDir, withIntermediateDirectories: true)
     }
@@ -165,16 +191,47 @@ public actor VMManager: VMStateQuerying {
         vmID: String,
         running: RunningVM,
     ) async {
+        guard running.workloadID == vmID else {
+            Log.vm.error(
+                "Refusing runtime handle \(running.workloadID) for Workload \(vmID)",
+                vm: vmID,
+            )
+            return
+        }
+        if let sockets = VMSockets(qmpSocketPath: running.qmpSocketPath),
+           sockets.shortID.count == 12,
+           sockets.shortID != String(vmID.prefix(12)) {
+            Log.vm.error(
+                "Refusing sockets \(running.qmpSocketPath) for Workload \(vmID)",
+                vm: vmID,
+            )
+            return
+        }
         runningVMs[vmID] = running
     }
 
     // MARK: - Start
 
+    public func start(vmID: String, operationID: String? = nil) async throws {
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "start", workloadID: vmID,
+        )
+        try await operations.perform(
+            workloadID: vmID,
+            operationID: operationID,
+            kind: .start,
+            load: { try await self.workloadObservation(vmID) },
+        ) { lease in
+            try await self.startWhileHeld(vmID: vmID, lease: lease)
+        }
+    }
+
     // swiftlint:disable:next function_body_length
-    public func start(vmID: String) async throws {
+    func startWhileHeld(vmID: String, lease: WorkloadOperationLease) async throws {
         guard runningVMs[vmID] == nil, !startingVMs.contains(vmID) else {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
+        try await requireLease(vmID, lease)
 
         // Claim immediately to block concurrent starts across await suspension points
         startingVMs.insert(vmID)
@@ -182,6 +239,7 @@ public actor VMManager: VMStateQuerying {
 
         // Load VM and related records
         let loaded = try await loadVM(id: vmID)
+        try await requireLease(vmID, lease)
         guard loaded.vm.state == "stopped" || loaded.vm.state == "error" else {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
@@ -210,9 +268,10 @@ public actor VMManager: VMStateQuerying {
         }
 
         try Self.assertHostPortsAvailable(for: loaded.vm)
+        try await requireLease(vmID, lease)
 
         // Update state to starting and clear pending changes
-        try await updateState(vmID: vmID, state: "starting")
+        try await updateState(vmID: vmID, state: "starting", expectedGeneration: lease.generation)
         try await dbPool.write { db in
             try db.execute(sql: "UPDATE vms SET pendingChanges = 0 WHERE id = ?", arguments: [vmID])
         }
@@ -237,6 +296,10 @@ public actor VMManager: VMStateQuerying {
 
             let (process, stdoutPipe, stderrPipe, _) = configureQEMUProcess(launch: launch, vmID: vmID)
             qemuProc = process
+            try await requireLease(vmID, lease)
+            if await lease.isCancelRequested() {
+                throw CancellationError()
+            }
             try process.run()
             let pid = process.processIdentifier
 
@@ -276,7 +339,17 @@ public actor VMManager: VMStateQuerying {
                 qmpEventSocketPath: sockets.event.path,
                 swtpmProcess: swtpmProc,
                 reconnected: false,
+                workloadID: vmID,
             )
+            let current = try await workloadObservation(vmID)
+            guard await operations.allowsWrite(lease: lease, current: current) else {
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                throw BarkVisorError.conflict(
+                    "Workload \(vmID) changed before the operation finished",
+                )
+            }
             runningVMs[vmID] = running
 
             // Attach console buffer BEFORE marking state as running,
@@ -284,7 +357,7 @@ public actor VMManager: VMStateQuerying {
             await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
 
             clearHealthError(for: vmID)
-            try await updateState(vmID: vmID, state: "running")
+            try await updateState(vmID: vmID, state: "running", expectedGeneration: lease.generation)
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
             await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
@@ -321,7 +394,12 @@ public actor VMManager: VMStateQuerying {
                 } catch let conflictError {
                     GPUPassthroughService.releaseVFIO(loaded.vm.decodedGPUDevices)
                     recordHealthError(conflictError.localizedDescription, for: vmID)
-                    try? await updateState(vmID: vmID, state: "error", error: conflictError.localizedDescription)
+                    try? await updateState(
+                        vmID: vmID,
+                        state: "error",
+                        error: conflictError.localizedDescription,
+                        expectedGeneration: lease.generation,
+                    )
                     throw conflictError
                 }
             } else if let proc = qemuProc, proc.isRunning {
@@ -332,7 +410,12 @@ public actor VMManager: VMStateQuerying {
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
                 recordHealthError(error.localizedDescription, for: vmID)
-                try await updateState(vmID: vmID, state: "error", error: error.localizedDescription)
+                try await updateState(
+                    vmID: vmID,
+                    state: "error",
+                    error: error.localizedDescription,
+                    expectedGeneration: lease.generation,
+                )
             } catch let stateError {
                 Log.vm.critical(
                     """
@@ -355,13 +438,66 @@ public actor VMManager: VMStateQuerying {
     /// Shutdown methods: "acpi" sends ACPI powerdown, "force" kills immediately.
     /// ACPI returns after QMP powerdown; a background task escalates to hard kill if needed.
     /// Force waits until the QEMU process is dead (or a short hard-kill timeout).
-    public func stop(vmID: String, force: Bool, method: String = "acpi") async throws {
+    public func stop(
+        vmID: String,
+        force: Bool,
+        method: String = "acpi",
+        operationID: String? = nil,
+    ) async throws {
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "stop", workloadID: vmID,
+        )
+        if force || method == "force" {
+            try await operations.perform(
+                workloadID: vmID,
+                operationID: operationID,
+                kind: .stop,
+                load: { try await self.workloadObservation(vmID) },
+            ) { lease in
+                try await self.stopWhileHeld(vmID: vmID, force: true, method: method, lease: lease)
+            }
+            return
+        }
+        let handoff = StopRequestHandoff()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task {
+                do {
+                    try await self.operations.perform(
+                        workloadID: vmID,
+                        operationID: operationID,
+                        kind: .stop,
+                        load: { try await self.workloadObservation(vmID) },
+                    ) { lease in
+                        try await self.stopWhileHeld(
+                            vmID: vmID,
+                            force: false,
+                            method: method,
+                            lease: lease,
+                            onRequested: { handoff.succeed(continuation) },
+                        )
+                    }
+                    handoff.succeed(continuation)
+                } catch {
+                    handoff.fail(continuation, error)
+                }
+            }
+        }
+    }
+
+    func stopWhileHeld(
+        vmID: String,
+        force: Bool,
+        method: String = "acpi",
+        lease: WorkloadOperationLease,
+        onRequested: (@Sendable () -> Void)? = nil,
+    ) async throws {
+        try await requireLease(vmID, lease)
         // Occupancy stays until handleTermination. ACPI/graceful stop leaves
         // QEMU (and the loopback ttyd hostfwd) bound.
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }
-        try await updateState(vmID: vmID, state: "stopping")
+        try await updateState(vmID: vmID, state: "stopping", expectedGeneration: lease.generation)
 
         // Mark as expected stop so process monitor treats exit as clean (reconnected VMs)
         await processMonitor?.markExpectedStop(vmID: vmID)
@@ -383,27 +519,28 @@ public actor VMManager: VMStateQuerying {
             Log.vm.error(
                 "Graceful shutdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID,
             )
+            onRequested?()
             await hardKill(running: running, vmID: vmID, reason: "graceful shutdown failed")
             return
         }
 
-        // Wait for graceful shutdown in the background — hard kill after acpiShutdownTimeout.
-        Task { [weak self] in
-            guard let self else { return }
-            let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout)
-            while await isProcessAlive(running), Date() < deadline {
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                if Task.isCancelled { return }
+        onRequested?()
+        let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout)
+        while isProcessAlive(running), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if await lease.isCancelRequested() {
+                await hardKill(running: running, vmID: vmID, reason: "stop cancelled")
+                return
             }
-            if await isProcessAlive(running) {
-                Log.vm.warning(
-                    "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s graceful stop, hard-killing",
-                    vm: vmID,
-                )
-                await hardKill(running: running, vmID: vmID, reason: "graceful shutdown timeout")
-            } else {
-                await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
-            }
+        }
+        if isProcessAlive(running) {
+            Log.vm.warning(
+                "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s graceful stop, hard-killing",
+                vm: vmID,
+            )
+            await hardKill(running: running, vmID: vmID, reason: "graceful shutdown timeout")
+        } else {
+            await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
         }
     }
 
@@ -494,9 +631,23 @@ public actor VMManager: VMStateQuerying {
 
     // MARK: - Restart
 
-    public func restart(vmID: String) async throws {
+    public func restart(vmID: String, operationID: String? = nil) async throws {
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "restart", workloadID: vmID,
+        )
+        try await operations.perform(
+            workloadID: vmID,
+            operationID: operationID,
+            kind: .restart,
+            load: { try await self.workloadObservation(vmID) },
+        ) { lease in
+            try await self.restartWhileHeld(vmID: vmID, lease: lease)
+        }
+    }
+
+    func restartWhileHeld(vmID: String, lease: WorkloadOperationLease) async throws {
         if runningVMs[vmID] != nil {
-            try await stop(vmID: vmID, force: false)
+            try await stopWhileHeld(vmID: vmID, force: false, lease: lease)
             // Wait for ACPI path (or hard-kill escalation) to finish.
             let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout + 15)
             while runningVMs[vmID] != nil, Date() < deadline {
@@ -512,6 +663,6 @@ public actor VMManager: VMStateQuerying {
                 throw BarkVisorError.timeout("VM \(vmID) did not stop — restart aborted")
             }
         }
-        try await start(vmID: vmID)
+        try await startWhileHeld(vmID: vmID, lease: lease)
     }
 }

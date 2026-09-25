@@ -377,36 +377,57 @@ struct VMController: RouteCollection {
         try UpdateVMRequest.validate(content: req)
         let body = try req.content.decode(UpdateVMRequest.self)
 
-        var vm: VM
-        if let spec = body.spec {
-            vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
-            if vm.isApplication {
-                try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
-            }
-            if let startOnBoot = body.startOnBoot, startOnBoot != vm.startOnBoot {
-                vm = try await VMLifecycleService.updateVM(
-                    id: id,
-                    params: UpdateVMParams(startOnBoot: startOnBoot),
-                    db: req.db,
+        let operationID = Self.operationID(req, action: "update", workloadID: id)
+        let db = req.db
+        let operations = vmManager.operations
+        let vm: VM = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .update,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            var vm: VM
+            if let spec = body.spec {
+                vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: db)
+                if vm.isApplication {
+                    try await ApplicationLifecycleService.syncProject(
+                        vm: &vm,
+                        db: db,
+                        operations: operations,
+                        lease: lease.atGeneration(vm.specGeneration),
+                    )
+                }
+                if let startOnBoot = body.startOnBoot, startOnBoot != vm.startOnBoot {
+                    vm = try await VMLifecycleService.updateVM(
+                        id: id,
+                        params: UpdateVMParams(startOnBoot: startOnBoot),
+                        db: db,
+                    )
+                }
+            } else {
+                let updateParams = UpdateVMParams(
+                    name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
+                    networkId: body.networkId, portForwards: body.portForwards,
+                    usbDevices: body.usbDevices,
+                    gpuDevices: body.gpuDevices,
+                    description: body.description, bootOrder: body.bootOrder,
+                    displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
+                    sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
+                    startOnBoot: body.startOnBoot,
                 )
+                vm = try await VMLifecycleService.updateVM(
+                    id: id, params: updateParams, db: db,
+                )
+                if vm.isApplication {
+                    try await ApplicationLifecycleService.syncProject(
+                        vm: &vm,
+                        db: db,
+                        operations: operations,
+                        lease: lease.atGeneration(vm.specGeneration),
+                    )
+                }
             }
-        } else {
-            let updateParams = UpdateVMParams(
-                name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
-                networkId: body.networkId, portForwards: body.portForwards,
-                usbDevices: body.usbDevices,
-                gpuDevices: body.gpuDevices,
-                description: body.description, bootOrder: body.bootOrder,
-                displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
-                sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
-                startOnBoot: body.startOnBoot,
-            )
-            vm = try await VMLifecycleService.updateVM(
-                id: id, params: updateParams, db: req.db,
-            )
-            if vm.isApplication {
-                try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
-            }
+            return vm
         }
 
         AuditService.log(
@@ -420,34 +441,42 @@ struct VMController: RouteCollection {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         let keepDisk = (try? req.query.get(Bool.self, at: "keepDisk")) ?? false
 
+        let operationID = Self.operationID(req, action: "delete", workloadID: id)
         let (taskID, vmName) = try await VMLifecycleService.deleteVM(
             id: id, keepDisk: keepDisk, vmManager: vmManager,
-            backgroundTasks: backgroundTasks, db: req.db,
+            backgroundTasks: backgroundTasks, db: req.db, operationID: operationID,
         )
 
         AuditService.log(
             action: "vm.delete", resourceType: "vm", resourceId: id, resourceName: vmName, req: req,
         )
 
-        return try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
+        let response = try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
+        response.headers.replaceOrAdd(
+            name: WorkloadOperationCoordinator.operationHeaderName, value: operationID,
+        )
+        return response
     }
 
     // MARK: - Lifecycle
 
     @Sendable
-    func start(req: Vapor.Request) async throws -> HTTPStatus {
+    func start(req: Vapor.Request) async throws -> Response {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        let operationID = Self.operationID(req, action: "start", workloadID: id)
         if var app = try await application(id, db: req.db) {
-            try await ApplicationLifecycleService.start(vm: &app, db: req.db)
+            try await ApplicationLifecycleService.start(
+                vm: &app, db: req.db, operations: vmManager.operations, operationID: operationID,
+            )
         } else {
-            try await vmManager.start(vmID: id)
+            try await vmManager.start(vmID: id, operationID: operationID)
         }
         AuditService.log(action: VMLifecycleAction.started, resourceType: "vm", resourceId: id, req: req)
-        return .noContent
+        return Self.accepted(operationID)
     }
 
     @Sendable
-    func stop(req: Vapor.Request) async throws -> HTTPStatus {
+    func stop(req: Vapor.Request) async throws -> Response {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         let body = try? req.content.decode(StopVMRequest.self)
         let allowedMethods: Set = ["acpi", "force"]
@@ -455,10 +484,15 @@ struct VMController: RouteCollection {
         guard allowedMethods.contains(method) else {
             throw Abort(.badRequest, reason: "Invalid stop method. Must be one of: acpi, force")
         }
+        let operationID = Self.operationID(req, action: "stop", workloadID: id)
         if var app = try await application(id, db: req.db) {
-            try await ApplicationLifecycleService.stop(vm: &app, db: req.db)
+            try await ApplicationLifecycleService.stop(
+                vm: &app, db: req.db, operations: vmManager.operations, operationID: operationID,
+            )
         } else {
-            try await vmManager.stop(vmID: id, force: body?.force ?? false, method: method)
+            try await vmManager.stop(
+                vmID: id, force: body?.force ?? false, method: method, operationID: operationID,
+            )
         }
         let detailJSON =
             try String(data: JSONEncoder().encode(["method": method]), encoding: .utf8) ?? "{}"
@@ -466,19 +500,38 @@ struct VMController: RouteCollection {
             action: VMLifecycleAction.stopped, resourceType: "vm", resourceId: id, detail: detailJSON,
             req: req,
         )
-        return .noContent
+        return Self.accepted(operationID)
     }
 
     @Sendable
-    func restart(req: Vapor.Request) async throws -> HTTPStatus {
+    func restart(req: Vapor.Request) async throws -> Response {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        let operationID = Self.operationID(req, action: "restart", workloadID: id)
         if var app = try await application(id, db: req.db) {
-            try await ApplicationLifecycleService.restart(vm: &app, db: req.db)
+            try await ApplicationLifecycleService.restart(
+                vm: &app, db: req.db, operations: vmManager.operations, operationID: operationID,
+            )
         } else {
-            try await vmManager.restart(vmID: id)
+            try await vmManager.restart(vmID: id, operationID: operationID)
         }
         AuditService.log(action: VMLifecycleAction.restarted, resourceType: "vm", resourceId: id, req: req)
-        return .noContent
+        return Self.accepted(operationID)
+    }
+
+    private static func operationID(_ req: Vapor.Request, action: String, workloadID: String) -> String {
+        WorkloadOperationCoordinator.makeOperationID(
+            supplied: req.headers.first(name: WorkloadOperationCoordinator.operationHeaderName),
+            action: action,
+            workloadID: workloadID,
+        )
+    }
+
+    private static func accepted(_ operationID: String) -> Response {
+        let response = Response(status: .noContent)
+        response.headers.replaceOrAdd(
+            name: WorkloadOperationCoordinator.operationHeaderName, value: operationID,
+        )
+        return response
     }
 
     private func application(_ id: String, db: DatabasePool) async throws -> VM? {
@@ -598,9 +651,25 @@ struct VMController: RouteCollection {
     func putSpec(req: Vapor.Request) async throws -> WorkloadSpec {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         let spec = try req.content.decode(WorkloadSpec.self)
-        var vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
-        if vm.isApplication {
-            try await ApplicationLifecycleService.syncProject(vm: &vm, db: req.db)
+        let operationID = Self.operationID(req, action: "sync", workloadID: id)
+        let db = req.db
+        let operations = vmManager.operations
+        let vm = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .sync,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            var vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: db)
+            if vm.isApplication {
+                try await ApplicationLifecycleService.syncProject(
+                    vm: &vm,
+                    db: db,
+                    operations: operations,
+                    lease: lease.atGeneration(vm.specGeneration),
+                )
+            }
+            return vm
         }
         AuditService.log(
             action: "vm.spec.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,

@@ -2,13 +2,6 @@ import Foundation
 import GRDB
 
 public enum ApplicationLifecycleService {
-    private actor Serial {
-        func run<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
-            try await body()
-        }
-    }
-
-    private static let serial = Serial()
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
     private nonisolated(unsafe) static var metricsCollector: MetricsCollector?
 
@@ -28,7 +21,12 @@ public enum ApplicationLifecycleService {
         "app-create:\(id)"
     }
 
-    public static func resumePending(db: DatabasePool, backgroundTasks: BackgroundTaskManager) async {
+    public static func resumePending(
+        db: DatabasePool,
+        backgroundTasks: BackgroundTaskManager,
+        operations: WorkloadOperationCoordinator? = nil,
+    ) async {
+        let operations = operations ?? WorkloadOperationCoordinator()
         let apps: [VM]
         do {
             apps = try await db.read { db in
@@ -50,7 +48,12 @@ public enum ApplicationLifecycleService {
                 if live.state == "deleting" || live.state == "running" {
                     return workloadID
                 }
-                try await ApplicationLifecycleService.start(vm: &live, db: db)
+                try await ApplicationLifecycleService.start(
+                    vm: &live,
+                    db: db,
+                    operations: operations,
+                    operationID: "recover:\(workloadID)",
+                )
                 return workloadID
             }
         }
@@ -124,50 +127,137 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
+        lease: WorkloadOperationLease? = nil,
     ) async throws {
-        let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await syncProjectLocked(vm: &current, db: db, dataDir: dataDir)
+        if let lease {
+            guard let operations else {
+                throw BarkVisorError.conflict("Workload operation owner is missing")
+            }
+            let id = vm.id
+            guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                throw BarkVisorError.notFound("Workload \(id) not found")
+            }
+            try await syncProjectLocked(
+                vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+            )
+            vm = current
+            return
+        }
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "sync", workloadID: id,
+        )
+        vm = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .sync,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                throw BarkVisorError.notFound("Workload \(id) not found")
+            }
+            try await syncProjectLocked(
+                vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+            )
             return current
         }
     }
 
-    public static func start(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        let snapshot = vm
+    public static func start(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
+    ) async throws {
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "start", workloadID: id,
+        )
         do {
-            vm = try await serial.run { () -> VM in
-                var current = snapshot
-                try await startLocked(vm: &current, db: db, dataDir: dataDir)
+            vm = try await operations.perform(
+                workloadID: id,
+                operationID: operationID,
+                kind: .start,
+                load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+            ) { lease in
+                guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                    throw BarkVisorError.notFound("Workload \(id) not found")
+                }
+                try await startLocked(
+                    vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+                )
                 return current
             }
         } catch {
-            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: id) }) {
                 vm = stored
             }
             throw error
         }
     }
 
-    public static func stop(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await stopLocked(vm: &current, db: db, dataDir: dataDir)
+    public static func stop(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
+    ) async throws {
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "stop", workloadID: id,
+        )
+        vm = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .stop,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                throw BarkVisorError.notFound("Workload \(id) not found")
+            }
+            try await stopLocked(
+                vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+            )
             return current
         }
     }
 
-    public static func restart(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
-        let snapshot = vm
+    public static func restart(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
+    ) async throws {
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "restart", workloadID: id,
+        )
         do {
-            vm = try await serial.run { () -> VM in
-                var current = snapshot
-                try await restartLocked(vm: &current, db: db, dataDir: dataDir)
+            vm = try await operations.perform(
+                workloadID: id,
+                operationID: operationID,
+                kind: .restart,
+                load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+            ) { lease in
+                guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                    throw BarkVisorError.notFound("Workload \(id) not found")
+                }
+                try await restartLocked(
+                    vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+                )
                 return current
             }
         } catch {
-            if let stored = try await db.read({ db in try VM.fetchOne(db, key: snapshot.id) }) {
+            if let stored = try await db.read({ db in try VM.fetchOne(db, key: id) }) {
                 vm = stored
             }
             throw error
@@ -178,12 +268,32 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
         progress: (@Sendable (Double) -> Void)? = nil,
     ) async throws {
-        let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await updateImagesLocked(vm: &current, db: db, dataDir: dataDir, progress: progress)
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "update", workloadID: id,
+        )
+        vm = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .update,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                throw BarkVisorError.notFound("Workload \(id) not found")
+            }
+            try await updateImagesLocked(
+                vm: &current,
+                db: db,
+                dataDir: dataDir,
+                lease: lease,
+                operations: operations,
+                progress: progress,
+            )
             return current
         }
     }
@@ -192,11 +302,26 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
     ) async throws {
-        let snapshot = vm
-        vm = try await serial.run { () -> VM in
-            var current = snapshot
-            try await refreshImageFactsLocked(vm: &current, db: db, dataDir: dataDir)
+        let id = vm.id
+        let operations = operations ?? WorkloadOperationCoordinator()
+        let operationID = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "refresh", workloadID: id,
+        )
+        vm = try await operations.perform(
+            workloadID: id,
+            operationID: operationID,
+            kind: .update,
+            load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
+        ) { lease in
+            guard var current = try await db.read({ try VM.fetchOne($0, key: id) }) else {
+                throw BarkVisorError.notFound("Workload \(id) not found")
+            }
+            try await refreshImageFactsLocked(
+                vm: &current, db: db, dataDir: dataDir, lease: lease, operations: operations,
+            )
             return current
         }
     }
@@ -215,9 +340,32 @@ public enum ApplicationLifecycleService {
         return try ComposeRuntime.followLogs(id: vm.id, project: project, tail: tail, dataDir: dataDir)
     }
 
-    public static func down(vm: VM, dataDir: URL = Config.dataDir) async {
-        try? await serial.run {
+    public static func down(
+        vm: VM,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+        operationID: String? = nil,
+        holdingSlot: Bool = false,
+    ) async {
+        if holdingSlot {
             downLocked(vm: vm, dataDir: dataDir)
+        } else {
+            let operations = operations ?? WorkloadOperationCoordinator()
+            let operationID = WorkloadOperationCoordinator.makeOperationID(
+                supplied: operationID, action: "down", workloadID: vm.id,
+            )
+            let generation = vm.specGeneration
+            let state = vm.state
+            try? await operations.perform(
+                workloadID: vm.id,
+                operationID: operationID,
+                kind: .delete,
+                load: {
+                    WorkloadObservation(generation: generation, state: state, exists: true)
+                },
+            ) { _ in
+                downLocked(vm: vm, dataDir: dataDir)
+            }
         }
         await metricsCollector?.stop(vmID: vm.id)
     }
@@ -235,8 +383,12 @@ public enum ApplicationLifecycleService {
         }
     }
 
-    public static func reconcile(db: DatabasePool, dataDir: URL = Config.dataDir) async {
-        guard let labeled = ComposeRuntime.listLabeledStates() else { return }
+    public static func reconcile(
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        operations: WorkloadOperationCoordinator? = nil,
+    ) async {
+        let operations = operations ?? WorkloadOperationCoordinator()
         let apps: [VM]
         do {
             apps = try await db.read { db in
@@ -246,30 +398,27 @@ public enum ApplicationLifecycleService {
             Log.vm.warning("Application reconcile list failed: \(error.localizedDescription)")
             return
         }
-        for var vm in apps {
-            if vm.state == "deleting" { continue }
-            let observed = labeled[vm.id]
-            if let observed {
-                if vm.state != observed {
-                    try? await setState(&vm, state: observed, error: nil, db: db)
+        await withTaskGroup(of: Void.self) { group in
+            for vm in apps {
+                let workloadID = vm.id
+                group.addTask {
+                    let operationID = "reconcile:\(workloadID):\(UUID().uuidString)"
+                    try? await operations.perform(
+                        workloadID: workloadID,
+                        operationID: operationID,
+                        kind: .reconcile,
+                        load: { try await WorkloadOperationCoordinator.observation(id: workloadID, db: db) },
+                    ) { lease in
+                        try await reconcileLocked(
+                            id: workloadID,
+                            db: db,
+                            dataDir: dataDir,
+                            lease: lease,
+                            operations: operations,
+                        )
+                    }
                 }
-                if observed == "running" {
-                    await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
-                } else {
-                    await metricsCollector?.stopApp(vm.id)
-                }
-                continue
             }
-            if vm.state == "running" {
-                try? await setState(
-                    &vm,
-                    state: "error",
-                    error: "compose project is missing on the Device",
-                    db: db,
-                )
-            }
-            await metricsCollector?.stopApp(vm.id)
-            _ = dataDir
         }
     }
 
@@ -324,11 +473,15 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         try DockerEngine.requireDeviceRuntime()
         if vm.state == "running" {
-            try await startLocked(vm: &vm, db: db, dataDir: dataDir)
+            try await startLocked(
+                vm: &vm, db: db, dataDir: dataDir, lease: lease, operations: operations,
+            )
             return
         }
         if vm.composeYaml != nil {
@@ -336,8 +489,16 @@ public enum ApplicationLifecycleService {
             let catalog = await catalogEntry(for: vm, db: db)
             let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
             try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
-            try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-            try await setState(&vm, state: vm.state, error: lastError(for: vm.id), db: db)
+            try await persistRuntime(
+                vm: &vm,
+                namedVolumes: render.namedVolumes,
+                db: db,
+                dataDir: dataDir,
+                generation: lease.generation,
+            )
+            try await setState(
+                &vm, state: vm.state, error: lastError(for: vm.id), db: db, generation: lease.generation,
+            )
         }
     }
 
@@ -345,8 +506,10 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
         let gpuShare = try await shareAttach(for: vm, db: db)
@@ -357,23 +520,41 @@ public enum ApplicationLifecycleService {
             if vm.state == "provisioning" {
                 try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
             }
-            try await refuseDeleting(id: vm.id, db: db)
-            try await setState(&vm, state: "starting", error: nil, db: db)
-            try await refuseDeleting(id: vm.id, db: db)
+            try await requireCurrent(lease: lease, db: db, operations: operations)
+            if await lease.isCancelRequested() {
+                try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+                try await setState(
+                    &vm,
+                    state: "error",
+                    error: "start cancelled",
+                    db: db,
+                    generation: lease.generation,
+                )
+                throw CancellationError()
+            }
+            try await setState(&vm, state: "starting", error: nil, db: db, generation: lease.generation)
+            try await requireCurrent(lease: lease, db: db, operations: operations)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
             try verifyInspectedBinds(
                 containerNames: render.containerNames,
                 bindHost: render.bindHost,
                 expected: render.publishedPorts,
             )
-            try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
+            try await requireCurrent(lease: lease, db: db, operations: operations)
+            try await persistRuntime(
+                vm: &vm,
+                namedVolumes: render.namedVolumes,
+                db: db,
+                dataDir: dataDir,
+                generation: lease.generation,
+            )
+            try await setState(&vm, state: "running", error: nil, db: db, generation: lease.generation)
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             vm.setPortForwards(nil)
-            try await setState(&vm, state: "error", error: message, db: db)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -382,16 +563,18 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         let project = projectName(vm)
         do {
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
-            try await setState(&vm, state: "stopped", error: nil, db: db)
+            try await setState(&vm, state: "stopped", error: nil, db: db, generation: lease.generation)
             await metricsCollector?.stop(vmID: vm.id)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            try await setState(&vm, state: "error", error: message, db: db)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -400,8 +583,10 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
         let gpuShare = try await shareAttach(for: vm, db: db)
@@ -409,21 +594,29 @@ public enum ApplicationLifecycleService {
         let render = try renderProject(vm: vm, dataDir: dataDir, gpuShare: gpuShare, catalog: catalog)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         do {
+            try await requireCurrent(lease: lease, db: db, operations: operations)
             try ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+            try await requireCurrent(lease: lease, db: db, operations: operations)
             try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
             try verifyInspectedBinds(
                 containerNames: render.containerNames,
                 bindHost: render.bindHost,
                 expected: render.publishedPorts,
             )
-            try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-            try await setState(&vm, state: "running", error: nil, db: db)
+            try await persistRuntime(
+                vm: &vm,
+                namedVolumes: render.namedVolumes,
+                db: db,
+                dataDir: dataDir,
+                generation: lease.generation,
+            )
+            try await setState(&vm, state: "running", error: nil, db: db, generation: lease.generation)
             await metricsCollector?.startApp(id: vm.id, project: project)
         } catch {
             try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             vm.setPortForwards(nil)
-            try await setState(&vm, state: "error", error: message, db: db)
+            await recordLifecycleError(&vm, message: message, db: db, generation: lease.generation)
             throw error
         }
     }
@@ -432,19 +625,35 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
         progress: (@Sendable (Double) -> Void)?,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         try await requireRunning(id: vm.id, db: db)
         try DockerEngine.requireDeviceRuntime()
         let project = projectName(vm)
         let render = try renderProject(vm: vm, dataDir: dataDir)
         try await applyPublishedPorts(render.publishedPorts, to: &vm, db: db)
         progress?(0.2)
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
+        if await lease.isCancelRequested() {
+            throw CancellationError()
+        }
         try ComposeRuntime.pull(id: vm.id, project: project, dataDir: dataDir)
         progress?(0.6)
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
+        if await lease.isCancelRequested() {
+            try? ComposeRuntime.stop(id: vm.id, project: project, dataDir: dataDir)
+            try await setState(
+                &vm,
+                state: "error",
+                error: "update cancelled",
+                db: db,
+                generation: lease.generation,
+            )
+            throw CancellationError()
+        }
         try ComposeRuntime.up(id: vm.id, project: project, dataDir: dataDir)
         progress?(0.85)
         try verifyInspectedBinds(
@@ -452,9 +661,15 @@ public enum ApplicationLifecycleService {
             bindHost: render.bindHost,
             expected: render.publishedPorts,
         )
-        try await persistRuntime(vm: &vm, namedVolumes: render.namedVolumes, db: db, dataDir: dataDir)
-        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
-        try await setState(&vm, state: "running", error: nil, db: db)
+        try await persistRuntime(
+            vm: &vm,
+            namedVolumes: render.namedVolumes,
+            db: db,
+            dataDir: dataDir,
+            generation: lease.generation,
+        )
+        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir, generation: lease.generation)
+        try await setState(&vm, state: "running", error: nil, db: db, generation: lease.generation)
         await metricsCollector?.startApp(id: vm.id, project: project)
         progress?(1.0)
     }
@@ -463,8 +678,10 @@ public enum ApplicationLifecycleService {
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
     ) async throws {
-        try await refuseDeleting(id: vm.id, db: db)
+        try await requireCurrent(lease: lease, db: db, operations: operations)
         let yaml = vm.composeYaml ?? ""
         let dir = ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir)
         let named: [String] = if yaml.isEmpty {
@@ -478,8 +695,10 @@ public enum ApplicationLifecycleService {
         } else {
             []
         }
-        try await persistRuntime(vm: &vm, namedVolumes: named, db: db, dataDir: dataDir)
-        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir)
+        try await persistRuntime(
+            vm: &vm, namedVolumes: named, db: db, dataDir: dataDir, generation: lease.generation,
+        )
+        try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir, generation: lease.generation)
     }
 
     private static func downLocked(vm: VM, dataDir: URL) {
@@ -493,11 +712,88 @@ public enum ApplicationLifecycleService {
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
-    private static func refuseDeleting(id: String, db: DatabasePool) async throws {
-        let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
-        if state == "deleting" {
+    private static func recordLifecycleError(
+        _ vm: inout VM,
+        message: String,
+        db: DatabasePool,
+        generation: Int,
+    ) async {
+        do {
+            try await setState(&vm, state: "error", error: message, db: db, generation: generation)
+        } catch {
+            let now = iso8601.string(from: Date())
+            let id = vm.id
+            let wrote = try? await db.write { db -> Bool in
+                try db.execute(
+                    sql: """
+                    UPDATE vms SET state = 'error', updatedAt = ?
+                    WHERE id = ? AND state IN ('starting', 'stopping', 'provisioning')
+                    """,
+                    arguments: [now, id],
+                )
+                return db.changesCount > 0
+            }
+            guard wrote == true else { return }
+            vm.state = "error"
+            vm.updatedAt = now
+            setLastError(id: id, message)
+        }
+    }
+
+    private static func requireCurrent(
+        lease: WorkloadOperationLease,
+        db: DatabasePool,
+        operations: WorkloadOperationCoordinator,
+    ) async throws {
+        let current = try await WorkloadOperationCoordinator.observation(
+            id: lease.identity.workloadID, db: db,
+        )
+        if current.exists, current.state == "deleting", lease.kind != .delete {
             throw BarkVisorError.conflict("Workload is deleting")
         }
+        guard await operations.allowsWrite(lease: lease, current: current) else {
+            throw BarkVisorError.conflict(
+                "Workload \(lease.identity.workloadID) changed before the operation finished",
+            )
+        }
+    }
+
+    private static func reconcileLocked(
+        id: String,
+        db: DatabasePool,
+        dataDir: URL,
+        lease: WorkloadOperationLease,
+        operations: WorkloadOperationCoordinator,
+    ) async throws {
+        guard let labeled = ComposeRuntime.listLabeledStates() else { return }
+        guard var vm = try await db.read({ try VM.fetchOne($0, key: id) }) else { return }
+        let current = WorkloadObservation(generation: vm.specGeneration, state: vm.state, exists: true)
+        guard await operations.allowsWrite(lease: lease, current: current) else { return }
+        let observed = labeled[vm.id]
+        if let observed {
+            if vm.state != observed {
+                try? await setState(&vm, state: observed, error: nil, db: db, generation: lease.generation)
+            }
+            let fresh = try await WorkloadOperationCoordinator.observation(id: id, db: db)
+            guard await operations.allowsWrite(lease: lease, current: fresh) else { return }
+            if observed == "running" {
+                await metricsCollector?.startApp(id: vm.id, project: projectName(vm))
+            } else {
+                await metricsCollector?.stopApp(vm.id)
+            }
+            return
+        }
+        if vm.state == "running" {
+            try? await setState(
+                &vm,
+                state: "error",
+                error: "compose project is missing on the Device",
+                db: db,
+                generation: lease.generation,
+            )
+        }
+        await metricsCollector?.stopApp(vm.id)
+        _ = dataDir
     }
 
     private static func requireRunning(id: String, db: DatabasePool) async throws {
@@ -512,6 +808,7 @@ public enum ApplicationLifecycleService {
         namedVolumes: [String],
         db: DatabasePool,
         dataDir: URL,
+        generation: Int? = nil,
     ) async throws {
         vm.setVolumeRoots(ComposeRuntime.volumeRoots(id: vm.id, named: namedVolumes, dataDir: dataDir))
         if let fact = try? ApplicationImageFacts.running(
@@ -537,16 +834,24 @@ public enum ApplicationLifecycleService {
             if current.state == "deleting" {
                 return false
             }
+            if let generation, current.specGeneration != generation {
+                return false
+            }
             try persisted.update(db)
             return true
         }
         if !applied {
-            throw BarkVisorError.conflict("Workload is deleting")
+            throw BarkVisorError.conflict("Workload changed before the operation finished")
         }
         vm = persisted
     }
 
-    private static func refreshCatalogDigest(vm: inout VM, db: DatabasePool, dataDir: URL) async throws {
+    private static func refreshCatalogDigest(
+        vm: inout VM,
+        db: DatabasePool,
+        dataDir: URL,
+        generation: Int? = nil,
+    ) async throws {
         let image = vm.imageRef ?? ComposeAllowlist.firstImage(yaml: vm.composeYaml)
         guard let image, !image.isEmpty else { return }
         guard let snap = try? ApplicationImageFacts.snapshot(
@@ -574,11 +879,14 @@ public enum ApplicationLifecycleService {
             if current.state == "deleting" {
                 return false
             }
+            if let generation, current.specGeneration != generation {
+                return false
+            }
             try persisted.update(db)
             return true
         }
         if !applied {
-            throw BarkVisorError.conflict("Workload is deleting")
+            throw BarkVisorError.conflict("Workload changed before the operation finished")
         }
         vm = persisted
     }
@@ -651,6 +959,7 @@ public enum ApplicationLifecycleService {
         state: String,
         error: String?,
         db: DatabasePool,
+        generation: Int? = nil,
     ) async throws {
         let now = iso8601.string(from: Date())
         var next = vm
@@ -666,6 +975,9 @@ public enum ApplicationLifecycleService {
             if current.state == "deleting" {
                 return false
             }
+            if let generation, current.specGeneration != generation {
+                return false
+            }
             try persisted.update(db)
             try VM.filter(key: persisted.id).updateAll(
                 db,
@@ -674,7 +986,13 @@ public enum ApplicationLifecycleService {
             return true
         }
         if !applied {
-            throw BarkVisorError.conflict("Workload is deleting")
+            let state = try await db.read { try VM.fetchOne($0, key: persisted.id)?.state }
+            if state == "deleting" || state == nil {
+                throw BarkVisorError.conflict("Workload is deleting")
+            }
+            throw BarkVisorError.conflict(
+                "Workload \(persisted.id) changed before the operation finished",
+            )
         }
         vm = persisted
         if let error {

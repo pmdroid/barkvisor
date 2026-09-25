@@ -97,6 +97,7 @@ extension VMManager {
                 swtpmProcess: nil,
                 reconnected: true,
                 swtpmPid: swtpmPid,
+                workloadID: vmID,
             ),
         )
 

@@ -12,6 +12,7 @@ import GRDB
 /// keeps working. Prefer this type over string surgery on `-qmp.sock` paths.
 public struct VMSockets: Sendable {
     /// First 12 characters of the VM UUID (path segment prefix).
+    public let workloadID: String
     public let shortID: String
     public let vnc: URL
     public let serial: URL
@@ -28,6 +29,7 @@ public struct VMSockets: Sendable {
 
     public init(vmID: String) {
         let shortID = String(vmID.prefix(12))
+        self.workloadID = vmID
         self.shortID = shortID
         vnc = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock")
         serial = Config.socketDir.appendingPathComponent("\(shortID)-ser.sock")
@@ -43,6 +45,7 @@ public struct VMSockets: Sendable {
         guard name.hasSuffix("-qmp.sock") else { return nil }
         let shortID = String(name.dropLast("-qmp.sock".count))
         guard !shortID.isEmpty else { return nil }
+        self.workloadID = shortID
         self.shortID = shortID
         let dir = URL(fileURLWithPath: qmpSocketPath).deletingLastPathComponent()
         vnc = dir.appendingPathComponent("\(shortID)-vnc.sock")
@@ -57,6 +60,11 @@ public struct VMSockets: Sendable {
         for url in all {
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    public func owned(by workloadID: String) -> Bool {
+        if self.workloadID == workloadID { return true }
+        return !shortID.isEmpty && shortID == String(workloadID.prefix(12))
     }
 
     public func setOwnerOnlyPermissions() {

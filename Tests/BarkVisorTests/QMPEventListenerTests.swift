@@ -367,6 +367,7 @@ import Testing
                     qmpEventSocketPath: newSocket.path,
                     swtpmProcess: nil,
                     reconnected: true,
+                    workloadID: "vm-stale",
                 )
                 await manager.registerReconnectedVM(vmID: "vm-stale", running: running)
 

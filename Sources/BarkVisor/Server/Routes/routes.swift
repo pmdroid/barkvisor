@@ -7,6 +7,7 @@ struct RouteDependencies {
     let keys: JWTKeyCollection
     let imageDownloader: ImageDownloader
     let vmManager: VMManager
+    let operations: WorkloadOperationCoordinator
     let consoleBuffers: ConsoleBufferManager
     let qmpDiskService: QMPDiskService
     let syncService: RepositorySyncService
@@ -97,7 +98,11 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             vmManager: deps.vmManager, healthProbes: deps.healthProbes,
         ),
     )
-    try protected.register(collection: WorkloadApplyController(backgroundTasks: deps.backgroundTasks))
+    try protected.register(
+        collection: WorkloadApplyController(
+            backgroundTasks: deps.backgroundTasks, operations: deps.operations,
+        ),
+    )
     try protected.register(collection: AgentInventoryController())
     let homeDevices = HomeDevicesController(
         vmManager: deps.vmManager, healthProbes: deps.healthProbes, keys: deps.keys,
@@ -141,7 +146,9 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try protected.register(collection: SecuritySettingsController())
 
     try protected.register(
-        collection: ApplicationOpsController(backgroundTasks: deps.backgroundTasks),
+        collection: ApplicationOpsController(
+            backgroundTasks: deps.backgroundTasks, operations: deps.operations,
+        ),
     )
 
     try protected.register(

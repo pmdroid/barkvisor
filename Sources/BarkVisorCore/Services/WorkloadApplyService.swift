@@ -41,17 +41,25 @@ public enum WorkloadApplyService {
         dryRun: Bool,
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
+        operations: WorkloadOperationCoordinator? = nil,
     ) async throws -> WorkloadApplyResult {
         try validateDocumentEnvelope(document)
         let existing = try await findExisting(document: document, db: db)
         if let existing {
-            return try await applyUpdate(document: document, existing: existing, dryRun: dryRun, db: db)
+            return try await applyUpdate(
+                document: document,
+                existing: existing,
+                dryRun: dryRun,
+                db: db,
+                operations: operations,
+            )
         }
         return try await applyCreate(
             document: document,
             dryRun: dryRun,
             db: db,
             backgroundTasks: backgroundTasks,
+            operations: operations,
         )
     }
 
@@ -89,6 +97,7 @@ public enum WorkloadApplyService {
         existing: VM,
         dryRun: Bool,
         db: DatabasePool,
+        operations: WorkloadOperationCoordinator? = nil,
     ) async throws -> WorkloadApplyResult {
         let before = WorkloadSpecProjector.fromVM(existing)
         if let kind = stringValue(document["kind"]), kind != existing.kind {
@@ -137,7 +146,7 @@ public enum WorkloadApplyService {
         }
         var vm = try await VMLifecycleService.updateVMSpec(id: existing.id, spec: merged, db: db)
         if vm.isApplication {
-            try await ApplicationLifecycleService.syncProject(vm: &vm, db: db)
+            try await ApplicationLifecycleService.syncProject(vm: &vm, db: db, operations: operations)
         }
         return WorkloadApplyResult(
             op: .updated,
@@ -154,6 +163,7 @@ public enum WorkloadApplyService {
         dryRun: Bool,
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
+        operations: WorkloadOperationCoordinator? = nil,
     ) async throws -> WorkloadApplyResult {
         var spec = try WorkloadSpecDocument.decode(document)
         if spec.kind == WorkloadSpec.kindApplication {
@@ -163,6 +173,7 @@ public enum WorkloadApplyService {
                 dryRun: dryRun,
                 db: db,
                 backgroundTasks: backgroundTasks,
+                operations: operations,
             )
         }
         let params = try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
@@ -202,6 +213,7 @@ public enum WorkloadApplyService {
         dryRun: Bool,
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
+        operations: WorkloadOperationCoordinator? = nil,
     ) async throws -> WorkloadApplyResult {
         try WorkloadSpecProjector.validate(spec)
         try DockerEngine.requireDeviceRuntime()
@@ -269,7 +281,7 @@ public enum WorkloadApplyService {
             guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
                 throw BarkVisorError.notFound("Workload \(workloadID) not found")
             }
-            try await ApplicationLifecycleService.start(vm: &live, db: db)
+            try await ApplicationLifecycleService.start(vm: &live, db: db, operations: operations)
             return workloadID
         }
         return WorkloadApplyResult(
