@@ -3,7 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Before, Given, Then, When } from "@cucumber/cucumber"
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..")
 let result
 
 Before(function () {
