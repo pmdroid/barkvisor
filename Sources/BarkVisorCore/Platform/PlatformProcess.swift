@@ -142,6 +142,14 @@ public enum PlatformProcess {
 
         let stdoutBox = DataBox()
         let stderrBox = DataBox()
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            finished.signal()
+        }
+        try process.run()
+        outPipe.fileHandleForWriting.closeFile()
+        errPipe.fileHandleForWriting.closeFile()
+
         let readers = DispatchGroup()
         readers.enter()
         readers.enter()
@@ -155,14 +163,6 @@ public enum PlatformProcess {
             stderrBox.append(errHandle.readDataToEndOfFile())
             readers.leave()
         }
-
-        let finished = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in
-            finished.signal()
-        }
-        try process.run()
-        outPipe.fileHandleForWriting.closeFile()
-        errPipe.fileHandleForWriting.closeFile()
 
         var timeoutExceeded: TimeInterval?
         if let timeout {
