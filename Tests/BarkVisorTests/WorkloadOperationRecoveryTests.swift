@@ -284,7 +284,8 @@ struct WorkloadOperationRecoveryTests {
         }
         #expect(harness.compose.pull - beforePull == pulledAgain)
         #expect(harness.compose.up - beforeUp == appliedAgain)
-        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: open[0].id))
+        let operationID = try #require(open.first).id
+        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: operationID))
         #expect(operation.status == WorkloadOperationStatus.completed)
     }
 
