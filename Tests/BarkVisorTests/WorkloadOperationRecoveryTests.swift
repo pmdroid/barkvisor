@@ -337,7 +337,6 @@ struct WorkloadOperationRecoveryTests {
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
-                        dataMigration: DataMigrationDecision(backupReference: nil),
                     )
                 }
             }
@@ -371,7 +370,6 @@ struct WorkloadOperationRecoveryTests {
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
-                        dataMigration: DataMigrationDecision(backupReference: "snap-1"),
                     )
                 }
             }
@@ -424,7 +422,7 @@ struct WorkloadOperationRecoveryTests {
         try await harness.db.pool.write { db in try saved.insert(db) }
         harness.compose.failStop = true
         try await harness.run {
-            await ApplicationLifecycleService.down(vm: harness.vm, db: harness.db.pool, dataDir: harness.db.dir)
+            await ApplicationLifecycleService.down(vm: harness.vm, dataDir: harness.db.dir)
         }
         #expect(FileManager.default.fileExists(atPath: marker.path))
         let failed = try await harness.db.pool.read { db in
