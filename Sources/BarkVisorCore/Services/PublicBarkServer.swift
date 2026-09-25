@@ -122,6 +122,9 @@ public final class PublicBarkServer: @unchecked Sendable {
         }
 
         private func handle(_ request: PublicHTTPRequest) -> String {
+            if request.method == "GET", request.path == "/api/health" || request.path.hasPrefix("/api/health?") {
+                return PublicHTTP.health()
+            }
             if request.upgradeWebSocket, let workload = request.workloadID {
                 let events = socket(
                     name: "workload.events",
@@ -239,6 +242,10 @@ public final class PublicBarkServer: @unchecked Sendable {
                 close(fd)
                 throw LocalManagementError.unavailable
             }
+            let descriptorFlags = fcntl(fd, F_GETFD)
+            if descriptorFlags >= 0 {
+                _ = fcntl(fd, F_SETFD, descriptorFlags | FD_CLOEXEC)
+            }
             var got = sockaddr_in()
             var length = socklen_t(MemoryLayout<sockaddr_in>.size)
             _ = withUnsafeMutablePointer(to: &got) { pointer in
@@ -322,6 +329,16 @@ public final class PublicBarkServer: @unchecked Sendable {
                 }
             }
             return escaped
+        }
+
+        static func health() -> String {
+            let body = ProcessHealthStatus(
+                status: "ok",
+                checks: [],
+                updatedAt: ISO8601DateFormatter().string(from: Date()),
+            )
+            let encoded = (try? JSONEncoder().encode(body)) ?? Data(#"{"status":"ok"}"#.utf8)
+            return json(status: 200, body: String(decoding: encoded, as: UTF8.self))
         }
 
         static func json(status: Int, body: String) -> String {

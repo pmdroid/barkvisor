@@ -4,6 +4,19 @@ set -e
 DATA_DIR=/var/lib/barkvisor
 RUN_DIR=/var/run/barkvisor
 
+stop_combined_listener() {
+  main_pid="$(systemctl show -p MainPID --value barkvisor.service 2>/dev/null || true)"
+  pid=$$
+  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+    if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
+      systemctl disable barkvisor.service >/dev/null 2>&1 || true
+      return 0
+    fi
+    pid="$(awk '/^PPid:/ { print $2; exit }' "/proc/${pid}/status" 2>/dev/null || true)"
+  done
+  systemctl disable --now barkvisor.service >/dev/null 2>&1 || true
+}
+
 case "$1" in
   configure)
     if ! getent passwd barkvisor >/dev/null 2>&1; then
@@ -76,12 +89,15 @@ case "$1" in
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true
       if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then
-        systemctl disable barkvisor.service >/dev/null 2>&1 || true
+        stop_combined_listener
         systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
         systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
       fi
       systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
       systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
+      if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then
+        systemctl start barkvisor-server.service >/dev/null 2>&1 || true
+      fi
       systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
     fi
     ;;

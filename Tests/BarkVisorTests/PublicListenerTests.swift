@@ -79,6 +79,16 @@ struct PublicListenerTests {
             )
             #expect(started.contains("200"))
             #expect(started.contains("running"))
+            let health = try httpExchange(
+                port: http,
+                request: """
+                GET /api/health HTTP/1.1\r
+                Host: 127.0.0.1\r
+                \r
+                """,
+            )
+            #expect(health.contains("200"))
+            #expect(health.contains("\"status\":\"ok\""))
             let again = try httpExchange(
                 port: http,
                 request: """
@@ -124,9 +134,68 @@ struct PublicListenerTests {
             _ = try? await daemonTask.value
         #endif
     }
+
+    @Test func `releasing an inherited public listener frees that port`() throws {
+        #if os(Windows)
+            return
+        #else
+            let held = try listen(port: 0)
+            let spared = try listen(port: 0)
+            defer {
+                if fcntl(held.fd, F_GETFD) >= 0 { close(held.fd) }
+                if fcntl(spared.fd, F_GETFD) >= 0 { close(spared.fd) }
+            }
+            InheritedPublicListeners.release(ports: [held.port])
+            #expect(fcntl(held.fd, F_GETFD) < 0)
+            #expect(fcntl(spared.fd, F_GETFD) >= 0)
+            let again = try listen(port: held.port)
+            defer { close(again.fd) }
+            #expect(again.port == held.port)
+        #endif
+    }
 }
 
 #if !os(Windows)
+    private func listen(port: Int) throws -> (fd: Int32, port: Int) {
+        let fd = socket(AF_INET, PlatformSocket.stream, 0)
+        guard fd >= 0 else { throw LocalManagementError.unavailable }
+        var reuse: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(port).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                #if canImport(Darwin)
+                    Darwin.bind(fd, sock, socklen_t(MemoryLayout<sockaddr_in>.size))
+                #else
+                    Glibc.bind(fd, sock, socklen_t(MemoryLayout<sockaddr_in>.size))
+                #endif
+            }
+        }
+        guard bound == 0, DarwinOrGlibcListen(fd) == 0 else {
+            close(fd)
+            throw LocalManagementError.unavailable
+        }
+        var got = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &got) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                getsockname(fd, sock, &length)
+            }
+        }
+        return (fd, Int(UInt16(bigEndian: got.sin_port)))
+    }
+
+    private func DarwinOrGlibcListen(_ fd: Int32) -> Int32 {
+        #if canImport(Darwin)
+            Darwin.listen(fd, 16)
+        #else
+            Glibc.listen(fd, 16)
+        #endif
+    }
+
     private func httpExchange(port: Int, request: String) throws -> String {
         let fd = socket(AF_INET, PlatformSocket.stream, 0)
         guard fd >= 0 else { throw LocalManagementError.unavailable }

@@ -55,6 +55,18 @@ getent group disk >/dev/null 2>&1 && usermod -aG disk barkvisor 2>/dev/null || t
 exit 0
 
 %post
+stop_combined_listener() {
+  main_pid="$(systemctl show -p MainPID --value barkvisor.service 2>/dev/null || true)"
+  pid=$$
+  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+    if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
+      systemctl disable barkvisor.service >/dev/null 2>&1 || true
+      return 0
+    fi
+    pid="$(awk '/^PPid:/ { print $2; exit }' "/proc/${pid}/status" 2>/dev/null || true)"
+  done
+  systemctl disable --now barkvisor.service >/dev/null 2>&1 || true
+}
 schema_file=/var/lib/barkvisor/schema-version
 if [ -f "$schema_file" ]; then
   on_disk=$(tr -cd '0-9' < "$schema_file" || true)
@@ -82,11 +94,12 @@ if command -v udevadm >/dev/null 2>&1; then
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  stop_combined_listener
   systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl start barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
 fi
 exit 0

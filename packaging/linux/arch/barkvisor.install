@@ -1,3 +1,16 @@
+stop_combined_listener() {
+  main_pid="$(systemctl show -p MainPID --value barkvisor.service 2>/dev/null || true)"
+  pid=$$
+  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+    if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
+      systemctl disable barkvisor.service >/dev/null 2>&1 || true
+      return 0
+    fi
+    pid="$(awk '/^PPid:/ { print $2; exit }' "/proc/${pid}/status" 2>/dev/null || true)"
+  done
+  systemctl disable --now barkvisor.service >/dev/null 2>&1 || true
+}
+
 post_install() {
   getent passwd barkvisor >/dev/null 2>&1 || \
     useradd --system --home /var/lib/barkvisor --shell /usr/bin/nologin barkvisor
@@ -30,11 +43,12 @@ post_install() {
     udevadm trigger --subsystem-match=vfio || true
   fi
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  stop_combined_listener
   systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl start barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
 }
 
