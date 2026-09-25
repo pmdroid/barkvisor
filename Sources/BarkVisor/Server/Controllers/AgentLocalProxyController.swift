@@ -94,13 +94,19 @@ struct AgentLocalProxyController: RouteCollection {
         app.webSocket(
             "api", "vms", ":id", .constant(kind.rawValue),
             shouldUpgrade: { req in
-                // Client cert is required by the agent-plane mTLS listener.
+                _ = try self.requireActivePeer(req)
                 try await Self.requireTunnelTicket(kind: kind, req: req)
                 return [:]
             },
             onUpgrade: { req, inbound in
                 Task {
+                    let host = req.mtlsPeer?.hostId ?? ""
+                    let stream = await PrivilegedStreamGate.shared.register(
+                        memberHostId: host,
+                        close: { inbound.close(promise: nil) },
+                    )
                     await self.tunnelToLocal(req: req, inbound: inbound, kind: kind)
+                    await PrivilegedStreamGate.shared.end(stream)
                 }
             },
         )
@@ -222,7 +228,7 @@ struct AgentLocalProxyController: RouteCollection {
 
     @Sendable
     func forwardGo(req: Vapor.Request) async throws -> Response {
-        _ = try requirePeer(req)
+        _ = try requireActivePeer(req)
         let id = try req.parameters.require("id")
         let remainder = req.parameters.getCatchall()
         let path = try HomeDeviceProxy.goPath(id: id, remainder: remainder)
@@ -246,7 +252,7 @@ struct AgentLocalProxyController: RouteCollection {
 
     @Sendable
     func forward(req: Vapor.Request) async throws -> Response {
-        let peer = try requirePeer(req)
+        let peer = try requireActivePeer(req)
         try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let path = try HomeDeviceProxy.normalizedAPIPath(req.url.path)
         if path == "/api/agent/whoami" {
@@ -270,8 +276,8 @@ struct AgentLocalProxyController: RouteCollection {
         )
         let body = try await HomeDevicesController.collectedBody(req)
         var headers: [(String, String)] = []
-        if let auth = req.headers.bearerAuthorization {
-            headers.append(("Authorization", "Bearer \(auth.token)"))
+        if let authorization = try await translatedAuthorization(req) {
+            headers.append(("Authorization", "Bearer \(authorization)"))
         }
         if let type = req.headers.contentType {
             headers.append(("Content-Type", type.serialize()))
@@ -322,5 +328,52 @@ struct AgentLocalProxyController: RouteCollection {
             throw Abort(.unauthorized, reason: "Client certificate required")
         }
         return peer
+    }
+
+    private func requireActivePeer(_ req: Vapor.Request) throws -> AgentPeerIdentity {
+        let names = req.headers.map(\.name)
+        if ForwardedIdentity.rejects(headerNames: names) {
+            throw Abort(.unauthorized, reason: "Forwarded identity is not accepted")
+        }
+        let peer = try requirePeer(req)
+        let decision = HomeMembershipAuthority(dataDir: Config.dataDir).authorizeCertificate(
+            hostId: peer.hostId,
+            fingerprint: peer.fingerprint,
+            localHostId: Config.hostId,
+        )
+        guard case .allow = decision else {
+            throw Abort(.unauthorized, reason: "Home membership denied this Device")
+        }
+        return peer
+    }
+
+    private func translatedAuthorization(_ req: Vapor.Request) async throws -> String? {
+        guard let token = req.headers.bearerAuthorization?.token else { return nil }
+        guard let peer = req.mtlsPeer else {
+            throw Abort(.unauthorized, reason: "Client certificate required")
+        }
+        if token.hasPrefix(HomeScopedCredential.prefix) {
+            guard let certificate = req.mtlsPeerCertificatePEM else {
+                throw Abort(.unauthorized, reason: "Client certificate required")
+            }
+            do {
+                return try HomeMemberHop.localManagementToken(
+                    dataDir: Config.dataDir,
+                    localHostId: Config.hostId,
+                    peerHostId: peer.hostId,
+                    peerCertificatePEM: certificate,
+                    scopedToken: token,
+                )
+            } catch let error as BarkVisorError {
+                throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
+            }
+        }
+        if HomeMembershipAuthority.ledgerExists(dataDir: Config.dataDir) {
+            throw Abort(
+                .unauthorized,
+                reason: "Member hop credential is not bound to the presented Device",
+            )
+        }
+        return token
     }
 }

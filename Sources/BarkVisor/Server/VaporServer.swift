@@ -41,6 +41,10 @@ public final class VaporServer: @unchecked Sendable {
                 throw ServiceProcessRoleError.serverCannotOpenAuthoritativeState
             }
         }
+        try HomeMembershipAuthority.migrateExistingHome(
+            dataDir: Config.dataDir,
+            localHostId: Config.hostId,
+        )
         await keys.add(hmac: .init(from: Config.jwtSecret), digestAlgorithm: .sha256)
 
         let app = try await Vapor.Application.make(.production)

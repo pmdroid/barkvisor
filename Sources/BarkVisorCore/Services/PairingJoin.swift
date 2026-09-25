@@ -92,6 +92,26 @@ extension PairingService {
             now: now,
             devices: devices,
         )
+        let authority = HomeMembershipAuthority(dataDir: dataDir)
+        let exchange = PairingCode.hash(expected.code)
+        do {
+            try authority.beginAdmission(
+                exchangeId: exchange,
+                hostId: response.hostId,
+                fingerprint: response.deviceFingerprint,
+                now: now,
+            )
+            try authority.commitAdmission(
+                exchangeId: exchange,
+                hostId: response.hostId,
+                fingerprint: response.deviceFingerprint,
+                now: now,
+            )
+        } catch {
+            try? pinStore.unpin(hostId: response.hostId)
+            try? (devices ?? DeviceRegistry(dataDir: dataDir)).remove(hostId: response.hostId)
+            throw error
+        }
 
         return PairingJoinResponse(
             peerHostId: response.hostId,

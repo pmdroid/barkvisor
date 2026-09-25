@@ -74,6 +74,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             try Self.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }
+        try Self.rejectForwardedIdentity(request)
         switch StreamTicketPolicy.site(path: request.url.path) {
         case .homeTunnel:
             return try await authenticateHomeTunnel(request, chainingTo: next)
@@ -116,12 +117,32 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             return try await next.respond(to: request)
         }
 
-        // JWT auth (existing flow)
+        if token.hasPrefix(HomeScopedCredential.prefix) {
+            throw Abort(
+                .unauthorized,
+                reason: "Scoped device credentials are not accepted on this listener",
+            )
+        }
+        if token.hasPrefix(HomeManagementCredential.prefix) {
+            try await attach(
+                authenticateManagement(token: token, request: request),
+                to: request,
+            )
+            return try await next.respond(to: request)
+        }
+
         try await attach(
             authenticateJWT(token: token, request: request),
             to: request,
         )
         return try await next.respond(to: request)
+    }
+
+    static func rejectForwardedIdentity(_ request: Vapor.Request) throws {
+        let names = request.headers.map(\.name)
+        if ForwardedIdentity.rejects(headerNames: names) {
+            throw Abort(.unauthorized, reason: "Forwarded identity is not accepted")
+        }
     }
 
     static func enforceInferenceACL(_ request: Vapor.Request) throws {
@@ -313,6 +334,45 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         }
         return try await HomeTunnelAuthMiddleware(keys: keys, ticketStore: ticketStore)
             .respond(to: request, chainingTo: next)
+    }
+
+    private func authenticateManagement(token: String, request: Vapor.Request) async throws
+        -> AuthenticatedUser {
+        let authority = HomeMembershipAuthority(dataDir: Config.dataDir)
+        let credential: HomeManagementCredential
+        do {
+            let publicKey = try authority.managementPublicKeyPEM()
+            credential = try HomeManagementCredential.verify(
+                token: token,
+                managementPublicKeyPEM: publicKey,
+            )
+        } catch {
+            throw Abort(.unauthorized, reason: "Invalid or expired token")
+        }
+        let decision = authority.authorizeLoginToken(
+            issuerHostId: credential.onBehalfOfHostId,
+            subjectHostId: credential.onBehalfOfHostId,
+            issuedAt: credential.issuedAt,
+            expiresAt: credential.expiresAt,
+            membershipRevision: credential.membershipRevision,
+            localHostId: Config.hostId,
+        )
+        guard case .allow = decision else {
+            throw Abort(.unauthorized, reason: "Home membership denied this login token")
+        }
+        try AuthBypass.validateSyntheticSubject(credential.subject, request: request)
+        let role = try await Self.resolveRole(
+            userId: credential.subject,
+            sessionFallback: credential.role,
+            request: request,
+        )
+        return AuthenticatedUser(
+            userId: credential.subject,
+            username: credential.username,
+            authMethod: "management",
+            apiKeyId: nil,
+            role: role,
+        )
     }
 
     private func authenticateJWT(token: String, request: Vapor.Request) async throws

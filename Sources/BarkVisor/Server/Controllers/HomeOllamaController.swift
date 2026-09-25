@@ -536,7 +536,9 @@ struct HomeOllamaController: RouteCollection {
         guard let keys else {
             throw BarkVisorError.internalError("Home JWT keys are not configured")
         }
-        return try await AuthService.signMemberHopToken(
+        return try await HomeMemberHop.token(
+            dataDir: dataDir,
+            issuerHostId: hostId,
             userId: user.userId,
             username: user.username,
             role: AuthService.memberHopRole(

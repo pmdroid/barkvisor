@@ -7,10 +7,19 @@ struct MTLSPeerKey: StorageKey {
     typealias Value = AgentPeerIdentity
 }
 
+struct MTLSPeerCertificateKey: StorageKey {
+    typealias Value = String
+}
+
 extension Vapor.Request {
     var mtlsPeer: AgentPeerIdentity? {
         get { storage[MTLSPeerKey.self] }
         set { storage[MTLSPeerKey.self] = newValue }
+    }
+
+    var mtlsPeerCertificatePEM: String? {
+        get { storage[MTLSPeerCertificateKey.self] }
+        set { storage[MTLSPeerCertificateKey.self] = newValue }
     }
 }
 
@@ -44,6 +53,18 @@ struct MTLSMiddleware: AsyncMiddleware {
         switch DeviceTrust.evaluate(leafPEM: pem, homeCAPEM: homeCAPEM, pins: loadedPins) {
         case let .accepted(hostId, source):
             let fingerprint = (try? DeviceTrust.fingerprint(pem: pem)) ?? ""
+            let dataDir = pins.fileURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let membership = HomeMembershipAuthority(dataDir: dataDir).authorizeCertificate(
+                hostId: hostId,
+                fingerprint: fingerprint,
+                localHostId: Config.hostId,
+            )
+            guard case .allow = membership else {
+                throw Abort(.unauthorized, reason: "Home membership denied this Device")
+            }
+            request.mtlsPeerCertificatePEM = pem
             request.mtlsPeer = AgentPeerIdentity(
                 hostId: hostId,
                 fingerprint: fingerprint,

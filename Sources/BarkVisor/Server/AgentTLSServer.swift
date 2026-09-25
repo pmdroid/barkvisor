@@ -265,7 +265,9 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(StructuredErrorMiddleware())
         app.middleware.use(APIVersionMiddleware(), at: .beginning)
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
-        try app.register(collection: AgentMTLSController())
+        try app.register(
+            collection: AgentMTLSController(dataDir: dataDir, hostId: hostId),
+        )
         if let database, let dataDir {
             try app.register(
                 collection: AgentCatalogController(database: database, dataDir: dataDir),
@@ -302,7 +304,20 @@ public final class AgentTLSServer: @unchecked Sendable {
             return
         }
         switch DeviceTrust.evaluate(leaf: leaf, homeCAPEM: homeCAPEM, pins: loadedPins) {
-        case .accepted:
+        case let .accepted(hostId, _):
+            let fingerprint = (try? DeviceTrust.fingerprint(certificate: leaf)) ?? ""
+            let dataDir = pins.fileURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let membership = HomeMembershipAuthority(dataDir: dataDir).authorizeCertificate(
+                hostId: hostId,
+                fingerprint: fingerprint,
+                localHostId: Config.hostId,
+            )
+            guard case .allow = membership else {
+                promise.succeed(.failed)
+                return
+            }
             promise.succeed(
                 .certificateVerified(VerificationMetadata(NIOSSL.ValidatedCertificateChain(certs))),
             )

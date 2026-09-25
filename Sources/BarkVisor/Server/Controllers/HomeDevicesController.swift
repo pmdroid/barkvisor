@@ -78,6 +78,7 @@ struct HomeDevicesController: RouteCollection {
                 dataDir: dataDir,
                 devices: devices,
             )
+            await PrivilegedStreamGate.shared.invalidate(memberHostId: id)
             await reachability.remove(id)
             AuditService.log(action: "home.device.remove", resourceType: "device", resourceId: id, req: req)
             return .noContent
@@ -136,7 +137,9 @@ struct HomeDevicesController: RouteCollection {
             return nil
         }
         guard let admin else { return nil }
-        return try? await AuthService.signMemberHopToken(
+        return try? await HomeMemberHop.token(
+            dataDir: dataDir,
+            issuerHostId: hostId,
             userId: admin.id,
             username: admin.username,
             role: UserRolePolicy.parseStored(admin.role).rawValue,
@@ -227,6 +230,40 @@ struct HomeDevicesController: RouteCollection {
             }
         }
         await reachability.replace(statuses)
+        await pullMembershipSnapshots(members: members)
+    }
+
+    func pullMembershipSnapshots(members: [HomeDevice]) async {
+        for member in members {
+            guard let agentHost = member.agentHost, !agentHost.isEmpty else { continue }
+            let client: any HomeDeviceProxyClient
+            if let mtlsClient {
+                client = mtlsClient
+            } else {
+                guard let created = try? HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId) else {
+                    continue
+                }
+                client = created
+            }
+            guard let url = try? HomeDeviceProxy.memberURL(
+                host: agentHost,
+                port: member.agentPort,
+                path: "/api/agent/membership",
+            ) else { continue }
+            do {
+                let response = try await client.send(
+                    HomeDeviceProxyRequest(method: "GET", url: url),
+                )
+                guard (200 ..< 300).contains(response.status) else { continue }
+                let snapshot = try JSONDecoder().decode(
+                    HomeMembershipSnapshot.self,
+                    from: response.body,
+                )
+                _ = try HomeMembershipAuthority(dataDir: dataDir).importSnapshot(snapshot)
+            } catch {
+                continue
+            }
+        }
     }
 
     func collectMemberProbes(
@@ -328,6 +365,15 @@ struct HomeDevicesController: RouteCollection {
                 reason: "Device registry is unavailable; local runtime continues",
             )
         }
+        let membership = HomeMembershipAuthority(dataDir: dataDir).authorizeProxy(
+            callerHostId: nil,
+            targetHostId: id,
+            fingerprint: record.fingerprint,
+            localHostId: hostId,
+        )
+        if case let .deny(reason) = membership {
+            throw Abort(.forbidden, reason: reason)
+        }
         guard let agentHost = record.agentHost, !agentHost.isEmpty else {
             throw Abort(.serviceUnavailable, reason: "Device has no reachable address")
         }
@@ -379,7 +425,9 @@ struct HomeDevicesController: RouteCollection {
     ) async throws -> String? {
         guard let keys else { return incoming }
         let hopUser = try await AuthBypass.hopUser(from: user, db: db)
-        return try await AuthService.signMemberHopToken(
+        return try await HomeMemberHop.token(
+            dataDir: dataDir,
+            issuerHostId: hostId,
             userId: hopUser.userId,
             username: hopUser.username,
             role: AuthService.memberHopRole(

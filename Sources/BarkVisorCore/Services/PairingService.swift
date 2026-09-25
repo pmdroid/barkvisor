@@ -264,6 +264,14 @@ public enum PairingService {
             material: material,
             now: input.now,
         ) {
+            let authority = HomeMembershipAuthority(dataDir: input.dataDir)
+            let exchange = PairingCode.hash(req.code)
+            try authority.beginAdmission(
+                exchangeId: exchange,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                now: input.now,
+            )
             try registerPairedDevice(
                 dataDir: input.dataDir,
                 hostId: joinerHostId,
@@ -272,6 +280,12 @@ public enum PairingService {
                 agentPort: req.agentPort ?? Config.agentPort,
                 now: input.now,
                 devices: devices,
+            )
+            try authority.commitAdmission(
+                exchangeId: exchange,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                now: input.now,
             )
             return try attachIdentity(
                 replayed,
@@ -285,6 +299,18 @@ public enum PairingService {
         // upserts the registry row. A consumed code with a new fingerprint
         // does not replay — issue a fresh code.
         let consumed = try store.consume(code: req.code, now: input.now)
+        let authority = HomeMembershipAuthority(dataDir: input.dataDir)
+        do {
+            try authority.beginAdmission(
+                exchangeId: consumed.codeHash,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                now: input.now,
+            )
+        } catch {
+            try? store.restore(consumed)
+            throw error
+        }
         let issued: IssuedDeviceCertificate
         do {
             issued = try issueAndPin(
@@ -296,6 +322,7 @@ public enum PairingService {
                 pins: pinStore,
             )
         } catch {
+            try? authority.abortAdmission(hostId: joinerHostId, exchangeId: consumed.codeHash)
             do {
                 try store.restore(consumed)
             } catch {
@@ -305,15 +332,28 @@ public enum PairingService {
             }
             throw error
         }
-        try registerPairedDevice(
-            dataDir: input.dataDir,
-            hostId: joinerHostId,
-            fingerprint: presented.fingerprint,
-            agentHost: req.agentHost,
-            agentPort: req.agentPort ?? Config.agentPort,
-            now: input.now,
-            devices: devices,
-        )
+        do {
+            try registerPairedDevice(
+                dataDir: input.dataDir,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                agentHost: req.agentHost,
+                agentPort: req.agentPort ?? Config.agentPort,
+                now: input.now,
+                devices: devices,
+            )
+            try authority.commitAdmission(
+                exchangeId: consumed.codeHash,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                now: input.now,
+            )
+        } catch {
+            try? pinStore.unpin(hostId: joinerHostId)
+            try? (devices ?? DeviceRegistry(dataDir: input.dataDir)).remove(hostId: joinerHostId)
+            try? authority.abortAdmission(hostId: joinerHostId, exchangeId: consumed.codeHash)
+            throw error
+        }
         return try attachIdentity(
             PairingRedeemResponse(
                 hostId: input.issuerHostId,
@@ -417,7 +457,7 @@ public enum PairingService {
         joinerCertificatePEM: String,
     ) throws -> PairingRedeemResponse {
         var copy = response
-        let secret = input.jwtSecret ?? Config.loadJWTSecret(from: input.dataDir) ?? ""
+        let secret = ""
         var admin = input.adminUser
         if let candidate = admin, candidate.id.isEmpty || candidate.username.isEmpty {
             admin = nil
