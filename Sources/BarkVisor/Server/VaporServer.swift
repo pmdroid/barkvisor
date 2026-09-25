@@ -15,6 +15,7 @@ public final class VaporServer: @unchecked Sendable {
     private(set) var backgroundTaskManager: BackgroundTaskManager?
     private(set) var healthProbes: HealthProbeService?
     private(set) var diskInfoCache: DiskInfoCache?
+    private var runtimeObservation: RuntimeObservation?
     private(set) var setupMiddleware: SetupMiddleware?
     private(set) var agentTLSServer: AgentTLSServer?
     private let tlsReloadStateLock = NSLock()
@@ -390,8 +391,12 @@ public final class VaporServer: @unchecked Sendable {
         )
         repositorySyncService = syncService
 
+        let observation = RuntimeObservation()
+        runtimeObservation = observation
+        ApplicationLifecycleService.setObservation(observation)
         let collector = MetricsCollector()
         metricsCollector = collector
+        await collector.setRuntimeObservation(observation)
         let guestAgentInventory = GuestAgentInventory(dbPool: pool)
         await collector.startSystemStatsCollection()
 
@@ -420,6 +425,8 @@ public final class VaporServer: @unchecked Sendable {
         let qmpEventListener = QMPEventListener(dbPool: pool)
         await qmpEventListener.setVMManager(manager)
         await qmpEventListener.setStateStreamService(stateStreamService)
+        await qmpEventListener.setObservation(observation)
+        await observation.ensureEvents(source: LiveDockerEventSource())
         await manager.setQMPEventListener(qmpEventListener)
 
         let processMonitor = VMProcessMonitor(dbPool: pool)
@@ -619,6 +626,11 @@ public final class VaporServer: @unchecked Sendable {
         if let diskInfoCache {
             await diskInfoCache.stop()
         }
+        if let runtimeObservation {
+            await runtimeObservation.stop()
+            self.runtimeObservation = nil
+        }
+        ApplicationLifecycleService.setObservation(nil)
 
         // Detach monitoring but leave QEMU processes running
         if let vmManager {

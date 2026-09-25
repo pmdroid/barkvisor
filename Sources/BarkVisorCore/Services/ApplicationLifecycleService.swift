@@ -4,9 +4,14 @@ import GRDB
 public enum ApplicationLifecycleService {
     private nonisolated(unsafe) static var lastErrors: [String: String] = [:]
     private nonisolated(unsafe) static var metricsCollector: MetricsCollector?
+    private nonisolated(unsafe) static var observation: RuntimeObservation?
 
     public static func setMetricsCollector(_ collector: MetricsCollector?) {
         metricsCollector = collector
+    }
+
+    public static func setObservation(_ observation: RuntimeObservation?) {
+        self.observation = observation
     }
 
     public static func lastError(for id: String) -> String? {
@@ -821,6 +826,13 @@ public enum ApplicationLifecycleService {
         guard await operations.allowsWrite(lease: lease, current: current) else { return }
         let observed = labeled[vm.id]
         if let observed {
+            await observation?.applyReconcile([
+                ReconcileFact(
+                    workloadID: vm.id,
+                    phase: observed == "running" ? .running : .exited,
+                    detail: nil,
+                ),
+            ])
             let services = serviceObservations(
                 containerNames: DockerServiceHealth.containerNames(
                     workloadID: vm.id,
@@ -848,6 +860,13 @@ public enum ApplicationLifecycleService {
             return
         }
         if vm.state == "running" {
+            await observation?.applyReconcile([
+                ReconcileFact(
+                    workloadID: vm.id,
+                    phase: .exited,
+                    detail: "compose project is missing on the Device",
+                ),
+            ])
             try? await setState(
                 &vm,
                 state: "error",
@@ -1106,7 +1125,6 @@ public enum ApplicationLifecycleService {
                 observedAt: now,
                 freshness: "fresh",
                 appliedGeneration: appliedGeneration,
->>>>>>> origin/acpdash/77745360-8a54-47dc-8934-a259c16eb5e9
             )
             _ = try WorkloadFactStore.recordObservation(
                 db: db,

@@ -47,7 +47,11 @@ public struct DockerEngineSnapshot: Sendable, Equatable {
 public enum DockerEngine {
     @TaskLocal public static var snapshotOverride: DockerEngineSnapshot?
     public nonisolated(unsafe) static var snapshotProvider: @Sendable () -> DockerEngineSnapshot = {
-        liveSnapshot()
+        DockerDiscoveryCache.shared.productionSnapshot()
+    }
+
+    public static func installDefaultSnapshotProvider() {
+        snapshotProvider = { DockerDiscoveryCache.shared.productionSnapshot() }
     }
 
     public static func snapshot() -> DockerEngineSnapshot {

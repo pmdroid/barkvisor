@@ -12,7 +12,7 @@ final class ApplicationLifecycleServiceTests {
 
     deinit {
         HostInfoService.lanBindIPv4Provider = nil
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        DockerEngine.installDefaultSnapshotProvider()
         ComposeTestIsolation.installFailFast()
         Task { await ComposeSerialGate.release() }
     }
@@ -123,7 +123,7 @@ final class ApplicationLifecycleServiceTests {
         ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
-            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            DockerEngine.installDefaultSnapshotProvider()
             ComposeTestIsolation.installFailFast()
         }
 
@@ -263,7 +263,7 @@ final class ApplicationLifecycleServiceTests {
         ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
-            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            DockerEngine.installDefaultSnapshotProvider()
             ComposeTestIsolation.installFailFast()
         }
 
@@ -320,7 +320,7 @@ final class ApplicationLifecycleServiceTests {
         ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
-            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            DockerEngine.installDefaultSnapshotProvider()
             ComposeTestIsolation.installFailFast()
         }
 
@@ -460,7 +460,7 @@ final class ApplicationLifecycleServiceTests {
         ComposeRuntime.runner = compose
         defer {
             HostInfoService.lanBindIPv4Provider = nil
-            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            DockerEngine.installDefaultSnapshotProvider()
             ComposeTestIsolation.installFailFast()
         }
 
@@ -545,7 +545,7 @@ final class ApplicationLifecycleServiceTests {
         DockerEngine.snapshotProvider = { snap }
         defer {
             HostInfoService.lanBindIPv4Provider = nil
-            DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+            DockerEngine.installDefaultSnapshotProvider()
             ComposeTestIsolation.installFailFast()
         }
 

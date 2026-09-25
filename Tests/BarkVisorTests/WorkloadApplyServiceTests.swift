@@ -48,7 +48,7 @@ final class WorkloadApplyServiceTests {
     }
 
     deinit {
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        DockerEngine.installDefaultSnapshotProvider()
         GPUShareService.listProvider = nil
         HostInfoService.lanBindIPv4Provider = nil
         ComposeTestIsolation.installFailFast()

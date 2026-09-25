@@ -24,7 +24,7 @@ final class ApplicationUpdateKeepVolumesTests {
     }
 
     deinit {
-        DockerEngine.snapshotProvider = { DockerEngine.liveSnapshot() }
+        DockerEngine.installDefaultSnapshotProvider()
         ComposeRuntime.labeledStatesProvider = nil
         ComposeTestIsolation.installFailFast()
         try? FileManager.default.removeItem(at: dataDir)
