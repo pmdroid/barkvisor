@@ -765,6 +765,7 @@ extension ApplicationLifecycleService {
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
+            return
         }
         ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
