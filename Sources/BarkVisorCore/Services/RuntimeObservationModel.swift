@@ -39,7 +39,7 @@ public struct ServiceObservation: Sendable, Equatable, Codable {
     }
 }
 
-public struct WorkloadObservation: Sendable, Equatable, Codable {
+public struct RuntimeSnapshot: Sendable, Equatable, Codable {
     public var workloadID: String
     public var configurationGeneration: UInt64
     public var observationSequence: UInt64
@@ -78,8 +78,8 @@ public struct WorkloadObservation: Sendable, Equatable, Codable {
         self.memoryUsedBytes = memoryUsedBytes
     }
 
-    public static func empty(_ workloadID: String) -> WorkloadObservation {
-        WorkloadObservation(
+    public static func empty(_ workloadID: String) -> RuntimeSnapshot {
+        RuntimeSnapshot(
             workloadID: workloadID,
             configurationGeneration: 0,
             observationSequence: 0,
@@ -164,7 +164,7 @@ public enum QMPObservationKind: String, Sendable, Equatable {
 }
 
 public enum ObservationNotice: Sendable, Equatable {
-    case observation(WorkloadObservation)
+    case observation(RuntimeSnapshot)
     case resync
 }
 

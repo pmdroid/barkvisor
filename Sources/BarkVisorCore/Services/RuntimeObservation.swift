@@ -1,7 +1,7 @@
 import Foundation
 
 public actor RuntimeObservation {
-    private var observations: [String: WorkloadObservation] = [:]
+    private var observations: [String: RuntimeSnapshot] = [:]
     private var subscribers: [UUID: Subscriber] = [:]
     private var resyncTime: Date?
     private var identityProvider: @Sendable () -> DockerRuntimeIdentity
@@ -25,11 +25,11 @@ public actor RuntimeObservation {
         self.listContainers = listContainers
     }
 
-    public func observation(for workloadID: String) -> WorkloadObservation? {
+    public func observation(for workloadID: String) -> RuntimeSnapshot? {
         observations[workloadID]
     }
 
-    public func currentObservations() -> [WorkloadObservation] {
+    public func currentObservations() -> [RuntimeSnapshot] {
         observations.values.sorted { $0.workloadID < $1.workloadID }
     }
 
@@ -332,7 +332,7 @@ public actor RuntimeObservation {
         }
     }
 
-    private func upsertService(_ observation: inout WorkloadObservation, event: DockerContainerEvent) {
+    private func upsertService(_ observation: inout RuntimeSnapshot, event: DockerContainerEvent) {
         let phase = ObservationRollup.phase(action: event.action)
         let health = ObservationRollup.health(action: event.action)
         if phase == nil, health == nil { return }
@@ -356,7 +356,7 @@ public actor RuntimeObservation {
         observation.health = ObservationRollup.workloadHealth(observation.services)
     }
 
-    private func store(_ observation: WorkloadObservation) {
+    private func store(_ observation: RuntimeSnapshot) {
         observations[observation.workloadID] = observation
         enqueue(.observation(observation))
     }

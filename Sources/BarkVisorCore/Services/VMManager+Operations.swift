@@ -243,7 +243,7 @@ extension VMManager {
         await stateStreamService?.broadcast(event: event)
     }
 
-    func workloadObservation(_ vmID: String) async throws -> WorkloadObservation {
+    func workloadObservation(_ vmID: String) async throws -> LeaseObservation {
         try await WorkloadOperationCoordinator.observation(id: vmID, db: dbPool)
     }
 

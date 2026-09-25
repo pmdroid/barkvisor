@@ -369,7 +369,7 @@ public enum ApplicationLifecycleService {
                 operationID: operationID,
                 kind: .delete,
                 load: {
-                    WorkloadObservation(generation: generation, state: state, exists: true)
+                    LeaseObservation(generation: generation, state: state, exists: true)
                 },
             ) { _ in
                 downLocked(vm: vm, dataDir: dataDir)
@@ -822,7 +822,7 @@ public enum ApplicationLifecycleService {
     ) async throws {
         guard let labeled = ComposeRuntime.listLabeledStates() else { return }
         guard var vm = try await db.read({ try VM.fetchOne($0, key: id) }) else { return }
-        let current = WorkloadObservation(generation: vm.specGeneration, state: vm.state, exists: true)
+        let current = LeaseObservation(generation: vm.specGeneration, state: vm.state, exists: true)
         guard await operations.allowsWrite(lease: lease, current: current) else { return }
         let observed = labeled[vm.id]
         if let observed {
@@ -879,14 +879,25 @@ public enum ApplicationLifecycleService {
         _ = dataDir
     }
 
-    private static func requireRunning(id: String, db: DatabasePool) async throws {
+    static func noteAppRunning(id: String, project: String) async {
+        await metricsCollector?.startApp(id: id, project: project)
+    }
+
+    static func refuseDeleting(id: String, db: DatabasePool) async throws {
+        let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
+        if state == "deleting" {
+            throw BarkVisorError.conflict("Workload is deleting")
+        }
+    }
+
+    static func requireRunning(id: String, db: DatabasePool) async throws {
         let state = try await db.read { db in try VM.fetchOne(db, key: id)?.state }
         if state != "running" {
             throw BarkVisorError.conflict("Application must be running to update images")
         }
     }
 
-    private static func persistRuntime(
+    static func persistRuntime(
         vm: inout VM,
         namedVolumes: [String],
         db: DatabasePool,
@@ -934,7 +945,7 @@ public enum ApplicationLifecycleService {
         vm = applied
     }
 
-    private static func refreshCatalogDigest(
+    static func refreshCatalogDigest(
         vm: inout VM,
         db: DatabasePool,
         dataDir: URL,
@@ -984,7 +995,7 @@ public enum ApplicationLifecycleService {
         vm = applied
     }
 
-    private static func applyPublishedPorts(
+    static func applyPublishedPorts(
         _ ports: [PublishedPort],
         to vm: inout VM,
         db: DatabasePool,
@@ -994,7 +1005,7 @@ public enum ApplicationLifecycleService {
         vm.setPortForwards(rules.isEmpty ? nil : rules)
     }
 
-    private static func catalogEntry(for vm: VM, db: DatabasePool) async -> AppCatalogEntryDTO? {
+    static func catalogEntry(for vm: VM, db: DatabasePool) async -> AppCatalogEntryDTO? {
         let labels = WorkloadSpecJSON.decode(vm.specJson)?.metadata.labels ?? [:]
         guard let slug = labels["catalog"], !slug.isEmpty else { return nil }
         let source = labels["catalog-source"]
@@ -1003,7 +1014,7 @@ public enum ApplicationLifecycleService {
         }
     }
 
-    private static func decodeEnv(
+    static func decodeEnv(
         _ vm: VM,
         dataDir: URL,
         catalog: AppCatalogEntryDTO? = nil,
@@ -1037,7 +1048,7 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    private static func shareAttach(for vm: VM, db: DatabasePool) async throws -> GPUShareAttach {
+    static func shareAttach(for vm: VM, db: DatabasePool) async throws -> GPUShareAttach {
         let selected = WorkloadSpecJSON.decode(vm.specJson)?.spec.gpuShare ?? []
         if selected.isEmpty { return .empty }
         let vms = try await db.read { db in try VM.fetchAll(db) }

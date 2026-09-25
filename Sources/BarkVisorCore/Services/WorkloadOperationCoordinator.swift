@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct WorkloadObservation: Sendable, Equatable {
+public struct LeaseObservation: Sendable, Equatable {
     public var generation: Int
     public var state: String
     public var exists: Bool
@@ -23,7 +23,7 @@ public struct WorkloadOperationIdentity: Hashable, Sendable {
     }
 }
 
-public enum WorkloadOperationKind: String, Sendable {
+public enum LeaseKind: String, Sendable {
     case start
     case stop
     case restart
@@ -36,7 +36,7 @@ public enum WorkloadOperationKind: String, Sendable {
 
 public struct WorkloadOperationLease: Sendable {
     public let identity: WorkloadOperationIdentity
-    public let kind: WorkloadOperationKind
+    public let kind: LeaseKind
     public let generation: Int
     public let state: String
     public let mutationEpoch: UInt64
@@ -86,13 +86,13 @@ public actor WorkloadOperationCoordinator {
     }
 
     private final class Outcome: @unchecked Sendable {
-        let kind: WorkloadOperationKind
+        let kind: LeaseKind
         private let lock = NSLock()
         private var result: Result<AnySendable, Error>?
         private var waiters: [CheckedContinuation<Result<AnySendable, Error>, Never>] = []
         private var finished = false
 
-        init(kind: WorkloadOperationKind) {
+        init(kind: LeaseKind) {
             self.kind = kind
         }
 
@@ -153,18 +153,18 @@ public actor WorkloadOperationCoordinator {
         return (operationHeaderName, trimmed)
     }
 
-    public static func observation(id: String, db: DatabasePool) async throws -> WorkloadObservation {
+    public static func observation(id: String, db: DatabasePool) async throws -> LeaseObservation {
         if let vm = try await db.read({ try VM.fetchOne($0, key: id) }) {
-            return WorkloadObservation(generation: vm.specGeneration, state: vm.state, exists: true)
+            return LeaseObservation(generation: vm.specGeneration, state: vm.state, exists: true)
         }
-        return WorkloadObservation(generation: 0, state: "absent", exists: false)
+        return LeaseObservation(generation: 0, state: "absent", exists: false)
     }
 
     public func perform<T: Sendable>(
         workloadID: String,
         operationID: String,
-        kind: WorkloadOperationKind,
-        load: @escaping @Sendable () async throws -> WorkloadObservation,
+        kind: LeaseKind,
+        load: @escaping @Sendable () async throws -> LeaseObservation,
         body: @escaping @Sendable (WorkloadOperationLease) async throws -> T,
     ) async throws -> T {
         let key = "\(workloadID)\n\(operationID)"
@@ -226,7 +226,7 @@ public actor WorkloadOperationCoordinator {
         waiter.continuation.resume(throwing: CancellationError())
     }
 
-    public func allowsWrite(lease: WorkloadOperationLease, current: WorkloadObservation) -> Bool {
+    public func allowsWrite(lease: WorkloadOperationLease, current: LeaseObservation) -> Bool {
         guard lanes[lease.identity.workloadID]?.owner == lease.identity else { return false }
         guard lanes[lease.identity.workloadID]?.mutationEpoch == lease.mutationEpoch else { return false }
         switch lease.kind {
@@ -255,8 +255,8 @@ public actor WorkloadOperationCoordinator {
     private func execute<T: Sendable>(
         workloadID: String,
         operationID: String,
-        kind: WorkloadOperationKind,
-        load: @escaping @Sendable () async throws -> WorkloadObservation,
+        kind: LeaseKind,
+        load: @escaping @Sendable () async throws -> LeaseObservation,
         body: @escaping @Sendable (WorkloadOperationLease) async throws -> T,
     ) async throws -> T {
         try await acquire(workloadID: workloadID, operationID: operationID)
