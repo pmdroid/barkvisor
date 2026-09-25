@@ -34,7 +34,7 @@ Given("the Docker discovery cache is cold and a catalog with Debian 13 is stored
   requirePassed("template list skips live docker probe")
 })
 
-When("the client GET /api/templates", function () {
+When("the client GET \\/api\\/templates", function () {
   requirePassed("template list skips live docker probe")
 })
 
