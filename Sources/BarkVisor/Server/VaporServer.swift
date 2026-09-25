@@ -91,6 +91,7 @@ public final class VaporServer: @unchecked Sendable {
 
         let services = await createServices(app: app, database: database)
         await services.processMonitor.reconnectOrCleanup()
+        await WorkloadOperationRecovery.resume(db: database.pool)
         await ApplicationLifecycleService.reconcile(
             db: database.pool, operations: services.manager.operations,
         )

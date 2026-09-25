@@ -67,6 +67,13 @@ struct DatabaseMigrationTests {
             #expect(columns.contains("digest"))
             #expect(columns.contains("catalogDigest"))
             #expect(columns.contains("volumeRootsJson"))
+            let operations = try db.columns(in: "workload_operations").map(\.name)
+            #expect(operations.contains("attemptID"))
+            #expect(operations.contains("recoveryOutcome"))
+            #expect(operations.contains("dataRestored"))
+            let revisions = try db.columns(in: "deployment_revisions").map(\.name)
+            #expect(revisions.contains("manifestJSON"))
+            #expect(revisions.contains("dataCompatibility"))
         }
     }
 

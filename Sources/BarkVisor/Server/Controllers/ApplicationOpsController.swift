@@ -65,11 +65,18 @@ struct ApplicationOpsController: RouteCollection {
         let db = req.db
         let workloadID = vm.id
         let operations = operations
-        let operationID = WorkloadOperationCoordinator.makeOperationID(
-            supplied: req.headers.first(name: WorkloadOperationCoordinator.operationHeaderName),
-            action: "update",
+        let idempotencyKey = req.headers.first(name: "Idempotency-Key")
+        let acceptance = try await WorkloadOperationStore.accept(
+            db: db,
+            idempotencyKey: idempotencyKey,
             workloadID: workloadID,
+            kind: WorkloadOperationKind.appUpdate,
+            requestedGeneration: vm.specGeneration,
         )
+        if !acceptance.started {
+            return try Response.json(TaskAcceptedResponse(taskID: acceptance.record.id), status: .accepted)
+        }
+        let operationID = acceptance.record.id
         let submitted = await backgroundTasks.submit(taskID, kind: .appUpdate) {
             guard var live = try await db.read({ db in try VM.fetchOne(db, key: workloadID) }) else {
                 throw BarkVisorError.notFound("Workload \(workloadID) not found")
@@ -105,9 +112,17 @@ struct ApplicationOpsController: RouteCollection {
         try await ApplicationLifecycleService.refreshImageFacts(
             vm: &vm, db: req.db, operations: operations,
         )
-        let published = await ApplicationLifecycleService.publishedUpdate(
+        var published = await ApplicationLifecycleService.publishedUpdate(
             event: backgroundTasks.status(ApplicationLifecycleService.taskID(forUpdate: vm.id)),
         )
+        if published.taskID == nil,
+           let open = try await WorkloadOperationStore.openOperation(
+               db: req.db,
+               workloadID: vm.id,
+               kind: WorkloadOperationKind.appUpdate,
+           ) {
+            published = (open.id, open.progress)
+        }
         return VMResponse(
             from: vm,
             updateTaskID: published.taskID,

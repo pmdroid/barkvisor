@@ -182,7 +182,7 @@ final class ApplicationLifecycleServiceTests {
         }
     }
 
-    @Test func `down removes the project when compose fails`() async throws {
+    @Test func `down keeps managed files when compose fails`() async throws {
         let previous = ComposeRuntime.runner
         ComposeRuntime.runner = FailingComposeRunner()
         defer { ComposeRuntime.runner = previous }
@@ -199,8 +199,15 @@ final class ApplicationLifecycleServiceTests {
             encoding: .utf8,
         )
 
+        let marker = dir.appendingPathComponent("volumes").appendingPathComponent("keep.txt")
+        try FileManager.default.createDirectory(
+            at: marker.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("volume".utf8).write(to: marker)
         await ApplicationLifecycleService.down(vm: applicationVM(id: id), dataDir: dataDir)
-        #expect(!FileManager.default.fileExists(atPath: dir.path))
+        #expect(FileManager.default.fileExists(atPath: dir.path))
+        #expect(FileManager.default.fileExists(atPath: marker.path))
     }
 
     @Test func `reconcile writes docker state while the daemon stays up`() async throws {
