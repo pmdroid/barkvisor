@@ -140,58 +140,57 @@ public enum PlatformProcess {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        // Drain pipes while the process runs to avoid pipe buffer deadlock.
         let stdoutBox = DataBox()
         let stderrBox = DataBox()
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                stdoutBox.append(chunk)
-            }
+        let readers = DispatchGroup()
+        readers.enter()
+        readers.enter()
+        let outHandle = outPipe.fileHandleForReading
+        let errHandle = errPipe.fileHandleForReading
+        DispatchQueue.global(qos: .userInitiated).async {
+            stdoutBox.append(outHandle.readDataToEndOfFile())
+            readers.leave()
         }
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                stderrBox.append(chunk)
-            }
+        DispatchQueue.global(qos: .userInitiated).async {
+            stderrBox.append(errHandle.readDataToEndOfFile())
+            readers.leave()
         }
 
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            finished.signal()
+        }
         try process.run()
 
         var timeoutExceeded: TimeInterval?
         if let timeout {
             let deadline = Date().addingTimeInterval(timeout)
-            while process.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            if process.isRunning {
-                process.terminate()
-                let killDeadline = Date().addingTimeInterval(0.5)
-                while process.isRunning, Date() < killDeadline {
-                    Thread.sleep(forTimeInterval: 0.05)
+            var exited = false
+            while Date() < deadline {
+                if finished.wait(timeout: .now() + 0.05) == .success {
+                    exited = true
+                    break
                 }
-                if process.isRunning {
-                    kill(process.processIdentifier, SIGKILL)
+            }
+            if !exited {
+                process.terminate()
+                if finished.wait(timeout: .now() + 0.5) == .timedOut {
+                    #if !os(Windows)
+                        kill(process.processIdentifier, SIGKILL)
+                    #endif
+                    _ = finished.wait(timeout: .now() + 2)
                 }
                 timeoutExceeded = timeout
             }
+        } else {
+            finished.wait()
         }
-        outPipe.fileHandleForReading.readabilityHandler = nil
-        errPipe.fileHandleForReading.readabilityHandler = nil
-        process.waitUntilExit()
+        _ = readers.wait(timeout: .now() + 2)
         if let timeoutExceeded {
             throw BarkVisorError.timeout(
                 "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
             )
         }
-        let leftoverOut = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let leftoverErr = errPipe.fileHandleForReading.readDataToEndOfFile()
-        if !leftoverOut.isEmpty { stdoutBox.append(leftoverOut) }
-        if !leftoverErr.isEmpty { stderrBox.append(leftoverErr) }
 
         return CommandResult(
             exitCode: process.terminationStatus,

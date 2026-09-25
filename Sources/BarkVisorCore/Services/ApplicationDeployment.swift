@@ -634,7 +634,19 @@ enum ApplicationDeployment {
         if phase == "accepted" || phase == "before_container_stop" || !stopped {
             if !stopped {
                 try await checkpoint(operation: record, db: db, phase: "before_container_stop")
-                try ComposeRuntime.stop(id: workloadID, project: project, dataDir: dataDir)
+                do {
+                    try ComposeRuntime.stop(id: workloadID, project: project, dataDir: dataDir)
+                } catch {
+                    _ = try? await WorkloadOperationStore.fail(
+                        db: db,
+                        operationID: record.id,
+                        attemptID: record.attemptID,
+                        phase: "before_container_stop",
+                        recoveryOutcome: ApplicationReadiness.outcomeCleanupIncomplete,
+                        error: error.localizedDescription,
+                    )
+                    return
+                }
                 try await checkpoint(operation: record, db: db, phase: "containers_stopped")
                 if !finishCleanup { return }
             } else {

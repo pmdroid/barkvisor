@@ -760,11 +760,11 @@ public enum ApplicationLifecycleService {
         let project = projectName(vm)
         do {
             try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+            ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
         }
-        ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
     private static func recordLifecycleError(

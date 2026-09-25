@@ -4,7 +4,8 @@
     "features/socket-operations.feature",
     "features/public-listeners.feature",
     "features/daemon-recovery.feature",
-    "features/appliance-units.feature"
+    "features/appliance-units.feature",
+    "features/command-timeout.feature"
   ],
   "import": ["features/steps/local-boundary.mjs"]
 }

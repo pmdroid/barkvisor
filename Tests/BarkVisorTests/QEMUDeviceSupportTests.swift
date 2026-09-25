@@ -45,10 +45,14 @@ struct QEMUDeviceSupportTests {
         let before = QEMUDeviceSupport.cacheKey(for: binary)
         let dir = QEMUDeviceSupport.moduleDirectories(for: binary)
             .first { FileManager.default.fileExists(atPath: $0) }
-        let added: URL? = dir.map {
-            let url = URL(fileURLWithPath: $0).appendingPathComponent("qemu-test-\(UUID().uuidString).so")
-            try? Data("x".utf8).write(to: url)
-            return url
+        let added: URL? = dir.flatMap { path in
+            let url = URL(fileURLWithPath: path).appendingPathComponent("qemu-test-\(UUID().uuidString).so")
+            do {
+                try Data("x".utf8).write(to: url)
+                return url
+            } catch {
+                return nil
+            }
         }
         defer {
             if let added { try? FileManager.default.removeItem(at: added) }

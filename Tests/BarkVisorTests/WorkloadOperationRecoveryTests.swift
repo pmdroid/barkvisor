@@ -232,7 +232,14 @@ struct WorkloadOperationRecoveryTests {
             }) {
                 try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                     await expectInterruption {
-                        try await harness.update()
+                        try await ApplicationDeployment.performImageUpdate(
+                            vm: &harness.vm,
+                            db: harness.db.pool,
+                            dataDir: harness.db.dir,
+                            operation: nil,
+                            dataMigration: nil,
+                            progress: nil,
+                        )
                     }
                 }
             }
@@ -300,7 +307,14 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await harness.update()
+                    try await ApplicationDeployment.performImageUpdate(
+                        vm: &harness.vm,
+                        db: harness.db.pool,
+                        dataDir: harness.db.dir,
+                        operation: nil,
+                        dataMigration: nil,
+                        progress: nil,
+                    )
                 }
             }
         }
@@ -333,11 +347,13 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await ApplicationLifecycleService.updateImages(
+                    try await ApplicationDeployment.performImageUpdate(
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
+                        operation: nil,
                         dataMigration: DataMigrationDecision(backupReference: nil),
+                        progress: nil,
                     )
                 }
             }
@@ -367,11 +383,13 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await ApplicationLifecycleService.updateImages(
+                    try await ApplicationDeployment.performImageUpdate(
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
+                        operation: nil,
                         dataMigration: DataMigrationDecision(backupReference: "snap-1"),
+                        progress: nil,
                     )
                 }
             }
@@ -395,7 +413,14 @@ struct WorkloadOperationRecoveryTests {
         try await harness.db.pool.write { db in try saved.insert(db) }
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
-                try await harness.update()
+                try await ApplicationDeployment.performImageUpdate(
+                    vm: &harness.vm,
+                    db: harness.db.pool,
+                    dataDir: harness.db.dir,
+                    operation: nil,
+                    dataMigration: nil,
+                    progress: nil,
+                )
             }
         }
         let revisions = try await harness.db.pool.read { db in try DeploymentRevisionRecord.fetchAll(db) }
@@ -423,8 +448,21 @@ struct WorkloadOperationRecoveryTests {
         let saved = harness.vm
         try await harness.db.pool.write { db in try saved.insert(db) }
         harness.compose.failStop = true
+        let accepted = try await WorkloadOperationStore.accept(
+            db: harness.db.pool,
+            idempotencyKey: nil,
+            workloadID: harness.vm.id,
+            kind: WorkloadOperationKind.appTeardown,
+            requestedGeneration: harness.vm.specGeneration,
+        )
         try await harness.run {
-            await ApplicationLifecycleService.down(vm: harness.vm, db: harness.db.pool, dataDir: harness.db.dir)
+            try await ApplicationDeployment.continueTeardown(
+                record: accepted.record,
+                vm: harness.vm,
+                db: harness.db.pool,
+                dataDir: harness.db.dir,
+                finishCleanup: true,
+            )
         }
         #expect(FileManager.default.fileExists(atPath: marker.path))
         let failed = try await harness.db.pool.read { db in

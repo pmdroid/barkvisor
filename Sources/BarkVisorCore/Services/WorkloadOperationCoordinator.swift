@@ -160,12 +160,31 @@ public actor WorkloadOperationCoordinator {
         return LeaseObservation(generation: 0, state: "absent", exists: false)
     }
 
-    public func perform<T: Sendable>(
+    public nonisolated func perform<T: Sendable>(
         workloadID: String,
         operationID: String,
         kind: LeaseKind,
         load: @escaping @Sendable () async throws -> LeaseObservation,
         body: @escaping @Sendable (WorkloadOperationLease) async throws -> T,
+    ) async throws -> T {
+        let effects = InheritedEffects.current()
+        return try await performIsolated(
+            workloadID: workloadID,
+            operationID: operationID,
+            kind: kind,
+            load: load,
+            body: body,
+            effects: effects,
+        )
+    }
+
+    private func performIsolated<T: Sendable>(
+        workloadID: String,
+        operationID: String,
+        kind: LeaseKind,
+        load: @escaping @Sendable () async throws -> LeaseObservation,
+        body: @escaping @Sendable (WorkloadOperationLease) async throws -> T,
+        effects: InheritedEffects,
     ) async throws -> T {
         let key = "\(workloadID)\n\(operationID)"
         if let existing = outcomes[key] {
@@ -186,6 +205,7 @@ public actor WorkloadOperationCoordinator {
                     kind: kind,
                     load: load,
                     body: body,
+                    effects: effects,
                 )
                 return .success(AnySendable(value: value))
             } catch {
@@ -258,6 +278,7 @@ public actor WorkloadOperationCoordinator {
         kind: LeaseKind,
         load: @escaping @Sendable () async throws -> LeaseObservation,
         body: @escaping @Sendable (WorkloadOperationLease) async throws -> T,
+        effects: InheritedEffects,
     ) async throws -> T {
         try await acquire(workloadID: workloadID, operationID: operationID)
         var holding = true
@@ -285,7 +306,9 @@ public actor WorkloadOperationCoordinator {
                 mutationEpoch: epoch,
                 operations: self,
             )
-            let value = try await Task.detached { try await body(lease) }.value
+            let value = try await Task.detached {
+                try await effects.apply { try await body(lease) }
+            }.value
             release(workloadID: workloadID)
             holding = false
             return value
@@ -337,6 +360,46 @@ public actor WorkloadOperationCoordinator {
             return value
         case let .failure(error):
             throw error
+        }
+    }
+}
+
+private struct InheritedEffects: Sendable {
+    var composeRunner: (any ComposeCommandRunning)?
+    var dockerRunner: (any DockerCommandRunning)?
+    var dockerSnapshot: DockerEngineSnapshot?
+    var dockerInspect: (@Sendable ([String]) throws -> Data)?
+    var effectHook: (@Sendable (String) throws -> Void)?
+    var healthTimeout: TimeInterval?
+    var adoptionAlive: (@Sendable (String, URL) -> Bool)?
+
+    static func current() -> Self {
+        Self(
+            composeRunner: ComposeRuntime.runnerOverride,
+            dockerRunner: DockerCLI.runnerOverride,
+            dockerSnapshot: DockerEngine.snapshotOverride,
+            dockerInspect: DockerInspect.jsonOverride,
+            effectHook: WorkloadEffectGate.hook,
+            healthTimeout: WorkloadEffectGate.healthTimeout,
+            adoptionAlive: VMAdoptionProbe.alive,
+        )
+    }
+
+    func apply<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
+        try await ComposeRuntime.$runnerOverride.withValue(composeRunner) {
+            try await DockerCLI.$runnerOverride.withValue(dockerRunner) {
+                try await DockerEngine.$snapshotOverride.withValue(dockerSnapshot) {
+                    try await DockerInspect.$jsonOverride.withValue(dockerInspect) {
+                        try await WorkloadEffectGate.$hook.withValue(effectHook) {
+                            try await WorkloadEffectGate.$healthTimeout.withValue(healthTimeout) {
+                                try await VMAdoptionProbe.$alive.withValue(adoptionAlive) {
+                                    try await body()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
