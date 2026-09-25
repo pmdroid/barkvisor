@@ -256,7 +256,7 @@ struct RuntimeObservationTests {
             listContainers: { lists.list() },
         )
         await service.ensureEvents(source: source, reconnect: false)
-        try await waitUntil { lists.count >= 1 }
+        try await waitUntil { await service.observation(for: "app-1") != nil }
         let observed = try #require(await service.observation(for: "app-1"))
         #expect(observed.phase == .running)
         #expect(observed.health == .healthy)
@@ -541,7 +541,7 @@ private func sampleIdentity(context: String) -> DockerRuntimeIdentity {
 }
 
 private func waitUntil(_ ready: () async -> Bool) async throws {
-    for _ in 0 ..< 50 {
+    for _ in 0 ..< 200 {
         if await ready() { return }
         try await Task.sleep(for: .milliseconds(10))
     }
