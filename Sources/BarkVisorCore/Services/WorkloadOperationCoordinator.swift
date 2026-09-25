@@ -364,7 +364,7 @@ public actor WorkloadOperationCoordinator {
     }
 }
 
-private struct InheritedEffects: Sendable {
+private struct InheritedEffects {
     var composeRunner: (any ComposeCommandRunning)?
     var dockerRunner: (any DockerCommandRunning)?
     var dockerSnapshot: DockerEngineSnapshot?
