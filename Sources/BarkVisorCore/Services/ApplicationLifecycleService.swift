@@ -481,7 +481,9 @@ public enum ApplicationLifecycleService {
         if let name = vm.composeProject, !name.isEmpty { return name }
         return ComposeRuntime.composeProjectName(id: vm.id)
     }
+}
 
+extension ApplicationLifecycleService {
     private static func syncProjectLocked(
         vm: inout VM,
         db: DatabasePool,
