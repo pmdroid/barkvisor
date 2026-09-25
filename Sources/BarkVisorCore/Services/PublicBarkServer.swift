@@ -166,21 +166,25 @@ public final class PublicBarkServer: @unchecked Sendable {
         private func health() -> String {
             let probe = protocolProbe()
             guard probe.accepted else {
-                return PublicHTTP.json(status: 503, body: #"{"status":"error","role":"BarkServer"}"#)
+                return PublicHTTP.json(status: 503, body: healthBody(status: "error", probe: nil))
             }
-            let version = PublicHTTP.jsonString(Config.version)
-            let marker = PublicHTTP.jsonString(probe.marker)
-            var body = """
-            {"status":"ok","role":"BarkServer","version":"\(version)","protocol":"\(marker)","services":{"BarkDaemon":"\(version)","BarkServer":"\(
-                version
-            )"}
-            """
+            return PublicHTTP.json(status: 200, body: healthBody(status: "ok", probe: probe))
+        }
+
+        private func healthBody(status: String, probe: (accepted: Bool, marker: String)?) -> String {
+            var body = #"{"status":"\#(PublicHTTP.jsonString(status))","role":"BarkServer""#
+            if let probe, probe.accepted {
+                let version = PublicHTTP.jsonString(Config.version)
+                let marker = PublicHTTP.jsonString(probe.marker)
+                body +=
+                    #","version":"\#(version)","protocol":"\#(marker)","services":{"BarkDaemon":"\#(version)","BarkServer":"\#(version)"}"#
+            }
             if let outcome = PackageUpdateOutcome.load(), outcome.status == "failed" {
                 let detail = PublicHTTP.jsonString(outcome.detail)
                 body += #","updateStatus":"failed","updateDetail":"\#(detail)""#
             }
             body += "}"
-            return PublicHTTP.json(status: 200, body: body)
+            return body
         }
 
         private func protocolProbe() -> (accepted: Bool, marker: String) {

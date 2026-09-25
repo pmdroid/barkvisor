@@ -164,14 +164,24 @@ async function startHealthPoll(device: NonNullable<typeof selectedDevice.value>)
   let recordedFailure = ''
   const result = await pollUntilHealthy({
     health: async () => {
-      const { status, data } = await api.get<{ updateStatus?: string; updateDetail?: string }>(
-        deviceHealthPath(device),
-      )
-      if (data?.updateStatus === 'failed') {
-        recordedFailure = data.updateDetail || 'Update failed'
-        return 'failed'
+      try {
+        const { status, data } = await api.get<{ updateStatus?: string; updateDetail?: string }>(
+          deviceHealthPath(device),
+        )
+        if (data?.updateStatus === 'failed') {
+          recordedFailure = data.updateDetail || 'Update failed'
+          return 'failed'
+        }
+        return status === 200
+      } catch (error: unknown) {
+        const data = (error as { response?: { data?: { updateStatus?: string; updateDetail?: string } } })
+          .response?.data
+        if (data?.updateStatus === 'failed') {
+          recordedFailure = data.updateDetail || 'Update failed'
+          return 'failed'
+        }
+        throw error
       }
-      return status === 200
     },
   })
   if (result === 'failed') {
