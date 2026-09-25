@@ -2,10 +2,14 @@
 # BDD scenarios, when declared on an issue, require Cucumber automatically.
 version: 1
 items:
+  - id: swift-lint
+    kind: command
+    run: mise run lint
+    hint: Run SwiftLint and SwiftFormat through start_command with this item ID. This is the CI lint job. Fix every finding before the final commit.
   - id: swift-tests
     kind: command
-    run: mise exec swift@6.3.3 -- swift test
-    hint: Run the full native Swift test suite through start_command with this item ID. Fix failures; macOS-only checks also run in CI.
+    run: mise run test
+    hint: Run the full native Swift test suite through start_command with this item ID. This is mise run test, the CI Test job, with no --filter. Fix failures; macOS-only checks also run in CI.
   - id: frontend-tests
     kind: command
     run: cd frontend && bun install --frozen-lockfile && bun test
