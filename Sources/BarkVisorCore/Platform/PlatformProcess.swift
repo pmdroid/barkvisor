@@ -161,6 +161,8 @@ public enum PlatformProcess {
             finished.signal()
         }
         try process.run()
+        outPipe.fileHandleForWriting.closeFile()
+        errPipe.fileHandleForWriting.closeFile()
 
         var timeoutExceeded: TimeInterval?
         if let timeout {
@@ -173,13 +175,12 @@ public enum PlatformProcess {
                 }
             }
             if !exited {
-                process.terminate()
-                if finished.wait(timeout: .now() + 0.5) == .timedOut {
-                    #if !os(Windows)
-                        kill(process.processIdentifier, SIGKILL)
-                    #endif
-                    _ = finished.wait(timeout: .now() + 2)
-                }
+                #if !os(Windows)
+                    kill(process.processIdentifier, SIGKILL)
+                #else
+                    process.terminate()
+                #endif
+                _ = finished.wait(timeout: .now() + 2)
                 timeoutExceeded = timeout
             }
         } else {
