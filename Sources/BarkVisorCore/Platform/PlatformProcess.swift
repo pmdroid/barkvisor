@@ -142,51 +142,53 @@ public enum PlatformProcess {
 
         let stdoutBox = DataBox()
         let stderrBox = DataBox()
-        let finished = DispatchSemaphore(value: 0)
+        let exitFlag = ExitFlag()
         process.terminationHandler = { _ in
-            finished.signal()
+            exitFlag.mark()
         }
         try process.run()
         outPipe.fileHandleForWriting.closeFile()
         errPipe.fileHandleForWriting.closeFile()
 
-        let readers = DispatchGroup()
-        readers.enter()
-        readers.enter()
         let outHandle = outPipe.fileHandleForReading
         let errHandle = errPipe.fileHandleForReading
-        DispatchQueue.global(qos: .userInitiated).async {
+        let outThread = Thread {
             stdoutBox.append(outHandle.readDataToEndOfFile())
-            readers.leave()
         }
-        DispatchQueue.global(qos: .userInitiated).async {
+        let errThread = Thread {
             stderrBox.append(errHandle.readDataToEndOfFile())
-            readers.leave()
         }
+        outThread.start()
+        errThread.start()
 
         var timeoutExceeded: TimeInterval?
-        if let timeout {
-            let deadline = Date().addingTimeInterval(timeout)
-            var exited = false
-            while Date() < deadline {
-                if finished.wait(timeout: .now() + 0.05) == .success {
-                    exited = true
-                    break
-                }
+        let limit = timeout ?? 60
+        let deadline = Date().addingTimeInterval(limit)
+        var exited = false
+        while Date() < deadline {
+            if exitFlag.isExited || !process.isRunning {
+                exited = true
+                break
             }
-            if !exited {
-                #if !os(Windows)
-                    kill(process.processIdentifier, SIGKILL)
-                #else
-                    process.terminate()
-                #endif
-                _ = finished.wait(timeout: .now() + 2)
-                timeoutExceeded = timeout
-            }
-        } else {
-            finished.wait()
+            Thread.sleep(forTimeInterval: 0.05)
         }
-        _ = readers.wait(timeout: .now() + 2)
+        if !exited {
+            #if !os(Windows)
+                kill(process.processIdentifier, SIGKILL)
+            #else
+                process.terminate()
+            #endif
+            let killDeadline = Date().addingTimeInterval(2)
+            while Date() < killDeadline {
+                if exitFlag.isExited || !process.isRunning { break }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            timeoutExceeded = limit
+        }
+        let joinDeadline = Date().addingTimeInterval(2)
+        while Date() < joinDeadline, outThread.isExecuting || errThread.isExecuting {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
         if let timeoutExceeded {
             throw BarkVisorError.timeout(
                 "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
@@ -298,6 +300,19 @@ public enum PlatformProcess {
             return String(decoding: buf.prefix(Int(size)).map { UInt16($0) }, as: UTF16.self)
         }
     #endif
+
+    private final class ExitFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var exited = false
+
+        func mark() {
+            lock.withLock { exited = true }
+        }
+
+        var isExited: Bool {
+            lock.withLock { exited }
+        }
+    }
 
     private final class DataBox: @unchecked Sendable {
         private let lock = NSLock()
