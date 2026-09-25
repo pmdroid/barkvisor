@@ -161,12 +161,25 @@ async function doInstallUpdate() {
 async function startHealthPoll(device: NonNullable<typeof selectedDevice.value>) {
   if (!isCurrentDevice(device)) return
   updatePhase.value = 'restarting'
+  let recordedFailure = ''
   const result = await pollUntilHealthy({
     health: async () => {
-      const { status } = await api.get(deviceHealthPath(device))
+      const { status, data } = await api.get<{ updateStatus?: string; updateDetail?: string }>(
+        deviceHealthPath(device),
+      )
+      if (data?.updateStatus === 'failed') {
+        recordedFailure = data.updateDetail || 'Update failed'
+        return 'failed'
+      }
       return status === 200
     },
   })
+  if (result === 'failed') {
+    if (!isCurrentDevice(device)) return
+    updatePhase.value = 'error'
+    updateError.value = recordedFailure || 'Update failed'
+    return
+  }
   if (result === 'timeout') {
     if (!isCurrentDevice(device)) return
     updatePhase.value = 'error'

@@ -65,6 +65,19 @@ public struct PackageInstallPlan: Sendable, Equatable {
     }
 }
 
+public enum PackageUpdateOutcome {
+    public struct Record: Codable, Equatable, Sendable {
+        public var status: String
+        public var detail: String
+    }
+
+    public static func load(from directory: URL = Config.dataDir) -> Record? {
+        let url = directory.appendingPathComponent("update-outcome.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Record.self, from: data)
+    }
+}
+
 public enum AppliancePackageInstaller {
     public static func plan(kind: AppliancePackageKind, packagePath: String) -> PackageInstallPlan {
         switch kind {
@@ -83,8 +96,8 @@ public enum AppliancePackageInstaller {
                 installArguments: ["-pkg", packagePath, "-target", "/"],
                 fixDependsExecutable: nil,
                 fixDependsArguments: [],
-                restartExecutable: "/bin/launchctl",
-                restartArguments: ["kickstart", "-k", "system/dev.barkvisor"],
+                restartExecutable: "/bin/bash",
+                restartArguments: ["/usr/local/libexec/barkvisor/pkg-service-handoff.sh"],
             )
         }
     }
@@ -395,8 +408,17 @@ public actor UpdateService {
             )
         }
 
-        let restart = try run(plan.restartExecutable, plan.restartArguments, 60)
+        let restart = try run(plan.restartExecutable, plan.restartArguments, 120)
         if !restart.succeeded {
+            let err = (restart.stderrString + restart.stdoutString)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if release.packageKind == .pkg {
+                throw BarkVisorError.updateFailed(
+                    err.isEmpty
+                        ? "BarkDaemon or BarkServer did not become ready (exit \(restart.exitCode))"
+                        : err,
+                )
+            }
             Log.server.warning(
                 "Update installed; restart returned \(restart.exitCode). The Device may still be coming back.",
             )

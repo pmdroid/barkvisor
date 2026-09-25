@@ -1,9 +1,9 @@
-export type HealthPollResult = 'ok' | 'timeout'
+export type HealthPollResult = 'ok' | 'timeout' | 'failed'
 
 export const consecutiveTaskMissesBeforeHealthPoll = 3
 
 export async function pollUntilHealthy(opts: {
-  health: () => Promise<boolean>
+  health: () => Promise<boolean | 'failed'>
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   intervalMs?: number
@@ -15,11 +15,14 @@ export async function pollUntilHealthy(opts: {
   const sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
   const started = now()
   while (now() - started <= timeout) {
+    let signal: boolean | 'failed' = false
     try {
-      if (await opts.health()) return 'ok'
+      signal = await opts.health()
     } catch {
-      // Device is restarting.
+      signal = false
     }
+    if (signal === 'failed') return 'failed'
+    if (signal) return 'ok'
     if (now() - started + interval > timeout) break
     await sleep(interval)
   }

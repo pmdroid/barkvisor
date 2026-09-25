@@ -52,6 +52,19 @@ struct PublicListenerTests {
             }
             let http = try #require(server.httpPort)
             let tls = try #require(server.deviceTLSPort)
+            let health = try httpExchange(
+                port: http,
+                request: """
+                GET /api/health HTTP/1.1\r
+                Host: 127.0.0.1\r
+                \r
+                """,
+            )
+            #expect(health.contains("200"))
+            #expect(health.contains("\"status\":\"ok\""))
+            #expect(health.contains("\"protocol\":\"1\""))
+            #expect(health.contains("BarkDaemon"))
+            #expect(health.contains("BarkServer"))
             #expect(server.bindsPublicHTTP)
             #expect(server.bindsDeviceTLS)
             #expect(!daemon.bindsTCP)
