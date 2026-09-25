@@ -446,10 +446,6 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    public static func openURL(from ports: [PublishedPort]) -> String? {
-        ports.compactMap(\.openURL).first
-    }
-
     public static func openURL(
         id: String,
         ports: [PublishedPort],
@@ -461,7 +457,7 @@ public enum ApplicationLifecycleService {
             id: id,
             catalogProxy: spec?.spec.ingress?.mode,
             ingress: spec?.spec.ingress,
-            lanURL: openURL(from: ports),
+            lanURL: ports.compactMap(\.openURL).first,
             listenHost: lanHost,
             listenPort: listenPort,
         )
