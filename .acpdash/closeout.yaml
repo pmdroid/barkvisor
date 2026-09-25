@@ -1,0 +1,23 @@
+# ACPDash pins this policy from the project base branch for each issue revision.
+# BDD scenarios, when declared on an issue, require Cucumber automatically.
+version: 1
+items:
+  - id: swift-tests
+    kind: command
+    run: mise exec swift@6.3.3 -- swift test
+    hint: Run the full native Swift test suite through start_command with this item ID. Fix failures; macOS-only checks also run in CI.
+  - id: frontend-tests
+    kind: command
+    run: cd frontend && bun install --frozen-lockfile && bun test
+    hint: Run frontend unit tests through start_command with this item ID against the final clean commit.
+  # Use Claude (or another non-Codex provider) for implementation: the reviewer
+  # must be independent, and Codex currently provides the read-only review path.
+  - id: independent-review
+    kind: review
+    skill: acpdash-review
+    providers: [codex]
+    differentProvider: true
+  - id: ci
+    kind: ci
+  - id: review-threads
+    kind: reviewThreads
