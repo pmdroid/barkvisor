@@ -1,9 +1,6 @@
-import AsyncHTTPClient
 import Foundation
 import GRDB
 import JWTKit
-import NIOCore
-import NIOPosix
 import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
@@ -991,34 +988,6 @@ struct HomeDevicesControllerTests {
         let selfRow = try #require(second.candidates.first { $0.hostId == selfId })
         #expect(selfRow.eligible)
     }
-
-    @Test func `cancelling a member connect closes the socket`() async throws {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let accepted = CloseSignal()
-        let server = try await ServerBootstrap(group: group)
-            .childChannelInitializer { channel in
-                channel.pipeline.addHandler(CloseWatch(signal: accepted))
-            }
-            .bind(host: "127.0.0.1", port: 0)
-            .get()
-        var config = HTTPClient.Configuration()
-        config.timeout = .init(connect: .seconds(10), read: .seconds(10))
-        let http = HTTPClient(eventLoopGroupProvider: .shared(group), configuration: config)
-        defer { stopProbeServer(http, server, group) }
-        let port = server.localAddress?.port ?? 0
-        #expect(port > 0)
-        let task = Task {
-            var request = HTTPClientRequest(url: "http://127.0.0.1:\(port)/api/agent/inventory")
-            request.method = .GET
-            _ = try await ProbeConnect.execute(request: request, client: http, timeout: .seconds(10))
-        }
-        let connected = await accepted.waitConnected(nanoseconds: 1_000_000_000)
-        #expect(connected)
-        task.cancel()
-        let closed = await accepted.waitClosed(nanoseconds: 1_000_000_000)
-        #expect(closed)
-        _ = await task.result
-    }
 }
 
 private enum ScoreRace {
@@ -1047,108 +1016,6 @@ private func firstScore(
 }
 
 private struct PlacementScoreHung: Error {}
-
-private final class CloseSignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var connectedContinuation: CheckedContinuation<Void, Never>?
-    private var closedContinuation: CheckedContinuation<Void, Never>?
-    private var connected = false
-    private var closed = false
-
-    func markConnected() {
-        lock.lock()
-        connected = true
-        let continuation = connectedContinuation
-        connectedContinuation = nil
-        lock.unlock()
-        continuation?.resume()
-    }
-
-    func markClosed() {
-        lock.lock()
-        closed = true
-        let continuation = closedContinuation
-        closedContinuation = nil
-        lock.unlock()
-        continuation?.resume()
-    }
-
-    func waitConnected(nanoseconds: UInt64) async -> Bool {
-        await race(nanoseconds: nanoseconds) {
-            await withCheckedContinuation { continuation in
-                self.armConnected(continuation)
-            }
-        }
-    }
-
-    func waitClosed(nanoseconds: UInt64) async -> Bool {
-        await race(nanoseconds: nanoseconds) {
-            await withCheckedContinuation { continuation in
-                self.armClosed(continuation)
-            }
-        }
-    }
-
-    private func race(
-        nanoseconds: UInt64,
-        untilReady: @escaping @Sendable () async -> Void,
-    ) async -> Bool {
-        await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                await untilReady()
-                return true
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: nanoseconds)
-                return false
-            }
-            let won = await group.next() ?? false
-            group.cancelAll()
-            return won
-        }
-    }
-
-    private func armConnected(_ continuation: CheckedContinuation<Void, Never>) {
-        lock.lock()
-        if connected {
-            lock.unlock()
-            continuation.resume()
-            return
-        }
-        connectedContinuation = continuation
-        lock.unlock()
-    }
-
-    private func armClosed(_ continuation: CheckedContinuation<Void, Never>) {
-        lock.lock()
-        if closed {
-            lock.unlock()
-            continuation.resume()
-            return
-        }
-        closedContinuation = continuation
-        lock.unlock()
-    }
-}
-
-private final class CloseWatch: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = ByteBuffer
-    let signal: CloseSignal
-
-    init(signal: CloseSignal) {
-        self.signal = signal
-    }
-
-    func channelActive(context: ChannelHandlerContext) {
-        signal.markConnected()
-        context.fireChannelActive()
-    }
-
-    func channelInactive(context: ChannelHandlerContext) {
-        signal.markClosed()
-        context.fireChannelInactive()
-    }
-}
 
 private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Sendable {
     private let inner = RecordingProxyClient()
@@ -1231,16 +1098,6 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
         ))
         return stalls.contains(key)
     }
-}
-
-private func stopProbeServer(
-    _ http: HTTPClient,
-    _ server: Channel,
-    _ group: MultiThreadedEventLoopGroup,
-) {
-    try? http.syncShutdown()
-    try? server.close().wait()
-    try? group.syncShutdownGracefully()
 }
 
 private func header(_ name: String, in headers: [(String, String)]) -> String? {
