@@ -129,6 +129,69 @@ public enum HostInventoryService {
         sliceCache.reset()
     }
 
+    public static func templateCatalogHost(
+        now: Date = Date(),
+        dataDir: URL = Config.dataDir,
+        version: String = Config.version,
+        hostId: String? = nil,
+        dockerCache: DockerDiscoveryCache = .shared,
+    ) -> HostInventory {
+        let resolvedHostId = hostId ?? HostIdentity.loadOrCreate(dataDir: dataDir).uuidString
+        let hostname = ProcessInfo.processInfo.hostName
+        let arch = PlatformCapabilities.hostArch
+        let accelerator = PlatformCapabilities.accelerator
+        let osName = PlatformHost.platformName
+        let qemuBridgeHelper = qemuBridgeHelperPresent()
+        let vfioFacts = VFIOProbe.live()
+        let dockerEngine = dockerCache.cachedSnapshot()?.capabilitySupported ?? false
+        dockerCache.refreshOffRequest()
+        let features = VirtualizationFeatures(
+            bridgedNetworking: bridgedNetworkingSupported(
+                platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                qemuBridgeHelper: qemuBridgeHelper,
+                os: osName,
+            ),
+            managedBridgeDaemon: PlatformCapabilities.supportsManagedBridgeDaemon,
+            usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
+            inAppUpdate: PlatformCapabilities.supportsInAppUpdate,
+            kvmDevice: kvmDevicePresent(),
+            qemuBridgeHelper: qemuBridgeHelper,
+            gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
+            vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
+            whpx: accelerator == "whpx",
+            dockerEngine: dockerEngine,
+        )
+        return HostInventory(
+            schemaVersion: currentSchemaVersion,
+            hostId: resolvedHostId,
+            displayName: hostname,
+            agent: AgentInfo(version: version),
+            platform: PlatformInfo(
+                os: osName,
+                osVersion: PlatformHost.osVersionString,
+                arch: arch,
+                hostname: hostname,
+            ),
+            resources: ResourcesInfo(
+                cpuCount: PlatformHost.cpuCount,
+                memoryTotalMB: PlatformHost.physicalMemoryMB,
+                memoryUsedMB: 0,
+                cpuLoadPercent: 0,
+            ),
+            storage: [],
+            networking: NetworkingInfo(interfaces: []),
+            virtualization: VirtualizationInfo(
+                accelerator: accelerator,
+                qemuCPUModel: PlatformCapabilities.qemuCPUModel,
+                defaultGuestArch: PlatformCapabilities.defaultGuestArch,
+                features: features,
+                vfioProbe: vfioFacts.inventory,
+            ),
+            guestTypes: [],
+            collectedAt: iso8601.string(from: now),
+        )
+    }
+
     /// Last-known tailnet for request paths. A cold `detect()` can
     /// `PlatformProcess.run` + `Thread.sleep`; refresh that off-request.
     private static func cachedTailnet() -> TailnetInfo? {
