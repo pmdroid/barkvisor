@@ -34,9 +34,15 @@ public enum InheritedPublicListeners {
         }
 
         private static func listeningPort(_ fd: Int32) -> UInt16? {
-            var domain: Int32 = 0
-            var length = socklen_t(MemoryLayout<Int32>.size)
-            guard getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &domain, &length) == 0 else { return nil }
+            var storage = sockaddr_storage()
+            var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
+            let named = withUnsafeMutablePointer(to: &storage) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                    getsockname(fd, sock, &length)
+                }
+            }
+            guard named == 0 else { return nil }
+            let domain = Int32(storage.ss_family)
             guard domain == AF_INET || domain == AF_INET6 else { return nil }
             var accepting: Int32 = 0
             length = socklen_t(MemoryLayout<Int32>.size)
