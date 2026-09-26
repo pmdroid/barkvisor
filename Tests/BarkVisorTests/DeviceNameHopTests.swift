@@ -100,6 +100,7 @@ struct DeviceNameHopTests {
                 healthCounts: ["running": 1],
             ),
             bearer: "home-jwt",
+            probeBudgetNanoseconds: 120_000_000_000,
         )
         let peer = try #require(report.devices.first { $0.hostId == peerId })
         #expect(peer.displayName == "Studio Mac")

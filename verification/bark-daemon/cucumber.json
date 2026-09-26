@@ -5,7 +5,8 @@
     "features/public-listeners.feature",
     "features/daemon-recovery.feature",
     "features/appliance-units.feature",
-    "features/command-timeout.feature"
+    "features/command-timeout.feature",
+    "features/pkg-handoff.feature"
   ],
   "import": ["features/steps/local-boundary.mjs"]
 }

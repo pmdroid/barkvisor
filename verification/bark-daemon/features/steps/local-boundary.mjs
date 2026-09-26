@@ -140,6 +140,37 @@ When("the appliance unit suite runs", function () {
   }
 });
 
+let handoffOutput = "";
+let handoffStatus = 1;
+
+When("the package handoff suite runs", function () {
+  const result = spawnSync(
+    "mise",
+    ["exec", "--", "swift", "test", "--filter", "PkgServiceHandoffTests", "--skip-update"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  handoffOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  handoffStatus = result.status ?? 1;
+  if (handoffStatus !== 0) {
+    throw new Error(handoffOutput.slice(-4000));
+  }
+});
+
+Then("the package handoff suite passes", function () {
+  if (!handoffOutput.includes("PkgServiceHandoffTests")) {
+    throw new Error(handoffOutput.slice(-4000));
+  }
+});
+
 Then("the appliance unit suite passes", function () {
   if (!applianceOutput.includes("ApplianceUnitTests")) {
     throw new Error(applianceOutput.slice(-4000));
