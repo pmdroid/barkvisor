@@ -44,8 +44,31 @@ public struct DockerEngineSnapshot: Sendable, Equatable {
     }
 }
 
+public final class LiveSnapshotGuard: @unchecked Sendable {
+    public let replacement: DockerEngineSnapshot
+    private let lock = NSLock()
+    private var calls = 0
+
+    public init(replacement: DockerEngineSnapshot) {
+        self.replacement = replacement
+    }
+
+    public var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+
+    func record() {
+        lock.lock()
+        calls += 1
+        lock.unlock()
+    }
+}
+
 public enum DockerEngine {
     @TaskLocal public static var snapshotOverride: DockerEngineSnapshot?
+    @TaskLocal public static var liveSnapshotGuard: LiveSnapshotGuard?
     public nonisolated(unsafe) static var snapshotProvider: @Sendable () -> DockerEngineSnapshot = {
         DockerDiscoveryCache.shared.productionSnapshot()
     }
@@ -59,6 +82,14 @@ public enum DockerEngine {
     }
 
     public static func liveSnapshot() -> DockerEngineSnapshot {
+        if let liveSnapshotGuard {
+            liveSnapshotGuard.record()
+            return liveSnapshotGuard.replacement
+        }
+        return probedLiveSnapshot()
+    }
+
+    private static func probedLiveSnapshot() -> DockerEngineSnapshot {
         let os = PlatformHost.platformName
         if os.caseInsensitiveCompare("Windows") == .orderedSame {
             return DockerEngineSnapshot(os: os)

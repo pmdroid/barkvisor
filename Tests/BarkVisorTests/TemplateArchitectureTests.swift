@@ -112,6 +112,33 @@ struct TemplateArchitectureTests {
         #expect(missing.reasons.contains { $0.code == "feature_missing" })
     }
 
+    @Test func `compatibility rejects a missing dockerEngine feature`() {
+        let template = VMTemplate(
+            id: "t-docker", slug: "compose-app", name: "Compose", description: nil,
+            category: "apps", icon: "terminal",
+            imageSlug: "ubuntu-24.04-x86_64", cpuCount: 1, memoryMB: 512, diskSizeGB: 8,
+            portForwards: "[]", networkMode: "nat", inputs: "[]",
+            userDataTemplate: "", isBuiltIn: true, repositoryId: nil,
+            createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+            architecturesJson: #"["arm64","x86_64"]"#,
+            requiredFeaturesJson: #"["dockerEngine"]"#,
+            imageByArchJson: #"{"arm64":"ubuntu-24.04-arm64","x86_64":"ubuntu-24.04-x86_64"}"#,
+        )
+        let missing = TemplateCompatibility.evaluate(
+            template: template, host: makeTemplateHost(arch: "x86_64", bridged: true),
+        )
+        #expect(!missing.compatible)
+        #expect(missing.missingFeatures == ["dockerEngine"])
+        #expect(missing.reasons.contains { $0.code == "feature_missing" })
+
+        let present = TemplateCompatibility.evaluate(
+            template: template,
+            host: makeTemplateHost(arch: "x86_64", bridged: true, dockerEngine: true),
+        )
+        #expect(present.compatible)
+        #expect(present.resolvedImageSlug == "ubuntu-24.04-x86_64")
+    }
+
     @Test func `compatibility honors requested memory override`() {
         let template = VMTemplate(
             id: "t1", slug: "ubuntu-cloud", name: "Ubuntu Cloud", description: nil,
@@ -370,7 +397,7 @@ private func repoRoot() -> URL {
     return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 }
 
-private func makeTemplateHost(arch: String, bridged: Bool) -> HostInventory {
+private func makeTemplateHost(arch: String, bridged: Bool, dockerEngine: Bool = false) -> HostInventory {
     HostInventory(
         schemaVersion: 1,
         hostId: "test-host-id",
@@ -393,6 +420,7 @@ private func makeTemplateHost(arch: String, bridged: Bool) -> HostInventory {
                 inAppUpdate: true,
                 kvmDevice: false,
                 qemuBridgeHelper: false,
+                dockerEngine: dockerEngine,
             ),
         ),
         guestTypes: [],
