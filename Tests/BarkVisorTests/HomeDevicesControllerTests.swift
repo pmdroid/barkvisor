@@ -7,6 +7,8 @@ import Testing
 
 @Suite("Home devices controller health (PAS-52)")
 struct HomeDevicesControllerTests {
+    private let responseMappingBudgetNanoseconds: UInt64 = 120_000_000_000
+
     private func isolatedDir(_ label: String = "home-ctl") throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "\(label)-\(UUID().uuidString)",
@@ -269,6 +271,7 @@ struct HomeDevicesControllerTests {
             listed: listed,
             local: localFacts(running: 1),
             bearer: "home-jwt",
+            probeBudgetNanoseconds: responseMappingBudgetNanoseconds,
         )
 
         #expect(report.devices.count == 3)
@@ -558,6 +561,7 @@ struct HomeDevicesControllerTests {
             listed: listed,
             local: localFacts(running: 1),
             bearer: nil,
+            probeBudgetNanoseconds: responseMappingBudgetNanoseconds,
         )
         let timedOut = try #require(report.devices.first { $0.hostId == timeoutId })
         #expect(timedOut.reachability == HomeDeviceHealthAggregator.connectTimeout)
@@ -602,6 +606,7 @@ struct HomeDevicesControllerTests {
             listed: listed,
             local: localFacts(running: 4),
             bearer: nil,
+            probeBudgetNanoseconds: responseMappingBudgetNanoseconds,
         )
         let peer = try #require(report.devices.first { $0.hostId == peerId })
         #expect(peer.reachability == HomeDeviceHealthAggregator.ok)
@@ -786,6 +791,7 @@ struct HomeDevicesControllerTests {
             listed: listed,
             local: localFacts(running: 1),
             bearer: bearer,
+            probeBudgetNanoseconds: responseMappingBudgetNanoseconds,
         )
         let peer = try #require(report.devices.first { $0.hostId == peerId })
         #expect(peer.reachability == HomeDeviceHealthAggregator.ok)
