@@ -27,9 +27,15 @@ public enum InheritedPublicListeners {
                 let names = (try? FileManager.default.contentsOfDirectory(atPath: "/proc/self/fd")) ?? []
                 return names.compactMap { Int32($0) }.filter { $0 > 2 }
             #else
-                let limit = Int(getdtablesize())
-                guard limit > 3 else { return [] }
-                return (3 ..< limit).map { Int32($0) }
+                let size = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, nil, 0)
+                guard size > 0 else { return [] }
+                let stride = MemoryLayout<proc_fdinfo>.stride
+                var descriptors = Array(repeating: proc_fdinfo(), count: Int(size) / stride + 32)
+                let bytes = descriptors.withUnsafeMutableBytes { buffer in
+                    proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, buffer.baseAddress, Int32(buffer.count))
+                }
+                guard bytes > 0 else { return [] }
+                return descriptors.prefix(Int(bytes) / stride).map(\.proc_fd).filter { $0 > 2 }
             #endif
         }
 
