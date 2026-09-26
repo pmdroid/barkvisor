@@ -94,6 +94,21 @@ struct RootDaemonPackagingTests {
         }
     }
 
+    @Test func `split package hooks restore combined service if cutover fails`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+        ] {
+            let script = try read(relative)
+            #expect(script.contains("systemctl is-active --quiet barkvisor-daemon.service"))
+            #expect(script.contains("systemctl is-active --quiet barkvisor-server.service"))
+            #expect(script.contains("systemctl enable barkvisor.service"))
+            #expect(script.contains("systemctl start barkvisor.service"))
+        }
+    }
+
     @Test func `linux device unit can apply a deb in-process`() throws {
         for relative in [
             "packaging/linux/barkvisor.service",
