@@ -72,6 +72,7 @@ struct RootDaemonPackagingTests {
             "packaging/linux/arch/barkvisor.install",
             "packaging/linux/rpm/barkvisor.spec.in",
             "scripts/build-linux-packages.sh",
+            "scripts/install-linux.sh",
         ] {
             let script = try read(relative)
             let daemon = try #require(script.range(of: "systemctl start barkvisor-daemon.service"))
