@@ -438,6 +438,7 @@ struct LinuxGuestScriptsTests {
             "cross-device.feature",
             "guest-boot.feature",
             "host-network-extra-ip.feature",
+            "template-list.feature",
         ])
     }
 

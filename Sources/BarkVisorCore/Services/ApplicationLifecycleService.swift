@@ -1061,24 +1061,6 @@ extension ApplicationLifecycleService {
         )
     }
 
-    private static func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
-        if vm.cpuCount >= 1, (128 ... 1_048_576).contains(vm.memoryMb) {
-            return (vm.cpuCount, vm.memoryMb)
-        }
-        return (nil, nil)
-    }
-
-    private static func serviceObservations(
-        containerNames: [String],
-        composeYaml: String?,
-    ) -> [WorkloadServiceObservation]? {
-        guard let data = try? DockerInspect.json(containerNames) else { return nil }
-        return DockerServiceHealth.observations(
-            inspectJSON: data,
-            roles: DockerServiceHealth.roles(composeYaml: composeYaml),
-        )
-    }
-
     static func setState(
         _ vm: inout VM,
         state: String,
@@ -1166,4 +1148,22 @@ extension ApplicationLifecycleService {
             Log.vm.warning("Application \(vm.id) \(state): \(error)", vm: vm.id)
         }
     }
+}
+
+private func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
+    if vm.cpuCount >= 1, (128 ... 1_048_576).contains(vm.memoryMb) {
+        return (vm.cpuCount, vm.memoryMb)
+    }
+    return (nil, nil)
+}
+
+private func serviceObservations(
+    containerNames: [String],
+    composeYaml: String?,
+) -> [WorkloadServiceObservation]? {
+    guard let data = try? DockerInspect.json(containerNames) else { return nil }
+    return DockerServiceHealth.observations(
+        inspectJSON: data,
+        roles: DockerServiceHealth.roles(composeYaml: composeYaml),
+    )
 }
