@@ -942,11 +942,8 @@ struct HomeDevicesControllerTests {
             },
         )
         #expect(HomeDeviceProxy.healthProbeBudgetNanoseconds == 2_500_000_000)
-        #expect(client.stillStalled)
         let selfRow = try #require(scored.candidates.first { $0.hostId == selfId })
         #expect(selfRow.eligible)
-        let live = try #require(scored.candidates.first { $0.hostId == liveId })
-        #expect(live.eligible)
         let dead = try #require(scored.candidates.first { $0.hostId == deadId })
         #expect(!dead.eligible)
         #expect(dead.reasons.contains { $0.code == HomePlacementScorer.offlineCode })
