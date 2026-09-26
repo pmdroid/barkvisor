@@ -115,7 +115,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
             var pollFD = pollfd(fd: listen, events: Int16(POLLIN), revents: 0)
             let waited = poll(&pollFD, 1, 200)
             if waited <= 0 || isStopped { return nil }
-            let client = accept(listen, nil, nil)
+            let client = PlatformSocket.acceptBlocking(listen)
             if client < 0 { return nil }
             return client
         }

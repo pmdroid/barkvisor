@@ -255,7 +255,7 @@ public final class PublicBarkServer: @unchecked Sendable {
             var pollFD = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             let waited = poll(&pollFD, 1, 200)
             if waited <= 0 { return -1 }
-            return PublicSocket.accept(fd)
+            return PlatformSocket.acceptBlocking(fd)
         }
 
         static func readRequest(_ fd: Int32) -> PublicHTTPRequest? {
@@ -352,14 +352,6 @@ public final class PublicBarkServer: @unchecked Sendable {
                 Darwin.bind(fd, addr, len)
             #else
                 Glibc.bind(fd, addr, len)
-            #endif
-        }
-
-        static func accept(_ fd: Int32) -> Int32 {
-            #if canImport(Darwin)
-                Darwin.accept(fd, nil, nil)
-            #else
-                Glibc.accept(fd, nil, nil)
             #endif
         }
 
