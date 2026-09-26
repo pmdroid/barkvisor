@@ -122,7 +122,7 @@ public final class PublicBarkServer: @unchecked Sendable {
         }
 
         private func handle(_ request: PublicHTTPRequest) -> String {
-            if request.method == "GET", request.path == "/api/health" {
+            if request.method == "GET", request.path == "/api/health" || request.path.hasPrefix("/api/health?") {
                 return health()
             }
             if request.upgradeWebSocket, let workload = request.workloadID {
@@ -282,6 +282,10 @@ public final class PublicBarkServer: @unchecked Sendable {
             guard bound == 0, listen(fd, 16) == 0 else {
                 close(fd)
                 throw LocalManagementError.unavailable
+            }
+            let descriptorFlags = fcntl(fd, F_GETFD)
+            if descriptorFlags >= 0 {
+                _ = fcntl(fd, F_SETFD, descriptorFlags | FD_CLOEXEC)
             }
             var got = sockaddr_in()
             var length = socklen_t(MemoryLayout<sockaddr_in>.size)

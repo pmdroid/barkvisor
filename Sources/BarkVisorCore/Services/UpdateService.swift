@@ -90,7 +90,11 @@ public enum AppliancePackageInstaller {
                 fixDependsExecutable: "/usr/bin/apt-get",
                 fixDependsArguments: ["-f", "install", "-y"],
                 restartExecutable: "/bin/systemctl",
-                restartArguments: ["restart", "barkvisor.service"],
+                restartArguments: [
+                    "restart",
+                    "barkvisor-daemon.service",
+                    "barkvisor-server.service",
+                ],
             )
         case .pkg:
             PackageInstallPlan(

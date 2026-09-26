@@ -157,6 +157,29 @@ build_tar() {
 #!/usr/bin/env bash
 # Install staged BarkVisor tree onto this host (root).
 set -euo pipefail
+stop_combined_listener() {
+  main_pid="$(systemctl show -p MainPID --value barkvisor.service 2>/dev/null || true)"
+  pid=$$
+  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
+    if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
+      systemd-run --collect --unit="barkvisor-split-$$" /bin/sh -c '
+        while [ -e "/proc/$1" ]; do sleep 1; done
+        systemctl stop barkvisor.service || exit 1
+        if ! systemctl restart barkvisor-daemon.service barkvisor-server.service ||
+           ! systemctl is-active --quiet barkvisor-daemon.service ||
+           ! systemctl is-active --quiet barkvisor-server.service; then
+          systemctl stop barkvisor-daemon.service barkvisor-server.service >/dev/null 2>&1 || true
+          systemctl start barkvisor.service
+          exit 1
+        fi
+      ' sh "$$" >/dev/null || return 1
+      systemctl disable barkvisor.service >/dev/null 2>&1 || true
+      return 0
+    fi
+    pid="$(awk '/^PPid:/ { print $2; exit }' "/proc/${pid}/status" 2>/dev/null || true)"
+  done
+  systemctl disable --now barkvisor.service >/dev/null 2>&1 || true
+}
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT_TREE="$HERE/root"
 [[ "$(id -u)" -eq 0 ]] || { echo "run as root"; exit 1; }
@@ -190,11 +213,13 @@ fi
 install -d -m 0755 /etc/qemu
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
-  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  stop_combined_listener
   systemctl enable barkvisor-daemon.service
   systemctl enable barkvisor-server.service
   systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl start barkvisor-daemon.service >/dev/null 2>&1 || true
+  systemctl start barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
   echo "Start with: systemctl start barkvisor-daemon.service barkvisor-server.service"
   echo "API-only Device: systemctl enable --now barkvisor-agent.service"

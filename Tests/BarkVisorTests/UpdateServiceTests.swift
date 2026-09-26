@@ -131,7 +131,11 @@ struct UpdateServiceTests {
         #expect(deb.installArguments == ["-i", "/tmp/bv.deb"])
         #expect(deb.fixDependsExecutable == "/usr/bin/apt-get")
         #expect(deb.fixDependsArguments == ["-f", "install", "-y"])
-        #expect(deb.restartArguments == ["restart", "barkvisor.service"])
+        #expect(deb.restartArguments == [
+            "restart",
+            "barkvisor-daemon.service",
+            "barkvisor-server.service",
+        ])
         #expect(!deb.mentionsBrew)
 
         let pkg = AppliancePackageInstaller.plan(kind: .pkg, packagePath: "/tmp/bv.pkg")
