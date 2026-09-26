@@ -80,6 +80,20 @@ struct RootDaemonPackagingTests {
         }
     }
 
+    @Test func `split package hooks schedule handoff before disabling combined service`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+        ] {
+            let script = try read(relative)
+            let scheduled = try #require(script.range(of: "systemd-run --collect"))
+            let disabled = try #require(script.range(of: "systemctl disable barkvisor.service"))
+            #expect(scheduled.lowerBound < disabled.lowerBound)
+        }
+    }
+
     @Test func `linux device unit can apply a deb in-process`() throws {
         for relative in [
             "packaging/linux/barkvisor.service",
