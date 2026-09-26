@@ -140,8 +140,14 @@ public final class DockerDiscoveryCache: @unchecked Sendable {
     private var snapshot: DockerEngineSnapshot?
     private var epoch = 0
     private var resolutions = 0
+    private var refreshing = false
+    var scheduleRefresh: @Sendable (@escaping @Sendable () -> Void) -> Void
 
-    public init() {}
+    public init() {
+        scheduleRefresh = { work in
+            DispatchQueue.global(qos: .utility).async(execute: work)
+        }
+    }
 
     public var resolutionCount: Int {
         lock.lock()
@@ -153,6 +159,47 @@ public final class DockerDiscoveryCache: @unchecked Sendable {
         lock.lock()
         identity = nil
         snapshot = nil
+        epoch += 1
+        lock.unlock()
+    }
+
+    public func cachedSnapshot() -> DockerEngineSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        return snapshot
+    }
+
+    public func refreshOffRequest(
+        detectIdentity: @escaping @Sendable () -> DockerRuntimeIdentity = {
+            DockerRuntimeIdentity.detectFromEnvironment()
+        },
+        make: @escaping @Sendable () -> DockerEngineSnapshot = { DockerEngine.liveSnapshot() },
+    ) {
+        let identity = detectIdentity()
+        lock.lock()
+        if refreshing || (self.identity == identity && snapshot != nil) {
+            lock.unlock()
+            return
+        }
+        refreshing = true
+        let schedule = scheduleRefresh
+        lock.unlock()
+        schedule { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let pending = self.refreshing
+            self.lock.unlock()
+            guard pending else { return }
+            _ = self.resolve(identity: identity, make: make)
+            self.lock.lock()
+            self.refreshing = false
+            self.lock.unlock()
+        }
+    }
+
+    func cancelPendingRefresh() {
+        lock.lock()
+        refreshing = false
         epoch += 1
         lock.unlock()
     }
