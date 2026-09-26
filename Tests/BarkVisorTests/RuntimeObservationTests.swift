@@ -367,17 +367,16 @@ struct RuntimeObservationTests {
     @Test func `a blocked docker command does not stall a status read`() async throws {
         let gate = BoundedCommandGate(limit: 1)
         let started = StartFlag()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
         let blocked = Task {
             try await gate.run(timeout: .seconds(2)) { () -> Int in
                 started.mark()
-                Thread.sleep(forTimeInterval: 0.3)
+                try #require(release.wait(timeout: .now() + 10) == .success)
                 return 1
             }
         }
-        for _ in 0 ..< 100 where !started.isSet {
-            await Task.yield()
-        }
-        #expect(started.isSet)
+        try await waitUntil { started.isSet }
         let service = RuntimeObservation(listContainers: { .fresh([]) })
         await service.noteConfiguration(workloadID: "app-1", generation: 1)
         let clock = ContinuousClock()
@@ -395,6 +394,7 @@ struct RuntimeObservationTests {
             timedOut = false
         }
         #expect(timedOut)
+        release.signal()
         let value = try await blocked.value
         #expect(value == 1)
     }
