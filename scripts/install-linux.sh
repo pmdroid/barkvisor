@@ -228,6 +228,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: systemctl daemon-reload"
   echo "DRY_RUN: systemctl disable --now barkvisor.service || true"
   echo "DRY_RUN: systemctl enable barkvisor-daemon.service barkvisor-server.service"
+  echo "DRY_RUN: systemctl start barkvisor-daemon.service || true"
   echo "DRY_RUN: systemctl start barkvisor-server.service || true"
 else
   systemctl daemon-reload
@@ -237,6 +238,7 @@ else
   if [[ "$SKIP_START" != "1" ]]; then
     systemctl try-restart barkvisor-daemon.service || true
     systemctl try-restart barkvisor-server.service || true
+    systemctl start barkvisor-daemon.service || true
     systemctl start barkvisor-server.service || true
   fi
 fi
