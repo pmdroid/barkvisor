@@ -60,12 +60,12 @@ stop_combined_listener() {
   pid=$$
   while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ]; do
     if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
-      systemctl disable barkvisor.service >/dev/null 2>&1 || true
       systemd-run --collect --unit="barkvisor-split-$$" /bin/sh -c '
         while [ -e "/proc/$1" ]; do sleep 1; done
         systemctl stop barkvisor.service
         systemctl restart barkvisor-daemon.service barkvisor-server.service
       ' sh "$$" >/dev/null || return 1
+      systemctl disable barkvisor.service >/dev/null 2>&1 || true
       return 0
     fi
     pid="$(awk '/^PPid:/ { print $2; exit }' "/proc/${pid}/status" 2>/dev/null || true)"
