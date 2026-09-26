@@ -178,7 +178,7 @@ public actor WorkloadOperationCoordinator {
         }
         let outcome = Outcome(kind: kind)
         outcomes[key] = outcome
-        let task = Task.detached { () -> Result<AnySendable, Error> in
+        let task = Task { () -> Result<AnySendable, Error> in
             do {
                 let value = try await self.execute(
                     workloadID: workloadID,
@@ -285,7 +285,7 @@ public actor WorkloadOperationCoordinator {
                 mutationEpoch: epoch,
                 operations: self,
             )
-            let value = try await Task.detached { try await body(lease) }.value
+            let value = try await Task { try await body(lease) }.value
             release(workloadID: workloadID)
             holding = false
             return value
