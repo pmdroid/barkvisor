@@ -365,9 +365,9 @@ public final class PublicBarkServer: @unchecked Sendable {
 
         static func write(_ fd: Int32, _ buffer: UnsafeRawPointer, _ count: Int) -> Int {
             #if canImport(Darwin)
-                Darwin.write(fd, buffer, count)
+                Darwin.send(fd, buffer, count, Int32(MSG_NOSIGNAL))
             #else
-                Glibc.write(fd, buffer, count)
+                Glibc.send(fd, buffer, count, Int32(MSG_NOSIGNAL))
             #endif
         }
     }

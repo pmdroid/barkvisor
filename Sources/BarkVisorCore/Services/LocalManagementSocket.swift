@@ -245,7 +245,7 @@ public enum LocalManagementSocketClient {
             while !remaining.isEmpty {
                 let wrote = remaining.withUnsafeBytes { raw -> Int in
                     guard let base = raw.baseAddress else { return -1 }
-                    return write(fd, base, raw.count)
+                    return send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 }
                 if wrote < 0 {
                     if errno == EINTR { continue }
