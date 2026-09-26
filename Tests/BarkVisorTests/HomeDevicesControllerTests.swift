@@ -1,6 +1,9 @@
+import AsyncHTTPClient
 import Foundation
 import GRDB
 import JWTKit
+import NIOCore
+import NIOPosix
 import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
@@ -803,6 +806,462 @@ struct HomeDevicesControllerTests {
         #expect(payload.sub.value == "admin-1")
         #expect(payload.sub.value != AuthBypass.syntheticUserId)
     }
+
+    @Test func `two placement scores inside five seconds probe once`() async throws {
+        let dir = try isolatedDir("place-reuse")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selfId = "self-host"
+        let peerId = "peer-host"
+        let client = RecordingProxyClient()
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "zimaboard")),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 1)),
+        )
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: selfId, role: "self", displayName: "this-device"),
+            HomeDevice(hostId: peerId, role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
+        ])
+        var local = localFacts(running: 1)
+        local.features = HomeDeviceFeatureSummary(
+            kvmDevice: true, bridgedNetworking: true, usbPassthrough: false,
+        )
+        let ctl = controller(dir: dir, hostId: selfId, mtlsClient: client)
+        let request = HomePlacementScoreRequest(
+            declaredArchitectures: ["arm64"],
+            requiredFeatures: ["kvmDevice"],
+            minMemoryMB: 512,
+        )
+        let first = await ctl.scorePlacement(
+            request: request, listed: listed, local: local, bearer: nil,
+        )
+        let callsAfterFirst = client.calls.count
+        #expect(callsAfterFirst > 0)
+        let second = await ctl.scorePlacement(
+            request: request, listed: listed, local: local, bearer: nil,
+        )
+        #expect(client.calls.count == callsAfterFirst)
+        #expect(first.recommendedHostId == selfId)
+        #expect(second.recommendedHostId == first.recommendedHostId)
+        #expect(second.candidates.map(\.hostId) == first.candidates.map(\.hostId))
+        let selfRow = try #require(second.candidates.first { $0.hostId == selfId })
+        #expect(selfRow.eligible)
+        let peer = try #require(second.candidates.first { $0.hostId == peerId })
+        #expect(!peer.eligible)
+        #expect(peer.reasons.contains { $0.code == HomePlacementScorer.featureMissingCode })
+    }
+
+    @Test func `placement score does not call DockerEngine.liveSnapshot`() async throws {
+        let dir = try isolatedDir("place-docker")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let shared = DockerDiscoveryCache.shared
+        let previousSchedule = shared.scheduleRefresh
+        let parked = ParkedDockerRefresh()
+        shared.scheduleRefresh = { parked.add($0) }
+        defer {
+            shared.cancelPendingRefresh()
+            shared.scheduleRefresh = previousSchedule
+        }
+        let ctl = controller(dir: dir, hostId: "self-host")
+        let guardProbe = LiveSnapshotGuard(
+            replacement: DockerEngineSnapshot(os: PlatformHost.platformName),
+        )
+        let facts = await DockerEngine.$liveSnapshotGuard.withValue(guardProbe) {
+            await ctl.resolvedLocalFacts(db: pool)
+        }
+        #expect(guardProbe.callCount == 0)
+        #expect(facts.features != nil)
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self-host", role: "self", displayName: "this-device"),
+        ])
+        let scored = await ctl.scorePlacement(
+            request: HomePlacementScoreRequest(
+                declaredArchitectures: ["arm64"],
+                requiredFeatures: ["kvmDevice"],
+                minMemoryMB: 512,
+            ),
+            listed: listed,
+            local: facts,
+            bearer: nil,
+        )
+        #expect(scored.candidates.contains { $0.hostId == "self-host" })
+    }
+
+    @Test func `dead member score returns inside the probe budget`() async throws {
+        let dir = try isolatedDir("place-budget")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selfId = "self-host"
+        let liveId = "live-peer"
+        let deadId = "dead-peer"
+        let client = StallingProxyClient()
+        client.stall(host: "10.0.0.11", port: 7_778, path: "/api/agent/inventory")
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: liveId, name: "goldbox")),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 2)),
+        )
+        defer { client.release() }
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: selfId, role: "self", displayName: "this-device"),
+            HomeDevice(hostId: liveId, role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
+            HomeDevice(hostId: deadId, role: "member", agentHost: "10.0.0.11", agentPort: 7_778),
+        ])
+        var local = localFacts(running: 1)
+        local.features = HomeDeviceFeatureSummary(
+            kvmDevice: true, bridgedNetworking: false, usbPassthrough: false,
+        )
+        let facts = local
+        let ctl = controller(dir: dir, hostId: selfId, mtlsClient: client)
+        let budget: UInt64 = 80_000_000
+        let started = ContinuousClock.now
+        let scored = try await firstScore(
+            withinNanoseconds: 1_000_000_000,
+            body: {
+                await ctl.scorePlacement(
+                    request: HomePlacementScoreRequest(
+                        declaredArchitectures: ["arm64"],
+                        minMemoryMB: 512,
+                    ),
+                    listed: listed,
+                    local: facts,
+                    bearer: nil,
+                    probeBudgetNanoseconds: budget,
+                )
+            },
+        )
+        let elapsed = started.duration(to: .now)
+        #expect(elapsed < .milliseconds(700))
+        #expect(HomeDeviceProxy.healthProbeBudgetNanoseconds == 2_500_000_000)
+        #expect(client.stillStalled)
+        let selfRow = try #require(scored.candidates.first { $0.hostId == selfId })
+        #expect(selfRow.eligible)
+        let live = try #require(scored.candidates.first { $0.hostId == liveId })
+        #expect(live.eligible)
+        let dead = try #require(scored.candidates.first { $0.hostId == deadId })
+        #expect(!dead.eligible)
+        #expect(dead.reasons.contains { $0.code == HomePlacementScorer.offlineCode })
+    }
+
+    @Test func `recorded connect timeout is not probed on the next score`() async throws {
+        let dir = try isolatedDir("place-skip-timeout")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selfId = "self-host"
+        let deadId = "dead-peer"
+        let client = StallingProxyClient()
+        client.stall(host: "10.0.0.11", port: 7_778, path: "/api/agent/inventory")
+        defer { client.release() }
+        let monitor = HomeDeviceReachabilityMonitor()
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: selfId, role: "self", displayName: "this-device"),
+            HomeDevice(hostId: deadId, role: "member", agentHost: "10.0.0.11", agentPort: 7_778),
+        ])
+        let ctl = controller(dir: dir, hostId: selfId, mtlsClient: client, reachability: monitor)
+        _ = try await firstScore(withinNanoseconds: 1_000_000_000) {
+            await ctl.scorePlacement(
+                request: HomePlacementScoreRequest(declaredArchitectures: ["arm64"], minMemoryMB: 512),
+                listed: listed,
+                local: localFacts(running: 1),
+                bearer: nil,
+                probeBudgetNanoseconds: 80_000_000,
+            )
+        }
+        let callsAfterTimeout = client.calls.count
+        #expect(callsAfterTimeout > 0)
+        #expect(await monitor.permitsHop(to: deadId) == false)
+        client.release()
+        let second = await ctl.scorePlacement(
+            request: HomePlacementScoreRequest(declaredArchitectures: ["arm64"], minMemoryMB: 512),
+            listed: listed,
+            local: localFacts(running: 1),
+            bearer: nil,
+            probeBudgetNanoseconds: 2_000_000_000,
+        )
+        #expect(client.calls.count == callsAfterTimeout)
+        let dead = try #require(second.candidates.first { $0.hostId == deadId })
+        #expect(!dead.eligible)
+        let selfRow = try #require(second.candidates.first { $0.hostId == selfId })
+        #expect(selfRow.eligible)
+    }
+
+    @Test func `cancelling a member connect closes the socket`() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let accepted = CloseSignal()
+        let server = try await ServerBootstrap(group: group)
+            .childChannelInitializer { channel in
+                channel.pipeline.addHandler(CloseWatch(signal: accepted))
+            }
+            .bind(host: "127.0.0.1", port: 0)
+            .get()
+        defer { stopProbeServer(server, group) }
+        let port = server.localAddress?.port ?? 0
+        #expect(port > 0)
+        var config = HTTPClient.Configuration()
+        config.timeout = .init(connect: .seconds(10), read: .seconds(10))
+        let http = HTTPClient(
+            eventLoopGroupProvider: .shared(MultiThreadedEventLoopGroup.singleton),
+            configuration: config,
+        )
+        let task = Task {
+            var request = HTTPClientRequest(url: "http://127.0.0.1:\(port)/api/agent/inventory")
+            request.method = .GET
+            _ = try await ProbeConnect.execute(request: request, client: http, timeout: .seconds(10))
+        }
+        let connected = await accepted.waitConnected(nanoseconds: 1_000_000_000)
+        #expect(connected)
+        task.cancel()
+        let closed = await accepted.waitClosed(nanoseconds: 1_000_000_000)
+        #expect(closed)
+        _ = await task.result
+        try? await http.shutdown()
+    }
+}
+
+private enum ScoreRace {
+    case scored(HomePlacementScoreResponse)
+    case hung
+}
+
+private func firstScore(
+    withinNanoseconds budget: UInt64,
+    body: @escaping @Sendable () async -> HomePlacementScoreResponse,
+) async throws -> HomePlacementScoreResponse {
+    let winner = await withTaskGroup(of: ScoreRace.self) { group in
+        group.addTask {
+            await .scored(body())
+        }
+        group.addTask {
+            try? await Task.sleep(nanoseconds: budget)
+            return .hung
+        }
+        let winner = await group.next() ?? .hung
+        group.cancelAll()
+        return winner
+    }
+    guard case let .scored(scored) = winner else { throw PlacementScoreHung() }
+    return scored
+}
+
+private struct PlacementScoreHung: Error {}
+
+private final class ParkedDockerRefresh: @unchecked Sendable {
+    private let lock = NSLock()
+    private var work: [() -> Void] = []
+
+    func add(_ item: @escaping @Sendable () -> Void) {
+        lock.lock()
+        work.append(item)
+        lock.unlock()
+    }
+}
+
+private final class CloseSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var connectedContinuation: CheckedContinuation<Void, Never>?
+    private var closedContinuation: CheckedContinuation<Void, Never>?
+    private var connected = false
+    private var closed = false
+
+    func markConnected() {
+        lock.lock()
+        connected = true
+        let continuation = connectedContinuation
+        connectedContinuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    func markClosed() {
+        lock.lock()
+        closed = true
+        let continuation = closedContinuation
+        closedContinuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    func waitConnected(nanoseconds: UInt64) async -> Bool {
+        await race(nanoseconds: nanoseconds) {
+            await withCheckedContinuation { continuation in
+                self.armConnected(continuation)
+            }
+        }
+    }
+
+    func waitClosed(nanoseconds: UInt64) async -> Bool {
+        await race(nanoseconds: nanoseconds) {
+            await withCheckedContinuation { continuation in
+                self.armClosed(continuation)
+            }
+        }
+    }
+
+    private func race(
+        nanoseconds: UInt64,
+        untilReady: @escaping @Sendable () async -> Void,
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await untilReady()
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                return false
+            }
+            let won = await group.next() ?? false
+            group.cancelAll()
+            return won
+        }
+    }
+
+    private func armConnected(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if connected {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        connectedContinuation = continuation
+        lock.unlock()
+    }
+
+    private func armClosed(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if closed {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        closedContinuation = continuation
+        lock.unlock()
+    }
+}
+
+private final class CloseWatch: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    let signal: CloseSignal
+
+    init(signal: CloseSignal) {
+        self.signal = signal
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        signal.markConnected()
+        context.fireChannelActive()
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        signal.markClosed()
+        context.fireChannelInactive()
+    }
+}
+
+private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Sendable {
+    private let inner = RecordingProxyClient()
+    private let lock = NSLock()
+    private var stalls: Set<String> = []
+    private var parked: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    private var _calls: [RecordingProxyClient.Call] = []
+    private var openStalls = 0
+
+    var calls: [RecordingProxyClient.Call] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _calls
+    }
+
+    var stillStalled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return openStalls > 0
+    }
+
+    func respond(host: String, port: Int, path: String, status: Int, body: Data) {
+        inner.respond(host: host, port: port, path: path, status: status, body: body)
+    }
+
+    func stall(host: String, port: Int, path: String) {
+        lock.lock()
+        stalls.insert("\(host):\(port)\(path)")
+        lock.unlock()
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        let parked = self.parked
+        self.parked = []
+        openStalls = 0
+        lock.unlock()
+        for continuation in parked {
+            continuation.resume()
+        }
+    }
+
+    func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
+        let stall = record(request)
+        if stall {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    self.park(continuation)
+                }
+            } onCancel: {
+                self.noteCancel()
+            }
+            throw CancellationError()
+        }
+        return try await inner.send(request)
+    }
+
+    private func park(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if released {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        openStalls += 1
+        parked.append(continuation)
+        lock.unlock()
+    }
+
+    private func noteCancel() {}
+
+    private func record(_ request: HomeDeviceProxyRequest) -> Bool {
+        let key = "\(request.url.host ?? ""):\(request.url.port ?? 0)\(request.url.path)"
+        lock.lock()
+        defer { lock.unlock() }
+        _calls.append(RecordingProxyClient.Call(
+            method: request.method, url: request.url, headers: request.headers,
+        ))
+        return stalls.contains(key)
+    }
+}
+
+private func stopProbeServer(_ server: Channel, _ group: MultiThreadedEventLoopGroup) {
+    try? server.close().wait()
+    try? group.syncShutdownGracefully()
 }
 
 private func header(_ name: String, in headers: [(String, String)]) -> String? {

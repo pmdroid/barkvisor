@@ -216,8 +216,20 @@ public enum HostInventoryService {
             usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
             gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
             vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
-            dockerEngine: DockerEngine.snapshot().capabilitySupported,
+            dockerEngine: cachedDockerEngine(),
         )
+    }
+
+    public static func cachedDockerEngine(cache: DockerDiscoveryCache = .shared) -> Bool {
+        let supported = cache.cachedSnapshot()?.capabilitySupported ?? false
+        cache.refreshOffRequest()
+        return supported
+    }
+
+    public static func cachedDockerSnapshot(cache: DockerDiscoveryCache = .shared) -> DockerEngineSnapshot {
+        let snapshot = cache.cachedSnapshot() ?? DockerEngineSnapshot(os: PlatformHost.platformName)
+        cache.refreshOffRequest()
+        return snapshot
     }
 
     public static func kvmDevicePresent() -> Bool {

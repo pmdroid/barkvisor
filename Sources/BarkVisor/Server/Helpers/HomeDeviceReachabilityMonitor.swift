@@ -7,7 +7,40 @@ import BarkVisorCore
 actor HomeDeviceReachabilityMonitor {
     static let refreshIntervalNanoseconds: UInt64 = 5_000_000_000
 
+    private struct CachedReport {
+        var report: HomeDeviceHealthReport
+        var at: ContinuousClock.Instant
+    }
+
     private var statusByHostId: [String: String] = [:]
+    private var cached: CachedReport?
+    private var inflight: Task<HomeDeviceHealthReport, Never>?
+    private var inflightToken = 0
+
+    func freshReport(now: ContinuousClock.Instant = .now) -> HomeDeviceHealthReport? {
+        guard let cached else { return nil }
+        let age = cached.at.duration(to: now)
+        guard age < .nanoseconds(Int64(Self.refreshIntervalNanoseconds)) else { return nil }
+        return cached.report
+    }
+
+    func joinProbe(
+        _ make: @Sendable @escaping () async -> HomeDeviceHealthReport,
+    ) async -> HomeDeviceHealthReport {
+        if let inflight {
+            return await inflight.value
+        }
+        inflightToken += 1
+        let token = inflightToken
+        let task = Task { await make() }
+        inflight = task
+        let report = await task.value
+        if inflightToken == token {
+            inflight = nil
+        }
+        cached = CachedReport(report: report, at: .now)
+        return report
+    }
 
     func replace(_ devices: [HomeDeviceHealthSnapshot]) {
         statusByHostId = Dictionary(

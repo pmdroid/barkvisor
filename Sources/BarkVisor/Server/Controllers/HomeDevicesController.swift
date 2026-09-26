@@ -99,13 +99,7 @@ struct HomeDevicesController: RouteCollection {
             db: req.db,
             incoming: req.headers.bearerAuthorization?.token,
         )
-        let report = await healthReport(
-            listed: listed,
-            local: facts,
-            bearer: bearer,
-        )
-        await reachability.replace(report.devices)
-        return report
+        return await coalescedHealthReport(listed: listed, local: facts, bearer: bearer)
     }
 
     func bootDisplay(routes: any RoutesBuilder) {
@@ -117,7 +111,7 @@ struct HomeDevicesController: RouteCollection {
         let listed = try await listedDevices(db: req.db)
         let facts = await resolvedLocalFacts(db: req.db)
         let bearer = await displayHopBearer(db: req.db)
-        let report = await healthReport(listed: listed, local: facts, bearer: bearer)
+        let report = await coalescedHealthReport(listed: listed, local: facts, bearer: bearer)
         var headers = HTTPHeaders()
         headers.replaceOrAdd(name: .contentType, value: "text/html; charset=utf-8")
         headers.replaceOrAdd(name: .cacheControl, value: "no-store")
@@ -173,9 +167,37 @@ struct HomeDevicesController: RouteCollection {
         listed: HomeDeviceList,
         local: HomeDeviceLiveFacts,
         bearer: String?,
+        probeBudgetNanoseconds: UInt64 = HomeDeviceProxy.healthProbeBudgetNanoseconds,
     ) async -> HomePlacementScoreResponse {
-        let report = await healthReport(listed: listed, local: local, bearer: bearer)
+        let report: HomeDeviceHealthReport = if let fresh = await reachability.freshReport() {
+            fresh
+        } else {
+            await coalescedHealthReport(
+                listed: listed,
+                local: local,
+                bearer: bearer,
+                probeBudgetNanoseconds: probeBudgetNanoseconds,
+            )
+        }
         return HomePlacementScorer.score(request: request, devices: report.devices)
+    }
+
+    func coalescedHealthReport(
+        listed: HomeDeviceList,
+        local: HomeDeviceLiveFacts,
+        bearer: String?,
+        probeBudgetNanoseconds: UInt64 = HomeDeviceProxy.healthProbeBudgetNanoseconds,
+    ) async -> HomeDeviceHealthReport {
+        await reachability.joinProbe {
+            let report = await self.healthReport(
+                listed: listed,
+                local: local,
+                bearer: bearer,
+                probeBudgetNanoseconds: probeBudgetNanoseconds,
+            )
+            await self.reachability.replace(report.devices)
+            return report
+        }
     }
 
     /// Probe members in parallel and merge with local facts. Extracted so
@@ -280,30 +302,12 @@ struct HomeDevicesController: RouteCollection {
             }
         }
         if !pending.isEmpty {
-            await withTaskGroup(of: (String, HomeDeviceProbeOutcome)?.self) { group in
-                for device in pending {
-                    group.addTask {
-                        await Optional((device.hostId, self.probeMember(device, bearer: bearer)))
-                    }
-                }
-                group.addTask {
-                    try? await Task.sleep(nanoseconds: budgetNanoseconds)
-                    return nil
-                }
-                var expired = false
-                for await item in group {
-                    guard let (id, outcome) = item else {
-                        expired = true
-                        group.cancelAll()
-                        continue
-                    }
-                    if expired { continue }
-                    probed[id] = outcome
-                    if probed.count == pending.count {
-                        group.cancelAll()
-                    }
-                }
-            }
+            probed = await raceMemberProbes(
+                controller: self,
+                pending: pending,
+                bearer: bearer,
+                budgetNanoseconds: budgetNanoseconds,
+            )
         }
         for device in members where probed[device.hostId] == nil {
             probed[device.hostId] = .failed(.connectTimeout)
@@ -550,7 +554,10 @@ struct HomeDevicesController: RouteCollection {
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
             doctor: HomeDeviceDoctorSummary.from(
-                report: DoctorService.probe(source: LiveDoctorFactSource(assumeHealthOK: true)),
+                report: DoctorService.probe(source: LiveDoctorFactSource(
+                    assumeHealthOK: true,
+                    dockerSnapshot: { HostInventoryService.cachedDockerSnapshot() },
+                )),
             ),
         )
     }
@@ -725,6 +732,16 @@ struct HomeDevicesController: RouteCollection {
         }
     }
 
+    private static func sendMemberProbe(
+        _ request: HomeDeviceProxyRequest,
+        client: any HomeDeviceProxyClient,
+    ) async throws -> HomeDeviceProxyResponse {
+        if let mtls = client as? AgentMTLSClient {
+            return try await mtls.sendClosingConnect(request)
+        }
+        return try await client.send(request)
+    }
+
     private func getJSON(
         url: URL,
         client: any HomeDeviceProxyClient,
@@ -737,8 +754,9 @@ struct HomeDevicesController: RouteCollection {
         if let bearer {
             headers.append(("Authorization", "Bearer \(bearer)"))
         }
-        let result = try await client.send(
+        let result = try await Self.sendMemberProbe(
             HomeDeviceProxyRequest(method: "GET", url: url, headers: headers, body: nil),
+            client: client,
         )
         guard (200 ..< 300).contains(result.status) else {
             throw HomeDeviceProxyError.memberHTTP(result.status)
@@ -765,5 +783,104 @@ struct HomeDevicesController: RouteCollection {
             headers: headers,
             body: .init(data: result.body),
         )
+    }
+}
+
+private final class ControllerProbe: @unchecked Sendable {
+    let controller: HomeDevicesController
+
+    init(_ controller: HomeDevicesController) {
+        self.controller = controller
+    }
+}
+
+private func raceMemberProbes(
+    controller: HomeDevicesController,
+    pending: [HomeDevice],
+    bearer: String?,
+    budgetNanoseconds: UInt64,
+) async -> [String: HomeDeviceProbeOutcome] {
+    let probe = ControllerProbe(controller)
+    let devices = pending
+    let token = bearer
+    let budget = budgetNanoseconds
+    return await withCheckedContinuation { continuation in
+        let ledger = MemberProbeLedger()
+        let gate = FirstProbeResult(continuation)
+        let work = Task {
+            await withTaskGroup(of: Void.self) { group in
+                for device in devices {
+                    group.addTask {
+                        let outcome = await probe.controller.probeMember(device, bearer: token)
+                        ledger.record(device.hostId, outcome)
+                    }
+                }
+            }
+            gate.finish(ledger.snapshot(members: devices))
+        }
+        let timer = Task {
+            try? await Task.sleep(nanoseconds: budget)
+            gate.finish(ledger.snapshot(members: devices))
+        }
+        gate.arm(work: work, timer: timer)
+    }
+}
+
+private final class MemberProbeLedger: @unchecked Sendable {
+    private let lock = NSLock()
+    private var outcomes: [String: HomeDeviceProbeOutcome] = [:]
+
+    func record(_ hostId: String, _ outcome: HomeDeviceProbeOutcome) {
+        lock.lock()
+        outcomes[hostId] = outcome
+        lock.unlock()
+    }
+
+    func snapshot(members: [HomeDevice]) -> [String: HomeDeviceProbeOutcome] {
+        lock.lock()
+        var copy = outcomes
+        lock.unlock()
+        for device in members where copy[device.hostId] == nil {
+            copy[device.hostId] = .failed(.connectTimeout)
+        }
+        return copy
+    }
+}
+
+private final class FirstProbeResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<[String: HomeDeviceProbeOutcome], Never>?
+    private var work: Task<Void, Never>?
+    private var timer: Task<Void, Never>?
+    private var finished = false
+
+    init(_ continuation: CheckedContinuation<[String: HomeDeviceProbeOutcome], Never>) {
+        self.continuation = continuation
+    }
+
+    func arm(work: Task<Void, Never>, timer: Task<Void, Never>) {
+        lock.lock()
+        self.work = work
+        self.timer = timer
+        let finished = self.finished
+        lock.unlock()
+        if finished {
+            work.cancel()
+            timer.cancel()
+        }
+    }
+
+    func finish(_ value: [String: HomeDeviceProbeOutcome]) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        finished = true
+        let work = self.work
+        let timer = self.timer
+        lock.unlock()
+        guard let continuation else { return }
+        work?.cancel()
+        timer?.cancel()
+        continuation.resume(returning: value)
     }
 }
