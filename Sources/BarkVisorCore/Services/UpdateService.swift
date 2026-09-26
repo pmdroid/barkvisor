@@ -48,7 +48,7 @@ public struct PackageInstallPlan: Sendable, Equatable {
     public var installArguments: [String]
     public var fixDependsExecutable: String?
     public var fixDependsArguments: [String]
-    public var restartExecutable: String
+    public var restartExecutable: String?
     public var restartArguments: [String]
 
     public var commandLines: [String] {
@@ -56,12 +56,27 @@ public struct PackageInstallPlan: Sendable, Equatable {
         if let fix = fixDependsExecutable {
             lines.append("\(fix) \(fixDependsArguments.joined(separator: " "))")
         }
-        lines.append("\(restartExecutable) \(restartArguments.joined(separator: " "))")
+        if let restartExecutable {
+            lines.append("\(restartExecutable) \(restartArguments.joined(separator: " "))")
+        }
         return lines
     }
 
     public var mentionsBrew: Bool {
         commandLines.joined(separator: " ").localizedCaseInsensitiveContains("brew")
+    }
+}
+
+public enum PackageUpdateOutcome {
+    public struct Record: Codable, Equatable, Sendable {
+        public var status: String
+        public var detail: String
+    }
+
+    public static func load(from directory: URL = Config.dataDir) -> Record? {
+        let url = directory.appendingPathComponent("update-outcome.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Record.self, from: data)
     }
 }
 
@@ -83,8 +98,8 @@ public enum AppliancePackageInstaller {
                 installArguments: ["-pkg", packagePath, "-target", "/"],
                 fixDependsExecutable: nil,
                 fixDependsArguments: [],
-                restartExecutable: "/bin/launchctl",
-                restartArguments: ["kickstart", "-k", "system/dev.barkvisor"],
+                restartExecutable: nil,
+                restartArguments: [],
             )
         }
     }
@@ -395,11 +410,13 @@ public actor UpdateService {
             )
         }
 
-        let restart = try run(plan.restartExecutable, plan.restartArguments, 60)
-        if !restart.succeeded {
-            Log.server.warning(
-                "Update installed; restart returned \(restart.exitCode). The Device may still be coming back.",
-            )
+        if let restartExecutable = plan.restartExecutable {
+            let restart = try run(restartExecutable, plan.restartArguments, 120)
+            if !restart.succeeded {
+                Log.server.warning(
+                    "Update installed; restart returned \(restart.exitCode). The Device may still be coming back.",
+                )
+            }
         }
         await progressHandler(1.0)
     }

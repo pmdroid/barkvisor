@@ -10,7 +10,7 @@ Check that the installed service is running:
 
 | Platform | Check |
 |----------|-------|
-| macOS | `sudo launchctl print system/dev.barkvisor` |
+| macOS | `sudo launchctl print system/dev.barkvisor.daemon` and `sudo launchctl print system/dev.barkvisor.server` |
 | Linux | `systemctl status barkvisor.service` |
 | Windows | `Get-Service BarkVisor` in PowerShell |
 

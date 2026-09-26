@@ -146,7 +146,7 @@ struct DaemonRestartIsolationTests {
     }
 
     @Test func `launchd does not reap the process group`() throws {
-        let text = try Self.readRepoFile("Resources/dev.barkvisor.plist")
+        let text = try Self.readRepoFile("Resources/dev.barkvisor.daemon.plist")
         #expect(text.contains("AbandonProcessGroup"))
         #expect(text.contains("<true/>"))
         let homebrew = try Self.readRepoFile("packaging/homebrew/homebrew.mxcl.barkvisor.plist")

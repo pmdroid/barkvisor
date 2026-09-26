@@ -122,6 +122,9 @@ public final class PublicBarkServer: @unchecked Sendable {
         }
 
         private func handle(_ request: PublicHTTPRequest) -> String {
+            if request.method == "GET", request.path == "/api/health" {
+                return health()
+            }
             if request.upgradeWebSocket, let workload = request.workloadID {
                 let events = socket(
                     name: "workload.events",
@@ -158,6 +161,47 @@ public final class PublicBarkServer: @unchecked Sendable {
                     .jsonString(result.phase))"}
                 """,
             )
+        }
+
+        private func health() -> String {
+            let probe = protocolProbe()
+            guard probe.accepted else {
+                return PublicHTTP.json(status: 503, body: healthBody(status: "error", probe: nil))
+            }
+            return PublicHTTP.json(status: 200, body: healthBody(status: "ok", probe: probe))
+        }
+
+        private func healthBody(status: String, probe: (accepted: Bool, marker: String)?) -> String {
+            var body = #"{"status":"\#(PublicHTTP.jsonString(status))","role":"BarkServer""#
+            if let probe, probe.accepted {
+                let version = PublicHTTP.jsonString(Config.version)
+                let marker = PublicHTTP.jsonString(probe.marker)
+                body +=
+                    #","version":"\#(version)","protocol":"\#(marker)","services":{"BarkDaemon":"\#(version)","BarkServer":"\#(version)"}"#
+            }
+            if let outcome = PackageUpdateOutcome.load(), outcome.status == "failed" {
+                let detail = PublicHTTP.jsonString(outcome.detail)
+                body += #","updateStatus":"failed","updateDetail":"\#(detail)""#
+            }
+            body += "}"
+            return body
+        }
+
+        private func protocolProbe() -> (accepted: Bool, marker: String) {
+            let request = LocalManagementRequest(
+                requestId: "health",
+                operationId: "health",
+                name: "protocolVersion",
+            )
+            do {
+                let response = try LocalManagementSocketClient.exchange(path: socketPath, request: request)
+                guard response.accepted, response.marker == String(LocalManagementLimits.version) else {
+                    return (false, "")
+                }
+                return (true, response.marker ?? "")
+            } catch {
+                return (false, "")
+            }
         }
 
         private func socket(
@@ -325,8 +369,14 @@ public final class PublicBarkServer: @unchecked Sendable {
         }
 
         static func json(status: Int, body: String) -> String {
-            """
-            HTTP/1.1 \(status) \(status == 200 ? "OK" : "Forbidden")\r
+            let reason =
+                switch status {
+                case 200: "OK"
+                case 503: "Service Unavailable"
+                default: "Forbidden"
+                }
+            return """
+            HTTP/1.1 \(status) \(reason)\r
             Content-Type: application/json\r
             Content-Length: \(body.utf8.count)\r
             Connection: close\r
