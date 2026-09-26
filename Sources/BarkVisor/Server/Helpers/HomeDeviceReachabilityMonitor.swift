@@ -1,4 +1,5 @@
 import BarkVisorCore
+import Foundation
 
 /// Home-owned reachability state for paired Devices.
 ///
@@ -14,7 +15,7 @@ actor HomeDeviceReachabilityMonitor {
 
     private var statusByHostId: [String: String] = [:]
     private var cached: CachedReport?
-    private var inflight: Task<HomeDeviceHealthReport, Never>?
+    private var inflight: ReportBridge?
     private var inflightToken = 0
 
     func freshReport(now: ContinuousClock.Instant = .now) -> HomeDeviceHealthReport? {
@@ -28,17 +29,18 @@ actor HomeDeviceReachabilityMonitor {
         _ make: @Sendable @escaping () async -> HomeDeviceHealthReport,
     ) async -> HomeDeviceHealthReport {
         if let inflight {
-            return await inflight.value
+            return await inflight.wait()
         }
         inflightToken += 1
         let token = inflightToken
-        let task = Task.detached(priority: Task.currentPriority, operation: make)
-        inflight = task
-        let report = await task.value
+        let bridge = ReportBridge()
+        inflight = bridge
+        let report = await make()
+        cached = CachedReport(report: report, at: .now)
+        bridge.succeed(report)
         if inflightToken == token {
             inflight = nil
         }
-        cached = CachedReport(report: report, at: .now)
         return report
     }
 
@@ -69,5 +71,33 @@ actor HomeDeviceReachabilityMonitor {
         // healthy. Only transport reachability failures suppress a proxy hop.
         return status == HomeDeviceHealthAggregator.ok
             || status == HomeDeviceHealthAggregator.memberHTTP
+    }
+}
+
+private final class ReportBridge: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<HomeDeviceHealthReport, Never>?
+    private var report: HomeDeviceHealthReport?
+
+    func wait() async -> HomeDeviceHealthReport {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if let report {
+                lock.unlock()
+                continuation.resume(returning: report)
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+        }
+    }
+
+    func succeed(_ report: HomeDeviceHealthReport) {
+        lock.lock()
+        self.report = report
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: report)
     }
 }

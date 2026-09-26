@@ -803,27 +803,28 @@ private func raceMemberProbes(
     let probe = ControllerProbe(controller)
     let devices = pending
     let token = bearer
-    let budget = budgetNanoseconds
-    return await withCheckedContinuation { continuation in
-        let ledger = MemberProbeLedger()
-        let gate = FirstProbeResult(continuation)
-        let work = Task(priority: Task.currentPriority) {
-            await withTaskGroup(of: Void.self) { group in
-                for device in devices {
-                    group.addTask {
-                        let outcome = await probe.controller.probeMember(device, bearer: token)
-                        ledger.record(device.hostId, outcome)
-                    }
+    let ledger = MemberProbeLedger()
+    let work = Task {
+        await withTaskGroup(of: Void.self) { group in
+            for device in devices {
+                group.addTask {
+                    let outcome = await probe.controller.probeMember(device, bearer: token)
+                    ledger.record(device.hostId, outcome)
                 }
             }
-            gate.finish(ledger.snapshot(members: devices))
         }
-        let timer = Task(priority: Task.currentPriority) {
-            try? await Task.sleep(nanoseconds: budget)
-            gate.finish(ledger.snapshot(members: devices))
-        }
-        gate.arm(work: work, timer: timer)
     }
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .nanoseconds(Int64(budgetNanoseconds)))
+    while !Task.isCancelled, clock.now < deadline {
+        if ledger.isComplete(devices) { break }
+        let remaining = clock.now.duration(to: deadline)
+        let slice = min(remaining, .milliseconds(50))
+        if slice <= .zero { break }
+        try? await Task.sleep(for: slice, clock: .continuous)
+    }
+    work.cancel()
+    return ledger.snapshot(members: devices)
 }
 
 private final class MemberProbeLedger: @unchecked Sendable {
@@ -836,6 +837,12 @@ private final class MemberProbeLedger: @unchecked Sendable {
         lock.unlock()
     }
 
+    func isComplete(_ members: [HomeDevice]) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return members.allSatisfy { outcomes[$0.hostId] != nil }
+    }
+
     func snapshot(members: [HomeDevice]) -> [String: HomeDeviceProbeOutcome] {
         lock.lock()
         var copy = outcomes
@@ -844,43 +851,5 @@ private final class MemberProbeLedger: @unchecked Sendable {
             copy[device.hostId] = .failed(.connectTimeout)
         }
         return copy
-    }
-}
-
-private final class FirstProbeResult: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<[String: HomeDeviceProbeOutcome], Never>?
-    private var work: Task<Void, Never>?
-    private var timer: Task<Void, Never>?
-    private var finished = false
-
-    init(_ continuation: CheckedContinuation<[String: HomeDeviceProbeOutcome], Never>) {
-        self.continuation = continuation
-    }
-
-    func arm(work: Task<Void, Never>, timer: Task<Void, Never>) {
-        lock.lock()
-        self.work = work
-        self.timer = timer
-        let finished = self.finished
-        lock.unlock()
-        if finished {
-            work.cancel()
-            timer.cancel()
-        }
-    }
-
-    func finish(_ value: [String: HomeDeviceProbeOutcome]) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        finished = true
-        let work = self.work
-        let timer = self.timer
-        lock.unlock()
-        guard let continuation else { return }
-        work?.cancel()
-        timer?.cancel()
-        continuation.resume(returning: value)
     }
 }
