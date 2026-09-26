@@ -1,5 +1,5 @@
 import { ref, watch, onUnmounted, type ComputedRef, type Ref } from 'vue'
-import type { HomePlacementScoreResponse } from '../api/types'
+import type { HomePlacementScoreRequest, HomePlacementScoreResponse } from '../api/types'
 import { useDevicesStore } from '../stores/devices'
 import { useHomeLibraryStore } from '../stores/homeLibrary'
 import { createVMIncompatibilityReasons } from '../utils/deviceCompatibility'
@@ -23,6 +23,8 @@ export function usePlacement(opts: {
   userOverrodeHost: Ref<boolean>
   initialHostId?: string
   effectiveGuestArch: ComputedRef<string>
+  declaredArchitectures: ComputedRef<string[]>
+  requiredFeatures: ComputedRef<string[]>
   memoryMB: Ref<number>
   osType: Ref<'linux' | 'windows'>
   selectedLibraryKey: ComputedRef<string>
@@ -93,14 +95,17 @@ export function usePlacement(opts: {
     const ac = new AbortController()
     placementAbort = ac
     const seq = ++placementScoreSeq
+    placementScore.value = null
     placementRefreshing.value = true
     try {
-      const guest = opts.effectiveGuestArch.value
-      const data = await scorePlacement({
-        declaredArchitectures: guest ? [guest] : [],
+      const features = opts.requiredFeatures.value
+      const request: HomePlacementScoreRequest = {
+        declaredArchitectures: opts.declaredArchitectures.value,
         minMemoryMB: opts.memoryMB.value,
         requestedMemoryMB: opts.memoryMB.value,
-      }, { signal: ac.signal })
+      }
+      if (features.length > 0) request.requiredFeatures = features
+      const data = await scorePlacement(request, { signal: ac.signal })
       if (seq !== placementScoreSeq) return
       placementScore.value = data
     } catch (error) {
@@ -120,7 +125,23 @@ export function usePlacement(opts: {
     }))
   }
 
-  watch([opts.memoryMB, opts.effectiveGuestArch, opts.osType], () => {
+  watch(
+    () => `${opts.declaredArchitectures.value.join('\0')}\n${opts.requiredFeatures.value.join('\0')}`,
+    (next, prev) => {
+      if (prev === undefined || next === prev) return
+      placementAbort?.abort()
+      placementScore.value = null
+    },
+    { flush: 'sync' },
+  )
+
+  watch([
+    opts.memoryMB,
+    opts.effectiveGuestArch,
+    opts.osType,
+    opts.declaredArchitectures,
+    opts.requiredFeatures,
+  ], () => {
     schedulePlacementRefresh(false)
   })
 
