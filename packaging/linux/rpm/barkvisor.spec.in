@@ -67,7 +67,6 @@ stop_combined_listener() {
            ! systemctl is-active --quiet barkvisor-daemon.service ||
            ! systemctl is-active --quiet barkvisor-server.service; then
           systemctl stop barkvisor-daemon.service barkvisor-server.service >/dev/null 2>&1 || true
-          systemctl enable barkvisor.service >/dev/null 2>&1 || true
           systemctl start barkvisor.service
           exit 1
         fi

@@ -104,7 +104,6 @@ struct RootDaemonPackagingTests {
             let script = try read(relative)
             #expect(script.contains("systemctl is-active --quiet barkvisor-daemon.service"))
             #expect(script.contains("systemctl is-active --quiet barkvisor-server.service"))
-            #expect(script.contains("systemctl enable barkvisor.service"))
             #expect(script.contains("systemctl start barkvisor.service"))
         }
     }
