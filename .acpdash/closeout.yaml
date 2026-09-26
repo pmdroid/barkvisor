@@ -5,6 +5,10 @@ version: 1
 retry:
   maxFailedAttemptsPerItem: 5
 items:
+  - id: lint
+    kind: command
+    run: mise run lint
+    hint: Run SwiftLint and SwiftFormat checks through start_command with this item ID against the final clean commit.
   - id: swift-tests
     kind: command
     run: mise exec swift@6.3.3 -- swift test
