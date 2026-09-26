@@ -498,13 +498,15 @@ struct WorkloadOperationRecoveryTests {
             projectPath: harness.project.path,
         )
         try await harness.run {
-            try await ApplicationDeployment.continueTeardown(
-                record: accepted.record,
-                vm: harness.vm,
-                db: harness.db.pool,
-                dataDir: harness.db.dir,
-                finishCleanup: true,
-            )
+            await #expect(throws: BarkVisorError.self) {
+                try await ApplicationDeployment.continueTeardown(
+                    record: accepted.record,
+                    vm: harness.vm,
+                    db: harness.db.pool,
+                    dataDir: harness.db.dir,
+                    finishCleanup: true,
+                )
+            }
         }
         #expect(FileManager.default.fileExists(atPath: marker.path))
         let failed = try await harness.db.pool.read { db in

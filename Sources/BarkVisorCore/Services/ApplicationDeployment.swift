@@ -645,7 +645,7 @@ enum ApplicationDeployment {
                         recoveryOutcome: ApplicationReadiness.outcomeCleanupIncomplete,
                         error: error.localizedDescription,
                     )
-                    return
+                    throw error
                 }
                 try await checkpoint(operation: record, db: db, phase: "containers_stopped")
                 if !finishCleanup { return }
