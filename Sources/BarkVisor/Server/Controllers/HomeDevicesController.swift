@@ -807,7 +807,7 @@ private func raceMemberProbes(
     return await withCheckedContinuation { continuation in
         let ledger = MemberProbeLedger()
         let gate = FirstProbeResult(continuation)
-        let work = Task.detached {
+        let work = Task(priority: Task.currentPriority) {
             await withTaskGroup(of: Void.self) { group in
                 for device in devices {
                     group.addTask {
@@ -818,7 +818,7 @@ private func raceMemberProbes(
             }
             gate.finish(ledger.snapshot(members: devices))
         }
-        let timer = Task.detached {
+        let timer = Task(priority: Task.currentPriority) {
             try? await Task.sleep(nanoseconds: budget)
             gate.finish(ledger.snapshot(members: devices))
         }

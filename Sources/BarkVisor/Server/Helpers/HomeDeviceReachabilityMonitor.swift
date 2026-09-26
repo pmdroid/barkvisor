@@ -32,7 +32,7 @@ actor HomeDeviceReachabilityMonitor {
         }
         inflightToken += 1
         let token = inflightToken
-        let task = Task.detached(operation: make)
+        let task = Task.detached(priority: Task.currentPriority, operation: make)
         inflight = task
         let report = await task.value
         if inflightToken == token {
