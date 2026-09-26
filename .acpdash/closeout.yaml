@@ -11,11 +11,11 @@ items:
     hint: Run SwiftLint and SwiftFormat checks through start_command with this item ID against the final clean commit.
   - id: swift-tests
     kind: command
-    run: mise exec swift@6.3.3 -- swift test
+    run: mise run test
     hint: Run the full native Swift test suite through start_command with this item ID. Fix failures; macOS-only checks also run in CI.
   - id: frontend-tests
     kind: command
-    run: cd frontend && bun install --frozen-lockfile && bun test
+    run: mise run frontend-test
     hint: Run frontend unit tests through start_command with this item ID against the final clean commit.
   # Use Claude (or another non-Codex provider) for implementation: the reviewer
   # must be independent, and Codex currently provides the read-only review path.
