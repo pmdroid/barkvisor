@@ -15,6 +15,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
     private let directoryMode: UInt16
     private let socketMode: UInt16
     private let lock = NSLock()
+    private let ioQueue = DispatchQueue(label: "barkvisor.management-socket")
     private var listenFD: Int32 = -1
     private var stopped = false
 
@@ -54,7 +55,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
                 try? FileManager.default.removeItem(atPath: path)
             }
             while !isStopped {
-                guard let client = acceptClient(listen: fd) else { continue }
+                guard let client = try await performIO({ self.acceptClient(listen: fd) }) else { continue }
                 await serve(client)
             }
         #endif
@@ -114,7 +115,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
             var pollFD = pollfd(fd: listen, events: Int16(POLLIN), revents: 0)
             let waited = poll(&pollFD, 1, 200)
             if waited <= 0 || isStopped { return nil }
-            let client = accept(listen, nil, nil)
+            let client = PlatformSocket.acceptBlocking(listen)
             if client < 0 { return nil }
             return client
         }
@@ -122,7 +123,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
         private func serve(_ client: Int32) async {
             defer { close(client) }
             do {
-                let payload = try LocalManagementPOSIX.readPayload(fd: client)
+                let payload = try await performIO { try LocalManagementPOSIX.readPayload(fd: client) }
                 let request: LocalManagementRequest
                 do {
                     request = try LocalManagementFraming.decodeRequest(payload)
@@ -135,7 +136,7 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
                         effectCount: 0,
                         rejection: LocalRejection.malformed.rawValue,
                     )
-                    try LocalManagementPOSIX.writeFrame(fd: client, payload: LocalManagementFraming.encode(response))
+                    try await send(response, to: client)
                     return
                 }
                 guard let peer = LocalManagementPOSIX.peerIdentity(fd: client) else {
@@ -143,11 +144,11 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
                         request: request,
                         reason: .peerNotAllowed,
                     )
-                    try LocalManagementPOSIX.writeFrame(fd: client, payload: LocalManagementFraming.encode(response))
+                    try await send(response, to: client)
                     return
                 }
                 let response = await session.handle(peer: peer, request: request)
-                try LocalManagementPOSIX.writeFrame(fd: client, payload: LocalManagementFraming.encode(response))
+                try await send(response, to: client)
             } catch LocalManagementError.payloadTooLarge {
                 let response = LocalManagementResponse(
                     requestId: "",
@@ -157,12 +158,21 @@ public final class LocalManagementSocketServer: @unchecked Sendable {
                     effectCount: 0,
                     rejection: LocalRejection.payloadTooLarge.rawValue,
                 )
-                try? LocalManagementPOSIX.writeFrame(
-                    fd: client,
-                    payload: LocalManagementFraming.encode(response),
-                )
+                try? await send(response, to: client)
             } catch {
                 return
+            }
+        }
+
+        private func send(_ response: LocalManagementResponse, to client: Int32) async throws {
+            try await performIO {
+                try LocalManagementPOSIX.writeFrame(fd: client, payload: LocalManagementFraming.encode(response))
+            }
+        }
+
+        private func performIO<T: Sendable>(_ operation: @escaping @Sendable () throws -> T) async throws -> T {
+            try await withCheckedThrowingContinuation { continuation in
+                ioQueue.async { continuation.resume(with: Result(catching: operation)) }
             }
         }
     #endif
@@ -235,7 +245,7 @@ public enum LocalManagementSocketClient {
             while !remaining.isEmpty {
                 let wrote = remaining.withUnsafeBytes { raw -> Int in
                     guard let base = raw.baseAddress else { return -1 }
-                    return write(fd, base, raw.count)
+                    return send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 }
                 if wrote < 0 {
                     if errno == EINTR { continue }

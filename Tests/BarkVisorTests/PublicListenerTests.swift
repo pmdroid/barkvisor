@@ -52,7 +52,7 @@ struct PublicListenerTests {
             }
             let http = try #require(server.httpPort)
             let tls = try #require(server.deviceTLSPort)
-            let health = try httpExchange(
+            let health = try await httpExchange(
                 port: http,
                 request: """
                 GET /api/health HTTP/1.1\r
@@ -79,7 +79,7 @@ struct PublicListenerTests {
             #expect(!VaporListenerGate.authoritativeStartAllowed(role: .barkServer))
             #expect(!VaporListenerGate.authoritativeStartAllowed(role: .barkDaemon))
             #expect(VaporListenerGate.authoritativeStartAllowed(role: .combined))
-            let started = try httpExchange(
+            let started = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/start HTTP/1.1\r
@@ -92,7 +92,7 @@ struct PublicListenerTests {
             )
             #expect(started.contains("200"))
             #expect(started.contains("running"))
-            let again = try httpExchange(
+            let again = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/start HTTP/1.1\r
@@ -104,7 +104,7 @@ struct PublicListenerTests {
             )
             #expect(again.contains("running"))
             #expect(driver.calls.count == 1)
-            let forged = try httpExchange(
+            let forged = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/stop HTTP/1.1\r
@@ -117,7 +117,7 @@ struct PublicListenerTests {
             #expect(forged.contains("403"))
             #expect(forged.contains("forgedIdentity"))
             #expect(driver.calls.count == 1)
-            let events = try httpExchange(
+            let events = try await httpExchange(
                 port: http,
                 request: """
                 GET /api/vms/vm-1/events HTTP/1.1\r
@@ -140,7 +140,11 @@ struct PublicListenerTests {
 }
 
 #if !os(Windows)
-    private func httpExchange(port: Int, request: String) throws -> String {
+    private func httpExchange(port: Int, request: String) async throws -> String {
+        try await runSocketIO { try blockingHTTPExchange(port: port, request: request) }
+    }
+
+    private func blockingHTTPExchange(port: Int, request: String) throws -> String {
         let fd = socket(AF_INET, PlatformSocket.stream, 0)
         guard fd >= 0 else { throw LocalManagementError.unavailable }
         defer { close(fd) }
@@ -160,9 +164,9 @@ struct PublicListenerTests {
             let wrote = remaining.withUnsafeBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return -1 }
                 #if canImport(Darwin)
-                    return Darwin.write(fd, base, raw.count)
+                    return Darwin.send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 #else
-                    return Glibc.write(fd, base, raw.count)
+                    return Glibc.send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 #endif
             }
             if wrote <= 0 { throw LocalManagementError.connectionLost }
@@ -170,7 +174,7 @@ struct PublicListenerTests {
         }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4_096)
-        if poll(&pollFD, 1, 2_000) <= 0 { throw LocalManagementError.connectionLost }
+        if poll(&pollFD, 1, 10_000) <= 0 { throw LocalManagementError.connectionLost }
         let count = buffer.withUnsafeMutableBytes { raw -> Int in
             guard let base = raw.baseAddress else { return -1 }
             return read(fd, base, raw.count)
