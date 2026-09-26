@@ -164,8 +164,15 @@ stop_combined_listener() {
     if [ -n "$main_pid" ] && [ "$pid" = "$main_pid" ]; then
       systemd-run --collect --unit="barkvisor-split-$$" /bin/sh -c '
         while [ -e "/proc/$1" ]; do sleep 1; done
-        systemctl stop barkvisor.service
-        systemctl restart barkvisor-daemon.service barkvisor-server.service
+        systemctl stop barkvisor.service || exit 1
+        if ! systemctl restart barkvisor-daemon.service barkvisor-server.service ||
+           ! systemctl is-active --quiet barkvisor-daemon.service ||
+           ! systemctl is-active --quiet barkvisor-server.service; then
+          systemctl stop barkvisor-daemon.service barkvisor-server.service >/dev/null 2>&1 || true
+          systemctl enable barkvisor.service >/dev/null 2>&1 || true
+          systemctl start barkvisor.service
+          exit 1
+        fi
       ' sh "$$" >/dev/null || return 1
       systemctl disable barkvisor.service >/dev/null 2>&1 || true
       return 0
