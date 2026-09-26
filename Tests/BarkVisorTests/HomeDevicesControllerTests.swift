@@ -1012,15 +1012,12 @@ struct HomeDevicesControllerTests {
             }
             .bind(host: "127.0.0.1", port: 0)
             .get()
-        defer { stopProbeServer(server, group) }
-        let port = server.localAddress?.port ?? 0
-        #expect(port > 0)
         var config = HTTPClient.Configuration()
         config.timeout = .init(connect: .seconds(10), read: .seconds(10))
-        let http = HTTPClient(
-            eventLoopGroupProvider: .shared(MultiThreadedEventLoopGroup.singleton),
-            configuration: config,
-        )
+        let http = HTTPClient(eventLoopGroupProvider: .shared(group), configuration: config)
+        defer { stopProbeServer(http, server, group) }
+        let port = server.localAddress?.port ?? 0
+        #expect(port > 0)
         let task = Task {
             var request = HTTPClientRequest(url: "http://127.0.0.1:\(port)/api/agent/inventory")
             request.method = .GET
@@ -1032,7 +1029,6 @@ struct HomeDevicesControllerTests {
         let closed = await accepted.waitClosed(nanoseconds: 1_000_000_000)
         #expect(closed)
         _ = await task.result
-        try? await http.shutdown()
     }
 }
 
@@ -1259,7 +1255,12 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
     }
 }
 
-private func stopProbeServer(_ server: Channel, _ group: MultiThreadedEventLoopGroup) {
+private func stopProbeServer(
+    _ http: HTTPClient,
+    _ server: Channel,
+    _ group: MultiThreadedEventLoopGroup,
+) {
+    try? http.syncShutdown()
     try? server.close().wait()
     try? group.syncShutdownGracefully()
 }
