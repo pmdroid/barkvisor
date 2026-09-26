@@ -48,7 +48,7 @@ post_install() {
     udevadm trigger --subsystem-match=vfio || true
   fi
   systemctl daemon-reload >/dev/null 2>&1 || true
-  stop_combined_listener
+  stop_combined_listener || return 1
   systemctl enable barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl enable barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
