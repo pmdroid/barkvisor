@@ -161,38 +161,32 @@ public enum PlatformProcess {
         outThread.start()
         errThread.start()
 
-        var timeoutExceeded: TimeInterval?
-        let limit = timeout ?? 60
-        let deadline = Date().addingTimeInterval(limit)
-        var exited = false
-        while Date() < deadline {
-            if exitFlag.isExited || !process.isRunning {
-                exited = true
-                break
+        let deadline = timeout.map { Date().addingTimeInterval($0) }
+        while !exitFlag.isExited {
+            if let deadline, let timeout, Date() >= deadline {
+                #if !os(Windows)
+                    kill(process.processIdentifier, SIGKILL)
+                #else
+                    process.terminate()
+                #endif
+                let killDeadline = Date().addingTimeInterval(2)
+                while !exitFlag.isExited, Date() < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                if exitFlag.isExited { process.waitUntilExit() }
+                throw BarkVisorError.timeout(
+                    "Process \(executable.lastPathComponent) timed out after \(Int(timeout))s",
+                )
             }
             Thread.sleep(forTimeInterval: 0.05)
         }
-        if !exited {
-            #if !os(Windows)
-                kill(process.processIdentifier, SIGKILL)
-            #else
-                process.terminate()
-            #endif
-            let killDeadline = Date().addingTimeInterval(2)
-            while Date() < killDeadline {
-                if exitFlag.isExited || !process.isRunning { break }
-                Thread.sleep(forTimeInterval: 0.05)
+        process.waitUntilExit()
+        let drainDeadline = deadline?.addingTimeInterval(2)
+        while !outThread.isFinished || !errThread.isFinished {
+            if let drainDeadline, Date() >= drainDeadline {
+                throw BarkVisorError.timeout("Process \(executable.lastPathComponent) output did not close")
             }
-            timeoutExceeded = limit
-        }
-        let joinDeadline = Date().addingTimeInterval(2)
-        while Date() < joinDeadline, outThread.isExecuting || errThread.isExecuting {
             Thread.sleep(forTimeInterval: 0.05)
-        }
-        if let timeoutExceeded {
-            throw BarkVisorError.timeout(
-                "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
-            )
         }
 
         return CommandResult(
