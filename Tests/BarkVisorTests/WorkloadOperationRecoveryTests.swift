@@ -235,7 +235,14 @@ struct WorkloadOperationRecoveryTests {
             }) {
                 try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                     await expectInterruption {
-                        try await harness.update()
+                        try await ApplicationDeployment.performImageUpdate(
+                            vm: &harness.vm,
+                            db: harness.db.pool,
+                            dataDir: harness.db.dir,
+                            operation: nil,
+                            dataMigration: nil,
+                            progress: nil,
+                        )
                     }
                 }
             }
@@ -305,7 +312,14 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await harness.update()
+                    try await ApplicationDeployment.performImageUpdate(
+                        vm: &harness.vm,
+                        db: harness.db.pool,
+                        dataDir: harness.db.dir,
+                        operation: nil,
+                        dataMigration: nil,
+                        progress: nil,
+                    )
                 }
             }
         }
@@ -407,7 +421,14 @@ struct WorkloadOperationRecoveryTests {
         try await harness.db.pool.write { db in try saved.insert(db) }
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
-                try await harness.update()
+                try await ApplicationDeployment.performImageUpdate(
+                    vm: &harness.vm,
+                    db: harness.db.pool,
+                    dataDir: harness.db.dir,
+                    operation: nil,
+                    dataMigration: nil,
+                    progress: nil,
+                )
             }
         }
         let revisions = try await harness.db.pool.read { db in try DeploymentRevisionRecord.fetchAll(db) }
@@ -424,6 +445,38 @@ struct WorkloadOperationRecoveryTests {
             }
         }
         #expect(revisions.contains { (try? $0.manifest().envRef) != nil })
+    }
+
+    @Test func `failed teardown reports the stop error`() async throws {
+        let harness = try await UpdateHarness()
+        try harness.writeProject(yaml: "services:\n  web:\n    image: example/web:1\n", env: nil)
+        harness.vm.state = "stopped"
+        let saved = harness.vm
+        try await harness.db.pool.write { db in try saved.insert(db) }
+        harness.compose.failStop = true
+        let accepted = try await WorkloadOperationStore.accept(
+            db: harness.db.pool,
+            idempotencyKey: nil,
+            workloadID: harness.vm.id,
+            kind: WorkloadOperationKind.appTeardown,
+            requestedGeneration: harness.vm.specGeneration,
+            projectPath: harness.project.path,
+        )
+        try await harness.run {
+            await #expect(throws: BarkVisorError.self) {
+                try await ApplicationDeployment.continueTeardown(
+                    record: accepted.record,
+                    vm: harness.vm,
+                    db: harness.db.pool,
+                    dataDir: harness.db.dir,
+                    finishCleanup: true,
+                )
+            }
+        }
+        let failed = try await harness.db.pool.read { db in
+            try WorkloadOperationRecord.fetchOne(db, key: accepted.record.id)
+        }
+        #expect(failed?.status == WorkloadOperationStatus.failed)
     }
 
     @Test(.disabled("teardown does not record a deployment operation"))
@@ -445,13 +498,13 @@ struct WorkloadOperationRecoveryTests {
             projectPath: harness.project.path,
         )
         try await harness.run {
-            await expectBarkVisorError {
+            await #expect(throws: BarkVisorError.self) {
                 try await ApplicationDeployment.continueTeardown(
                     record: accepted.record,
                     vm: harness.vm,
                     db: harness.db.pool,
                     dataDir: harness.db.dir,
-                    finishCleanup: false,
+                    finishCleanup: true,
                 )
             }
         }
@@ -459,7 +512,8 @@ struct WorkloadOperationRecoveryTests {
         let failed = try await harness.db.pool.read { db in
             try WorkloadOperationRecord.filter(Column("kind") == WorkloadOperationKind.appTeardown).fetchOne(db)
         }
-        #expect(failed?.status == WorkloadOperationStatus.running)
+        #expect(failed?.status == WorkloadOperationStatus.failed)
+        #expect(failed?.recoveryOutcome == ApplicationReadiness.outcomeCleanupIncomplete)
         #expect(failed?.isRetryable == true)
         #expect(harness.compose.down == 0)
         harness.compose.failStop = false

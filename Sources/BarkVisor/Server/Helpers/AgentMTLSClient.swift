@@ -411,10 +411,11 @@ private final class LocalHostProxyClientCache: @unchecked Sendable {
 
     func client(requestTimeout: Int64) -> HTTPClient {
         lock.lock()
-        defer { lock.unlock() }
         if let existing = clients[requestTimeout] {
+            lock.unlock()
             return existing
         }
+        lock.unlock()
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
         config.timeout = HTTPClient.Configuration.Timeout(
@@ -425,7 +426,16 @@ private final class LocalHostProxyClientCache: @unchecked Sendable {
             eventLoopGroupProvider: .shared(LocalHostProxyHTTPGroup.shared),
             configuration: config,
         )
+        lock.lock()
+        if let existing = clients[requestTimeout] {
+            lock.unlock()
+            Task {
+                try? await created.shutdown()
+            }
+            return existing
+        }
         clients[requestTimeout] = created
+        lock.unlock()
         return created
     }
 }

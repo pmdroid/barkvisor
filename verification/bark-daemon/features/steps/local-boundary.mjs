@@ -177,6 +177,38 @@ Then("the appliance unit suite passes", function () {
   }
 });
 
+let commandTimeoutOutput = "";
+let commandTimeoutStatus = 1;
+
+When("the command timeout regression runs", function () {
+  const swift = process.env.SWIFT_BIN ?? "swift";
+  const result = spawnSync(
+    swift,
+    ["test", "--skip-build", "--filter", "run times out a child that fills its pipes"],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: ["/usr/local/lib/barkvisor/compat", process.env.LD_LIBRARY_PATH]
+          .filter(Boolean)
+          .join(":"),
+      },
+    },
+  );
+  commandTimeoutOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  commandTimeoutStatus = result.status ?? 1;
+  if (commandTimeoutStatus !== 0) {
+    throw new Error(commandTimeoutOutput.slice(-4000));
+  }
+});
+
+Then("the command timeout regression passes", function () {
+  if (!commandTimeoutOutput.includes("run times out a child that fills its pipes")) {
+    throw new Error(commandTimeoutOutput.slice(-4000));
+  }
+});
+
 Then("the daemon recovery suite passes", function () {
   if (!recoveryOutput.includes("DaemonRecoveryTests")) {
     throw new Error(recoveryOutput.slice(-4000));
