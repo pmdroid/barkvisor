@@ -865,14 +865,6 @@ struct HomeDevicesControllerTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
         try AppDatabase.makeMigrator().migrate(pool)
-        let shared = DockerDiscoveryCache.shared
-        let previousSchedule = shared.scheduleRefresh
-        let parked = ParkedDockerRefresh()
-        shared.scheduleRefresh = { parked.add($0) }
-        defer {
-            shared.cancelPendingRefresh()
-            shared.scheduleRefresh = previousSchedule
-        }
         let ctl = controller(dir: dir, hostId: "self-host")
         let guardProbe = LiveSnapshotGuard(
             replacement: DockerEngineSnapshot(os: PlatformHost.platformName),
@@ -1055,17 +1047,6 @@ private func firstScore(
 }
 
 private struct PlacementScoreHung: Error {}
-
-private final class ParkedDockerRefresh: @unchecked Sendable {
-    private let lock = NSLock()
-    private var work: [() -> Void] = []
-
-    func add(_ item: @escaping @Sendable () -> Void) {
-        lock.lock()
-        work.append(item)
-        lock.unlock()
-    }
-}
 
 private final class CloseSignal: @unchecked Sendable {
     private let lock = NSLock()

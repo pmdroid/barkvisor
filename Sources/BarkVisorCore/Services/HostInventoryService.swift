@@ -221,15 +221,11 @@ public enum HostInventoryService {
     }
 
     public static func cachedDockerEngine(cache: DockerDiscoveryCache = .shared) -> Bool {
-        let supported = cache.cachedSnapshot()?.capabilitySupported ?? false
-        cache.refreshOffRequest()
-        return supported
+        cache.cachedSnapshot()?.capabilitySupported ?? false
     }
 
     public static func cachedDockerSnapshot(cache: DockerDiscoveryCache = .shared) -> DockerEngineSnapshot {
-        let snapshot = cache.cachedSnapshot() ?? DockerEngineSnapshot(os: PlatformHost.platformName)
-        cache.refreshOffRequest()
-        return snapshot
+        cache.cachedSnapshot() ?? DockerEngineSnapshot(os: PlatformHost.platformName)
     }
 
     public static func kvmDevicePresent() -> Bool {
