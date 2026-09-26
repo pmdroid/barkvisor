@@ -932,7 +932,7 @@ struct HomeDevicesControllerTests {
         )
         let facts = local
         let ctl = controller(dir: dir, hostId: selfId, mtlsClient: client)
-        let budget: UInt64 = 80_000_000
+        let budget = HomeDeviceProxy.healthProbeBudgetNanoseconds
         let scored = try await firstScore(
             withinNanoseconds: 20_000_000_000,
             body: {
