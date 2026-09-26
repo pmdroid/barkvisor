@@ -140,58 +140,54 @@ public enum PlatformProcess {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        // Drain pipes while the process runs to avoid pipe buffer deadlock.
         let stdoutBox = DataBox()
         let stderrBox = DataBox()
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                stdoutBox.append(chunk)
-            }
+        let exitFlag = ExitFlag()
+        process.terminationHandler = { _ in
+            exitFlag.mark()
         }
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                stderrBox.append(chunk)
-            }
-        }
-
         try process.run()
+        outPipe.fileHandleForWriting.closeFile()
+        errPipe.fileHandleForWriting.closeFile()
 
-        var timeoutExceeded: TimeInterval?
-        if let timeout {
-            let deadline = Date().addingTimeInterval(timeout)
-            while process.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            if process.isRunning {
-                process.terminate()
-                let killDeadline = Date().addingTimeInterval(0.5)
-                while process.isRunning, Date() < killDeadline {
+        let outHandle = outPipe.fileHandleForReading
+        let errHandle = errPipe.fileHandleForReading
+        let outThread = Thread {
+            stdoutBox.append(outHandle.readDataToEndOfFile())
+        }
+        let errThread = Thread {
+            stderrBox.append(errHandle.readDataToEndOfFile())
+        }
+        outThread.start()
+        errThread.start()
+
+        let deadline = timeout.map { Date().addingTimeInterval($0) }
+        while !exitFlag.isExited {
+            if let deadline, let timeout, Date() >= deadline {
+                #if !os(Windows)
+                    kill(process.processIdentifier, SIGKILL)
+                #else
+                    process.terminate()
+                #endif
+                let killDeadline = Date().addingTimeInterval(2)
+                while !exitFlag.isExited, Date() < killDeadline {
                     Thread.sleep(forTimeInterval: 0.05)
                 }
-                if process.isRunning {
-                    kill(process.processIdentifier, SIGKILL)
-                }
-                timeoutExceeded = timeout
+                if exitFlag.isExited { process.waitUntilExit() }
+                throw BarkVisorError.timeout(
+                    "Process \(executable.lastPathComponent) timed out after \(Int(timeout))s",
+                )
             }
+            Thread.sleep(forTimeInterval: 0.05)
         }
-        outPipe.fileHandleForReading.readabilityHandler = nil
-        errPipe.fileHandleForReading.readabilityHandler = nil
         process.waitUntilExit()
-        if let timeoutExceeded {
-            throw BarkVisorError.timeout(
-                "Process \(executable.lastPathComponent) timed out after \(Int(timeoutExceeded))s",
-            )
+        let drainDeadline = deadline?.addingTimeInterval(2)
+        while !outThread.isFinished || !errThread.isFinished {
+            if let drainDeadline, Date() >= drainDeadline {
+                throw BarkVisorError.timeout("Process \(executable.lastPathComponent) output did not close")
+            }
+            Thread.sleep(forTimeInterval: 0.05)
         }
-        let leftoverOut = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let leftoverErr = errPipe.fileHandleForReading.readDataToEndOfFile()
-        if !leftoverOut.isEmpty { stdoutBox.append(leftoverOut) }
-        if !leftoverErr.isEmpty { stderrBox.append(leftoverErr) }
 
         return CommandResult(
             exitCode: process.terminationStatus,
@@ -298,6 +294,19 @@ public enum PlatformProcess {
             return String(decoding: buf.prefix(Int(size)).map { UInt16($0) }, as: UTF16.self)
         }
     #endif
+
+    private final class ExitFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var exited = false
+
+        func mark() {
+            lock.withLock { exited = true }
+        }
+
+        var isExited: Bool {
+            lock.withLock { exited }
+        }
+    }
 
     private final class DataBox: @unchecked Sendable {
         private let lock = NSLock()

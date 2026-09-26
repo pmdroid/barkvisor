@@ -431,14 +431,7 @@ public enum ApplicationLifecycleService {
     }
 
     public static func portRules(_ ports: [PublishedPort]) -> [PortForwardRule] {
-        ports.map {
-            PortForwardRule(
-                protocol: $0.proto,
-                hostPort: $0.hostPort,
-                guestPort: $0.containerPort,
-                host: $0.hostAddress,
-            )
-        }
+        applicationPortRules(ports)
     }
 
     static func verifyInspectedBinds(
@@ -446,18 +439,11 @@ public enum ApplicationLifecycleService {
         bindHost: String,
         expected: [PublishedPort],
     ) throws {
-        let data = try DockerInspect.json(containerNames)
-        let bindings = try ComposePorts.parseInspectBindings(data)
-        try ComposePorts.requireLANHostIP(
-            bindings,
+        try applicationVerifyInspectedBinds(
+            containerNames: containerNames,
             bindHost: bindHost,
             expected: expected,
-            allowWildcard: false,
         )
-    }
-
-    public static func openURL(from ports: [PublishedPort]) -> String? {
-        ports.compactMap(\.openURL).first
     }
 
     public static func openURL(
@@ -471,7 +457,7 @@ public enum ApplicationLifecycleService {
             id: id,
             catalogProxy: spec?.spec.ingress?.mode,
             ingress: spec?.spec.ingress,
-            lanURL: openURL(from: ports),
+            lanURL: ports.compactMap(\.openURL).first,
             listenHost: lanHost,
             listenPort: listenPort,
         )
@@ -1148,6 +1134,32 @@ extension ApplicationLifecycleService {
             Log.vm.warning("Application \(vm.id) \(state): \(error)", vm: vm.id)
         }
     }
+}
+
+private func applicationPortRules(_ ports: [PublishedPort]) -> [PortForwardRule] {
+    ports.map {
+        PortForwardRule(
+            protocol: $0.proto,
+            hostPort: $0.hostPort,
+            guestPort: $0.containerPort,
+            host: $0.hostAddress,
+        )
+    }
+}
+
+private func applicationVerifyInspectedBinds(
+    containerNames: [String],
+    bindHost: String,
+    expected: [PublishedPort],
+) throws {
+    let data = try DockerInspect.json(containerNames)
+    let bindings = try ComposePorts.parseInspectBindings(data)
+    try ComposePorts.requireLANHostIP(
+        bindings,
+        bindHost: bindHost,
+        expected: expected,
+        allowWildcard: false,
+    )
 }
 
 private func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
