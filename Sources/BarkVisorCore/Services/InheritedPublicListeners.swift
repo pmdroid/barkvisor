@@ -50,11 +50,17 @@ public enum InheritedPublicListeners {
             guard named == 0 else { return nil }
             let domain = Int32(storage.ss_family)
             guard domain == AF_INET || domain == AF_INET6 else { return nil }
-            var accepting: Int32 = 0
-            length = socklen_t(MemoryLayout<Int32>.size)
-            guard getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &accepting, &length) == 0, accepting != 0 else {
-                return nil
-            }
+            #if canImport(Darwin)
+                var info = socket_fdinfo()
+                guard proc_pidfdinfo(getpid(), fd, PROC_PIDFDSOCKETINFO, &info, Int32(MemoryLayout<socket_fdinfo>.size)) > 0,
+                      Int32(info.psi.soi_options) & SO_ACCEPTCONN != 0 else { return nil }
+            #else
+                var accepting: Int32 = 0
+                length = socklen_t(MemoryLayout<Int32>.size)
+                guard getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &accepting, &length) == 0, accepting != 0 else {
+                    return nil
+                }
+            #endif
             if domain == AF_INET {
                 var address = sockaddr_in()
                 var size = socklen_t(MemoryLayout<sockaddr_in>.size)
