@@ -66,6 +66,20 @@ struct RootDaemonPackagingTests {
         #expect(sourceInstall.contains("/etc/qemu"))
     }
 
+    @Test func `split package hooks start daemon before server`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+        ] {
+            let script = try read(relative)
+            let daemon = try #require(script.range(of: "systemctl start barkvisor-daemon.service"))
+            let server = try #require(script.range(of: "systemctl start barkvisor-server.service"))
+            #expect(daemon.lowerBound < server.lowerBound)
+        }
+    }
+
     @Test func `linux device unit can apply a deb in-process`() throws {
         for relative in [
             "packaging/linux/barkvisor.service",
