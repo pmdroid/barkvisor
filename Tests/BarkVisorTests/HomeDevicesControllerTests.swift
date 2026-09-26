@@ -839,7 +839,11 @@ struct HomeDevicesControllerTests {
             minMemoryMB: 512,
         )
         let first = await ctl.scorePlacement(
-            request: request, listed: listed, local: local, bearer: nil,
+            request: request,
+            listed: listed,
+            local: local,
+            bearer: nil,
+            probeBudgetNanoseconds: responseMappingBudgetNanoseconds,
         )
         let callsAfterFirst = client.calls.count
         #expect(callsAfterFirst > 0)
@@ -968,7 +972,7 @@ struct HomeDevicesControllerTests {
                 listed: listed,
                 local: localFacts(running: 1),
                 bearer: nil,
-                probeBudgetNanoseconds: 80_000_000,
+                probeBudgetNanoseconds: HomeDeviceProxy.healthProbeBudgetNanoseconds,
             )
         }
         let callsAfterTimeout = client.calls.count
@@ -1023,6 +1027,7 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
     private var stalls: Set<String> = []
     private var parked: [CheckedContinuation<Void, Never>] = []
     private var released = false
+    private var cancelled = false
     private var _calls: [RecordingProxyClient.Call] = []
     private var openStalls = 0
 
@@ -1051,6 +1056,7 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
     func release() {
         lock.lock()
         released = true
+        cancelled = false
         let parked = self.parked
         self.parked = []
         openStalls = 0
@@ -1068,7 +1074,7 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
                     self.park(continuation)
                 }
             } onCancel: {
-                self.noteCancel()
+                self.cancelParked()
             }
             throw CancellationError()
         }
@@ -1077,7 +1083,7 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
 
     private func park(_ continuation: CheckedContinuation<Void, Never>) {
         lock.lock()
-        if released {
+        if released || cancelled {
             lock.unlock()
             continuation.resume()
             return
@@ -1087,7 +1093,16 @@ private final class StallingProxyClient: HomeDeviceProxyClient, @unchecked Senda
         lock.unlock()
     }
 
-    private func noteCancel() {}
+    private func cancelParked() {
+        lock.lock()
+        cancelled = true
+        let parked = self.parked
+        self.parked = []
+        lock.unlock()
+        for continuation in parked {
+            continuation.resume()
+        }
+    }
 
     private func record(_ request: HomeDeviceProxyRequest) -> Bool {
         let key = "\(request.url.host ?? ""):\(request.url.port ?? 0)\(request.url.path)"
