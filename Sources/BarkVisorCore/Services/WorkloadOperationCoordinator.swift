@@ -197,7 +197,7 @@ public actor WorkloadOperationCoordinator {
         }
         let outcome = Outcome(kind: kind)
         outcomes[key] = outcome
-        let task = Task.detached { () -> Result<AnySendable, Error> in
+        let task = Task { () -> Result<AnySendable, Error> in
             do {
                 let value = try await self.execute(
                     workloadID: workloadID,

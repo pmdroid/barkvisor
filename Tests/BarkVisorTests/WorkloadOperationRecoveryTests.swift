@@ -291,7 +291,8 @@ struct WorkloadOperationRecoveryTests {
         }
         #expect(harness.compose.pull - beforePull == pulledAgain)
         #expect(harness.compose.up - beforeUp == appliedAgain)
-        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: open[0].id))
+        let accepted = try #require(open.first)
+        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: accepted.id))
         #expect(operation.status == WorkloadOperationStatus.completed)
     }
 
@@ -454,6 +455,7 @@ struct WorkloadOperationRecoveryTests {
             workloadID: harness.vm.id,
             kind: WorkloadOperationKind.appTeardown,
             requestedGeneration: harness.vm.specGeneration,
+            projectPath: harness.project.path,
         )
         try await harness.run {
             try await ApplicationDeployment.continueTeardown(
@@ -611,10 +613,13 @@ private final class UpdateHarness: @unchecked Sendable {
     }
 
     func update() async throws {
-        try await ApplicationLifecycleService.updateImages(
+        try await ApplicationDeployment.performImageUpdate(
             vm: &vm,
             db: db.pool,
             dataDir: db.dir,
+            operation: nil,
+            dataMigration: nil,
+            progress: nil,
         )
     }
 }

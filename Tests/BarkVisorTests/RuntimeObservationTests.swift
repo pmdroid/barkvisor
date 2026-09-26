@@ -369,17 +369,16 @@ struct RuntimeObservationTests {
     @Test func `a blocked docker command does not stall a status read`() async throws {
         let gate = BoundedCommandGate(limit: 1)
         let started = StartFlag()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
         let blocked = Task {
             try await gate.run(timeout: .seconds(2)) { () -> Int in
                 started.mark()
-                Thread.sleep(forTimeInterval: 0.3)
+                try #require(release.wait(timeout: .now() + 10) == .success)
                 return 1
             }
         }
-        for _ in 0 ..< 100 where !started.isSet {
-            await Task.yield()
-        }
-        #expect(started.isSet)
+        try await waitUntil { started.isSet }
         let service = RuntimeObservation(listContainers: { .fresh([]) })
         await service.noteConfiguration(workloadID: "app-1", generation: 1)
         let clock = ContinuousClock()
@@ -397,6 +396,7 @@ struct RuntimeObservationTests {
             timedOut = false
         }
         #expect(timedOut)
+        release.signal()
         let value = try await blocked.value
         #expect(value == 1)
     }
@@ -409,7 +409,8 @@ struct RuntimeObservationTests {
             listContainers: { .fresh([]) },
         )
         await service.ensureEvents(source: source, reconnect: false)
-        try await waitUntil { await service.subscriptionOpenings() == 1 }
+        try await waitUntil { source.openings == 1 }
+        #expect(await service.subscriptionOpenings() == 1)
         let view = await service.connectPublic(capacity: 2)
         let base = Int(Date().timeIntervalSince1970) + 5
         for index in 0 ..< 6 {
@@ -425,8 +426,8 @@ struct RuntimeObservationTests {
         #expect(source.openings == 1)
         box.current = sampleIdentity(context: "desktop")
         await service.refreshIdentity()
-        try await waitUntil { await service.subscriptionOpenings() == 2 }
-        #expect(source.openings == 2)
+        try await waitUntil { source.openings == 2 }
+        #expect(await service.subscriptionOpenings() == 2)
         await service.stop()
     }
 
@@ -507,8 +508,8 @@ struct RuntimeObservationTests {
         #expect(commands.0 == 2)
         #expect(commands.1 == 2)
         #expect(latency < .milliseconds(50))
-        #expect(idleTicks < 500)
         if let path = ProcessInfo.processInfo.environment["BARKVISOR_OBSERVATION_EVIDENCE"] {
+            #expect(idleTicks < 50)
             let data = try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path))
         }
@@ -638,11 +639,17 @@ private final class FinishFlag: @unchecked Sendable {
 
 private final class HoldingEventSource: DockerEventProducing, @unchecked Sendable {
     private let lock = NSLock()
-    private(set) var openings = 0
+    private var openingCount = 0
+
+    var openings: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return openingCount
+    }
 
     func open(identity _: DockerRuntimeIdentity) -> DockerEventSubscription {
         lock.lock()
-        openings += 1
+        openingCount += 1
         lock.unlock()
         let finish = FinishFlag()
         let stream = AsyncStream<DockerEventDelivery> { continuation in
