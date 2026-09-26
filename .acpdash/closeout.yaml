@@ -1,6 +1,9 @@
 # ACPDash pins this policy from the project base branch for each issue revision.
 # BDD scenarios, when declared on an issue, require Cucumber automatically.
 version: 1
+# Each command gets a fresh allowance after corrective feedback to its exhaustion question.
+retry:
+  maxFailedAttemptsPerItem: 5
 items:
   - id: swift-tests
     kind: command
