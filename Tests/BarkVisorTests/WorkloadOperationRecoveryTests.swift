@@ -284,8 +284,8 @@ struct WorkloadOperationRecoveryTests {
         }
         #expect(harness.compose.pull - beforePull == pulledAgain)
         #expect(harness.compose.up - beforeUp == appliedAgain)
-        let operationID = try #require(open.first).id
-        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: operationID))
+        let accepted = try #require(open.first)
+        let operation = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: accepted.id))
         #expect(operation.status == WorkloadOperationStatus.completed)
     }
 
@@ -334,10 +334,13 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await ApplicationLifecycleService.updateImages(
+                    try await ApplicationDeployment.performImageUpdate(
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
+                        operation: nil,
+                        dataMigration: DataMigrationDecision(backupReference: nil),
+                        progress: nil,
                     )
                 }
             }
@@ -367,10 +370,13 @@ struct WorkloadOperationRecoveryTests {
         try await harness.run {
             try await WorkloadEffectGate.$healthTimeout.withValue(0) {
                 await expectBarkVisorError {
-                    try await ApplicationLifecycleService.updateImages(
+                    try await ApplicationDeployment.performImageUpdate(
                         vm: &harness.vm,
                         db: harness.db.pool,
                         dataDir: harness.db.dir,
+                        operation: nil,
+                        dataMigration: DataMigrationDecision(backupReference: "snap-1"),
+                        progress: nil,
                     )
                 }
             }
@@ -422,15 +428,30 @@ struct WorkloadOperationRecoveryTests {
         let saved = harness.vm
         try await harness.db.pool.write { db in try saved.insert(db) }
         harness.compose.failStop = true
+        let accepted = try await WorkloadOperationStore.accept(
+            db: harness.db.pool,
+            idempotencyKey: nil,
+            workloadID: harness.vm.id,
+            kind: WorkloadOperationKind.appTeardown,
+            requestedGeneration: harness.vm.specGeneration,
+            projectPath: harness.project.path,
+        )
         try await harness.run {
-            await ApplicationLifecycleService.down(vm: harness.vm, dataDir: harness.db.dir)
+            await expectBarkVisorError {
+                try await ApplicationDeployment.continueTeardown(
+                    record: accepted.record,
+                    vm: harness.vm,
+                    db: harness.db.pool,
+                    dataDir: harness.db.dir,
+                    finishCleanup: false,
+                )
+            }
         }
         #expect(FileManager.default.fileExists(atPath: marker.path))
         let failed = try await harness.db.pool.read { db in
             try WorkloadOperationRecord.filter(Column("kind") == WorkloadOperationKind.appTeardown).fetchOne(db)
         }
-        #expect(failed?.status == WorkloadOperationStatus.failed)
-        #expect(failed?.recoveryOutcome == ApplicationReadiness.outcomeCleanupIncomplete)
+        #expect(failed?.status == WorkloadOperationStatus.running)
         #expect(failed?.isRetryable == true)
         #expect(harness.compose.down == 0)
         harness.compose.failStop = false
@@ -572,10 +593,13 @@ private final class UpdateHarness: @unchecked Sendable {
     }
 
     func update() async throws {
-        try await ApplicationLifecycleService.updateImages(
+        try await ApplicationDeployment.performImageUpdate(
             vm: &vm,
             db: db.pool,
             dataDir: db.dir,
+            operation: nil,
+            dataMigration: nil,
+            progress: nil,
         )
     }
 }
