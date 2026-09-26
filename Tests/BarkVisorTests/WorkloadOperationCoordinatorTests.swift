@@ -156,10 +156,10 @@ struct WorkloadOperationCoordinatorTests {
             kind: .reconcile,
             load: { Self.running },
         ) { lease -> Bool in
-            let newer = WorkloadObservation(generation: lease.generation + 1, state: "running", exists: true)
-            let same = WorkloadObservation(generation: lease.generation, state: "running", exists: true)
-            let starting = WorkloadObservation(generation: lease.generation, state: "starting", exists: true)
-            let deleted = WorkloadObservation(generation: lease.generation, state: "running", exists: false)
+            let newer = LeaseObservation(generation: lease.generation + 1, state: "running", exists: true)
+            let same = LeaseObservation(generation: lease.generation, state: "running", exists: true)
+            let starting = LeaseObservation(generation: lease.generation, state: "starting", exists: true)
+            let deleted = LeaseObservation(generation: lease.generation, state: "running", exists: false)
             let newerAllowed = await coordinator.allowsWrite(lease: lease, current: newer)
             let sameAllowed = await coordinator.allowsWrite(lease: lease, current: same)
             let startingAllowed = await coordinator.allowsWrite(lease: lease, current: starting)
@@ -191,7 +191,7 @@ struct WorkloadOperationCoordinatorTests {
                 workloadID: "gone",
                 operationID: "start-gone",
                 kind: .start,
-                load: { WorkloadObservation(generation: 1, state: "absent", exists: false) },
+                load: { LeaseObservation(generation: 1, state: "absent", exists: false) },
             ) { _ in
                 await runs.increment()
             }
@@ -262,8 +262,8 @@ struct WorkloadOperationCoordinatorTests {
         #expect(WorkloadOperationCoordinator.operationHeader(from: nil) == nil)
     }
 
-    private static let running = WorkloadObservation(generation: 3, state: "running", exists: true)
-    private static let stopped = WorkloadObservation(generation: 3, state: "stopped", exists: true)
+    private static let running = LeaseObservation(generation: 3, state: "running", exists: true)
+    private static let stopped = LeaseObservation(generation: 3, state: "stopped", exists: true)
 }
 
 private actor Counter {
