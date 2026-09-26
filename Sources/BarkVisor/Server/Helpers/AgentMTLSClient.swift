@@ -69,6 +69,31 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         }
     }
 
+    public func sendClosingConnect(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
+        let http: HTTPClient
+        do {
+            http = try AgentMTLSRuntime.shared.ephemeralClient(
+                for: material,
+                presentationCertificatePEM: presentationCertificatePEM,
+                trustCertificatePEMs: trustCertificatePEMs,
+                timeoutSeconds: timeoutSeconds,
+            )
+        } catch {
+            throw HomeDeviceProxyError.classify(error)
+        }
+        do {
+            let response = try await executeClosing(request, on: http)
+            Task { try? await http.shutdown() }
+            return response
+        } catch let error as HomeDeviceProxyError {
+            Task { try? await http.shutdown() }
+            throw error
+        } catch {
+            Task { try? await http.shutdown() }
+            throw HomeDeviceProxyError.classify(error)
+        }
+    }
+
     public func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
         CancellableProxyStream.make { continuation in
             do {
@@ -138,6 +163,54 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             throw HomeDeviceProxyError.classify(error)
         }
     }
+
+    private func executeClosing(
+        _ request: HomeDeviceProxyRequest,
+        on client: HTTPClient,
+    ) async throws -> HomeDeviceProxyResponse {
+        var outbound = HTTPClientRequest(url: request.url.absoluteString)
+        outbound.method = HTTPMethod(rawValue: request.method.uppercased())
+        for (name, value) in request.headers {
+            outbound.headers.replaceOrAdd(name: name, value: value)
+        }
+        if let body = request.body {
+            outbound.body = .bytes(body)
+        }
+        let response: HTTPClientResponse
+        do {
+            response = try await ProbeConnect.execute(
+                request: outbound,
+                client: client,
+                timeout: .seconds(timeoutSeconds),
+            )
+        } catch {
+            throw HomeDeviceProxyError.classify(error)
+        }
+        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
+        let headers = response.headers.map { ($0.name, $0.value) }
+        return HomeDeviceProxyResponse(
+            status: Int(response.status.code),
+            headers: headers,
+            body: Data(buffer.readableBytesView),
+        )
+    }
+}
+
+enum ProbeConnect {
+    static func execute(
+        request: HTTPClientRequest,
+        client: HTTPClient,
+        timeout: TimeAmount,
+    ) async throws -> HTTPClientResponse {
+        let http = client
+        let operation: @Sendable () async throws -> HTTPClientResponse = {
+            try await http.execute(request, timeout: timeout)
+        }
+        let onCancel: @Sendable () -> Void = {
+            http.shutdown(queue: DispatchQueue.global()) { _ in }
+        }
+        return try await withTaskCancellationHandler(operation: operation, onCancel: onCancel)
+    }
 }
 
 /// Process-wide NIO + HTTPClient cache. Clients are never shut down; the
@@ -174,6 +247,21 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
         )
         clients[key] = created
         return created
+    }
+
+    func ephemeralClient(
+        for material: HomeCertificateMaterial,
+        presentationCertificatePEM: String,
+        trustCertificatePEMs: [String],
+        timeoutSeconds: Int64,
+    ) throws -> HTTPClient {
+        try makeClient(
+            material: material,
+            presentationCertificatePEM: presentationCertificatePEM,
+            trustCertificatePEMs: trustCertificatePEMs,
+            timeoutSeconds: timeoutSeconds,
+            readTimeoutSeconds: timeoutSeconds,
+        )
     }
 
     private func makeClient(

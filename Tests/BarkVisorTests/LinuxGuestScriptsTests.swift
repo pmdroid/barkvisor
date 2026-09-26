@@ -434,9 +434,11 @@ struct LinuxGuestScriptsTests {
             .sorted()
         #expect(names == [
             "api-contract.feature",
+            "create-vm-placement.feature",
             "cross-device.feature",
             "guest-boot.feature",
             "host-network-extra-ip.feature",
+            "placement-score.feature",
             "template-list.feature",
         ])
     }

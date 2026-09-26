@@ -22,6 +22,7 @@ struct ApplianceUnitTests {
             "scripts/install-linux.sh",
             "scripts/build-linux-packages.sh",
             "packaging/homebrew/postinstall.sh",
+            "scripts/pkg-service-handoff.sh",
         ] {
             let script = try read(relative)
             #expect(script.contains("schema-version"), "\(relative)")

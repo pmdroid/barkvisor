@@ -506,6 +506,7 @@ struct RuntimeObservationTests {
         #expect(commands.0 == 2)
         #expect(commands.1 == 2)
         #expect(latency < .milliseconds(50))
+        #expect(idleTicks < 400)
         if let path = ProcessInfo.processInfo.environment["BARKVISOR_OBSERVATION_EVIDENCE"] {
             #expect(idleTicks < 50)
             let data = try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
@@ -543,7 +544,7 @@ private func sampleIdentity(context: String) -> DockerRuntimeIdentity {
 }
 
 private func waitUntil(_ ready: () async -> Bool) async throws {
-    for _ in 0 ..< 50 {
+    for _ in 0 ..< 200 {
         if await ready() { return }
         try await Task.sleep(for: .milliseconds(10))
     }

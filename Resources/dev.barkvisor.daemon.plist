@@ -4,24 +4,36 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>dev.barkvisor</string>
-    <key>Program</key>
-    <string>/usr/local/bin/barkvisor</string>
+    <string>dev.barkvisor.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/barkvisor</string>
+        <string>daemon</string>
+    </array>
+    <key>GroupName</key>
+    <string>barkvisor</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <!-- Do not reap QEMU children when launchd restarts the daemon (PAS-223). -->
     <key>AbandonProcessGroup</key>
     <true/>
     <key>WorkingDirectory</key>
     <string>/var/lib/barkvisor</string>
     <key>StandardOutPath</key>
-    <string>/var/log/barkvisor/server.log</string>
+    <string>/var/log/barkvisor/daemon.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/barkvisor/server.err</string>
+    <string>/var/log/barkvisor/daemon.err</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>BARKVISOR_SERVICE_NAME</key>
+        <string>BarkDaemon</string>
+        <key>BARKVISOR_DATA_DIR</key>
+        <string>/var/lib/barkvisor</string>
+        <key>BARKVISOR_SOCKET_DIR</key>
+        <string>/var/run/barkvisor</string>
+        <key>BARKVISOR_PROCESS_ROLE</key>
+        <string>bark-daemon</string>
         <key>PATH</key>
         <string>/usr/local/bin:/opt/homebrew/bin:/Applications/OrbStack.app/Contents/MacOS/xbin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
