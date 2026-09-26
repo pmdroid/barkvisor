@@ -48,7 +48,7 @@ public struct PackageInstallPlan: Sendable, Equatable {
     public var installArguments: [String]
     public var fixDependsExecutable: String?
     public var fixDependsArguments: [String]
-    public var restartExecutable: String
+    public var restartExecutable: String?
     public var restartArguments: [String]
 
     public var commandLines: [String] {
@@ -56,7 +56,9 @@ public struct PackageInstallPlan: Sendable, Equatable {
         if let fix = fixDependsExecutable {
             lines.append("\(fix) \(fixDependsArguments.joined(separator: " "))")
         }
-        lines.append("\(restartExecutable) \(restartArguments.joined(separator: " "))")
+        if let restartExecutable {
+            lines.append("\(restartExecutable) \(restartArguments.joined(separator: " "))")
+        }
         return lines
     }
 
@@ -96,8 +98,8 @@ public enum AppliancePackageInstaller {
                 installArguments: ["-pkg", packagePath, "-target", "/"],
                 fixDependsExecutable: nil,
                 fixDependsArguments: [],
-                restartExecutable: "/bin/bash",
-                restartArguments: ["/usr/local/libexec/barkvisor/pkg-service-handoff.sh"],
+                restartExecutable: nil,
+                restartArguments: [],
             )
         }
     }
@@ -408,20 +410,13 @@ public actor UpdateService {
             )
         }
 
-        let restart = try run(plan.restartExecutable, plan.restartArguments, 120)
-        if !restart.succeeded {
-            let err = (restart.stderrString + restart.stdoutString)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if release.packageKind == .pkg {
-                throw BarkVisorError.updateFailed(
-                    err.isEmpty
-                        ? "BarkDaemon or BarkServer did not become ready (exit \(restart.exitCode))"
-                        : err,
+        if let restartExecutable = plan.restartExecutable {
+            let restart = try run(restartExecutable, plan.restartArguments, 120)
+            if !restart.succeeded {
+                Log.server.warning(
+                    "Update installed; restart returned \(restart.exitCode). The Device may still be coming back.",
                 )
             }
-            Log.server.warning(
-                "Update installed; restart returned \(restart.exitCode). The Device may still be coming back.",
-            )
         }
         await progressHandler(1.0)
     }

@@ -137,8 +137,8 @@ struct UpdateServiceTests {
         let pkg = AppliancePackageInstaller.plan(kind: .pkg, packagePath: "/tmp/bv.pkg")
         #expect(pkg.installExecutable == "/usr/sbin/installer")
         #expect(pkg.installArguments == ["-pkg", "/tmp/bv.pkg", "-target", "/"])
-        #expect(pkg.restartExecutable == "/bin/bash")
-        #expect(pkg.restartArguments == ["/usr/local/libexec/barkvisor/pkg-service-handoff.sh"])
+        #expect(pkg.restartExecutable == nil)
+        #expect(pkg.restartArguments.isEmpty)
         #expect(!pkg.mentionsBrew)
         #expect(!pkg.commandLines.joined().contains("sudo"))
     }
