@@ -407,7 +407,8 @@ struct RuntimeObservationTests {
             listContainers: { .fresh([]) },
         )
         await service.ensureEvents(source: source, reconnect: false)
-        try await waitUntil { await service.subscriptionOpenings() == 1 }
+        try await waitUntil { source.openings == 1 }
+        #expect(await service.subscriptionOpenings() == 1)
         let view = await service.connectPublic(capacity: 2)
         let base = Int(Date().timeIntervalSince1970) + 5
         for index in 0 ..< 6 {
@@ -423,8 +424,8 @@ struct RuntimeObservationTests {
         #expect(source.openings == 1)
         box.current = sampleIdentity(context: "desktop")
         await service.refreshIdentity()
-        try await waitUntil { await service.subscriptionOpenings() == 2 }
-        #expect(source.openings == 2)
+        try await waitUntil { source.openings == 2 }
+        #expect(await service.subscriptionOpenings() == 2)
         await service.stop()
     }
 
@@ -636,11 +637,17 @@ private final class FinishFlag: @unchecked Sendable {
 
 private final class HoldingEventSource: DockerEventProducing, @unchecked Sendable {
     private let lock = NSLock()
-    private(set) var openings = 0
+    private var openingCount = 0
+
+    var openings: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return openingCount
+    }
 
     func open(identity _: DockerRuntimeIdentity) -> DockerEventSubscription {
         lock.lock()
-        openings += 1
+        openingCount += 1
         lock.unlock()
         let finish = FinishFlag()
         let stream = AsyncStream<DockerEventDelivery> { continuation in
