@@ -212,6 +212,7 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl enable barkvisor-server.service
   systemctl try-restart barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-server.service >/dev/null 2>&1 || true
+  systemctl start barkvisor-daemon.service >/dev/null 2>&1 || true
   systemctl start barkvisor-server.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
   echo "Start with: systemctl start barkvisor-daemon.service barkvisor-server.service"
