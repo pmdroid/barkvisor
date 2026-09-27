@@ -76,7 +76,7 @@ actor HomeDeviceReachabilityMonitor {
 
 private final class ReportBridge: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<HomeDeviceHealthReport, Never>?
+    private var waiters: [CheckedContinuation<HomeDeviceHealthReport, Never>] = []
     private var report: HomeDeviceHealthReport?
 
     func wait() async -> HomeDeviceHealthReport {
@@ -87,7 +87,7 @@ private final class ReportBridge: @unchecked Sendable {
                 continuation.resume(returning: report)
                 return
             }
-            self.continuation = continuation
+            waiters.append(continuation)
             lock.unlock()
         }
     }
@@ -95,9 +95,11 @@ private final class ReportBridge: @unchecked Sendable {
     func succeed(_ report: HomeDeviceHealthReport) {
         lock.lock()
         self.report = report
-        let continuation = self.continuation
-        self.continuation = nil
+        let pending = waiters
+        waiters.removeAll()
         lock.unlock()
-        continuation?.resume(returning: report)
+        for waiter in pending {
+            waiter.resume(returning: report)
+        }
     }
 }
