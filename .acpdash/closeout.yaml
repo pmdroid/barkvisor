@@ -24,6 +24,7 @@ items:
     skill: acpdash-review
     providers: [codex]
     differentProvider: true
+    failOn: P1
   - id: ci
     kind: ci
   - id: review-threads
