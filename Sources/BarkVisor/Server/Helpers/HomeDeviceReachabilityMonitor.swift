@@ -44,6 +44,10 @@ actor HomeDeviceReachabilityMonitor {
         return report
     }
 
+    func inflightWaiterCount() -> Int {
+        inflight?.waiterCount() ?? 0
+    }
+
     func replace(_ devices: [HomeDeviceHealthSnapshot]) {
         statusByHostId = Dictionary(
             uniqueKeysWithValues: devices.compactMap { device in
@@ -90,6 +94,12 @@ private final class ReportBridge: @unchecked Sendable {
             waiters.append(continuation)
             lock.unlock()
         }
+    }
+
+    func waiterCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return waiters.count
     }
 
     func succeed(_ report: HomeDeviceHealthReport) {

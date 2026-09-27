@@ -19,7 +19,6 @@ struct HomeDeviceReachabilityMonitorTests {
         )
         let park = ProbePark()
         let makes = MakeCounter()
-        let started = ContinuousClock.now
         async let first: HomeDeviceHealthReport = monitor.joinProbe {
             makes.record()
             await park.hold()
@@ -34,7 +33,10 @@ struct HomeDeviceReachabilityMonitorTests {
             makes.record()
             return report
         }
-        try? await Task.sleep(for: .milliseconds(50))
+        while await monitor.inflightWaiterCount() < 2 {
+            await Task.yield()
+        }
+        let started = ContinuousClock.now
         park.release()
         let results = await [first, second, third]
         let elapsed = started.duration(to: .now)
