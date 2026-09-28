@@ -75,3 +75,26 @@ struct FailFastDockerRunner: DockerCommandRunning {
         throw BarkVisorError.internalError("test invoked live docker")
     }
 }
+
+/// Reports every container as already stopped so a teardown goes straight to `compose down`.
+final class TeardownComposeStub: ComposeCommandRunning, @unchecked Sendable {
+    private(set) var stop = 0
+    private(set) var down = 0
+
+    func run(
+        arguments: [String],
+        projectDirectory _: URL,
+        timeout _: TimeInterval,
+    ) throws -> CommandResult {
+        if arguments.contains("stop") { stop += 1 }
+        if arguments.contains("down") { down += 1 }
+        if arguments.contains("ps") {
+            return CommandResult(
+                exitCode: 0,
+                stdout: Data("{\"State\":\"exited\"}\n".utf8),
+                stderr: Data(),
+            )
+        }
+        return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
+    }
+}

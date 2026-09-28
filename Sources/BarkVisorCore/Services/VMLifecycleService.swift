@@ -199,6 +199,7 @@ public enum VMLifecycleService {
         vmManager: VMManager,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        dataDir: URL,
         operationID: String? = nil,
     ) async throws -> (taskID: String, vmName: String) {
         let vm = try await db.read { db in try VM.fetchOne(db, key: id) }
@@ -233,7 +234,14 @@ public enum VMLifecycleService {
                     kind: .delete,
                     load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
                 ) { _ in
-                    try await deleteVMResources(vm: vm, keepDisk: keepDisk, db: db, holdingSlot: true)
+                    try await deleteVMResources(
+                        vm: vm,
+                        keepDisk: keepDisk,
+                        db: db,
+                        dataDir: dataDir,
+                        holdingSlot: true,
+                        operationID: deleteOperationID,
+                    )
                     _ = try await db.write { db in try VM.deleteOne(db, key: id) }
                 }
                 return nil

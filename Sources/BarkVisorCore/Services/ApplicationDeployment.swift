@@ -667,7 +667,19 @@ enum ApplicationDeployment {
             return
         }
         try await checkpoint(operation: record, db: db, phase: "before_file_cleanup")
-        try ComposeRuntime.down(id: workloadID, project: project, dataDir: dataDir)
+        do {
+            try ComposeRuntime.down(id: workloadID, project: project, dataDir: dataDir)
+        } catch {
+            _ = try? await WorkloadOperationStore.fail(
+                db: db,
+                operationID: record.id,
+                attemptID: record.attemptID,
+                phase: "before_file_cleanup",
+                recoveryOutcome: ApplicationReadiness.outcomeCleanupIncomplete,
+                error: error.localizedDescription,
+            )
+            throw error
+        }
         ComposeRuntime.removeProject(id: workloadID, dataDir: dataDir)
         guard try await WorkloadOperationStore.setPhase(
             db: db,

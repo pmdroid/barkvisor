@@ -445,7 +445,8 @@ struct VMController: RouteCollection {
         let operationID = Self.operationID(req, action: "delete", workloadID: id)
         let (taskID, vmName) = try await VMLifecycleService.deleteVM(
             id: id, keepDisk: keepDisk, vmManager: vmManager,
-            backgroundTasks: backgroundTasks, db: req.db, operationID: operationID,
+            backgroundTasks: backgroundTasks, db: req.db, dataDir: Config.dataDir,
+            operationID: operationID,
         )
 
         AuditService.log(

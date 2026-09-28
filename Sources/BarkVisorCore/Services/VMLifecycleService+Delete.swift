@@ -35,10 +35,18 @@ extension VMLifecycleService {
         vm: VM,
         keepDisk: Bool,
         db: DatabasePool,
+        dataDir: URL,
         holdingSlot: Bool = false,
+        operationID: String? = nil,
     ) async throws {
         if vm.isApplication {
-            await ApplicationLifecycleService.down(vm: vm, holdingSlot: holdingSlot)
+            try await ApplicationLifecycleService.down(
+                vm: vm,
+                db: db,
+                dataDir: dataDir,
+                operationID: operationID,
+                holdingSlot: holdingSlot,
+            )
         }
         if let bootDiskId = vm.bootDiskId, !bootDiskId.isEmpty {
             try await deleteOrDetachBootDisk(
@@ -58,14 +66,14 @@ extension VMLifecycleService {
         GPUPassthroughService.releaseVFIO(vm.decodedGPUDevices)
 
         if vm.cloudInitPath != nil {
-            let ciDir = Config.dataDir.appendingPathComponent("cloud-init/\(vm.id)")
+            let ciDir = dataDir.appendingPathComponent("cloud-init/\(vm.id)")
             try? FileManager.default.removeItem(at: ciDir)
         }
 
-        let fwDir = Config.dataDir.appendingPathComponent("efivars/\(vm.id)")
+        let fwDir = dataDir.appendingPathComponent("efivars/\(vm.id)")
         try? FileManager.default.removeItem(at: fwDir)
 
-        let tpmDir = Config.dataDir.appendingPathComponent("tpm/\(vm.id)")
+        let tpmDir = dataDir.appendingPathComponent("tpm/\(vm.id)")
         try? FileManager.default.removeItem(at: tpmDir)
 
         if let netId = vm.networkId {

@@ -192,6 +192,7 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
                 vmManager: vmManager,
                 backgroundTasks: tasks,
                 db: db,
+                dataDir: Config.dataDir,
             )
             try await waitForDelete(taskID)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "deleted", runtime: runtime)

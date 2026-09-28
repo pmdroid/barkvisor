@@ -479,8 +479,7 @@ struct WorkloadOperationRecoveryTests {
         #expect(failed?.status == WorkloadOperationStatus.failed)
     }
 
-    @Test(.disabled("teardown does not record a deployment operation"))
-    func `failed teardown keeps files until a later retry removes them`() async throws {
+    @Test func `failed teardown keeps files until a later retry removes them`() async throws {
         let harness = try await UpdateHarness()
         try harness.writeProject(yaml: "services:\n  web:\n    image: example/web:1\n", env: nil)
         let marker = harness.volumeFile
