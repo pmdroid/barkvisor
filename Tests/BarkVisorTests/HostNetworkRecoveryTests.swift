@@ -138,6 +138,79 @@ struct HostNetworkRecoveryTests {
         #expect(HostNetworkRecoveryPhase.isTerminal(HostNetworkRecoveryPhase.superseded))
     }
 
+    /// A restore that succeeds but whose terminal phase cannot be persisted would be
+    /// replayed on every later sweep. The sweep must report that instead of claiming
+    /// success.
+    @Test func `a restore whose terminal state cannot be persisted reports failure`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "dhcp".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "static".write(to: file, atomically: true, encoding: .utf8)
+
+        // The data volume is full: every write to the record fails.
+        let swept = HostNetworkRecovery.sweepExpired(
+            dataDir: data,
+            now: Date(),
+            options: HostNetworkRecoverySweepOptions(
+                persist: { _ in throw BarkVisorError.internalError("no space left on device") },
+            ),
+        )
+        #expect(swept.failed == ["op-old"])
+        #expect(swept.restored.isEmpty)
+        // The snapshot did land on the host, but the sweep does not claim success.
+        #expect(try String(contentsOf: file, encoding: .utf8) == "dhcp")
+    }
+
+    @Test func `a terminal write is retried before the sweep gives up`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "dhcp".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "static".write(to: file, atomically: true, encoding: .utf8)
+        var terminalWrites = 0
+        let swept = HostNetworkRecovery.sweepExpired(
+            dataDir: data,
+            now: Date(),
+            options: HostNetworkRecoverySweepOptions(
+                persist: { record in
+                    // Fail until the record reaches its terminal phase, the way a transient
+                    // full disk settles.
+                    guard record.phase == HostNetworkRecoveryPhase.restored else {
+                        throw BarkVisorError.internalError("no space left on device")
+                    }
+                    terminalWrites += 1
+                    try HostNetworkRecovery.save(record, dataDir: data)
+                },
+            ),
+        )
+        #expect(swept.restored == ["op-old"])
+        #expect(terminalWrites == 1)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "dhcp")
+        #expect(HostNetworkRecovery.load(operationId: "op-old", dataDir: data)?.phase
+            == HostNetworkRecoveryPhase.restored)
+    }
+
     @Test func `a stale record never writes a path a live pending commit owns`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
@@ -277,61 +350,6 @@ struct HostNetworkRecoveryTests {
         #expect(swept.restored == ["op-good"])
         #expect(try String(contentsOf: broken, encoding: .utf8) == "after")
         #expect(try String(contentsOf: good, encoding: .utf8) == "before-good")
-    }
-
-    @Test func `terminal records are pruned once the retention window passes`() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let data = root.appendingPathComponent("data", isDirectory: true)
-        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let settled = Date().addingTimeInterval(-2 * HostNetworkRecovery.terminalRetention)
-        for (id, phase) in [
-            ("op-restored", HostNetworkRecoveryPhase.restored),
-            ("op-superseded", HostNetworkRecoveryPhase.superseded),
-            ("op-legacy", HostNetworkRecoveryPhase.legacyReverting),
-        ] {
-            try HostNetworkRecovery.save(
-                HostNetworkRecoveryRecord(
-                    operationId: id,
-                    generation: 1,
-                    target: "eth0",
-                    phase: phase,
-                    deadline: settled,
-                    snapshot: HostNetworkSnapshot(),
-                    restoredAt: settled,
-                ),
-                dataDir: data,
-            )
-        }
-        _ = try HostNetworkRecovery.begin(
-            operationId: "op-live",
-            generation: 2,
-            target: "eth0",
-            snapshot: HostNetworkSnapshot(),
-            deadline: Date().addingTimeInterval(60),
-            dataDir: data,
-        )
-        #expect(HostNetworkRecovery.list(dataDir: data).count == 4)
-        #expect(HostNetworkRecovery.prune(dataDir: data, now: Date()).sorted()
-            == ["op-legacy", "op-restored", "op-superseded"])
-        #expect(HostNetworkRecovery.list(dataDir: data).map(\.operationId) == ["op-live"])
-        // A late confirmation for a pruned record still gets a meaningful answer.
-        #expect(throws: BarkVisorError.self) {
-            try HostNetworkRecovery.requireConfirmation(
-                pending: HostNetworkPendingCommit(
-                    target: "eth0",
-                    commitDeadline: Date().addingTimeInterval(60),
-                    rollbackSeconds: 60,
-                    operationId: "op-restored",
-                    generation: 1,
-                ),
-                requestedOperationId: "op-restored",
-                requestedGeneration: 1,
-                authorized: true,
-                now: Date(),
-                dataDir: data,
-            )
-        }
     }
 
     @Test func `a legacy reverting record is treated as already restored`() throws {

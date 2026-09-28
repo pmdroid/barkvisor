@@ -62,6 +62,10 @@ public struct HostNetworkRecoveryRecord: Codable, Equatable, Sendable {
     public var phase: String
     public var deadline: Date
     public var snapshot: HostNetworkSnapshot
+    /// When the apply began. Together with `generation` this totally orders records for a
+    /// target, which `generation` alone does not: an ordinary apply that sends no
+    /// generation gets 1 every time.
+    public var startedAt: Date?
     /// Restore attempts made so far. Only failures increment it.
     public var restoreAttempts: Int
     public var lastRestoreError: String?
@@ -74,6 +78,7 @@ public struct HostNetworkRecoveryRecord: Codable, Equatable, Sendable {
         phase: String,
         deadline: Date,
         snapshot: HostNetworkSnapshot,
+        startedAt: Date? = nil,
         restoreAttempts: Int = 0,
         lastRestoreError: String? = nil,
         restoredAt: Date? = nil,
@@ -84,14 +89,23 @@ public struct HostNetworkRecoveryRecord: Codable, Equatable, Sendable {
         self.phase = phase
         self.deadline = deadline
         self.snapshot = snapshot
+        self.startedAt = startedAt
         self.restoreAttempts = restoreAttempts
         self.lastRestoreError = lastRestoreError
         self.restoredAt = restoredAt
     }
 
+    /// Every host path this record may write or remove. Overlap is what makes a stale
+    /// snapshot dangerous: a Linux bridge snapshot always includes the shared
+    /// `/etc/systemd/network/90-barkvisor-*` units, so two different targets can claim the
+    /// same file.
+    var claimedPaths: Set<String> {
+        Set(snapshot.files.keys).union(snapshot.absentPaths)
+    }
+
     enum CodingKeys: String, CodingKey {
         case operationId, generation, target, phase, deadline, snapshot
-        case restoreAttempts, lastRestoreError, restoredAt
+        case startedAt, restoreAttempts, lastRestoreError, restoredAt
     }
 
     /// Records written before restore accounting existed decode with zeroed fields, so an
@@ -104,6 +118,7 @@ public struct HostNetworkRecoveryRecord: Codable, Equatable, Sendable {
         phase = try c.decode(String.self, forKey: .phase)
         deadline = try c.decode(Date.self, forKey: .deadline)
         snapshot = try c.decode(HostNetworkSnapshot.self, forKey: .snapshot)
+        startedAt = try c.decodeIfPresent(Date.self, forKey: .startedAt)
         restoreAttempts = try c.decodeIfPresent(Int.self, forKey: .restoreAttempts) ?? 0
         lastRestoreError = try c.decodeIfPresent(String.self, forKey: .lastRestoreError)
         restoredAt = try c.decodeIfPresent(Date.self, forKey: .restoredAt)
@@ -143,17 +158,20 @@ public struct HostNetworkRecoverySweepOptions {
     public var stampExists: ((String) -> Bool)?
     public var keepingExists: ((String) -> Bool)?
     public var restore: (HostNetworkSnapshot) throws -> Void
+    public var persist: ((HostNetworkRecoveryRecord) throws -> Void)?
 
     public init(
         pendingCommits: [HostNetworkPendingCommit]? = nil,
         stampExists: ((String) -> Bool)? = nil,
         keepingExists: ((String) -> Bool)? = nil,
         restore: @escaping (HostNetworkSnapshot) throws -> Void = { try HostNetworkRecovery.restore($0) },
+        persist: ((HostNetworkRecoveryRecord) throws -> Void)? = nil,
     ) {
         self.pendingCommits = pendingCommits
         self.stampExists = stampExists
         self.keepingExists = keepingExists
         self.restore = restore
+        self.persist = persist
     }
 }
 
@@ -181,6 +199,7 @@ public enum HostNetworkRecovery {
         snapshot: HostNetworkSnapshot,
         deadline: Date,
         dataDir: URL = Config.dataDir,
+        startedAt: Date = Date(),
     ) throws -> HostNetworkRecoveryRecord {
         try requireOperationId(operationId)
         let record = HostNetworkRecoveryRecord(
@@ -190,6 +209,7 @@ public enum HostNetworkRecovery {
             phase: HostNetworkRecoveryPhase.mutating,
             deadline: deadline,
             snapshot: snapshot,
+            startedAt: startedAt,
         )
         try save(record, dataDir: dataDir)
         return record
@@ -296,17 +316,25 @@ public enum HostNetworkRecovery {
         }
     }
 
-    /// Settles every expired recovery record that still owns its target.
+    /// Settles every expired recovery record that still owns what it would write.
     ///
-    /// The newest `generation` for a target owns that target's files. An older expired
-    /// record is marked `superseded` without writing anything, so it can never clobber a
-    /// newer confirmed apply — including after a daemon restart, because ownership is
+    /// Ownership is per claim, not per target. A record claims its target plus every host
+    /// path in its snapshot, and it may write only while no strictly newer record claims
+    /// any of them. Claims are compared across *all* targets, because a Linux bridge
+    /// snapshot always contains the shared `/etc/systemd/network/90-barkvisor-*` units that
+    /// every other bridge's snapshot also contains. Records are totally ordered by
+    /// `(generation, startedAt, operationId)`: `generation` alone is not enough, because an
+    /// ordinary apply that sends no generation records 1 every time.
+    ///
+    /// An outranked record is marked `superseded` and writes nothing, so it can never
+    /// clobber a newer apply — including after a daemon restart, because ownership is
     /// recomputed from the records on disk on every sweep. Each record is handled
     /// independently: a failed restore is recorded and retried on the next sweep without
     /// stopping the rest of the sweep.
     ///
     /// Callers run this inside the per-target `claimRevert` gate and re-check the commit
-    /// stamp after claiming.
+    /// stamp after claiming. That gate serialises same-target work; ownership is what keeps
+    /// overlapping paths safe across targets.
     @discardableResult
     public static func sweepExpired(
         dataDir: URL = Config.dataDir,
@@ -322,12 +350,11 @@ public enum HostNetworkRecovery {
         let keeping = options.keepingExists ?? { HostNetworkPendingCommitService.keepingExists($0, dataDir: dataDir) }
         let pendings = options.pendingCommits ?? HostNetworkPendingCommitService.listPending(dataDir: dataDir)
         prune(dataDir: dataDir, now: now)
-        let candidates = list(dataDir: dataDir)
+        let onDisk = list(dataDir: dataDir)
+        let ownership = HostNetworkRecoveryOwnership(records: onDisk)
+        let candidates = onDisk
             .filter { target == nil || $0.target == target }
-            .sorted { $0.generation == $1.generation ? $0.operationId < $1.operationId : $0.generation < $1.generation }
-        guard !candidates.isEmpty else { return result }
-        let owners = Dictionary(grouping: candidates, by: \.target)
-            .mapValues { group in group.map(\.generation).max() }
+            .sorted { ownership.order(of: $0) < ownership.order(of: $1) }
         for record in candidates {
             do {
                 switch try settle(
@@ -335,12 +362,18 @@ public enum HostNetworkRecovery {
                     SettleContext(
                         dataDir: dataDir,
                         now: now,
-                        ownerGeneration: owners[record.target] ?? record.generation,
                         pendings: pendings,
                         stampExists: stamped,
                         keepingExists: keeping,
                         restore: options.restore,
+                        persist: options.persist ?? { try HostNetworkRecovery.save($0, dataDir: dataDir) },
+                        // Re-read ownership immediately before the write, so an apply that
+                        // landed while this sweep was running still wins.
+                        outranked: {
+                            ownership.isOutranked(record, in: HostNetworkRecoveryOwnership(records: list(dataDir: dataDir)))
+                        },
                     ),
+                    ownership: ownership,
                 ) {
                 case .restored:
                     result.restored.append(record.operationId)
@@ -365,11 +398,12 @@ public enum HostNetworkRecovery {
     private struct SettleContext {
         var dataDir: URL
         var now: Date
-        var ownerGeneration: Int?
         var pendings: [HostNetworkPendingCommit]
         var stampExists: (String) -> Bool
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
+        var persist: (HostNetworkRecoveryRecord) throws -> Void
+        var outranked: () -> Bool
     }
 
     private enum Settlement {
@@ -383,13 +417,12 @@ public enum HostNetworkRecovery {
     private static func settle(
         _ record: HostNetworkRecoveryRecord,
         _ context: SettleContext,
+        ownership: HostNetworkRecoveryOwnership,
     ) throws -> Settlement {
         guard !HostNetworkRecoveryPhase.isTerminal(record.phase) else { return .skipped }
         guard context.now >= record.deadline else { return .skipped }
-        if let ownerGeneration = context.ownerGeneration, ownerGeneration > record.generation {
-            var next = record
-            next.phase = HostNetworkRecoveryPhase.superseded
-            try save(next, dataDir: context.dataDir)
+        if ownership.isOutranked(record) {
+            try markSuperseded(record, context: context)
             return .superseded
         }
         let live = context.pendings.filter { $0.target == record.target }
@@ -400,25 +433,76 @@ public enum HostNetworkRecovery {
         }
         var next = record
         next.phase = HostNetworkRecoveryPhase.restoring
-        try? save(next, dataDir: context.dataDir)
+        // Best effort: failing to note the attempt must not stop the restore, which is the
+        // safe direction when the host is mid-change.
+        try? context.persist(next)
+        if context.outranked() {
+            try markSuperseded(record, context: context)
+            return .superseded
+        }
         do {
             try context.restore(record.snapshot)
         } catch {
             next.phase = HostNetworkRecoveryPhase.restoreFailed
             next.restoreAttempts += 1
             next.lastRestoreError = String(describing: error)
-            try? save(next, dataDir: context.dataDir)
+            try? context.persist(next)
             return .failed
         }
         next.phase = HostNetworkRecoveryPhase.restored
         next.restoredAt = context.now
         next.lastRestoreError = nil
-        try? save(next, dataDir: context.dataDir)
+        do {
+            try persistTerminal(next, context: context)
+        } catch {
+            // The host files are restored but the terminal phase is not on disk, so the
+            // next sweep would restore them again. Report the failure instead of claiming
+            // success, and keep what we can on the record.
+            next.phase = HostNetworkRecoveryPhase.restoreFailed
+            next.restoreAttempts += 1
+            next.lastRestoreError = "snapshot restored but terminal state not persisted: "
+                + String(describing: error)
+            try? context.persist(next)
+            return .failed
+        }
         return .restored
+    }
+
+    private static func markSuperseded(
+        _ record: HostNetworkRecoveryRecord,
+        context: SettleContext,
+    ) throws {
+        var next = record
+        next.phase = HostNetworkRecoveryPhase.superseded
+        try context.persist(next)
+    }
+
+    /// Persists the terminal phase, retrying a couple of times. Losing this write is the
+    /// one way a completed restore could be replayed, so it gets more than one attempt
+    /// before the sweep reports a failure.
+    private static func persistTerminal(
+        _ record: HostNetworkRecoveryRecord,
+        context: SettleContext,
+        attempts: Int = 3,
+    ) throws {
+        var lastError: Error?
+        for _ in 0 ..< max(1, attempts) {
+            do {
+                try context.persist(record)
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? BarkVisorError.internalError("Host network recovery record could not be persisted")
     }
 
     /// Deletes terminal records once they are old enough that no live confirmation can
     /// still be waiting on them, so `list()` stays bounded.
+    ///
+    /// A terminal record is kept while it is still the only ownership evidence for an
+    /// unsettled one: pruning must never hand a target back to an older record that would
+    /// then restore its snapshot over newer configuration.
     @discardableResult
     public static func prune(
         dataDir: URL = Config.dataDir,
@@ -427,13 +511,20 @@ public enum HostNetworkRecovery {
     ) -> [String] {
         let dir = dataDir.appendingPathComponent("host-network/recovery", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        var pruned: [String] = []
-        for name in names where name.hasSuffix(".json") {
+        let all = names.compactMap { name -> HostNetworkRecoveryRecord? in
+            guard name.hasSuffix(".json") else { return nil }
             let url = dir.appendingPathComponent(name)
-            guard let data = try? Data(contentsOf: url),
-                  let record = try? JSONDecoder().decode(HostNetworkRecoveryRecord.self, from: data),
-                  HostNetworkRecoveryPhase.isTerminal(record.phase)
-            else { continue }
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(HostNetworkRecoveryRecord.self, from: data)
+        }
+        let unsettled = all.filter { !HostNetworkRecoveryPhase.isTerminal($0.phase) }
+        var pruned: [String] = []
+        for record in all where HostNetworkRecoveryPhase.isTerminal(record.phase) {
+            let mine = HostNetworkRecoveryOwnership.claims(of: record)
+            let stillNeeded = unsettled.contains { !$0.claimedPaths.isDisjoint(with: mine) }
+                || unsettled.contains { $0.target == record.target }
+            guard !stillNeeded else { continue }
+            let url = dir.appendingPathComponent("\(record.operationId).json")
             let settledAt = record.restoredAt
                 ?? (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
                 ?? record.deadline
