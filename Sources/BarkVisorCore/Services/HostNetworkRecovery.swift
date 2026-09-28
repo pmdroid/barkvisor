@@ -356,10 +356,13 @@ public enum HostNetworkRecovery {
         let stamped = options.stampExists ?? { HostNetworkPendingCommitService.stampExists($0, dataDir: dataDir) }
         let keeping = options.keepingExists ?? { HostNetworkPendingCommitService.keepingExists($0, dataDir: dataDir) }
         let pendings = options.pendingCommits ?? HostNetworkPendingCommitService.listPending(dataDir: dataDir)
+        // Read again inside the exclusion, where a commit that landed while the sweep was
+        // queued shows up. A test that pins the list keeps it.
+        let livePendings: () -> [HostNetworkPendingCommit] = {
+            options.pendingCommits ?? HostNetworkPendingCommitService.listPending(dataDir: dataDir)
+        }
         prune(dataDir: dataDir, now: now)
-        let onDisk = list(dataDir: dataDir)
-        let ownership = HostNetworkRecoveryOwnership(records: onDisk)
-        let candidates = onDisk.filter { target == nil || $0.target == target }
+        let candidates = list(dataDir: dataDir).filter { target == nil || $0.target == target }
         for record in candidates {
             do {
                 switch try settle(
@@ -376,13 +379,13 @@ public enum HostNetworkRecovery {
                             try HostNetworkPendingCommitService.withApplyGate(body)
                             return true
                         },
-                        // Re-read ownership inside that section, immediately before the
-                        // write, so an apply that landed while this sweep was running wins.
-                        outranked: {
-                            ownership.isOutranked(record, in: HostNetworkRecoveryOwnership(records: list(dataDir: dataDir)))
+                        reload: {
+                            (
+                                HostNetworkRecovery.load(operationId: record.operationId, dataDir: dataDir),
+                                livePendings(),
+                            )
                         },
                     ),
-                    ownership: ownership,
                 ) {
                 case .restored:
                     result.restored.append(record.operationId)
@@ -412,10 +415,24 @@ public enum HostNetworkRecovery {
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
         var persist: (HostNetworkRecoveryRecord) throws -> Void
-        /// Runs the re-check and the write with host network applies excluded. Returns
-        /// false when it declined to run the body because another holder owns the target.
+        /// Runs the decision and the write with host network applies excluded, in the lock
+        /// order an apply takes them. Returns false when it declined because another holder
+        /// owns the target's revert claim.
         var exclusive: (@escaping () throws -> Void) throws -> Bool
-        var outranked: () -> Bool
+        /// Re-reads this record and the live pending commits, for use inside the exclusion.
+        var reload: () -> (record: HostNetworkRecoveryRecord?, pendings: [HostNetworkPendingCommit])
+    }
+
+    /// True when a commit, a keeping marker or a live pending commit already owns the target.
+    private static func targetInUse(
+        _ target: String,
+        pendings: [HostNetworkPendingCommit],
+        _ context: SettleContext,
+    ) -> Bool {
+        let live = pendings.filter { $0.target == target }
+        return context.stampExists(target)
+            || context.keepingExists(target)
+            || HostNetworkPendingCommitService.blockingPending(target: target, existing: live) != nil
     }
 
     private enum Settlement {
@@ -429,71 +446,70 @@ public enum HostNetworkRecovery {
     private static func settle(
         _ record: HostNetworkRecoveryRecord,
         _ context: SettleContext,
-        ownership: HostNetworkRecoveryOwnership,
     ) throws -> Settlement {
+        // Read-only filters, so a record that is plainly not due costs no gate. They are
+        // repeated inside the exclusion, where they are authoritative: a commit that lands
+        // while this sweep waits can confirm the operation, write the commit stamp or take
+        // the target, and none of that is visible from here.
         guard !HostNetworkRecoveryPhase.isTerminal(record.phase) else { return .skipped }
         guard context.now >= record.deadline else { return .skipped }
-        if ownership.isOutranked(record) {
-            try markSuperseded(record, context: context)
-            return .superseded
-        }
-        let live = context.pendings.filter { $0.target == record.target }
-        if context.stampExists(record.target)
-            || context.keepingExists(record.target)
-            || HostNetworkPendingCommitService.blockingPending(target: record.target, existing: live) != nil {
-            return .deferred
-        }
-        var next = record
-        next.phase = HostNetworkRecoveryPhase.restoring
-        // Best effort: failing to note the attempt must not stop the restore, which is the
-        // safe direction when the host is mid-change.
-        try? context.persist(next)
+        guard !targetInUse(record.target, pendings: context.pendings, context) else { return .deferred }
+
         var outcome: Settlement = .deferred
-        var restoreError: Error?
-        // The re-check and the write share one exclusion with host network applies, so a
-        // concurrent apply on an overlapping target cannot write between them. Re-reading
-        // the records alone would still leave that window open.
+        // Every decision and every write happens inside the exclusion, against state read
+        // there. Re-reading outside it, or persisting `restoring` before taking it, could
+        // clobber a phase a concurrent commit just set.
         let ran = try context.exclusive {
-            if context.outranked() {
-                try markSuperseded(record, context: context)
+            let fresh = context.reload()
+            guard let current = fresh.record else { return }
+            guard !HostNetworkRecoveryPhase.isTerminal(current.phase) else { return }
+            guard context.now >= current.deadline else { return }
+            let ownership = HostNetworkRecoveryOwnership(records: HostNetworkRecovery.list(dataDir: context.dataDir))
+            if ownership.isOutranked(current) {
+                try markSuperseded(current, context: context)
                 outcome = .superseded
                 return
             }
+            if targetInUse(current.target, pendings: fresh.pendings, context) {
+                outcome = .deferred
+                return
+            }
+            var next = current
+            next.phase = HostNetworkRecoveryPhase.restoring
+            try? context.persist(next)
             do {
-                try context.restore(record.snapshot)
+                try context.restore(current.snapshot)
             } catch {
-                restoreError = error
+                next.phase = HostNetworkRecoveryPhase.restoreFailed
+                next.restoreAttempts += 1
+                next.lastRestoreError = String(describing: error)
+                try? context.persist(next)
+                outcome = .failed
+                return
+            }
+            next.phase = HostNetworkRecoveryPhase.restored
+            next.restoredAt = context.now
+            next.lastRestoreError = nil
+            do {
+                try persistTerminal(next, context: context)
+                outcome = .restored
+            } catch {
+                // The host files are restored but the terminal phase is not on disk, so the
+                // next sweep would restore them again. Report the failure instead of
+                // claiming success, and keep what we can on the record.
+                next.phase = HostNetworkRecoveryPhase.restoreFailed
+                next.restoreAttempts += 1
+                next.lastRestoreError = "snapshot restored but terminal state not persisted: "
+                    + String(describing: error)
+                try? context.persist(next)
+                outcome = .failed
             }
         }
         // The exclusion may decline to run the body at all, when another holder owns the
         // target's revert claim. Nothing was written, so the record must stay retryable
         // rather than be marked settled.
         guard ran else { return .deferred }
-        if case .superseded = outcome { return .superseded }
-        if let restoreError {
-            next.phase = HostNetworkRecoveryPhase.restoreFailed
-            next.restoreAttempts += 1
-            next.lastRestoreError = String(describing: restoreError)
-            try? context.persist(next)
-            return .failed
-        }
-        next.phase = HostNetworkRecoveryPhase.restored
-        next.restoredAt = context.now
-        next.lastRestoreError = nil
-        do {
-            try persistTerminal(next, context: context)
-        } catch {
-            // The host files are restored but the terminal phase is not on disk, so the
-            // next sweep would restore them again. Report the failure instead of claiming
-            // success, and keep what we can on the record.
-            next.phase = HostNetworkRecoveryPhase.restoreFailed
-            next.restoreAttempts += 1
-            next.lastRestoreError = "snapshot restored but terminal state not persisted: "
-                + String(describing: error)
-            try? context.persist(next)
-            return .failed
-        }
-        return .restored
+        return outcome
     }
 
     private static func markSuperseded(

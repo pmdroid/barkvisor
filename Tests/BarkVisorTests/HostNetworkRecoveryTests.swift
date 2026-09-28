@@ -177,6 +177,90 @@ struct HostNetworkRecoveryTests {
     /// would suppress the retry permanently and leave the expired host configuration in
     /// place, and the record sweep only restores files it captured, so nothing else undoes
     /// a restore that never happened.
+    /// A commit lands while the sweep is queued for the target claim. The sweep's read-only
+    /// checks all run before it waits, so it could pass them, take the claim afterwards and
+    /// restore its old snapshot over configuration that was just kept. The stamp check is
+    /// repeated inside the exclusion, where it is authoritative.
+    @Test func `a commit stamp that lands while the sweep waits blocks the restore`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "kept".write(to: file, atomically: true, encoding: .utf8)
+        let stamp = URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: "eth0", dataDir: data))
+
+        let swept = HostNetworkRecovery.sweepExpired(
+            dataDir: data,
+            now: Date(),
+            options: HostNetworkRecoverySweepOptions(
+                exclusive: { body in
+                    // The stamp appears after the read-only checks ran, before the body.
+                    try Data().write(to: stamp, options: .atomic)
+                    try body()
+                    return true
+                },
+            ),
+        )
+        #expect(swept.restored.isEmpty)
+        #expect(swept.deferred == ["op-old"])
+        #expect(try String(contentsOf: file, encoding: .utf8) == "kept")
+    }
+
+    /// A confirmation that marked the record `confirmed` while the sweep waited. Ownership
+    /// cannot catch this: a record never outranks itself, so the in-gate re-read of the
+    /// record's own phase is the only thing standing between the sweep and a restore that
+    /// would overwrite the confirmed configuration and persist `restored`.
+    @Test func `a record confirmed while the sweep waits is not restored`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "confirmed".write(to: file, atomically: true, encoding: .utf8)
+
+        let swept = HostNetworkRecovery.sweepExpired(
+            dataDir: data,
+            now: Date(),
+            options: HostNetworkRecoverySweepOptions(
+                // A confirmation marks the record before it writes the stamp, so the record
+                // is already terminal when the sweep's turn comes. No stamp here on purpose.
+                exclusive: { body in
+                    try HostNetworkRecovery.mark(
+                        "op-old",
+                        phase: HostNetworkRecoveryPhase.confirmed,
+                        dataDir: data,
+                    )
+                    try body()
+                    return true
+                },
+            ),
+        )
+        #expect(swept.restored.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "confirmed")
+        let record = HostNetworkRecovery.load(operationId: "op-old", dataDir: data)
+        #expect(record?.phase == HostNetworkRecoveryPhase.confirmed)
+        #expect(record?.restoredAt == nil)
+    }
+
     @Test func `a declined exclusion leaves the record retryable`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
@@ -211,12 +295,12 @@ struct HostNetworkRecoveryTests {
         #expect(swept.restored.isEmpty)
         #expect(swept.failed.isEmpty)
         #expect(!restores.didRestore)
-        // Nothing was written to the host, and the record is left non-terminal: the sweep
-        // notes `restoring` before it takes the gate, which is the same state a crash
-        // mid-restore leaves, and both mean "retry this".
+        // Nothing was written at all, to the host or to the record: the phase change is
+        // written inside the exclusion, so a declined body leaves the record untouched and
+        // retryable.
         #expect(try String(contentsOf: file, encoding: .utf8) == "static")
         let record = HostNetworkRecovery.load(operationId: "op-old", dataDir: data)
-        #expect(record?.phase == HostNetworkRecoveryPhase.restoring)
+        #expect(record?.phase == HostNetworkRecoveryPhase.mutating)
         #expect(record?.restoredAt == nil)
         #expect(record.map { !HostNetworkRecoveryPhase.isTerminal($0.phase) } == true)
 
