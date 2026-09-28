@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import type { PortForwardRule } from '../api/types'
+import { applyPortForwardBind, type BindableRule, type BindField } from '../utils/portForwardBind'
 import AppSelect from './ui/AppSelect.vue'
-
-type BindField = 'host' | 'hostIP'
-
-/** `hostIP` is the compose spelling of the same idea; a Workload rule uses `host`. */
-type BindableRule = PortForwardRule & { hostIP?: string }
 
 const props = withDefaults(defineProps<{ bindField?: BindField }>(), { bindField: 'host' })
 const model = defineModel<BindableRule[]>({ default: () => [] })
@@ -24,18 +20,9 @@ function updateRule(index: number, field: keyof PortForwardRule, value: any) {
   model.value = rules
 }
 
-/**
- * A blank bind means "every IPv4 interface", so an empty box drops the key
- * rather than storing `''`. Dropping also leaves the key absent on save,
- * which is what lets the API inherit a stored bind instead of widening it.
- */
 function setBind(index: number, raw: string) {
-  const bind = raw.trim()
   const rules = [...model.value]
-  const next: BindableRule = { ...rules[index] }
-  if (bind) next[props.bindField] = bind
-  else delete next[props.bindField]
-  rules[index] = next
+  rules[index] = applyPortForwardBind(rules[index], props.bindField, raw)
   model.value = rules
 }
 </script>
