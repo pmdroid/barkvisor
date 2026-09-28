@@ -212,8 +212,13 @@ struct HostNetworkRecoveryTests {
             ),
         )
         #expect(swept.restored.isEmpty)
-        #expect(swept.deferred == ["op-old"])
+        // The stamp means this target's changes were kept, so the operation is settled
+        // rather than left waiting: deferring here would keep the record unsettled forever,
+        // and retention keeps every settled record an unsettled one depends on.
+        #expect(swept.confirmed == ["op-old"])
         #expect(try String(contentsOf: file, encoding: .utf8) == "kept")
+        #expect(HostNetworkRecovery.load(operationId: "op-old", dataDir: data)?.phase
+            == HostNetworkRecoveryPhase.confirmed)
     }
 
     /// A confirmation that marked the record `confirmed` while the sweep waited. Ownership
@@ -404,9 +409,10 @@ struct HostNetworkRecoveryTests {
             now: Date(),
             options: HostNetworkRecoverySweepOptions(stampExists: { $0 == "eth0" }),
         )
-        #expect(swept.deferred == ["op-old"])
+        #expect(swept.confirmed == ["op-old"])
+        #expect(swept.restored.isEmpty)
         #expect(HostNetworkRecovery.load(operationId: "op-old", dataDir: data)?.phase
-            == HostNetworkRecoveryPhase.mutating)
+            == HostNetworkRecoveryPhase.confirmed)
         #expect(try String(contentsOf: file, encoding: .utf8) == "kept")
     }
 

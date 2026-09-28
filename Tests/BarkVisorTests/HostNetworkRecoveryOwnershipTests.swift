@@ -240,6 +240,65 @@ struct HostNetworkRecoveryOwnershipTests {
         #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br1")
     }
 
+    /// A newer confirmed apply leaves a commit stamp on the target, and the older expired
+    /// record must still be settled as superseded. A read-only target probe ahead of the
+    /// ownership decision would defer it on that stamp forever, and retention keeps every
+    /// settled record an unsettled one depends on, so `list()` would never shrink.
+    @Test func `a superseded record behind a newer commit stamp still settles`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let longAgo = Date().addingTimeInterval(-30 * HostNetworkRecovery.terminalRetention)
+
+        // The older record expired long ago and is still unsettled.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: longAgo,
+            dataDir: data,
+            startedAt: longAgo.addingTimeInterval(-120),
+        )
+        try "applied-by-old".write(to: file, atomically: true, encoding: .utf8)
+
+        // The newer apply was confirmed long ago and left a real commit stamp.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-new",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: longAgo,
+            dataDir: data,
+            startedAt: longAgo.addingTimeInterval(-60),
+        )
+        try HostNetworkRecovery.mark("op-new", phase: HostNetworkRecoveryPhase.confirmed, dataDir: data)
+        var owner = try #require(HostNetworkRecovery.load(operationId: "op-new", dataDir: data))
+        owner.restoredAt = longAgo
+        try HostNetworkRecovery.save(owner, dataDir: data)
+        let stamp = URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: "eth0", dataDir: data))
+        try FileManager.default.createDirectory(
+            at: stamp.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data().write(to: stamp, options: .atomic)
+        try "confirmed-by-new".write(to: file, atomically: true, encoding: .utf8)
+
+        // The first sweep settles the older record despite the stamp.
+        let first = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(first.superseded == ["op-old"])
+        #expect(first.deferred.isEmpty)
+        #expect(first.restored.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "confirmed-by-new")
+
+        // Nothing is unsettled now, so retention can prune the confirmed owner and `list()`
+        // stops growing.
+        #expect(HostNetworkRecovery.sweepExpired(dataDir: data, now: Date()).isEmpty)
+        #expect(HostNetworkRecovery.list(dataDir: data).map(\.operationId) == ["op-old"])
+    }
+
     /// `generation` comes from each request, so an old br0 record can carry generation 2
     /// while a much newer br1 record carries 1. Comparing generations across targets would
     /// hand the older apply the win over the shared networkd files.

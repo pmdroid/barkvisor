@@ -130,23 +130,27 @@ public struct HostNetworkRecoveryRecord: Codable, Equatable, Sendable {
 public struct HostNetworkRecoverySweepResult: Equatable, Sendable {
     public var restored: [String]
     public var superseded: [String]
+    /// Settled by a commit stamp already on the target, rather than restored.
+    public var confirmed: [String]
     public var failed: [String]
     public var deferred: [String]
 
     public init(
         restored: [String] = [],
         superseded: [String] = [],
+        confirmed: [String] = [],
         failed: [String] = [],
         deferred: [String] = [],
     ) {
         self.restored = restored
         self.superseded = superseded
+        self.confirmed = confirmed
         self.failed = failed
         self.deferred = deferred
     }
 
     public var isEmpty: Bool {
-        restored.isEmpty && superseded.isEmpty && failed.isEmpty && deferred.isEmpty
+        restored.isEmpty && superseded.isEmpty && confirmed.isEmpty && failed.isEmpty && deferred.isEmpty
     }
 }
 
@@ -370,7 +374,6 @@ public enum HostNetworkRecovery {
                     SettleContext(
                         dataDir: dataDir,
                         now: now,
-                        pendings: pendings,
                         stampExists: stamped,
                         keepingExists: keeping,
                         restore: options.restore,
@@ -391,6 +394,8 @@ public enum HostNetworkRecovery {
                     result.restored.append(record.operationId)
                 case .superseded:
                     result.superseded.append(record.operationId)
+                case .confirmed:
+                    result.confirmed.append(record.operationId)
                 case .deferred:
                     result.deferred.append(record.operationId)
                 case .failed:
@@ -410,7 +415,6 @@ public enum HostNetworkRecovery {
     private struct SettleContext {
         var dataDir: URL
         var now: Date
-        var pendings: [HostNetworkPendingCommit]
         var stampExists: (String) -> Bool
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
@@ -423,21 +427,11 @@ public enum HostNetworkRecovery {
         var reload: () -> (record: HostNetworkRecoveryRecord?, pendings: [HostNetworkPendingCommit])
     }
 
-    /// True when a commit, a keeping marker or a live pending commit already owns the target.
-    private static func targetInUse(
-        _ target: String,
-        pendings: [HostNetworkPendingCommit],
-        _ context: SettleContext,
-    ) -> Bool {
-        let live = pendings.filter { $0.target == target }
-        return context.stampExists(target)
-            || context.keepingExists(target)
-            || HostNetworkPendingCommitService.blockingPending(target: target, existing: live) != nil
-    }
-
     private enum Settlement {
         case restored
         case superseded
+        /// Settled by a commit stamp already on the target.
+        case confirmed
         case deferred
         case failed
         case skipped
@@ -447,13 +441,12 @@ public enum HostNetworkRecovery {
         _ record: HostNetworkRecoveryRecord,
         _ context: SettleContext,
     ) throws -> Settlement {
-        // Read-only filters, so a record that is plainly not due costs no gate. They are
-        // repeated inside the exclusion, where they are authoritative: a commit that lands
-        // while this sweep waits can confirm the operation, write the commit stamp or take
-        // the target, and none of that is visible from here.
+        // Only pure checks run before the gate. A read-only probe of the target would
+        // shadow the decision inside: a record a newer operation has superseded must be
+        // marked superseded, and a commit stamp left by that newer operation would defer it
+        // forever instead, which also stops retention from pruning anything.
         guard !HostNetworkRecoveryPhase.isTerminal(record.phase) else { return .skipped }
         guard context.now >= record.deadline else { return .skipped }
-        guard !targetInUse(record.target, pendings: context.pendings, context) else { return .deferred }
 
         var outcome: Settlement = .deferred
         // Every decision and every write happens inside the exclusion, against state read
@@ -470,8 +463,21 @@ public enum HostNetworkRecovery {
                 outcome = .superseded
                 return
             }
-            if targetInUse(current.target, pendings: fresh.pendings, context) {
+            let live = fresh.pendings.filter { $0.target == current.target }
+            // A live pending commit is mid-apply and a keeping marker means netplan is
+            // still deciding: leave both alone.
+            if HostNetworkPendingCommitService.blockingPending(target: current.target, existing: live) != nil
+                || context.keepingExists(current.target) {
                 outcome = .deferred
+                return
+            }
+            // A commit stamp means this target's changes were kept, so the operation is
+            // settled rather than waiting. Deferring instead would leave the record
+            // unsettled forever, and retention keeps every settled record an unsettled one
+            // depends on, so `list()` would never shrink.
+            if context.stampExists(current.target) {
+                try markConfirmed(current, context: context)
+                outcome = .confirmed
                 return
             }
             var next = current
@@ -510,6 +516,17 @@ public enum HostNetworkRecovery {
         // rather than be marked settled.
         guard ran else { return .deferred }
         return outcome
+    }
+
+    /// Settles a record whose target already carries a commit stamp.
+    private static func markConfirmed(
+        _ record: HostNetworkRecoveryRecord,
+        context: SettleContext,
+    ) throws {
+        var next = record
+        next.phase = HostNetworkRecoveryPhase.confirmed
+        next.lastRestoreError = nil
+        try context.persist(next)
     }
 
     private static func markSuperseded(

@@ -137,8 +137,9 @@ struct HostNetworkPendingReaperTests {
 
         await HostNetworkPendingReaper.expire(db: pool, dataDir: data)
         #expect(try String(contentsOf: file, encoding: .utf8) == "kept")
+        // Settled by the stamp rather than left waiting, so retention can prune it.
         #expect(HostNetworkRecovery.load(operationId: "op-old", dataDir: data)?.phase
-            == HostNetworkRecoveryPhase.mutating)
+            == HostNetworkRecoveryPhase.confirmed)
     }
 
     /// An expired pending commit outlives a newer apply: the pending file is replaced when
