@@ -331,6 +331,43 @@ struct VMProvisionRecoveryTests {
         #expect(record.isOpen == false)
     }
 
+    @Test func `a failure after the delete removed the disk does not resurrect the row`() async throws {
+        // Regression: `finalise` reads the virtual size before its transactional claim guard, so a
+        // delete that removed the destination in between made that read throw. `drive` treated it
+        // as an ordinary failure and the handler's unconditional `state = 'error'` overwrote the
+        // delete's `deleting`, resurrecting a workload mid-teardown.
+        let harness = try await ProvisionHarness()
+        let seed = try #require(harness.vm.cloudInitPath)
+        try await harness.run(claim: .deleteRemovesDiskBeforeSizeRead) {
+            _ = try? await VMProvision.drive(
+                record: harness.operation, db: harness.db.pool, report: nil,
+            )
+        }
+        #expect(try await harness.state() == "deleting")
+        // The failure handler also clears `cloudInitPath`; a claim-losing failure must not
+        // release a seed the delete still owns.
+        #expect(try await harness.storedVM()?.cloudInitPath == seed)
+        // The disk row is not reset either — the delete is removing it.
+        #expect(try await harness.disk()?.status == "creating")
+    }
+
+    @Test func `a clone that fails after delete admission does not resurrect the row`() async throws {
+        // Cancelling the task cannot stop `qemu-img`, so the in-flight clone can error after the
+        // delete has claimed the row. The same guard applies.
+        let harness = try await ProvisionHarness()
+        let seed = try #require(harness.vm.cloudInitPath)
+        try await harness.run(claim: .deleteWinsWithFailingClone) {
+            _ = try? await VMProvision.drive(
+                record: harness.operation, db: harness.db.pool, report: nil,
+            )
+        }
+        #expect(harness.clones == 1)
+        #expect(try await harness.state() == "deleting")
+        #expect(try await harness.storedVM()?.cloudInitPath == seed)
+        // The clone's own file is still cleaned up, so nothing is orphaned.
+        #expect(!FileManager.default.fileExists(atPath: harness.destination.path))
+    }
+
     @Test func `a record with no stored intent fails instead of guessing`() async throws {
         let db = try makeDB()
         let vm = provisionVM(id: "no-intent", state: "provisioning", bootDiskID: nil)
@@ -483,6 +520,14 @@ private final class ProvisionHarness: @unchecked Sendable {
         /// finalisation transaction. This is the window that used to write a stale `stopped` over
         /// the delete's `deleting`.
         case deleteWinsBeforeFinalise
+
+        /// The delete removes the destination before `finalise` reads its virtual size, so that
+        /// read throws. The failure lands after delete admission, with the row already claimed.
+        case deleteRemovesDiskBeforeSizeRead
+
+        /// The in-flight `qemu-img` call fails after the delete has been admitted. Cancelling the
+        /// task cannot stop the subprocess, so the clone can still error once the row is claimed.
+        case deleteWinsWithFailingClone
     }
 
     /// `seeded: false` skips the mid-clone workload and record, leaving only a ready cloud image
@@ -499,19 +544,24 @@ private final class ProvisionHarness: @unchecked Sendable {
         tasks = BackgroundTaskManager()
 
         let host = PlatformCapabilities.hostArch
-        let guest = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let guestType = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let seedPath = db.dir.appendingPathComponent("cloud-init/guest-prov/cidata.iso").path
         createParams = CreateVMParams(
             name: "guest-prov",
-            vmType: guest,
+            vmType: guestType,
             cpuCount: 2,
             memoryMB: 2_048,
             diskSizeGB: 20,
             cloudImageId: "image-prov",
         )
-        let placeholder = provisionVM(
+        // A seeded cloud-init path makes the failure handler's `cloudInitPath = NULL` observable,
+        // so a claim-losing failure cannot quietly release a seed the delete still owns.
+        var seededGuest = provisionVM(
             id: "guest-prov", state: "provisioning", bootDiskID: Self.diskID,
         )
-        vm = placeholder
+        seededGuest.cloudInitPath = seedPath
+        let guest = seededGuest
+        vm = guest
         let pool = db.pool
         let now = "2026-01-01T00:00:00Z"
         let diskPath = destination
@@ -541,15 +591,15 @@ private final class ProvisionHarness: @unchecked Sendable {
                 path: diskPath.path,
                 sizeBytes: 1_024,
                 format: "qcow2",
-                vmId: placeholder.id,
+                vmId: guest.id,
                 autoCreated: false,
                 status: "creating",
                 createdAt: now,
             ).insert(database)
-            try placeholder.insert(database)
+            try guest.insert(database)
             if template {
                 try PendingDeploy(
-                    vmId: placeholder.id, imageId: "image-1", payload: "{}", createdAt: now,
+                    vmId: guest.id, imageId: "image-1", payload: "{}", createdAt: now,
                 ).insert(database)
             }
         }
@@ -564,17 +614,17 @@ private final class ProvisionHarness: @unchecked Sendable {
         }
         let accepted = try await WorkloadOperationStore.accept(
             db: pool,
-            idempotencyKey: "provision-\(placeholder.id)",
-            workloadID: placeholder.id,
+            idempotencyKey: "provision-\(guest.id)",
+            workloadID: guest.id,
             kind: WorkloadOperationKind.vmProvision,
-            requestedGeneration: placeholder.specGeneration,
+            requestedGeneration: guest.specGeneration,
             inputPayload: WorkloadProvisionIntent.encode(
                 WorkloadProvisionIntent(
                     sourceImagePath: sourcePath.path,
                     destinationPath: diskPath.path,
                     diskID: Self.diskID,
                     sizeGB: 20,
-                    vmName: placeholder.name,
+                    vmName: guest.name,
                 ),
             ),
         )
@@ -637,12 +687,32 @@ private final class ProvisionHarness: @unchecked Sendable {
                 throw BarkVisorError.diskCreateFailed("no space left on device")
             }
             try Data("complete-clone".utf8).write(to: dest)
-            if claim == .deleteWinsDuringClone { try claimDelete() }
+            switch claim {
+            case .deleteWinsDuringClone, .deleteWinsWithFailingClone:
+                try claimDelete()
+            default:
+                break
+            }
+            // Models `qemu-img` failing after delete admission: cancelling the task cannot stop
+            // the subprocess, so the error surfaces once the row is already claimed.
+            if claim == .deleteWinsWithFailingClone {
+                throw BarkVisorError.diskCreateFailed("qemu-img convert failed")
+            }
         }) {
-            try await VMProvisionEffects.$virtualSize.withValue({ _ in
-                // `finalise` reads the virtual size inside itself, just before its transaction —
-                // precisely the window a stale snapshot used to miss.
-                if claim == .deleteWinsBeforeFinalise { try claimDelete() }
+            try await VMProvisionEffects.$virtualSize.withValue({ target in
+                // `finalise` reads the virtual size inside itself, just before its transaction.
+                switch claim {
+                case .deleteWinsBeforeFinalise:
+                    try claimDelete()
+                case .deleteRemovesDiskBeforeSizeRead:
+                    // The delete got there first: the destination is gone, so the read throws and
+                    // the failure path runs with the row already claimed.
+                    try claimDelete()
+                    try FileManager.default.removeItem(at: target)
+                    throw BarkVisorError.diskCreateFailed("qemu-img info failed")
+                default:
+                    break
+                }
                 return 20 * 1_073_741_824
             }) {
                 try await VMProvisionEffects.$destinationComplete.withValue({ _ in true }) {

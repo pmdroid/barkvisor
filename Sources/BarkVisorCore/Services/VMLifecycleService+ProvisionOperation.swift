@@ -355,6 +355,13 @@ public enum VMProvision {
     /// Removes the partial destination, resets the disk row, and moves the workload to `error`
     /// so start and delete both work again. The record stays retryable: a retry re-runs the
     /// clone from the same source.
+    ///
+    /// **Only while this attempt still owns the claim.** A delete that has taken the row is
+    /// authoritative: its `deleting` state, its cloud-init release, and its disk removal must not
+    /// be undone by a clone error that happened afterwards. The window is real — cancelling a task
+    /// cannot stop the in-flight `qemu-img` call, so a clone can fail *after* delete admission,
+    /// and `finalise`'s virtual-size read throws once the delete has already removed the
+    /// destination. In both cases the only thing left that is ours to clean up is the file.
     private static func failProvision(
         record: WorkloadOperationRecord,
         db: DatabasePool,
@@ -363,6 +370,15 @@ public enum VMProvision {
     ) async {
         let intent = record.provisionIntent
         try? FileManager.default.removeItem(atPath: intent?.destinationPath ?? "")
+        // A lost claim means a delete owns the row, or a newer attempt does. Every write below
+        // would fight that teardown, so stop here rather than resurrect the workload.
+        guard await (try? ownsClaim(record: record, db: db)) == true else {
+            Log.vm.warning(
+                "Provision failure for workload \(record.workloadID) ignored: the row is no longer this attempt's",
+                vm: record.workloadID,
+            )
+            return
+        }
         await VMLifecycleService.handleProvisionFailure(
             vmID: record.workloadID,
             diskID: intent?.diskID ?? "",
