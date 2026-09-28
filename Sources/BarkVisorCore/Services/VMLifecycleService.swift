@@ -134,7 +134,13 @@ public enum VMLifecycleService {
         hostDevices: [HostUSBDevice]? = nil,
         expectedGeneration: Int? = nil,
     ) async throws -> VM {
-        try WorkloadSpecProjector.validate(spec, existingID: id)
+        // Shape-only pre-check. The bind-aware uniqueness check runs inside
+        // `WorkloadSpecProjector.apply` below, which is the first place the
+        // stored `portForwards` are in scope — an omitted `host` has to be
+        // judged as the bind it inherits, not as a wildcard.
+        try WorkloadSpecProjector.validate(
+            spec, existingID: id, checkPortForwardUniqueness: false,
+        )
         var normalized = spec
         if !normalized.spec.usb.isEmpty {
             let usbDevices = try persistableUSBDevices(

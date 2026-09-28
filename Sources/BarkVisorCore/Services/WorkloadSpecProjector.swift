@@ -136,7 +136,17 @@ public enum WorkloadSpecProjector {
 
     /// Apply spec fields onto an existing VM. Preserves host-only columns.
     public static func apply(_ spec: WorkloadSpec, to vm: inout VM) throws {
-        try validate(spec, existingID: vm.id)
+        // Resolve omitted `host` values before validating, so uniqueness is
+        // judged on the binds this write will persist. Captured up front
+        // because the portForwards assignment below overwrites the column.
+        let existingForwards = spec.kind == WorkloadSpec.kindApplication
+            ? nil
+            : vm.decodedPortForwards
+        let rules = try effectiveRules(
+            spec.spec.networks.first?.portForwards.map(PortForwardRule.init) ?? [],
+            existing: existingForwards,
+        )
+        try validate(spec, existingID: vm.id, existingForwards: existingForwards)
         if spec.kind == WorkloadSpec.kindApplication {
             try applyApplication(spec, to: &vm)
             return
@@ -174,10 +184,6 @@ public enum WorkloadSpecProjector {
         if spec.spec.networks.isEmpty == false {
             vm.networkId = net?.networkId
             vm.macAddress = net?.mac
-            let rules = PortForwardRule.inherited(
-                from: (net?.portForwards ?? []).map(PortForwardRule.init),
-                existing: vm.decodedPortForwards,
-            )
             vm.setPortForwards(rules.isEmpty ? nil : rules)
         }
 
@@ -201,7 +207,37 @@ public enum WorkloadSpecProjector {
         vm.setHealth(spec.spec.health)
     }
 
-    public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {
+    /// The rules a spec write will actually persist: the incoming rules with
+    /// omitted `host` values resolved against what is stored. `validate` and
+    /// `apply` both go through here, so the uniqueness check and the persisted
+    /// column can never disagree about a bind.
+    ///
+    /// `existing` is nil on create (nothing to inherit) and the stored
+    /// `portForwards` on update.
+    static func effectiveRules(
+        _ incoming: [PortForwardRule],
+        existing: [PortForwardRule]?,
+    ) throws -> [PortForwardRule] {
+        guard let existing else { return incoming }
+        return try PortForwardRule.inherited(from: incoming, existing: existing)
+    }
+
+    /// - Parameter existingForwards: the VM's currently stored `portForwards`.
+    ///   Supplied on update so the uniqueness check runs on the *effective*
+    ///   rules — the ones `apply` will actually persist once omitted `host`
+    ///   values are inherited. Validating the raw incoming rules instead
+    ///   reports two rules as duplicates when the stored binds they continue
+    ///   are disjoint. `nil` on create, where there is nothing to inherit.
+    /// - Parameter checkPortForwardUniqueness: `false` for a pre-check that
+    ///   runs before the stored `portForwards` are readable. The real check
+    ///   belongs to `apply`, which is the only place that can inherit binds;
+    ///   running it earlier would judge omitted `host` as a wildcard.
+    public static func validate(
+        _ spec: WorkloadSpec,
+        existingID: String? = nil,
+        existingForwards: [PortForwardRule]? = nil,
+        checkPortForwardUniqueness: Bool = true,
+    ) throws {
         if spec.apiVersion != WorkloadSpec.currentAPIVersion {
             throw BarkVisorError.badRequest(
                 "Unsupported apiVersion \(spec.apiVersion). Expected \(WorkloadSpec.currentAPIVersion)",
@@ -254,8 +290,16 @@ public enum WorkloadSpecProjector {
                 }
             }
             // Uniqueness is bind-aware: two forwards on one host port with
-            // different explicit binds do not overlap.
-            try PortRegistry.assertUnique(net.portForwards.map(PortForwardRule.init))
+            // different explicit binds do not overlap. On update this checks the
+            // effective rules, so an omitted `host` is judged as the bind it
+            // inherits rather than as a second wildcard.
+            if checkPortForwardUniqueness {
+                let rules = try effectiveRules(
+                    net.portForwards.map(PortForwardRule.init),
+                    existing: existingForwards,
+                )
+                try PortRegistry.assertUnique(rules)
+            }
         }
         if let resolution = resolved.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)

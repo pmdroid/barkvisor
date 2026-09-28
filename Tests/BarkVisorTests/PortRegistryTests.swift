@@ -366,6 +366,38 @@ final class PortRegistryTests {
         #expect(error?.code == "port_in_use")
     }
 
+    /// Validating raw incoming rules would see two wildcards on one host port
+    /// and reject the update, even though the stored binds they continue are
+    /// disjoint and the write is a no-op.
+    @Test func `update VMSpec accepts a payload that omits both distinct binds`() async throws {
+        try await insertVM(
+            id: "vm-binds", name: "Two binds",
+            portForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 8_080, host: "10.0.0.5"),
+            ],
+        )
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-binds") }
+        let occupant = try #require(stored)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        // The same two forwards with `host` omitted: each continues its own
+        // publication, so the effective binds stay disjoint.
+        spec.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp"),
+                ],
+            ),
+        ]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-binds", spec: spec, db: self.dbPool,
+        )
+        #expect(updated.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
     @Test func `flat update keeps an explicit bind unchanged`() async throws {
         try await insertVM(
             id: "vm-ha", name: "Home Assistant",

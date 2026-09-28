@@ -120,13 +120,20 @@ public enum EffectiveWorkloadPipeline {
     }
 
     /// Validate then resolve. Use for documents and create.
+    ///
+    /// `existingForwards` is the record's stored `portForwards` on an update, so
+    /// validation judges an omitted `host` as the bind it inherits rather than as
+    /// a wildcard that collides with the bind it continues.
     public static func evaluate(
         _ spec: WorkloadSpec,
         existingID: String? = nil,
+        existingForwards: [PortForwardRule]? = nil,
         storedDocument: WorkloadSpec? = nil,
         host: WorkloadSpecResolver.HostCapabilities = .current,
     ) throws -> EffectiveWorkload {
-        try WorkloadSpecProjector.validate(spec, existingID: existingID)
+        try WorkloadSpecProjector.validate(
+            spec, existingID: existingID, existingForwards: existingForwards,
+        )
         // validate() already applied current-host overlay checks; resolve uses platform.
         var effective = try resolve(spec, host: host.platform)
         effective.storedDocument = storedDocument
@@ -144,7 +151,12 @@ public enum EffectiveWorkloadPipeline {
                 base: WorkloadSpecProjector.fromVM(existing),
                 overlay: document,
             )
-            return try evaluate(merged, existingID: existing.id, host: host)
+            return try evaluate(
+                merged,
+                existingID: existing.id,
+                existingForwards: existing.decodedPortForwards,
+                host: host,
+            )
         }
         let spec = try WorkloadSpecDocument.decode(document)
         return try evaluate(spec, host: host)

@@ -74,31 +74,69 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
     /// A spec apply/PUT/PATCH replaces the whole list, so an element without
     /// `host` would otherwise rebind an existing `127.0.0.1` publish to every
     /// IPv4 interface without the client asking for it. Omitted means "unchanged
-    /// here": an omitted `host` inherits the bind of the `existing` rule it
-    /// replaces, matched on `proto` + `hostPort` + `guestPort`. To widen a bind
-    /// on purpose, send an explicit `host` (including `0.0.0.0`). A rule with
-    /// no `existing` counterpart is new, so it keeps the documented default
-    /// (absent = every IPv4 interface).
+    /// here": an omitted `host` inherits the bind of the stored publication it
+    /// continues. Widening on purpose stays possible with an explicit `host`
+    /// (including `0.0.0.0`).
+    ///
+    /// A publish is identified by where it is *published* (`proto` + `hostPort`),
+    /// not by where it lands, so a retargeted `guestPort` still continues the
+    /// same publication and keeps its bind. Which stored publication is being
+    /// continued is resolved in order:
+    ///
+    /// 1. exactly one stored rule on this `proto` + `hostPort` — unambiguous;
+    /// 2. otherwise the one that also repeats this `guestPort` — unambiguous;
+    /// 3. otherwise **ambiguous**, and rejected rather than guessed, because any
+    ///    choice silently moves a bind the client did not mention.
+    ///
+    /// A rule with no stored rule on its host port is new and keeps the
+    /// documented default (absent = every IPv4 interface).
     public static func inherited(
         from incoming: [PortForwardRule],
         existing: [PortForwardRule],
-    ) -> [PortForwardRule] {
+    ) throws -> [PortForwardRule] {
         guard !incoming.isEmpty, !existing.isEmpty else { return incoming }
-        return incoming.map { rule in
+        return try incoming.map { rule in
             guard rule.host == nil else { return rule }
-            guard let prior = existing.first(where: {
-                $0.protocol.lowercased() == rule.protocol.lowercased()
+            let onPort = existing.filter {
+                Self.normalizedProtocol($0.protocol) == Self.normalizedProtocol(rule.protocol)
                     && $0.hostPort == rule.hostPort
-                    && $0.guestPort == rule.guestPort
-            }) else { return rule }
-            return PortForwardRule(
-                protocol: rule.protocol,
-                hostPort: rule.hostPort,
-                guestPort: rule.guestPort,
-                httpPath: rule.httpPath,
-                host: prior.host,
-            )
+            }
+            guard let prior = onPort.count == 1
+                ? onPort[0]
+                : onPort.first(where: { $0.guestPort == rule.guestPort })
+            else {
+                guard onPort.isEmpty else {
+                    throw BarkVisorError.badRequest(
+                        "portForwards entry \(rule.hostPort)/\(rule.protocol) omits host, but this "
+                            + "workload already publishes that host port on several binds "
+                            + "(\(binds(onPort).joined(separator: ", "))). "
+                            + "Send host to choose the one to keep.",
+                    )
+                }
+                return rule
+            }
+            return rule.replacingHost(prior.host)
         }
+    }
+
+    private static func binds(_ rules: [PortForwardRule]) -> [String] {
+        Array(Set(rules.map { $0.host ?? PortRegistry.wildcardBind })).sorted()
+    }
+
+    /// Same rule with a different bind. `0.0.0.0` is normalized back to an
+    /// absent bind so an explicit wildcard and an omitted one stay one value.
+    private func replacingHost(_ host: String?) -> PortForwardRule {
+        PortForwardRule(
+            protocol: `protocol`,
+            hostPort: hostPort,
+            guestPort: guestPort,
+            httpPath: httpPath,
+            host: host == PortRegistry.wildcardBind ? nil : host,
+        )
+    }
+
+    static func normalizedProtocol(_ proto: String) -> String {
+        proto.lowercased()
     }
 
     enum CodingKeys: String, CodingKey {

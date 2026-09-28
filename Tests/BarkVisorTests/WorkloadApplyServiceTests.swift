@@ -204,6 +204,65 @@ final class WorkloadApplyServiceTests {
         #expect(afterBump.memoryMb == 1_024)
     }
 
+    /// The declarative path validates through `evaluate(document:existing:)`,
+    /// which must also judge omitted `host` as the bind it inherits.
+    @Test func `declarative apply keeps distinct binds when the payload omits them`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-twobinds")
+        let createDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "twobinds"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp", "host": "127.0.0.1"],
+                        ["hostPort": 8_080, "guestPort": 8_080, "proto": "tcp", "host": "10.0.0.5"],
+                    ],
+                ]],
+            ],
+        ]
+        let created = try await WorkloadApplyService.apply(
+            document: createDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        let afterCreate = try await fetchVM(created.id)
+        #expect(afterCreate.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+
+        // Re-applying the same spec with `host` omitted on both forwards must be
+        // a no-op, not a false duplicate rejection.
+        let reapply: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "twobinds"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp"],
+                        ["hostPort": 8_080, "guestPort": 8_080, "proto": "tcp"],
+                    ],
+                ]],
+            ],
+        ]
+        let again = try await WorkloadApplyService.apply(
+            document: reapply, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        // What matters is that the write was accepted at all and that the two
+        // disjoint binds survived; the declarative merge also fills in
+        // host-only fields, so the op itself need not be `.unchanged`.
+        #expect(again.op == .updated)
+        #expect(again.id == created.id)
+        let afterReapply = try await fetchVM(created.id)
+        #expect(afterReapply.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+        #expect(WorkloadSpecProjector.fromVM(afterReapply)
+            .spec.networks.first?.portForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
     @Test func `dryRun create and update leave the database unchanged`() async throws {
         let diskID = try await insertFreeDisk(name: "boot-dry")
         let createDoc: [String: Any] = [

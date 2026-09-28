@@ -117,7 +117,7 @@
                     "proto": { "type": "string", "enum": ["tcp", "udp"] },
                     "host": {
                       "type": ["string", "null"],
-                      "description": "Bind address for this publish. Absent means every IPv4 interface. On update, omitting host for a forward that already exists keeps that forward's stored bind; send an explicit host to change it."
+                      "description": "Bind address for this publish. Absent means every IPv4 interface. On update, omitting host for a publish this workload already has keeps that publish's stored bind, including when only guestPort changes. When one host port is already published on several binds, an omitted host is ambiguous and rejected. Send an explicit host to choose or to change a bind."
                     }
                   }
                 }
