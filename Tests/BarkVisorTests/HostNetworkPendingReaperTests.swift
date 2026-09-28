@@ -73,7 +73,10 @@ struct HostNetworkPendingReaperTests {
             operationId: "op-live",
             generation: 2,
         )
-        try HostNetworkPendingCommitService.writeLinux(pending, dataDir: data)
+        try HostNetworkPendingCommitService.write(
+            pending,
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "eth0", dataDir: data),
+        )
 
         await HostNetworkPendingReaper.expire(db: pool, dataDir: data)
         #expect(try String(contentsOf: file, encoding: .utf8) == "pending-apply")
@@ -138,30 +141,89 @@ struct HostNetworkPendingReaperTests {
             == HostNetworkRecoveryPhase.mutating)
     }
 
-    @Test func `targets come from both pending commits and recovery records`() throws {
+    @Test func `only expired work claims a gate`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
         try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        // A live pending commit and an unexpired record stay out of the two-second sweep.
         _ = try HostNetworkRecovery.begin(
-            operationId: "op-record",
+            operationId: "op-live",
             generation: 1,
-            target: "target-from-record",
+            target: "target-from-live-record",
             snapshot: HostNetworkSnapshot(),
             deadline: Date().addingTimeInterval(60),
             dataDir: data,
         )
-        let pending = HostNetworkPendingCommit(
-            target: "target-from-pending",
-            commitDeadline: Date().addingTimeInterval(60),
-            rollbackSeconds: 60,
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "target-from-live-pending",
+                commitDeadline: Date().addingTimeInterval(60),
+                rollbackSeconds: 60,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "target-from-live-pending", dataDir: data),
         )
-        try HostNetworkPendingCommitService.writeLinux(pending, dataDir: data)
-        let targets = HostNetworkPendingReaper.expireTargets(
-            pendings: HostNetworkPendingReaper.pendingWithoutStamp(dataDir: data),
+        #expect(
+            HostNetworkPendingReaper.expireTargets(
+                pendings: HostNetworkPendingReaper.pendingWithoutStamp(dataDir: data),
+                records: HostNetworkRecovery.list(dataDir: data),
+            ).isEmpty,
+        )
+
+        // Expired work on either side does claim its target.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-expired",
+            generation: 1,
+            target: "target-from-expired-record",
+            snapshot: HostNetworkSnapshot(),
+            deadline: Date().addingTimeInterval(-5),
             dataDir: data,
         )
-        #expect(Set(targets) == ["target-from-pending", "target-from-record"])
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "target-from-expired-pending",
+                commitDeadline: Date().addingTimeInterval(-5),
+                rollbackSeconds: 60,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(
+                bridge: "target-from-expired-pending",
+                dataDir: data,
+            ),
+        )
+        #expect(
+            HostNetworkPendingReaper.expireTargets(
+                pendings: HostNetworkPendingReaper.pendingWithoutStamp(dataDir: data),
+                records: HostNetworkRecovery.list(dataDir: data),
+            ).sorted() == ["target-from-expired-pending", "target-from-expired-record"],
+        )
+    }
+
+    @Test func `a settled record claims no gate`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (id, phase) in [
+            ("op-restored", HostNetworkRecoveryPhase.restored),
+            ("op-superseded", HostNetworkRecoveryPhase.superseded),
+            ("op-confirmed", HostNetworkRecoveryPhase.confirmed),
+        ] {
+            _ = try HostNetworkRecovery.begin(
+                operationId: id,
+                generation: 1,
+                target: "settled-target",
+                snapshot: HostNetworkSnapshot(),
+                deadline: Date().addingTimeInterval(-5),
+                dataDir: data,
+            )
+            try HostNetworkRecovery.mark(id, phase: phase, dataDir: data)
+        }
+        #expect(
+            HostNetworkPendingReaper.expireTargets(
+                pendings: [],
+                records: HostNetworkRecovery.list(dataDir: data),
+            ).isEmpty,
+        )
     }
 
     private func tempPool() throws -> DatabasePool {

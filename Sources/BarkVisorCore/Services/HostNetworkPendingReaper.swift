@@ -7,7 +7,8 @@ import GRDB
 public enum HostNetworkPendingReaper {
     public static func expire(db: DatabasePool, dataDir: URL = Config.dataDir) async {
         let pendings = pendingWithoutStamp(dataDir: dataDir)
-        for target in expireTargets(pendings: pendings, dataDir: dataDir) {
+        let records = HostNetworkRecovery.list(dataDir: dataDir)
+        for target in expireTargets(pendings: pendings, records: records) {
             guard HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir) else { continue }
             defer { HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir) }
             // Re-check after claiming: a commit that landed while we waited owns the target.
@@ -28,17 +29,22 @@ public enum HostNetworkPendingReaper {
         }
     }
 
-    /// Every target with expired work: pending commits and recovery records, so a record
-    /// is still swept after its pending commit file is gone.
+    /// Targets with expired work, from both pending commits and recovery records, so a
+    /// record is still settled after its pending commit file is gone. Settled and
+    /// unexpired records claim no gate: this runs every two seconds.
     public static func expireTargets(
         pendings: [HostNetworkPendingCommit],
-        dataDir: URL = Config.dataDir,
+        records: [HostNetworkRecoveryRecord],
+        now: Date = Date(),
     ) -> [String] {
         var targets: [String] = []
-        for pending in pendings where !targets.contains(pending.target) {
+        for pending in pendings where pending.expired && !targets.contains(pending.target) {
             targets.append(pending.target)
         }
-        for record in HostNetworkRecovery.list(dataDir: dataDir) where !targets.contains(record.target) {
+        for record in records
+            where !HostNetworkRecoveryPhase.isTerminal(record.phase)
+            && now >= record.deadline
+            && !targets.contains(record.target) {
             targets.append(record.target)
         }
         return targets
