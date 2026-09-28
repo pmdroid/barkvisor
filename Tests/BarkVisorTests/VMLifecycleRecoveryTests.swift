@@ -77,11 +77,26 @@ final class VMLifecycleRecoveryTests {
             ).insert(db)
         }
 
-        await VMLifecycleService.handleProvisionFailure(
-            vmID: "vm-1",
-            diskID: "disk-1",
-            diskPath: diskPath.path,
+        let accepted = try await WorkloadOperationStore.accept(
             db: dbPool,
+            idempotencyKey: "provision-failure",
+            workloadID: "vm-1",
+            kind: WorkloadOperationKind.vmProvision,
+            requestedGeneration: 1,
+            inputPayload: WorkloadProvisionIntent.encode(
+                WorkloadProvisionIntent(
+                    sourceImagePath: "/images/source.qcow2",
+                    destinationPath: diskPath.path,
+                    diskID: "disk-1",
+                    sizeGB: 20,
+                    vmName: "test-vm",
+                ),
+            ),
+        )
+        let applied = await VMLifecycleService.handleProvisionFailure(
+            record: accepted.record,
+            db: dbPool,
+            outcome: VMProvision.outcomeIncomplete,
             message: "clone failed",
         )
 
@@ -91,11 +106,114 @@ final class VMLifecycleRecoveryTests {
         let disk = try await dbPool.read { db in
             try Disk.fetchOne(db, key: "disk-1")
         }
+        let record = try await dbPool.read { db in
+            try WorkloadOperationRecord.fetchOne(db, key: accepted.record.id)
+        }
 
+        #expect(applied)
         #expect(vm?.state == "error")
         #expect(vm?.cloudInitPath == nil)
         #expect(disk?.status == "creating")
-        #expect(!FileManager.default.fileExists(atPath: diskPath.path))
+        // The handler owns the rows only. The partial destination is removed by the caller
+        // (`VMProvision.failProvision`), which is also what cleans it up when the claim is lost.
+        #expect(FileManager.default.fileExists(atPath: diskPath.path))
+        // The record closes with the failure so startup does not repeat the clone.
+        #expect(record?.status == WorkloadOperationStatus.failed)
+        #expect(record?.recoveryOutcome == VMProvision.outcomeIncomplete)
+        #expect(record?.isRetryable == true)
+    }
+
+    @Test func `handle provision failure writes nothing once a delete owns the row`() async throws {
+        // The claim check and the row writes must be one transaction. A delete that has already
+        // committed `deleting` owns the teardown: resetting the workload to `error` here would
+        // resurrect it, clear the seed it is about to release, and reset a disk it is removing.
+        let now = "2026-01-01T00:00:00Z"
+        let diskPath = tmpDir.appendingPathComponent("claimed.qcow2")
+        let seedDir = tmpDir.appendingPathComponent("cloud-init/vm-claimed")
+        try FileManager.default.createDirectory(at: seedDir, withIntermediateDirectories: true)
+        let seed = seedDir.appendingPathComponent("cidata.iso").path
+
+        try await dbPool.write { db in
+            try Disk(
+                id: "disk-claimed",
+                name: "boot",
+                path: diskPath.path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: "vm-claimed",
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+            try VM(
+                id: "vm-claimed",
+                name: "claimed-vm",
+                vmType: "linux-arm64",
+                state: "deleting",
+                cpuCount: 2,
+                memoryMb: 2_048,
+                bootDiskId: "disk-claimed",
+                isoIds: nil,
+                networkId: nil,
+                cloudInitPath: seed,
+                description: nil,
+                bootOrder: nil,
+                displayResolution: nil,
+                additionalDiskIds: nil,
+                uefi: true,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: nil,
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+            try PendingDeploy(
+                vmId: "vm-claimed", imageId: "image-1", payload: "{}", createdAt: now,
+            ).insert(db)
+        }
+
+        let accepted = try await WorkloadOperationStore.accept(
+            db: dbPool,
+            idempotencyKey: "provision-claimed",
+            workloadID: "vm-claimed",
+            kind: WorkloadOperationKind.vmProvision,
+            requestedGeneration: 1,
+            inputPayload: WorkloadProvisionIntent.encode(
+                WorkloadProvisionIntent(
+                    sourceImagePath: "/images/source.qcow2",
+                    destinationPath: diskPath.path,
+                    diskID: "disk-claimed",
+                    sizeGB: 20,
+                    vmName: "claimed-vm",
+                ),
+            ),
+        )
+        let applied = await VMLifecycleService.handleProvisionFailure(
+            record: accepted.record,
+            db: dbPool,
+            outcome: VMProvision.outcomeIncomplete,
+            message: "clone failed after delete admission",
+        )
+
+        #expect(!applied)
+        let vm = try #require(
+            try await dbPool.read { db in try VM.fetchOne(db, key: "vm-claimed") },
+        )
+        #expect(vm.state == "deleting")
+        #expect(vm.cloudInitPath == seed)
+        let disk = try #require(
+            try await dbPool.read { db in try Disk.fetchOne(db, key: "disk-claimed") },
+        )
+        #expect(disk.status == "ready")
+        // The template marker stays too: it is only cleared alongside the state change it
+        // describes, and there was no state change.
+        #expect(try await dbPool.read { db in
+            try PendingDeploy.filter(PendingDeploy.Columns.vmId == "vm-claimed").fetchCount(db)
+        } == 1)
     }
 
     @Test func `handle delete failure marks VM error`() async throws {

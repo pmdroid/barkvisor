@@ -352,49 +352,27 @@ public enum VMProvision {
         )
     }
 
-    /// Removes the partial destination, resets the disk row, and moves the workload to `error`
-    /// so start and delete both work again. The record stays retryable: a retry re-runs the
-    /// clone from the same source.
+    /// Removes the partial destination and resets the workload to `error` so start and delete both
+    /// work again. The record closes retryable: a retry re-runs the clone from the same source.
     ///
-    /// **Only while this attempt still owns the claim.** A delete that has taken the row is
-    /// authoritative: its `deleting` state, its cloud-init release, and its disk removal must not
-    /// be undone by a clone error that happened afterwards. The window is real — cancelling a task
-    /// cannot stop the in-flight `qemu-img` call, so a clone can fail *after* delete admission,
-    /// and `finalise`'s virtual-size read throws once the delete has already removed the
-    /// destination. In both cases the only thing left that is ours to clean up is the file.
+    /// The destination removal is the one cleanup that stays unconditional, and deliberately so: it
+    /// is the file *this* attempt created, the delete removes that same path, and removing it is
+    /// what stops a clone that lost its claim from orphaning a disk. Everything else — the row
+    /// state, the seed release, the disk reset, the template marker — belongs to whoever holds the
+    /// claim now, and `handleProvisionFailure` applies all of it in a single transaction guarded by
+    /// that claim.
     private static func failProvision(
         record: WorkloadOperationRecord,
         db: DatabasePool,
         outcome: String = outcomeIncomplete,
         message: String,
     ) async {
-        let intent = record.provisionIntent
-        try? FileManager.default.removeItem(atPath: intent?.destinationPath ?? "")
-        // A lost claim means a delete owns the row, or a newer attempt does. Every write below
-        // would fight that teardown, so stop here rather than resurrect the workload.
-        guard await (try? ownsClaim(record: record, db: db)) == true else {
-            Log.vm.warning(
-                "Provision failure for workload \(record.workloadID) ignored: the row is no longer this attempt's",
-                vm: record.workloadID,
-            )
-            return
+        if let intent = record.provisionIntent {
+            try? FileManager.default.removeItem(atPath: intent.destinationPath)
         }
         await VMLifecycleService.handleProvisionFailure(
-            vmID: record.workloadID,
-            diskID: intent?.diskID ?? "",
-            diskPath: intent?.destinationPath ?? "",
-            db: db,
-            message: message,
+            record: record, db: db, outcome: outcome, message: message,
         )
-        _ = try? await WorkloadOperationStore.fail(
-            db: db,
-            operationID: record.id,
-            attemptID: record.attemptID,
-            phase: (try? currentPhase(operation: record, db: db)) ?? record.phase,
-            recoveryOutcome: outcome,
-            error: message,
-        )
-        await settleTemplateMarker(vmID: record.workloadID, failure: message, db: db)
     }
 
     // MARK: - Template marker
