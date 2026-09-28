@@ -667,6 +667,15 @@ extension VMLifecycleService {
         let row = vm
 
         try await db.write { db in
+            // The rebuild restores the deploy's original port forwards from
+            // `params`, not from the placeholder row, which a concurrent
+            // `updateVM` may have cleared. That clears the forwards the
+            // network-update guard reads, so the network may have been switched
+            // to isolated in the meantime. Validate the row about to be written
+            // here, in the transaction that writes it (#634).
+            try assertNetworkSupportsPortForwards(
+                networkId: row.networkId, forwardCount: row.decodedPortForwards.count, db: db,
+            )
             try row.update(db)
         }
 

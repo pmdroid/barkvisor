@@ -75,14 +75,14 @@ final class NetworkPortForwardRaceTests {
     private func flipNetwork(
         id networkID: String = "net-race",
         on trigger: String,
-    ) async throws -> ModeFlip {
+    ) throws -> ModeFlip {
         let flipPool = try DatabasePool(path: dbPath)
         let hook = FlipHook()
         let armed = ArmOnce()
         var config = Configuration()
         config.prepareDatabase { db in
             db.trace { event in
-                guard case let .statement(statement) = event else { return }
+                guard armed.isArmed, case let .statement(statement) = event else { return }
                 guard statement.sql.contains(trigger) else { return }
                 guard armed.claim() else { return }
                 hook.begin()
@@ -104,9 +104,14 @@ final class NetworkPortForwardRaceTests {
                 done.wait()
             }
         }
-        let tracedPool = try DatabasePool(path: dbPath, configuration: config)
-        try AppDatabase.makeMigrator().migrate(tracedPool)
-        return ModeFlip(pool: tracedPool, hook: hook)
+        // `dbPool` already migrated this file, so do not migrate the traced
+        // pool: migration emits reads of the very tables the triggers match,
+        // which would flip the network before the seam under test even runs.
+        return try ModeFlip(
+            pool: DatabasePool(path: dbPath, configuration: config),
+            hook: hook,
+            arm: { armed.arm() },
+        )
     }
 
     @Test func `createVM re-checks the network inside the insert transaction`() async throws {
@@ -114,7 +119,8 @@ final class NetworkPortForwardRaceTests {
         // `PortRegistry.claims` reads the VMs in its own `db.read`, after
         // `validateCreateVMInputs` has seen NAT and before `insertVMAndDisk`
         // opens its write transaction.
-        let flip = try await flipNetwork(on: "FROM \"vms\"")
+        let flip = try flipNetwork(on: "FROM \"vms\"")
+        flip.arm()
 
         let error = await #expect(throws: BarkVisorError.self) {
             try await VMLifecycleService.createVM(
@@ -231,7 +237,8 @@ final class NetworkPortForwardRaceTests {
         // `insertPlaceholder` resolves the network in its own read, then reads
         // `app_settings` for the disk directory, then opens its write
         // transaction. Park on that middle read.
-        let flip = try await flipNetwork(id: "net-deploy", on: "FROM \"app_settings\"")
+        let flip = try flipNetwork(id: "net-deploy", on: "FROM \"app_settings\"")
+        flip.arm()
 
         let error = await #expect(throws: BarkVisorError.self) {
             try await TemplateDeployService.deploy(
@@ -276,6 +283,103 @@ final class NetworkPortForwardRaceTests {
         #expect(vm.decodedPortForwards.count == 1)
         let claims = try await dbPool.read { db in try PortRegistry.claims(db: db) }
         #expect(claims.contains { $0.hostPort == 9_951 })
+    }
+
+    // MARK: - Pending deploy completion
+
+    /// A provisioning placeholder whose forwards were cleared mid-download, the
+    /// state `updateVM` leaves behind before the image finishes.
+    private func seedClearedPlaceholder(
+        _ pool: DatabasePool, tmpDir: URL, networkID: String,
+    ) async throws -> String {
+        let vmID = "vm-pending"
+        try await pool.write { db in
+            try Network(
+                id: networkID, name: networkID, mode: "nat", bridge: nil,
+                macAddress: nil, dnsServer: nil, autoCreated: false, isDefault: false,
+            ).insert(db)
+            let path = tmpDir.appendingPathComponent("pending.qcow2").path
+            _ = FileManager.default.createFile(atPath: path, contents: Data())
+            try Disk(
+                id: "disk-pending", name: "pending", path: path, sizeBytes: 1_024,
+                format: "qcow2", vmId: vmID, autoCreated: false, status: "creating",
+                createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+            var vm = VM(
+                id: vmID, name: "pending", vmType: "linux-amd64", state: "provisioning",
+                cpuCount: 1, memoryMb: 512, bootDiskId: "disk-pending",
+                networkId: networkID, cloudInitPath: nil, description: nil,
+                bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+                uefi: true, tpmEnabled: false, macAddress: "52:54:00:00:00:09",
+                sharedPaths: nil, portForwards: nil, // cleared while downloading
+                autoCreated: false, pendingChanges: false,
+                createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+            )
+            vm.syncSpecProjection(bumpGeneration: false)
+            try vm.insert(db)
+            try PendingDeploy(
+                vmId: vmID, imageId: "img-1", payload: "{}", createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        return vmID
+    }
+
+    private func completionParams(vmID: String, hostPort: Int) -> CreateVMParams {
+        CreateVMParams(
+            id: vmID, name: "pending", vmType: hostLinux,
+            cpuCount: 1, memoryMB: 512, networkId: "net-pending",
+            existingDiskId: "disk-pending",
+            portForwards: [PortForwardRule(protocol: "tcp", hostPort: hostPort, guestPort: 80)],
+        )
+    }
+
+    @Test func `pending deploy completion re-checks the network inside its update`() async throws {
+        let vmID = try await seedClearedPlaceholder(dbPool, tmpDir: tmpDir, networkID: "net-pending")
+        // `completePlaceholderIfNeeded` reads the placeholder *after*
+        // `createVM` validated the network, and before it writes the rebuilt
+        // row — a read slot with no write lock held.
+        // `validateCreateVMInputs` also reads `pending_deploys`, so that table is
+        // not a usable trigger. `completePlaceholderIfNeeded` re-reads the
+        // placeholder's boot disk, which nothing between validation and the
+        // completion write does.
+        let flip = try flipNetwork(id: "net-pending", on: "FROM \"disks\" WHERE \"id\" = ?")
+        let params = completionParams(vmID: vmID, hostPort: 9_960)
+        flip.arm()
+
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await VMLifecycleService.createVM(
+                params: params, db: flip.pool, backgroundTasks: BackgroundTaskManager(),
+            )
+        }
+
+        #expect(flip.hook.didFire)
+        #expect(error?.errorDescription?.contains("Port forwards require NAT") == true)
+        // The completion branch, not a fresh insert: the placeholder row and
+        // its PendingDeploy still exist.
+        #expect(try await dbPool.read { db in try VM.fetchOne(db, key: vmID) } != nil)
+        #expect(try await dbPool.read { db in try PendingDeploy.fetchCount(db) } == 1)
+        // The forwards must not have been restored onto the isolated network.
+        let vm = try await dbPool.read { db in try VM.fetchOne(db, key: vmID) }
+        #expect(vm?.state == "provisioning")
+        #expect(vm?.decodedPortForwards.isEmpty == true)
+        let claims = try await dbPool.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.isEmpty)
+    }
+
+    @Test func `pending deploy completion still succeeds when the mode holds`() async throws {
+        let vmID = try await seedClearedPlaceholder(dbPool, tmpDir: tmpDir, networkID: "net-pending")
+        let params = completionParams(vmID: vmID, hostPort: 9_961)
+        let result = try await VMLifecycleService.createVM(
+            params: params, db: dbPool, backgroundTasks: BackgroundTaskManager(),
+        )
+        guard case let .created(vm) = result else {
+            Issue.record("expected created, got \(result)")
+            return
+        }
+        #expect(vm.state == "stopped")
+        #expect(vm.decodedPortForwards.count == 1)
+        let claims = try await dbPool.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.contains { $0.hostPort == 9_961 })
     }
 
     private static func createSucceeds(_ params: CreateVMParams, _ pool: DatabasePool) async -> Bool {
@@ -328,6 +432,9 @@ final class NetworkPortForwardRaceTests {
 private struct ModeFlip {
     let pool: DatabasePool
     let hook: FlipHook
+    /// Arm the hook only once setup is done, so the flip cannot land before
+    /// the seam under test has started.
+    let arm: () -> Void
 }
 
 private actor RaceStubDownloader: ImageDownloadStarting {
@@ -340,10 +447,23 @@ private actor RaceStubDownloader: ImageDownloadStarting {
     ) {}
 }
 
-/// Fires the `PortRegistry.claims` flip at most once.
+/// Fires the mode flip at most once, and only after `arm()`.
 private final class ArmOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var spent = false
+    private var armed = false
+
+    func arm() {
+        lock.lock()
+        armed = true
+        lock.unlock()
+    }
+
+    var isArmed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return armed
+    }
 
     func claim() -> Bool {
         lock.lock()
