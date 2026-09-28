@@ -213,8 +213,38 @@ public enum VMLifecycleService {
         dataDir: URL,
         operationID: String? = nil,
     ) async throws -> (taskID: String, vmName: String, operationID: String) {
+        // Admission — accept, decide replay-versus-drive, and submit — is serialized per
+        // workload. A replay can otherwise arrive in the window after the first request
+        // accepted the record but before it submitted its worker: the live-task check would
+        // see nothing, take a replacement attempt, and then lose the `submit` race to a
+        // duplicate task ID, leaving the stale worker holding a superseded attempt and the
+        // row stranded in `deleting` with no worker at all.
+        try await deleteAdmissionGate.withLock(id) {
+            try await admitDelete(
+                id: id,
+                keepDisk: keepDisk,
+                vmManager: vmManager,
+                backgroundTasks: backgroundTasks,
+                db: db,
+                dataDir: dataDir,
+                suppliedOperationID: operationID,
+            )
+        }
+    }
+
+    private static let deleteAdmissionGate = KeyedAsyncGate()
+
+    private static func admitDelete(
+        id: String,
+        keepDisk: Bool,
+        vmManager: VMManager,
+        backgroundTasks: BackgroundTaskManager,
+        db: DatabasePool,
+        dataDir: URL,
+        suppliedOperationID: String?,
+    ) async throws -> (taskID: String, vmName: String, operationID: String) {
         let deleteOperationID = WorkloadOperationCoordinator.makeOperationID(
-            supplied: operationID, action: "delete", workloadID: id,
+            supplied: suppliedOperationID, action: "delete", workloadID: id,
         )
         let acceptance = try await WorkloadOperationStore.accept(
             db: db,
@@ -232,11 +262,20 @@ public enum VMLifecycleService {
         let record = acceptance.record
         let taskID = record.id
 
+        // A finished delete replays its stored result. Never reopen it: the record is
+        // completed, and a workload that has since reused the id must not be deleted again.
+        if record.status == WorkloadOperationStatus.completed {
+            return (
+                taskID: taskID,
+                vmName: record.deleteIntent?.vmName ?? id,
+                operationID: deleteOperationID,
+            )
+        }
         // A replay must not steal the attempt from a worker that is still running it: the
         // live task would then fail its next `setPhase` and abandon the row in `deleting`.
         // Only an open record with no live worker (a crash left it orphaned) needs a new
         // attempt, so that this request can drive the cleanup.
-        if !acceptance.started, record.status != WorkloadOperationStatus.completed {
+        if !acceptance.started {
             let live = await backgroundTasks.status(taskID)
             if live?.status == .running || live?.status == .queued {
                 return (

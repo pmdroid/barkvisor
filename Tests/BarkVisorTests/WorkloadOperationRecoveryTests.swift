@@ -572,6 +572,98 @@ struct WorkloadOperationRecoveryTests {
         try await harness.assertFullyDeleted()
     }
 
+    @Test func `a replay of a completed delete does not reopen it or delete a reused id`() async throws {
+        // Regression: a completed record skipped the live-task check but still went through
+        // `beginReplacement`, which flipped it back to `recovering`. A workload that later
+        // reused the id would then be deleted a second time by the replayed key.
+        let db = try makeDB()
+        let vmID = "vm-reused"
+        let tasks = BackgroundTaskManager()
+        defer { Task { await tasks.cancelAll() } }
+        var original = recoveryGuest(id: vmID, state: "stopped")
+        original.name = "first-life"
+        let seed = original
+        try await db.pool.write { db in try seed.insert(db) }
+        let first = try await VMLifecycleService.deleteVM(
+            id: vmID, keepDisk: false, vmManager: VMManager(dbPool: db.pool),
+            backgroundTasks: tasks, db: db.pool, dataDir: db.dir,
+            operationID: "reuse-key",
+        )
+        for _ in 0 ..< 300 {
+            if await tasks.status(first.taskID)?.status == .completed { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let finished = try #require(try await WorkloadOperationStore.fetch(db: db.pool, id: first.taskID))
+        #expect(finished.status == WorkloadOperationStatus.completed)
+
+        // A new workload claims the id that the completed delete used to own.
+        var reused = recoveryGuest(id: vmID, state: "stopped")
+        reused.name = "second-life"
+        let row = reused
+        try await db.pool.write { db in try row.insert(db) }
+
+        // The replayed key must return the stored result and leave the new row alone.
+        let replayed = try await VMLifecycleService.deleteVM(
+            id: vmID, keepDisk: false, vmManager: VMManager(dbPool: db.pool),
+            backgroundTasks: tasks, db: db.pool, dataDir: db.dir,
+            operationID: "reuse-key",
+        )
+        #expect(replayed.taskID == first.taskID)
+        #expect(replayed.vmName == "first-life")
+        let afterReplay = try #require(try await WorkloadOperationStore.fetch(db: db.pool, id: first.taskID))
+        #expect(afterReplay.status == WorkloadOperationStatus.completed)
+        #expect(afterReplay.finishedAt == finished.finishedAt)
+        let survivor = try await db.pool.read { db in try VM.fetchOne(db, key: vmID) }
+        #expect(survivor?.name == "second-life")
+        #expect(survivor?.state == "stopped")
+    }
+
+    @Test func `concurrent same-key deletes do not strand the row`() async throws {
+        // Regression: a replay arriving between the first request's accept and its submit saw
+        // no live task, took a replacement attempt, then lost the duplicate `submit` race. The
+        // stale worker failed its attempt check and the row stayed `deleting` with no worker.
+        // The window is narrow, so this hammers it rather than hoping to land on it once.
+        let harness = try await DeleteHarness()
+        let vmID = harness.vm.id
+        let db = harness.db.pool
+
+        for round in 0 ..< 8 {
+            let tasks = BackgroundTaskManager()
+            await withTaskGroup(of: Void.self) { group in
+                for _ in 0 ..< 4 {
+                    group.addTask {
+                        _ = try? await VMLifecycleService.deleteVM(
+                            id: vmID, keepDisk: false, vmManager: VMManager(dbPool: db),
+                            backgroundTasks: tasks, db: db, dataDir: harness.db.dir,
+                            operationID: "delete-guest-box",
+                        )
+                    }
+                }
+            }
+            // Every concurrent caller must agree the workload is gone, and no round may leave
+            // an operation open with nothing to drive it.
+            for _ in 0 ..< 300 {
+                if try await db.read({ db in try VM.fetchOne(db, key: vmID) }) == nil { break }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            #expect(
+                try await db.read { db in try VM.fetchOne(db, key: vmID) } == nil,
+                "round \(round) left the workload stranded",
+            )
+            let operations = try await db.read { db in
+                try WorkloadOperationRecord.filter(Column("workloadID") == vmID).fetchAll(db)
+            }
+            #expect(operations.count == 1, "round \(round) started a second delete operation")
+            for operation in operations {
+                #expect(
+                    operation.status != WorkloadOperationStatus.running,
+                    "round \(round) left an operation open with no worker",
+                )
+            }
+            if try await db.read({ db in try VM.fetchCount(db) }) == 0 { break }
+        }
+    }
+
     @Test func `a resuming delete repeats no finished phase`() async throws {
         let harness = try await DeleteHarness()
         try await WorkloadEffectGate.$hook.withValue({ phase in
