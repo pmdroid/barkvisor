@@ -199,6 +199,11 @@ public enum VMLifecycleService {
     /// point leaves a record the next startup can resume. A repeat with the same
     /// `X-BarkVisor-Operation-Id` replays that record instead of conflicting; a fresh key
     /// against a row with an open delete returns `409` naming the in-flight operation.
+    ///
+    /// The returned `taskID` is the durable record's id, not a per-process handle. That is the
+    /// id `TaskController` falls back to `WorkloadOperationStore` with, so a client holding it
+    /// still gets status and progress after a restart drops the in-memory task. The in-memory
+    /// task is submitted under the same id, so live status and SSE keep working too.
     public static func deleteVM(
         id: String,
         keepDisk: Bool,
@@ -211,31 +216,61 @@ public enum VMLifecycleService {
         let deleteOperationID = WorkloadOperationCoordinator.makeOperationID(
             supplied: operationID, action: "delete", workloadID: id,
         )
-        let taskID = taskID(forDelete: id)
-        let accepted = try await acceptDeleteOperation(
-            id: id, keepDisk: keepDisk, operationID: deleteOperationID, db: db,
+        let acceptance = try await WorkloadOperationStore.accept(
+            db: db,
+            idempotencyKey: deleteOperationID,
+            workloadID: id,
+            kind: WorkloadOperationKind.vmDelete,
+            requestedGeneration: specGeneration(id: id, db: db),
+            inputPayload: WorkloadDeleteIntent.encode(
+                WorkloadDeleteIntent(
+                    keepDisk: keepDisk,
+                    vmName: vmName(id: id, db: db) ?? id,
+                ),
+            ),
         )
+        let record = acceptance.record
+        let taskID = record.id
+
+        // A replay must not steal the attempt from a worker that is still running it: the
+        // live task would then fail its next `setPhase` and abandon the row in `deleting`.
+        // Only an open record with no live worker (a crash left it orphaned) needs a new
+        // attempt, so that this request can drive the cleanup.
+        if !acceptance.started, record.status != WorkloadOperationStatus.completed {
+            let live = await backgroundTasks.status(taskID)
+            if live?.status == .running || live?.status == .queued {
+                return (
+                    taskID: taskID,
+                    vmName: record.deleteIntent?.vmName ?? id,
+                    operationID: deleteOperationID,
+                )
+            }
+        }
+
+        let attempt = acceptance.started
+            ? record
+            : try await WorkloadOperationStore.beginReplacement(db: db, operationID: record.id)
 
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: id) }) else {
             // No row: the delete already finished. Complete the record so a replayed key
             // resolves to that result rather than a 404 or a second side effect.
             _ = try await WorkloadOperationStore.complete(
                 db: db,
-                operationID: accepted.id,
-                attemptID: accepted.attemptID,
+                operationID: attempt.id,
+                attemptID: attempt.attemptID,
                 phase: VMDelete.phaseRowDeleted,
                 recoveryOutcome: VMDelete.outcomeDeleted,
                 resultPayload: id,
             )
             return (
                 taskID: taskID,
-                vmName: accepted.deleteIntent?.vmName ?? id,
+                vmName: attempt.deleteIntent?.vmName ?? id,
                 operationID: deleteOperationID,
             )
         }
 
         guard canDelete(vm, hasResumableDelete: true) else {
-            try await refuseDelete(id: id, record: accepted, db: db, message: "Workload \(id) cannot be deleted from state \(vm.state)")
+            try await refuseDelete(record: attempt, db: db, state: vm.state)
             throw BarkVisorError.conflict(
                 vm.isApplication
                     ? "App must be stopped before deleting"
@@ -243,9 +278,7 @@ public enum VMLifecycleService {
             )
         }
         guard await !vmManager.isActiveOrStarting(id) else {
-            try await refuseDelete(
-                id: id, record: accepted, db: db, message: "Workload \(id) is starting or running",
-            )
+            try await refuseDelete(record: attempt, db: db, message: "Workload \(id) is starting or running")
             throw BarkVisorError.conflict("VM is currently starting or running")
         }
 
@@ -256,6 +289,7 @@ public enum VMLifecycleService {
         await submitDeleteTask(
             id: id,
             taskID: taskID,
+            attemptID: attempt.attemptID,
             deleteOperationID: deleteOperationID,
             vmManager: vmManager,
             backgroundTasks: backgroundTasks,
@@ -266,58 +300,35 @@ public enum VMLifecycleService {
         return (taskID: taskID, vmName: vm.name, operationID: deleteOperationID)
     }
 
-    public static func taskID(forDelete id: String) -> String {
-        "vm-delete:\(id)"
+    private static func specGeneration(id: String, db: DatabasePool) async throws -> Int {
+        try await db.read { db in try VM.fetchOne(db, key: id)?.specGeneration ?? 0 }
     }
 
-    /// Accepts the durable delete record, or returns the record a replayed key already owns.
-    private static func acceptDeleteOperation(
-        id: String,
-        keepDisk: Bool,
-        operationID: String,
-        db: DatabasePool,
-    ) async throws -> WorkloadOperationRecord {
-        let vm = try await db.read { db in try VM.fetchOne(db, key: id) }
-        let intent = try WorkloadDeleteIntent.encode(
-            WorkloadDeleteIntent(keepDisk: keepDisk, vmName: vm?.name ?? id),
-        )
-        let acceptance = try await WorkloadOperationStore.accept(
-            db: db,
-            idempotencyKey: operationID,
-            workloadID: id,
-            kind: WorkloadOperationKind.vmDelete,
-            requestedGeneration: vm?.specGeneration ?? 0,
-            inputPayload: intent,
-        )
-        guard !acceptance.started else { return acceptance.record }
-        // A finished delete is a replay of its stored result, not a new side effect.
-        if acceptance.record.status == WorkloadOperationStatus.completed { return acceptance.record }
-        // An open record needs a fresh attempt so a stale in-memory callback from an earlier
-        // request cannot finish the operation out from under this one.
-        return try await WorkloadOperationStore.beginReplacement(
-            db: db, operationID: acceptance.record.id,
-        )
+    private static func vmName(id: String, db: DatabasePool) async throws -> String? {
+        try await db.read { db in try VM.fetchOne(db, key: id)?.name }
     }
 
     private static func refuseDelete(
-        id: String,
         record: WorkloadOperationRecord,
         db: DatabasePool,
-        message: String,
+        state: String? = nil,
+        message: String? = nil,
     ) async throws {
+        let reason = message ?? "Workload \(record.workloadID) cannot be deleted from state \(state ?? "unknown")"
         _ = try? await WorkloadOperationStore.fail(
             db: db,
             operationID: record.id,
             attemptID: record.attemptID,
             phase: record.phase,
             recoveryOutcome: VMDelete.outcomeRefused,
-            error: message,
+            error: reason,
         )
     }
 
     private static func submitDeleteTask(
         id: String,
         taskID: String,
+        attemptID: String,
         deleteOperationID: String,
         vmManager: VMManager,
         backgroundTasks: BackgroundTaskManager,
@@ -333,7 +344,8 @@ public enum VMLifecycleService {
                     load: { try await WorkloadOperationCoordinator.observation(id: id, db: db) },
                 ) { _ in
                     try await VMDelete.run(
-                        deleteOperationID: deleteOperationID,
+                        operationID: taskID,
+                        attemptID: attemptID,
                         vmManager: vmManager,
                         backgroundTasks: backgroundTasks,
                         taskID: taskID,

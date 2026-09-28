@@ -39,19 +39,43 @@ public enum VMDelete {
     // MARK: - In-memory path
 
     /// Runs the delete for a live request, reporting progress onto the background task.
+    ///
+    /// The record is looked up by the id the caller was handed, so a replay and a resume drive
+    /// the same record rather than whatever a regenerated key happens to point at.
     public static func run(
-        deleteOperationID: String,
+        operationID: String,
+        attemptID: String,
         vmManager _: VMManager,
         backgroundTasks: BackgroundTaskManager,
         taskID: String,
         db: DatabasePool,
         dataDir: URL,
     ) async throws {
-        guard let record = try await WorkloadOperationStore.record(
-            db: db, idempotencyKey: deleteOperationID,
-        ) else {
-            throw BarkVisorError.notFound("Delete operation \(deleteOperationID) not found")
+        guard let stored = try await WorkloadOperationStore.fetch(db: db, id: operationID) else {
+            throw BarkVisorError.notFound("Delete operation \(operationID) not found")
         }
+        // Drive the attempt this request owns. If a newer attempt has already taken over, the
+        // superseded worker must not touch the record.
+        let record = stored.attemptID == attemptID ? stored : WorkloadOperationRecord(
+            id: stored.id,
+            attemptID: attemptID,
+            workloadID: stored.workloadID,
+            kind: stored.kind,
+            requestedGeneration: stored.requestedGeneration,
+            phase: stored.phase,
+            progress: stored.progress,
+            status: stored.status,
+            idempotencyKey: stored.idempotencyKey,
+            recoveryOutcome: stored.recoveryOutcome,
+            resultPayload: stored.resultPayload,
+            inputPayload: stored.inputPayload,
+            error: stored.error,
+            projectPath: stored.projectPath,
+            dataRestored: stored.dataRestored,
+            createdAt: stored.createdAt,
+            updatedAt: stored.updatedAt,
+            finishedAt: stored.finishedAt,
+        )
         try await drive(record: record, db: db, dataDir: dataDir) { value in
             await backgroundTasks.reportProgress(taskID, progress: value)
         }

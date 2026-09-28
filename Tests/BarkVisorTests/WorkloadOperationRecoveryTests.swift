@@ -491,6 +491,87 @@ struct WorkloadOperationRecoveryTests {
         try await harness.assertFullyDeleted()
     }
 
+    @Test func `a same-key replay during cleanup does not strand the row`() async throws {
+        // Regression: a replay used to call `beginReplacement` unconditionally, so it stole the
+        // attempt from the worker still running. That worker's next `setPhase` then failed and
+        // the row was abandoned in `deleting` with no worker until the next restart.
+        let harness = try await DeleteHarness()
+        let tasks = BackgroundTaskManager()
+        defer { Task { await tasks.cancelAll() } }
+        let gate = AsyncStreamGate()
+        let vmID = harness.vm.id
+        let opID = harness.operation.id
+
+        // The original request's worker, submitted the way `deleteVM` submits it, held at the
+        // door so the replay lands while it still owns the attempt.
+        await tasks.submit(opID, kind: .vmDelete) {
+            await gate.waitForRelease()
+            try await VMDelete.run(
+                operationID: opID,
+                attemptID: harness.operation.attemptID,
+                vmManager: VMManager(dbPool: harness.db.pool),
+                backgroundTasks: tasks,
+                taskID: opID,
+                db: harness.db.pool,
+                dataDir: harness.db.dir,
+            )
+            return nil
+        }
+        for _ in 0 ..< 300 where await tasks.status(opID)?.status != .running {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(await tasks.status(opID)?.status == .running)
+
+        // The replay: same key, while the worker holds the record open.
+        let replayed = try await VMLifecycleService.deleteVM(
+            id: vmID, keepDisk: false, vmManager: VMManager(dbPool: harness.db.pool),
+            backgroundTasks: tasks, db: harness.db.pool, dataDir: harness.db.dir,
+            operationID: "delete-guest-box",
+        )
+        // It must replay the same record, not take a new attempt.
+        #expect(replayed.taskID == opID)
+        let afterReplay = try #require(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: opID))
+        #expect(afterReplay.attemptID == harness.operation.attemptID)
+        #expect(afterReplay.isOpen)
+
+        await gate.release()
+        for _ in 0 ..< 300 {
+            if await tasks.status(opID)?.status == .completed { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        // The original worker finished its own record rather than being superseded.
+        #expect(await tasks.status(opID)?.status == .completed)
+        try await harness.assertFullyDeleted()
+    }
+
+    @Test func `a replayed delete hands back the durable record id as its task id`() async throws {
+        // Regression: the response used to carry `vm-delete:<workloadID>`, a per-process handle.
+        // `TaskController` falls back to `WorkloadOperationStore.fetch` by id, so after a
+        // restart that handle 404s and the client loses status and progress.
+        let harness = try await DeleteHarness()
+        let tasks = BackgroundTaskManager()
+        defer { Task { await tasks.cancelAll() } }
+        let vmID = harness.vm.id
+        let opID = harness.operation.id
+
+        // The record already exists and is open, with no live in-memory worker: a replay
+        // takes a fresh attempt and drives the cleanup.
+        let replayed = try await VMLifecycleService.deleteVM(
+            id: vmID, keepDisk: false, vmManager: VMManager(dbPool: harness.db.pool),
+            backgroundTasks: tasks, db: harness.db.pool, dataDir: harness.db.dir,
+            operationID: "delete-guest-box",
+        )
+        #expect(replayed.taskID == opID)
+        // The task id the client holds is the one the durable store answers for, so status
+        // survives the in-memory task going away.
+        #expect(try await WorkloadOperationStore.fetch(db: harness.db.pool, id: replayed.taskID) != nil)
+        for _ in 0 ..< 300 {
+            if await tasks.status(replayed.taskID)?.status == .completed { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try await harness.assertFullyDeleted()
+    }
+
     @Test func `a resuming delete repeats no finished phase`() async throws {
         let harness = try await DeleteHarness()
         try await WorkloadEffectGate.$hook.withValue({ phase in
@@ -851,6 +932,25 @@ private final class UpdateHarness: @unchecked Sendable {
             dataMigration: nil,
             progress: nil,
         )
+    }
+}
+
+/// Lets a test hold a background worker at the door while it inspects mid-flight state.
+private actor AsyncStreamGate {
+    private var released = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func waitForRelease() async {
+        if released { return }
+        await withCheckedContinuation { continuation in
+            waiter = continuation
+        }
+    }
+
+    func release() {
+        released = true
+        waiter?.resume()
+        waiter = nil
     }
 }
 

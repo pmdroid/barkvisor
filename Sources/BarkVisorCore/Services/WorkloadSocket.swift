@@ -194,14 +194,17 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
                 db: db,
                 dataDir: Config.dataDir,
             )
-            try await waitForDelete(deleted.taskID)
+            try await waitForDelete(deleted.taskID, db: db)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "deleted", runtime: runtime)
         default:
             throw LocalManagementError.malformed
         }
     }
 
-    private func waitForDelete(_ taskID: String) async throws {
+    /// Waits on the durable operation, not the in-memory task. The task ID handed back by
+    /// `deleteVM` is the operation record's id, so this still resolves if the in-memory task
+    /// is gone (a restart mid-delete) and the record is what the wait is actually about.
+    private func waitForDelete(_ taskID: String, db: DatabasePool) async throws {
         for _ in 0 ..< 2_400 {
             if let event = await tasks.status(taskID) {
                 switch event.status {
@@ -210,6 +213,15 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
                 case .failed, .cancelled:
                     throw BarkVisorError.conflict(event.error ?? "Workload delete did not finish")
                 case .queued, .running:
+                    break
+                }
+            } else if let record = try await WorkloadOperationStore.fetch(db: db, id: taskID) {
+                switch record.status {
+                case WorkloadOperationStatus.completed:
+                    return
+                case WorkloadOperationStatus.failed, WorkloadOperationStatus.cancelled:
+                    throw BarkVisorError.conflict(record.error ?? "Workload delete did not finish")
+                default:
                     break
                 }
             }
