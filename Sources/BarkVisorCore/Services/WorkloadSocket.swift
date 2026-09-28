@@ -186,7 +186,7 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
             try await vmManager.restart(vmID: vm.id)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "running", runtime: runtime)
         case "delete":
-            let (taskID, _) = try await VMLifecycleService.deleteVM(
+            let deleted = try await VMLifecycleService.deleteVM(
                 id: vm.id,
                 keepDisk: false,
                 vmManager: vmManager,
@@ -194,7 +194,7 @@ public struct LiveWorkloadSocketDriver: WorkloadSocketDriving {
                 db: db,
                 dataDir: Config.dataDir,
             )
-            try await waitForDelete(taskID)
+            try await waitForDelete(deleted.taskID)
             return WorkloadSocketSnapshot(workloadID: vm.id, state: "deleted", runtime: runtime)
         default:
             throw LocalManagementError.malformed
