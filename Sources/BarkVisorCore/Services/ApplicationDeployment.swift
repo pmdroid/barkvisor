@@ -656,15 +656,19 @@ enum ApplicationDeployment {
             phase = "containers_stopped"
         }
         guard containersStopped(id: workloadID, project: project, dataDir: dataDir) else {
-            _ = try await WorkloadOperationStore.fail(
+            // `ps` cannot confirm the containers are gone, so they may still hold host
+            // ports. Throwing keeps the caller — notably VM delete — from dropping the
+            // workload row and its PortRegistry claims while that is true.
+            let message = "containers still running"
+            _ = try? await WorkloadOperationStore.fail(
                 db: db,
                 operationID: record.id,
                 attemptID: record.attemptID,
                 phase: "containers_stopped",
                 recoveryOutcome: ApplicationReadiness.outcomeCleanupIncomplete,
-                error: "containers still running",
+                error: message,
             )
-            return
+            throw BarkVisorError.conflict(message)
         }
         try await checkpoint(operation: record, db: db, phase: "before_file_cleanup")
         do {

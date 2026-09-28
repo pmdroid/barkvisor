@@ -77,9 +77,16 @@ struct FailFastDockerRunner: DockerCommandRunning {
 }
 
 /// Reports every container as already stopped so a teardown goes straight to `compose down`.
+/// `keepsRunningAfterStop` makes `ps` keep reporting `running` even after `compose stop`
+/// succeeds, which is the state a stubborn container leaves behind.
 final class TeardownComposeStub: ComposeCommandRunning, @unchecked Sendable {
     private(set) var stop = 0
     private(set) var down = 0
+    var keepsRunningAfterStop: Bool
+
+    init(keepsRunningAfterStop: Bool = false) {
+        self.keepsRunningAfterStop = keepsRunningAfterStop
+    }
 
     func run(
         arguments: [String],
@@ -89,9 +96,10 @@ final class TeardownComposeStub: ComposeCommandRunning, @unchecked Sendable {
         if arguments.contains("stop") { stop += 1 }
         if arguments.contains("down") { down += 1 }
         if arguments.contains("ps") {
+            let state = keepsRunningAfterStop ? "running" : "exited"
             return CommandResult(
                 exitCode: 0,
-                stdout: Data("{\"State\":\"exited\"}\n".utf8),
+                stdout: Data("{\"State\":\"\(state)\"}\n".utf8),
                 stderr: Data(),
             )
         }
