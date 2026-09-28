@@ -5,40 +5,70 @@ import GRDB
 #endif
 
 public enum HostNetworkPendingReaper {
-    public static func expire(db: DatabasePool) async {
-        for pending in pendingWithoutStamp() {
-            guard pending.expired else { continue }
-            guard HostNetworkPendingCommitService.claimRevert(pending.target) else { continue }
-            defer { HostNetworkPendingCommitService.releaseRevert(pending.target) }
-            if HostNetworkPendingCommitService.stampExists(pending.target) {
+    public static func expire(db: DatabasePool, dataDir: URL = Config.dataDir) async {
+        let pendings = pendingWithoutStamp(dataDir: dataDir)
+        for target in expireTargets(pendings: pendings, dataDir: dataDir) {
+            guard HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir) else { continue }
+            defer { HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir) }
+            // Re-check after claiming: a commit that landed while we waited owns the target.
+            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) {
                 continue
             }
-            do {
-                let bridge = workloadBridgeName(pending)
-                let attached = try await pending.createdBridge
-                    ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
-                    : 0
-                if try await settleExpired(pending, db: db) {
-                    continue
-                }
-                guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
-                    continue
-                }
-                try revertHost(pending, attached: attached)
-                let still = try await pending.createdBridge
-                    ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
-                    : 0
-                if LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(
-                    createdBridge: pending.createdBridge,
-                    attached: still,
-                ) {
-                    try await NetworkService.deleteUnattached(bridge: bridge, db: db)
-                }
-            } catch {
-                continue
+            for pending in pendings where pending.target == target && pending.expired {
+                await expirePending(pending, db: db)
             }
+            // Recovery records run inside the same per-target gate, so a snapshot is never
+            // written while another revert or commit owns the target.
+            HostNetworkRecovery.sweepExpired(
+                dataDir: dataDir,
+                now: Date(),
+                target: target,
+                options: HostNetworkRecoverySweepOptions(pendingCommits: pendings),
+            )
         }
-        try? HostNetworkRecovery.revertExpired()
+    }
+
+    /// Every target with expired work: pending commits and recovery records, so a record
+    /// is still swept after its pending commit file is gone.
+    public static func expireTargets(
+        pendings: [HostNetworkPendingCommit],
+        dataDir: URL = Config.dataDir,
+    ) -> [String] {
+        var targets: [String] = []
+        for pending in pendings where !targets.contains(pending.target) {
+            targets.append(pending.target)
+        }
+        for record in HostNetworkRecovery.list(dataDir: dataDir) where !targets.contains(record.target) {
+            targets.append(record.target)
+        }
+        return targets
+    }
+
+    private static func expirePending(_ pending: HostNetworkPendingCommit, db: DatabasePool) async {
+        do {
+            let bridge = workloadBridgeName(pending)
+            let attached = try await pending.createdBridge
+                ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                : 0
+            if try await settleExpired(pending, db: db) {
+                return
+            }
+            guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
+                return
+            }
+            try revertHost(pending, attached: attached)
+            let still = try await pending.createdBridge
+                ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
+                : 0
+            if LinuxHostBridgeApply.shouldDeleteWorkloadNetwork(
+                createdBridge: pending.createdBridge,
+                attached: still,
+            ) {
+                try await NetworkService.deleteUnattached(bridge: bridge, db: db)
+            }
+        } catch {
+            return
+        }
     }
 
     public static func settleExpired(
@@ -66,16 +96,9 @@ public enum HostNetworkPendingReaper {
         #endif
     }
 
-    public static func pendingWithoutStamp() -> [HostNetworkPendingCommit] {
-        #if os(Linux)
-            return HostNetworkPendingCommitService.listLinuxPending()
-                .filter { !HostNetworkPendingCommitService.stampExists($0.target) }
-        #elseif os(macOS)
-            return HostNetworkPendingCommitService.listMacPending()
-                .filter { !HostNetworkPendingCommitService.stampExists($0.target) }
-        #else
-            return []
-        #endif
+    public static func pendingWithoutStamp(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
+        HostNetworkPendingCommitService.listPending(dataDir: dataDir)
+            .filter { !HostNetworkPendingCommitService.stampExists($0.target, dataDir: dataDir) }
     }
 
     public static func revertHost(_ pending: HostNetworkPendingCommit, attached: Int = 0) throws {

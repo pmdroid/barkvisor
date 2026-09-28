@@ -143,40 +143,35 @@ public enum HostNetworkPendingCommitService {
     }
 
     public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
-        let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        var result: [HostNetworkPendingCommit] = []
-        for name in names where name.hasSuffix("-pending.json") {
-            let path = "\(dir)/\(name)"
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-                  let pending = try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
-            else { continue }
-            result.append(pending)
-        }
-        return result
+        listPending(dataDir: dataDir)
     }
 
-    public static func writeLinux(_ pending: HostNetworkPendingCommit) throws {
-        if let other = blockingPending(target: pending.target, existing: listLinuxPending()) {
+    public static func writeLinux(_ pending: HostNetworkPendingCommit, dataDir: URL = Config.dataDir) throws {
+        if let other = blockingPending(target: pending.target, existing: listLinuxPending(dataDir: dataDir)) {
             throw BarkVisorError.conflict(
                 "A host network apply is already pending for \(other.target). Keep or Revert it first.",
             )
         }
-        let path = linuxPendingPath(bridge: pending.target)
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
         try FileManager.default.createDirectory(
             atPath: "/run/barkvisor",
+            withIntermediateDirectories: true,
+        )
+        try write(pending, to: linuxPendingPath(bridge: pending.target, dataDir: dataDir))
+    }
+
+    /// Persists a pending commit without any host-side setup, so a test can stage one in a
+    /// temp data directory.
+    public static func write(_ pending: HostNetworkPendingCommit, to path: String) throws {
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
         let data = try JSONEncoder().encode(pending)
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
-    public static func clearLinux(bridge: String) {
-        try? FileManager.default.removeItem(atPath: linuxPendingPath(bridge: bridge))
+    public static func clearLinux(bridge: String, dataDir: URL = Config.dataDir) {
+        try? FileManager.default.removeItem(atPath: linuxPendingPath(bridge: bridge, dataDir: dataDir))
     }
 
     #if os(macOS)
@@ -192,13 +187,7 @@ public enum HostNetworkPendingCommitService {
                     "A host network apply is already pending for \(other.target). Keep or Revert it first.",
                 )
             }
-            let url = macPendingURL(device: pending.target)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-            )
-            let data = try JSONEncoder().encode(pending)
-            try data.write(to: url, options: .atomic)
+            try write(pending, to: macPendingURL(device: pending.target).path)
         }
 
         public static func clearMac(device: String) {
@@ -207,6 +196,11 @@ public enum HostNetworkPendingCommitService {
     #endif
 
     public static func listMacPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
+        listPending(dataDir: dataDir)
+    }
+
+    /// Every pending commit on this Device, whichever platform wrote it.
+    public static func listPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
         let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         var result: [HostNetworkPendingCommit] = []
@@ -220,8 +214,8 @@ public enum HostNetworkPendingCommitService {
         return result
     }
 
-    public static func stampExists(_ target: String) -> Bool {
-        FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target))
+    public static func stampExists(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
+        FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir))
     }
 
     public static func claimPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
@@ -234,8 +228,8 @@ public enum HostNetworkPendingCommitService {
             .appendingPathComponent("\(target)-keeping").path
     }
 
-    public static func keepingExists(_ target: String) -> Bool {
-        FileManager.default.fileExists(atPath: keepingPath(target))
+    public static func keepingExists(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
+        FileManager.default.fileExists(atPath: keepingPath(target, dataDir: dataDir))
     }
 
     private static let applyGate = NSLock()
@@ -257,10 +251,10 @@ public enum HostNetworkPendingCommitService {
         return lock
     }
 
-    public static func claimRevert(_ target: String) -> Bool {
+    public static func claimRevert(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
         let lock = gate(for: target)
         lock.lock()
-        let path = claimPath(target)
+        let path = claimPath(target, dataDir: dataDir)
         let fm = FileManager.default
         try? fm.createDirectory(
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
@@ -300,8 +294,8 @@ public enum HostNetworkPendingCommitService {
         }
     }
 
-    public static func releaseRevert(_ target: String) {
-        let path = claimPath(target)
+    public static func releaseRevert(_ target: String, dataDir: URL = Config.dataDir) {
+        let path = claimPath(target, dataDir: dataDir)
         let myPid = String(ProcessInfo.processInfo.processIdentifier)
         let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)

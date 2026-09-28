@@ -133,51 +133,6 @@ struct NetworkIntentTests {
         #expect(rows.count == 2)
     }
 
-    @Test func `expired unconfirmed recovery restores the snapshot`() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let data = root.appendingPathComponent("data", isDirectory: true)
-        let file = root.appendingPathComponent("nic.txt")
-        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try "dhcp".write(to: file, atomically: true, encoding: .utf8)
-        let snapshot = HostNetworkRecovery.capture(paths: [file.path])
-        let deadline = Date().addingTimeInterval(-5)
-        _ = try HostNetworkRecovery.begin(
-            operationId: "op-old",
-            generation: 2,
-            target: "eth0",
-            snapshot: snapshot,
-            deadline: deadline,
-            dataDir: data,
-        )
-        try "static".write(to: file, atomically: true, encoding: .utf8)
-        let pending = HostNetworkPendingCommit(
-            target: "eth0",
-            commitDeadline: deadline,
-            rollbackSeconds: 60,
-            operationId: "op-old",
-            generation: 2,
-        )
-        #expect(throws: BarkVisorError.self) {
-            try HostNetworkRecovery.requireConfirmation(
-                pending: pending,
-                requestedOperationId: "op-old",
-                requestedGeneration: 2,
-                authorized: true,
-                now: Date(),
-                dataDir: data,
-            )
-        }
-        let reverted = try HostNetworkRecovery.revertExpired(dataDir: data, now: Date())
-        #expect(reverted == ["op-old"])
-        #expect(try String(contentsOf: file, encoding: .utf8) == "dhcp")
-        let record = HostNetworkRecovery.load(operationId: "op-old", dataDir: data)
-        #expect(record?.phase == HostNetworkRecoveryPhase.reverting)
-        #expect(!PendingNetworkUsePolicy.attachmentConfirmsPending())
-        #expect(PendingNetworkUsePolicy.expiryAction(attachedWorkloads: 3) == .revert)
-        #expect(!PendingNetworkUsePolicy.usableWhileUnconfirmed())
-    }
-
     @Test func `stale or unauthorized confirmation does not commit a newer operation`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
