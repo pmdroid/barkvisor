@@ -40,11 +40,14 @@ public enum HostNetworkPendingReaper {
                 target: target,
                 options: HostNetworkRecoverySweepOptions(
                     pendingCommits: pendings,
+                    // Reports false when another holder owns the target's revert claim,
+                    // so the sweep leaves the record retryable instead of settling a
+                    // restore that never ran.
                     exclusive: { body in
-                        _ = try HostNetworkPendingCommitService.withHostMutationGate(
+                        try HostNetworkPendingCommitService.withHostMutationGate(
                             target: target,
                             dataDir: dataDir,
-                        ) { try body() }
+                        ) { try body() } != nil
                     },
                 ),
             )

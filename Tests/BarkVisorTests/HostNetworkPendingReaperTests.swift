@@ -405,6 +405,62 @@ struct HostNetworkPendingReaperTests {
         #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br2")
     }
 
+    /// Another process holding the target's revert claim must leave the expired record
+    /// retryable. The reaper's exclusion returns false in that case, and the sweep must not
+    /// record a restore that never ran: that would suppress the retry permanently and
+    /// leave the expired host configuration in place.
+    @Test func `a claim held by another process leaves the record retryable`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = try tempPool()
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "applied".write(to: file, atomically: true, encoding: .utf8)
+
+        // A live foreign process owns the claim, so claimRevert refuses it.
+        let claim = URL(
+            fileURLWithPath: HostNetworkPendingCommitService.claimPath("eth0", dataDir: data),
+        )
+        try FileManager.default.createDirectory(at: claim, withIntermediateDirectories: true)
+        try "1".write(to: claim.appendingPathComponent("pid"), atomically: true, encoding: .utf8)
+        try "1".write(to: claim.appendingPathComponent("refs"), atomically: true, encoding: .utf8)
+        #expect(!HostNetworkPendingCommitService.claimRevert("eth0", dataDir: data))
+
+        let reverts = RevertRecorder()
+        await HostNetworkPendingReaper.expire(
+            db: pool,
+            dataDir: data,
+            options: HostNetworkReapOptions(revertHost: reverts.record),
+        )
+        #expect(reverts.targets.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "applied")
+        let record = HostNetworkRecovery.load(operationId: "op-old", dataDir: data)
+        #expect(record?.phase != HostNetworkRecoveryPhase.restored)
+        #expect(record?.restoredAt == nil)
+        #expect(record.map { !HostNetworkRecoveryPhase.isTerminal($0.phase) } == true)
+
+        // Once the other holder is gone the sweep restores it.
+        try? FileManager.default.removeItem(at: claim)
+        await HostNetworkPendingReaper.expire(
+            db: pool,
+            dataDir: data,
+            options: HostNetworkReapOptions(revertHost: reverts.record),
+        )
+        #expect(try String(contentsOf: file, encoding: .utf8) == "before")
+        #expect(HostNetworkRecovery.load(operationId: "op-old", dataDir: data)?.phase
+            == HostNetworkRecoveryPhase.restored)
+    }
+
     @Test func `only expired work claims a gate`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)

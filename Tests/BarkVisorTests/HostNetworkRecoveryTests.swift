@@ -172,6 +172,60 @@ struct HostNetworkRecoveryTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == "dhcp")
     }
 
+    /// The exclusion can decline to run the restore at all, when another holder owns the
+    /// target's revert claim. The record must then stay retryable: reporting it restored
+    /// would suppress the retry permanently and leave the expired host configuration in
+    /// place, and the record sweep only restores files it captured, so nothing else undoes
+    /// a restore that never happened.
+    @Test func `a declined exclusion leaves the record retryable`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "dhcp".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "eth0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "static".write(to: file, atomically: true, encoding: .utf8)
+
+        let restores = RestoreCount()
+        let swept = HostNetworkRecovery.sweepExpired(
+            dataDir: data,
+            now: Date(),
+            options: HostNetworkRecoverySweepOptions(
+                restore: { snapshot in
+                    restores.increment()
+                    try HostNetworkRecovery.restore(snapshot)
+                },
+                // Stands in for another process holding the target's revert claim.
+                exclusive: { _ in false },
+            ),
+        )
+        #expect(swept.deferred == ["op-old"])
+        #expect(swept.restored.isEmpty)
+        #expect(swept.failed.isEmpty)
+        #expect(!restores.didRestore)
+        // Nothing was written to the host, and the record is left non-terminal: the sweep
+        // notes `restoring` before it takes the gate, which is the same state a crash
+        // mid-restore leaves, and both mean "retry this".
+        #expect(try String(contentsOf: file, encoding: .utf8) == "static")
+        let record = HostNetworkRecovery.load(operationId: "op-old", dataDir: data)
+        #expect(record?.phase == HostNetworkRecoveryPhase.restoring)
+        #expect(record?.restoredAt == nil)
+        #expect(record.map { !HostNetworkRecoveryPhase.isTerminal($0.phase) } == true)
+
+        // With the claim released, the very next sweep restores it.
+        let retried = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(retried.restored == ["op-old"])
+        #expect(try String(contentsOf: file, encoding: .utf8) == "dhcp")
+    }
+
     @Test func `a terminal write is retried before the sweep gives up`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
@@ -427,6 +481,24 @@ struct HostNetworkRecoveryTests {
         #expect(record?.restoreAttempts == 0)
         #expect(record?.lastRestoreError == nil)
         #expect(record?.restoredAt == nil)
+    }
+
+    /// Counts restores across the threads a sweep may run on.
+    private final class RestoreCount: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen = 0
+
+        var didRestore: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return seen > 0
+        }
+
+        func increment() {
+            lock.lock()
+            seen += 1
+            lock.unlock()
+        }
     }
 
     private func jsonString(_ raw: String) -> String {

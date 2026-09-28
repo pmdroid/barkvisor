@@ -161,8 +161,9 @@ public struct HostNetworkRecoverySweepOptions {
     public var persist: ((HostNetworkRecoveryRecord) throws -> Void)?
     /// Exclusion held across the ownership re-check and the host write. Defaults to the
     /// same gate every host network apply holds, so an apply on an overlapping target
-    /// cannot interleave.
-    public var exclusive: ((@escaping () throws -> Void) throws -> Void)?
+    /// cannot interleave. Returns false when the body was not run, so a caller cannot
+    /// record a phase change for work that never happened.
+    public var exclusive: ((@escaping () throws -> Void) throws -> Bool)?
 
     public init(
         pendingCommits: [HostNetworkPendingCommit]? = nil,
@@ -170,7 +171,7 @@ public struct HostNetworkRecoverySweepOptions {
         keepingExists: ((String) -> Bool)? = nil,
         restore: @escaping (HostNetworkSnapshot) throws -> Void = { try HostNetworkRecovery.restore($0) },
         persist: ((HostNetworkRecoveryRecord) throws -> Void)? = nil,
-        exclusive: ((@escaping () throws -> Void) throws -> Void)? = nil,
+        exclusive: ((@escaping () throws -> Void) throws -> Bool)? = nil,
     ) {
         self.pendingCommits = pendingCommits
         self.stampExists = stampExists
@@ -371,7 +372,10 @@ public enum HostNetworkRecovery {
                         keepingExists: keeping,
                         restore: options.restore,
                         persist: options.persist ?? { try HostNetworkRecovery.save($0, dataDir: dataDir) },
-                        exclusive: options.exclusive ?? { body in try HostNetworkPendingCommitService.withApplyGate(body) },
+                        exclusive: options.exclusive ?? { body in
+                            try HostNetworkPendingCommitService.withApplyGate(body)
+                            return true
+                        },
                         // Re-read ownership inside that section, immediately before the
                         // write, so an apply that landed while this sweep was running wins.
                         outranked: {
@@ -408,8 +412,9 @@ public enum HostNetworkRecovery {
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
         var persist: (HostNetworkRecoveryRecord) throws -> Void
-        /// Runs the re-check and the write with host network applies excluded.
-        var exclusive: (@escaping () throws -> Void) throws -> Void
+        /// Runs the re-check and the write with host network applies excluded. Returns
+        /// false when it declined to run the body because another holder owns the target.
+        var exclusive: (@escaping () throws -> Void) throws -> Bool
         var outranked: () -> Bool
     }
 
@@ -448,7 +453,7 @@ public enum HostNetworkRecovery {
         // The re-check and the write share one exclusion with host network applies, so a
         // concurrent apply on an overlapping target cannot write between them. Re-reading
         // the records alone would still leave that window open.
-        try context.exclusive {
+        let ran = try context.exclusive {
             if context.outranked() {
                 try markSuperseded(record, context: context)
                 outcome = .superseded
@@ -460,6 +465,10 @@ public enum HostNetworkRecovery {
                 restoreError = error
             }
         }
+        // The exclusion may decline to run the body at all, when another holder owns the
+        // target's revert claim. Nothing was written, so the record must stay retryable
+        // rather than be marked settled.
+        guard ran else { return .deferred }
         if case .superseded = outcome { return .superseded }
         if let restoreError {
             next.phase = HostNetworkRecoveryPhase.restoreFailed
