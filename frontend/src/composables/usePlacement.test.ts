@@ -101,6 +101,8 @@ describe('usePlacement (PAS-240)', () => {
       selectedHostId: ref(''),
       userOverrodeHost: ref(false),
       effectiveGuestArch: computed(() => 'arm64'),
+      declaredArchitectures: computed(() => ['arm64']),
+      requiredFeatures: computed(() => []),
       memoryMB,
       osType: ref('linux'),
       selectedLibraryKey: computed(() => ''),
@@ -156,6 +158,8 @@ describe('usePlacement (PAS-240)', () => {
       selectedHostId,
       userOverrodeHost: ref(false),
       effectiveGuestArch: computed(() => 'arm64'),
+      declaredArchitectures: computed(() => ['arm64']),
+      requiredFeatures: computed(() => []),
       memoryMB: ref(1024),
       osType: ref('linux'),
       selectedLibraryKey: computed(() => key),
@@ -186,11 +190,83 @@ describe('usePlacement (PAS-240)', () => {
       selectedHostId,
       userOverrodeHost,
       effectiveGuestArch: computed(() => 'arm64'),
+      declaredArchitectures: computed(() => ['arm64']),
+      requiredFeatures: computed(() => []),
       memoryMB: ref(1024),
       osType: ref('linux'),
       selectedLibraryKey: computed(() => ''),
     })
     await placement.refreshPlacement(true)
     expect(selectedHostId.value).toBe('desk')
+  })
+
+  test('a new architecture list drops the previous hard reason before the score returns', async () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'zimaboard',
+        role: 'member',
+        displayName: 'zimaboard',
+        platform: { os: 'linux', arch: 'x86_64' },
+      }),
+    ])
+    const mismatch = 'Architecture (arm64) is not compatible with this Device (x86_64).'
+    const arches = ref<string[]>(['arm64'])
+    const features = ref<string[]>([])
+    const bodies: Array<Record<string, unknown>> = []
+    let releaseSecond: (() => void) | undefined
+    api.post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url !== '/home/placement/score') throw new Error(`unexpected POST ${url}`)
+      bodies.push(body ?? {})
+      if (bodies.length === 1) {
+        return Promise.resolve({
+          data: {
+            recommendedHostId: 'desk',
+            candidates: [{
+              hostId: 'zimaboard',
+              role: 'member',
+              eligible: false,
+              recommended: false,
+              rank: 1,
+              reasons: [{ code: 'arch_mismatch', kind: 'hard', message: mismatch }],
+            }],
+          },
+        })
+      }
+      return new Promise((resolve) => {
+        releaseSecond = () => resolve({
+          data: { recommendedHostId: 'desk', candidates: [] },
+        })
+      })
+    }) as typeof api.post
+
+    const placement = usePlacement({
+      selectedHostId: ref('desk'),
+      userOverrodeHost: ref(true),
+      effectiveGuestArch: computed(() => arches.value[0] ?? ''),
+      declaredArchitectures: computed(() => arches.value),
+      requiredFeatures: computed(() => features.value),
+      memoryMB: ref(2048),
+      osType: ref('linux'),
+      selectedLibraryKey: computed(() => ''),
+    })
+    await placement.refreshPlacement()
+    expect(placement.placementScore.value?.candidates[0]?.reasons[0]?.message).toBe(mismatch)
+
+    arches.value = ['arm64', 'x86_64']
+    features.value = ['kvm']
+    expect(placement.placementScore.value).toBeNull()
+
+    const pending = placement.refreshPlacement()
+    expect(placement.placementScore.value).toBeNull()
+    expect(placement.placementRefreshing.value).toBe(true)
+    expect(bodies[1]?.declaredArchitectures).toEqual(['arm64', 'x86_64'])
+    expect(bodies[1]?.requiredFeatures).toEqual(['kvm'])
+    expect(bodies[1]?.minMemoryMB).toBe(2048)
+    expect(bodies[1]?.requestedMemoryMB).toBe(2048)
+    releaseSecond?.()
+    await pending
+    expect(placement.placementScore.value?.candidates ?? []).toEqual([])
   })
 })

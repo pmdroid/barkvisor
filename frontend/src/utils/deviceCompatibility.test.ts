@@ -124,6 +124,16 @@ describe('deviceCompatibility (PAS-34)', () => {
     expect(templateIncompatibilityReasons(x86, template({ architectures: ['arm64'] }), { capabilities: x86Caps })).toContain(
       'Architecture (arm64) is not compatible with this Device (x86_64).',
     )
+    const debian = template({
+      slug: 'debian-13',
+      imageSlug: 'debian-13-arm64',
+      architectures: ['arm64', 'x86_64'],
+      imageByArch: { arm64: 'debian-13-arm64', x86_64: 'debian-13-x86_64' },
+    })
+    expect(
+      templateIncompatibilityReasons(x86, debian, { capabilities: x86Caps })
+        .some((reason) => reason.startsWith('Architecture')),
+    ).toBe(false)
   })
 
   test('Windows follows advertised guestTypes, not an arm64-only host check', () => {

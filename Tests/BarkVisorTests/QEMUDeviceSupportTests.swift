@@ -40,25 +40,17 @@ struct QEMUDeviceSupportTests {
         #expect(windowsRequired.subtracting(supported).sorted() == ["nvme", "usb-storage", "virtio-gpu-pci"])
     }
 
-    @Test func `cache key changes when module files appear`() {
-        let binary = URL(fileURLWithPath: "/usr/bin/qemu-system-x86_64")
+    @Test func `cache key changes when module files appear`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let binary = root.appendingPathComponent("bin/qemu-system-x86_64")
+        let modules = root.appendingPathComponent("lib/qemu")
+        try FileManager.default.createDirectory(at: modules, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let before = QEMUDeviceSupport.cacheKey(for: binary)
-        let dir = QEMUDeviceSupport.moduleDirectories(for: binary)
-            .first { FileManager.default.fileExists(atPath: $0) }
-        let added: URL? = dir.map {
-            let url = URL(fileURLWithPath: $0).appendingPathComponent("qemu-test-\(UUID().uuidString).so")
-            try? Data("x".utf8).write(to: url)
-            return url
-        }
-        defer {
-            if let added { try? FileManager.default.removeItem(at: added) }
-        }
+        let added = modules.appendingPathComponent("qemu-test.so")
+        try Data("x".utf8).write(to: added)
         let after = QEMUDeviceSupport.cacheKey(for: binary)
-        if added != nil {
-            #expect(before != after)
-        } else {
-            #expect(before == after)
-        }
+        #expect(before != after)
     }
 
     @Test func `firmware vars candidates match the 4m token case-insensitively`() {

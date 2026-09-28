@@ -52,6 +52,19 @@ struct PublicListenerTests {
             }
             let http = try #require(server.httpPort)
             let tls = try #require(server.deviceTLSPort)
+            let queryHealth = try await httpExchange(
+                port: http,
+                request: """
+                GET /api/health?nonce=1 HTTP/1.1\r
+                Host: 127.0.0.1\r
+                \r
+                """,
+            )
+            #expect(queryHealth.contains("200"))
+            #expect(queryHealth.contains("\"status\":\"ok\""))
+            #expect(queryHealth.contains("\"protocol\":\"1\""))
+            #expect(queryHealth.contains("BarkDaemon"))
+            #expect(queryHealth.contains("BarkServer"))
             #expect(server.bindsPublicHTTP)
             #expect(server.bindsDeviceTLS)
             #expect(!daemon.bindsTCP)
@@ -66,7 +79,7 @@ struct PublicListenerTests {
             #expect(!VaporListenerGate.authoritativeStartAllowed(role: .barkServer))
             #expect(!VaporListenerGate.authoritativeStartAllowed(role: .barkDaemon))
             #expect(VaporListenerGate.authoritativeStartAllowed(role: .combined))
-            let started = try httpExchange(
+            let started = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/start HTTP/1.1\r
@@ -79,7 +92,17 @@ struct PublicListenerTests {
             )
             #expect(started.contains("200"))
             #expect(started.contains("running"))
-            let again = try httpExchange(
+            let health = try await httpExchange(
+                port: http,
+                request: """
+                GET /api/health HTTP/1.1\r
+                Host: 127.0.0.1\r
+                \r
+                """,
+            )
+            #expect(health.contains("200"))
+            #expect(health.contains("\"status\":\"ok\""))
+            let again = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/start HTTP/1.1\r
@@ -91,7 +114,7 @@ struct PublicListenerTests {
             )
             #expect(again.contains("running"))
             #expect(driver.calls.count == 1)
-            let forged = try httpExchange(
+            let forged = try await httpExchange(
                 port: http,
                 request: """
                 POST /api/vms/vm-1/stop HTTP/1.1\r
@@ -104,7 +127,7 @@ struct PublicListenerTests {
             #expect(forged.contains("403"))
             #expect(forged.contains("forgedIdentity"))
             #expect(driver.calls.count == 1)
-            let events = try httpExchange(
+            let events = try await httpExchange(
                 port: http,
                 request: """
                 GET /api/vms/vm-1/events HTTP/1.1\r
@@ -124,10 +147,73 @@ struct PublicListenerTests {
             _ = try? await daemonTask.value
         #endif
     }
+
+    @Test func `releasing an inherited public listener frees that port`() throws {
+        #if os(Windows)
+            return
+        #else
+            let held = try listen(port: 0)
+            let spared = try listen(port: 0)
+            defer {
+                if fcntl(held.fd, F_GETFD) >= 0 { close(held.fd) }
+                if fcntl(spared.fd, F_GETFD) >= 0 { close(spared.fd) }
+            }
+            InheritedPublicListeners.release(ports: [held.port])
+            #expect(fcntl(held.fd, F_GETFD) < 0)
+            #expect(fcntl(spared.fd, F_GETFD) >= 0)
+            let again = try listen(port: held.port)
+            defer { close(again.fd) }
+            #expect(again.port == held.port)
+        #endif
+    }
 }
 
 #if !os(Windows)
-    private func httpExchange(port: Int, request: String) throws -> String {
+    private func listen(port: Int) throws -> (fd: Int32, port: Int) {
+        let fd = socket(AF_INET, PlatformSocket.stream, 0)
+        guard fd >= 0 else { throw LocalManagementError.unavailable }
+        var reuse: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(port).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                #if canImport(Darwin)
+                    Darwin.bind(fd, sock, socklen_t(MemoryLayout<sockaddr_in>.size))
+                #else
+                    Glibc.bind(fd, sock, socklen_t(MemoryLayout<sockaddr_in>.size))
+                #endif
+            }
+        }
+        guard bound == 0, platformListen(fd) == 0 else {
+            close(fd)
+            throw LocalManagementError.unavailable
+        }
+        var got = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &got) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                getsockname(fd, sock, &length)
+            }
+        }
+        return (fd, Int(UInt16(bigEndian: got.sin_port)))
+    }
+
+    private func platformListen(_ fd: Int32) -> Int32 {
+        #if canImport(Darwin)
+            Darwin.listen(fd, 16)
+        #else
+            Glibc.listen(fd, 16)
+        #endif
+    }
+
+    private func httpExchange(port: Int, request: String) async throws -> String {
+        try await runSocketIO { try blockingHTTPExchange(port: port, request: request) }
+    }
+
+    private func blockingHTTPExchange(port: Int, request: String) throws -> String {
         let fd = socket(AF_INET, PlatformSocket.stream, 0)
         guard fd >= 0 else { throw LocalManagementError.unavailable }
         defer { close(fd) }
@@ -147,9 +233,9 @@ struct PublicListenerTests {
             let wrote = remaining.withUnsafeBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return -1 }
                 #if canImport(Darwin)
-                    return Darwin.write(fd, base, raw.count)
+                    return Darwin.send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 #else
-                    return Glibc.write(fd, base, raw.count)
+                    return Glibc.send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
                 #endif
             }
             if wrote <= 0 { throw LocalManagementError.connectionLost }
@@ -157,7 +243,7 @@ struct PublicListenerTests {
         }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4_096)
-        if poll(&pollFD, 1, 2_000) <= 0 { throw LocalManagementError.connectionLost }
+        if poll(&pollFD, 1, 10_000) <= 0 { throw LocalManagementError.connectionLost }
         let count = buffer.withUnsafeMutableBytes { raw -> Int in
             guard let base = raw.baseAddress else { return -1 }
             return read(fd, base, raw.count)

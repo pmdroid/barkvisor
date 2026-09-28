@@ -431,14 +431,7 @@ public enum ApplicationLifecycleService {
     }
 
     public static func portRules(_ ports: [PublishedPort]) -> [PortForwardRule] {
-        ports.map {
-            PortForwardRule(
-                protocol: $0.proto,
-                hostPort: $0.hostPort,
-                guestPort: $0.containerPort,
-                host: $0.hostAddress,
-            )
-        }
+        applicationPortRules(ports)
     }
 
     static func verifyInspectedBinds(
@@ -446,18 +439,11 @@ public enum ApplicationLifecycleService {
         bindHost: String,
         expected: [PublishedPort],
     ) throws {
-        let data = try DockerInspect.json(containerNames)
-        let bindings = try ComposePorts.parseInspectBindings(data)
-        try ComposePorts.requireLANHostIP(
-            bindings,
+        try applicationVerifyInspectedBinds(
+            containerNames: containerNames,
             bindHost: bindHost,
             expected: expected,
-            allowWildcard: false,
         )
-    }
-
-    public static func openURL(from ports: [PublishedPort]) -> String? {
-        ports.compactMap(\.openURL).first
     }
 
     public static func openURL(
@@ -471,7 +457,7 @@ public enum ApplicationLifecycleService {
             id: id,
             catalogProxy: spec?.spec.ingress?.mode,
             ingress: spec?.spec.ingress,
-            lanURL: openURL(from: ports),
+            lanURL: ports.compactMap(\.openURL).first,
             listenHost: lanHost,
             listenPort: listenPort,
         )
@@ -481,7 +467,9 @@ public enum ApplicationLifecycleService {
         if let name = vm.composeProject, !name.isEmpty { return name }
         return ComposeRuntime.composeProjectName(id: vm.id)
     }
+}
 
+extension ApplicationLifecycleService {
     private static func syncProjectLocked(
         vm: inout VM,
         db: DatabasePool,
@@ -760,11 +748,12 @@ public enum ApplicationLifecycleService {
         let project = projectName(vm)
         do {
             try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
+            ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
         } catch {
             let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
             Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
+            return
         }
-        ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
     }
 
     private static func recordLifecycleError(
@@ -1058,24 +1047,6 @@ public enum ApplicationLifecycleService {
         )
     }
 
-    private static func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
-        if vm.cpuCount >= 1, (128 ... 1_048_576).contains(vm.memoryMb) {
-            return (vm.cpuCount, vm.memoryMb)
-        }
-        return (nil, nil)
-    }
-
-    private static func serviceObservations(
-        containerNames: [String],
-        composeYaml: String?,
-    ) -> [WorkloadServiceObservation]? {
-        guard let data = try? DockerInspect.json(containerNames) else { return nil }
-        return DockerServiceHealth.observations(
-            inspectJSON: data,
-            roles: DockerServiceHealth.roles(composeYaml: composeYaml),
-        )
-    }
-
     static func setState(
         _ vm: inout VM,
         state: String,
@@ -1163,4 +1134,48 @@ public enum ApplicationLifecycleService {
             Log.vm.warning("Application \(vm.id) \(state): \(error)", vm: vm.id)
         }
     }
+}
+
+private func applicationPortRules(_ ports: [PublishedPort]) -> [PortForwardRule] {
+    ports.map {
+        PortForwardRule(
+            protocol: $0.proto,
+            hostPort: $0.hostPort,
+            guestPort: $0.containerPort,
+            host: $0.hostAddress,
+        )
+    }
+}
+
+private func applicationVerifyInspectedBinds(
+    containerNames: [String],
+    bindHost: String,
+    expected: [PublishedPort],
+) throws {
+    let data = try DockerInspect.json(containerNames)
+    let bindings = try ComposePorts.parseInspectBindings(data)
+    try ComposePorts.requireLANHostIP(
+        bindings,
+        bindHost: bindHost,
+        expected: expected,
+        allowWildcard: false,
+    )
+}
+
+private func enforcedLimits(_ vm: VM) -> (cpu: Int?, memoryMb: Int?) {
+    if vm.cpuCount >= 1, (128 ... 1_048_576).contains(vm.memoryMb) {
+        return (vm.cpuCount, vm.memoryMb)
+    }
+    return (nil, nil)
+}
+
+private func serviceObservations(
+    containerNames: [String],
+    composeYaml: String?,
+) -> [WorkloadServiceObservation]? {
+    guard let data = try? DockerInspect.json(containerNames) else { return nil }
+    return DockerServiceHealth.observations(
+        inspectJSON: data,
+        roles: DockerServiceHealth.roles(composeYaml: composeYaml),
+    )
 }

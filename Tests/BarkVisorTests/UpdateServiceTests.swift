@@ -131,13 +131,18 @@ struct UpdateServiceTests {
         #expect(deb.installArguments == ["-i", "/tmp/bv.deb"])
         #expect(deb.fixDependsExecutable == "/usr/bin/apt-get")
         #expect(deb.fixDependsArguments == ["-f", "install", "-y"])
-        #expect(deb.restartArguments == ["restart", "barkvisor.service"])
+        #expect(deb.restartArguments == [
+            "restart",
+            "barkvisor-daemon.service",
+            "barkvisor-server.service",
+        ])
         #expect(!deb.mentionsBrew)
 
         let pkg = AppliancePackageInstaller.plan(kind: .pkg, packagePath: "/tmp/bv.pkg")
         #expect(pkg.installExecutable == "/usr/sbin/installer")
         #expect(pkg.installArguments == ["-pkg", "/tmp/bv.pkg", "-target", "/"])
-        #expect(pkg.restartArguments == ["kickstart", "-k", "system/dev.barkvisor"])
+        #expect(pkg.restartExecutable == nil)
+        #expect(pkg.restartArguments.isEmpty)
         #expect(!pkg.mentionsBrew)
         #expect(!pkg.commandLines.joined().contains("sudo"))
     }

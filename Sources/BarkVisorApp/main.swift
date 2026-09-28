@@ -426,6 +426,7 @@ struct DaemonCommand: AsyncParsableCommand {
         #if os(Windows)
             throw ServiceProcessRoleError.unavailable
         #else
+            InheritedPublicListeners.release(ports: [Config.port, Config.agentPort])
             setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkDaemon.rawValue, 1)
             let euid = WorkloadPrivilegeDrop.currentEUID()
             let permissions = SocketPermissionPlan.forDaemonEUID(euid)
@@ -501,6 +502,7 @@ struct ServerCommand: AsyncParsableCommand {
         #if os(Windows)
             throw ServiceProcessRoleError.unavailable
         #else
+            InheritedPublicListeners.release(ports: [Config.port, Config.agentPort])
             setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkServer.rawValue, 1)
             try BarkServerStartup.refuseRoot(euid: WorkloadPrivilegeDrop.currentEUID())
             let handshake = try LocalManagementSocketClient.exchange(

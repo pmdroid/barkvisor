@@ -208,6 +208,11 @@ func registerProcessHealthRoute(_ app: Vapor.Application) {
             )
         }
 
-        return WorkloadHealthProjector.processHealth(checks: checks, updatedAt: now)
+        var health = WorkloadHealthProjector.processHealth(checks: checks, updatedAt: now)
+        if let outcome = PackageUpdateOutcome.load(), outcome.status == "failed" {
+            health.updateStatus = outcome.status
+            health.updateDetail = outcome.detail
+        }
+        return health
     }
 }

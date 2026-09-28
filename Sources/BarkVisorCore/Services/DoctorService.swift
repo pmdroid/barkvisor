@@ -177,9 +177,14 @@ public protocol DoctorFactSource: Sendable {
 /// Live host probes. Read-only: never installs, starts, stops, or writes.
 public struct LiveDoctorFactSource: DoctorFactSource {
     public var assumeHealthOK: Bool
+    public var dockerSnapshot: @Sendable () -> DockerEngineSnapshot
 
-    public init(assumeHealthOK: Bool = false) {
+    public init(
+        assumeHealthOK: Bool = false,
+        dockerSnapshot: @escaping @Sendable () -> DockerEngineSnapshot = { DockerEngine.liveSnapshot() },
+    ) {
         self.assumeHealthOK = assumeHealthOK
+        self.dockerSnapshot = dockerSnapshot
     }
 
     public func inputs() -> DoctorFactInputs {
@@ -204,7 +209,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
                 QEMUDeviceSupport.requiredLaunchDevices.subtracting(supported).sorted()
             }
         }
-        let docker = DockerEngine.liveSnapshot()
+        let docker = dockerSnapshot()
         let nvidia = NVIDIAShareProbe.live()
         #if os(Windows)
             let whpxPresent = PlatformCapabilities.whpxPresent()

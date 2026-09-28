@@ -22,6 +22,7 @@ struct ApplianceUnitTests {
             "scripts/install-linux.sh",
             "scripts/build-linux-packages.sh",
             "packaging/homebrew/postinstall.sh",
+            "scripts/pkg-service-handoff.sh",
         ] {
             let script = try read(relative)
             #expect(script.contains("schema-version"), "\(relative)")
@@ -42,6 +43,10 @@ struct ApplianceUnitTests {
         #expect(postinst.contains("systemctl enable barkvisor-daemon.service"))
         #expect(postinst.contains("systemctl enable barkvisor-server.service"))
         #expect(postinst.contains("systemctl disable barkvisor.service"))
+        let stopped = try #require(postinst.range(of: "systemctl disable --now barkvisor.service"))
+        let enabled = try #require(postinst.range(of: "systemctl enable barkvisor-daemon.service"))
+        #expect(stopped.lowerBound < enabled.lowerBound)
+        #expect(postinst.contains("systemctl start barkvisor-server.service"))
         let daemon = try read("packaging/linux/barkvisor-daemon.service")
         let server = try read("packaging/linux/barkvisor-server.service")
         #expect(daemon.contains("User=root"))

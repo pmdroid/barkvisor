@@ -61,7 +61,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ---- Stop leftover helper-era and appliance LaunchDaemons (macOS) ----
 
 if [ -z "$TEST_ROOT" ]; then
-    for svc in dev.barkvisor dev.barkvisor.helper; do
+    for svc in dev.barkvisor dev.barkvisor.daemon dev.barkvisor.server dev.barkvisor.helper; do
         if command -v launchctl >/dev/null 2>&1 && launchctl print "system/$svc" &>/dev/null; then
             log "Stopping $svc..."
             launchctl bootout "system/$svc" 2>/dev/null || true
@@ -70,8 +70,12 @@ if [ -z "$TEST_ROOT" ]; then
 
     if command -v systemctl >/dev/null 2>&1; then
         systemctl stop barkvisor.service >/dev/null 2>&1 || true
+        systemctl stop barkvisor-daemon.service >/dev/null 2>&1 || true
+        systemctl stop barkvisor-server.service >/dev/null 2>&1 || true
         systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
         systemctl disable barkvisor.service >/dev/null 2>&1 || true
+        systemctl disable barkvisor-daemon.service >/dev/null 2>&1 || true
+        systemctl disable barkvisor-server.service >/dev/null 2>&1 || true
         systemctl disable barkvisor-agent.service >/dev/null 2>&1 || true
     fi
 
@@ -82,6 +86,8 @@ fi
 
 if [ -z "$TEST_ROOT" ]; then
     for plist in /Library/LaunchDaemons/dev.barkvisor.plist \
+                 /Library/LaunchDaemons/dev.barkvisor.daemon.plist \
+                 /Library/LaunchDaemons/dev.barkvisor.server.plist \
                  /Library/LaunchDaemons/dev.barkvisor.helper.plist; do
         if [ -f "$plist" ]; then
             log "Removing $plist"
@@ -95,6 +101,15 @@ if [ -z "$TEST_ROOT" ]; then
     fi
     rm -f /usr/local/libexec/dev.barkvisor.helper
     rm -f /usr/local/libexec/barkvisor/dev.barkvisor.helper
+fi
+
+if [ -n "$TEST_ROOT" ]; then
+    for plist in "$TEST_ROOT/Library/LaunchDaemons/dev.barkvisor.plist" \
+                 "$TEST_ROOT/Library/LaunchDaemons/dev.barkvisor.daemon.plist" \
+                 "$TEST_ROOT/Library/LaunchDaemons/dev.barkvisor.server.plist" \
+                 "$TEST_ROOT/Library/LaunchDaemons/dev.barkvisor.helper.plist"; do
+        rm -f "$plist"
+    done
 fi
 
 # ---- socket_vmnet: stop what we started; do not brew uninstall unless asked ----

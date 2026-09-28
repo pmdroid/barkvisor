@@ -174,11 +174,22 @@ extension VMManager {
         await Task.detached(priority: .utility) {
             for _ in 0 ..< pollCount {
                 if FileManager.default.fileExists(atPath: url.path) { return true }
-                if !process.isRunning { return false }
+                if !processStillRunning(process) { return false }
                 usleep(pollNanos)
             }
-            return process.isRunning && FileManager.default.fileExists(atPath: url.path)
+            return processStillRunning(process) && FileManager.default.fileExists(atPath: url.path)
         }.value
+    }
+
+    private static func processStillRunning(_ process: Process) -> Bool {
+        let pid = process.processIdentifier
+        guard pid > 0 else { return false }
+        #if os(Windows)
+            return process.isRunning
+        #else
+            if kill(pid, 0) == 0 { return true }
+            return errno == EPERM
+        #endif
     }
 
     // MARK: - Host port forwards

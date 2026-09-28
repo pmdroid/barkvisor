@@ -434,8 +434,10 @@ mkdir -p "$STAGE_BIN" "$STAGE_LIBEXEC" "$STAGE_LIB" "$STAGE_QEMU" "$STAGE_FRONTE
 # Main server daemon binary
 cp "$EXECUTABLE" "$STAGE_BIN/barkvisor"
 
-# LaunchDaemon plist (daemon only — no privileged helper)
-cp "$PROJECT_DIR/Resources/dev.barkvisor.plist" "$STAGE_LAUNCHD/dev.barkvisor.plist"
+cp "$PROJECT_DIR/Resources/dev.barkvisor.daemon.plist" "$STAGE_LAUNCHD/dev.barkvisor.daemon.plist"
+cp "$PROJECT_DIR/Resources/dev.barkvisor.server.plist" "$STAGE_LAUNCHD/dev.barkvisor.server.plist"
+cp "$PROJECT_DIR/scripts/pkg-service-handoff.sh" "$STAGE_LIBEXEC/pkg-service-handoff.sh"
+chmod 0755 "$STAGE_LIBEXEC/pkg-service-handoff.sh"
 
 stage_host_tool() {
     local name="$1"
@@ -674,7 +676,8 @@ if [ "$NO_PKG" = false ]; then
     # Use the postinstall script from the repo
     mkdir -p "$PKG_SCRIPTS"
     cp "$PROJECT_DIR/scripts/postinstall.sh" "$PKG_SCRIPTS/postinstall"
-    chmod +x "$PKG_SCRIPTS/postinstall"
+    cp "$PROJECT_DIR/scripts/pkg-service-handoff.sh" "$PKG_SCRIPTS/pkg-service-handoff.sh"
+    chmod +x "$PKG_SCRIPTS/postinstall" "$PKG_SCRIPTS/pkg-service-handoff.sh"
 
     # Build the component package directly from staging directory
     COMPONENT_PKG="$BUILD_DIR/BarkVisor-component.pkg"
@@ -716,9 +719,9 @@ DIST
 <h2>BarkVisor ${VERSION}</h2>
 <p>This installer will:</p>
 <ul>
-<li>Install the BarkVisor server daemon</li>
+<li>Install BarkDaemon and BarkServer</li>
 <li>Requires Homebrew: <code>brew install qemu swtpm socket_vmnet</code></li>
-<li>Start the server as a root LaunchDaemon</li>
+<li>Start BarkDaemon as root and BarkServer as the barkvisor account</li>
 </ul>
 <p>After installation, open <strong>http://localhost:7777</strong> to complete setup.</p>
 <p>Can also be installed headlessly via SSH:</p>
@@ -789,7 +792,8 @@ log_sub "/usr/local/bin/barkvisor-agent                    (API-only Device; sym
 log_sub "/usr/local/libexec/barkvisor/                     (xz, mkisofs; QEMU from Homebrew)"
 log_sub "/usr/local/lib/barkvisor/                         (shared libraries)"
 log_sub "/usr/local/share/barkvisor/                       (frontend, firmware)"
-log_sub "/Library/LaunchDaemons/dev.barkvisor.plist"
+log_sub "/Library/LaunchDaemons/dev.barkvisor.daemon.plist"
+log_sub "/Library/LaunchDaemons/dev.barkvisor.server.plist"
 echo ""
 log "Dependency versions:"
 log_sub "QEMU:          ${QEMU_VERSION}"

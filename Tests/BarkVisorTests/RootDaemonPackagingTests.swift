@@ -66,6 +66,49 @@ struct RootDaemonPackagingTests {
         #expect(sourceInstall.contains("/etc/qemu"))
     }
 
+    @Test func `split package hooks start daemon before server`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+            "scripts/install-linux.sh",
+        ] {
+            let script = try read(relative)
+            let daemon = try #require(script.range(of: "systemctl start barkvisor-daemon.service"))
+            let server = try #require(script.range(of: "systemctl start barkvisor-server.service"))
+            #expect(daemon.lowerBound < server.lowerBound)
+        }
+    }
+
+    @Test func `split package hooks schedule handoff before disabling combined service`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+        ] {
+            let script = try read(relative)
+            let scheduled = try #require(script.range(of: "systemd-run --collect"))
+            let disabled = try #require(script.range(of: "systemctl disable barkvisor.service"))
+            #expect(scheduled.lowerBound < disabled.lowerBound)
+        }
+    }
+
+    @Test func `split package hooks restore combined service if cutover fails`() throws {
+        for relative in [
+            "packaging/linux/debian/postinst",
+            "packaging/linux/arch/barkvisor.install",
+            "packaging/linux/rpm/barkvisor.spec.in",
+            "scripts/build-linux-packages.sh",
+        ] {
+            let script = try read(relative)
+            #expect(script.contains("systemctl is-active --quiet barkvisor-daemon.service"))
+            #expect(script.contains("systemctl is-active --quiet barkvisor-server.service"))
+            #expect(script.contains("systemctl start barkvisor.service"))
+        }
+    }
+
     @Test func `linux device unit can apply a deb in-process`() throws {
         for relative in [
             "packaging/linux/barkvisor.service",
@@ -136,25 +179,45 @@ struct RootDaemonPackagingTests {
         #expect(postinst.contains("udevadm trigger --subsystem-match=vfio"))
     }
 
-    @Test func `macos appliance plist is root without _barkvisor`() throws {
-        let plist = try read("Resources/dev.barkvisor.plist")
-        #expect(!plist.contains("<key>UserName</key>"))
-        #expect(!plist.contains("<key>GroupName</key>"))
-        #expect(!plist.contains("_barkvisor"))
-        #expect(plist.contains("<key>AbandonProcessGroup</key>"))
-        #expect(plist.contains("<key>PATH</key>"))
-        #expect(plist.contains("/usr/local/bin"))
-        #expect(plist.contains("/Applications/OrbStack.app/Contents/MacOS/xbin"))
-        #expect(!plist.contains("barkvisor.helper"))
+    @Test func `macos package runs BarkDaemon as root and BarkServer as barkvisor`() throws {
+        let daemon = try read("Resources/dev.barkvisor.daemon.plist")
+        #expect(daemon.contains("<string>BarkDaemon</string>"))
+        #expect(!daemon.contains("<key>UserName</key>"))
+        #expect(daemon.contains("<key>GroupName</key>"))
+        #expect(daemon.contains("<string>barkvisor</string>"))
+        #expect(!daemon.contains("_barkvisor"))
+        #expect(daemon.contains("<key>AbandonProcessGroup</key>"))
+        #expect(daemon.contains("<string>daemon</string>"))
+        #expect(daemon.contains("<key>PATH</key>"))
+        #expect(daemon.contains("/usr/local/bin"))
+        #expect(daemon.contains("/Applications/OrbStack.app/Contents/MacOS/xbin"))
+        #expect(!daemon.contains("barkvisor.helper"))
+        let server = try read("Resources/dev.barkvisor.server.plist")
+        #expect(server.contains("<string>BarkServer</string>"))
+        #expect(server.contains("<key>UserName</key>"))
+        #expect(server.contains("<string>barkvisor</string>"))
+        #expect(server.contains("<string>server</string>"))
+        #expect(!server.contains("_barkvisor"))
+        #expect(!server.contains("barkvisor.helper"))
     }
 
-    @Test func `pkg postinstall does not create _barkvisor`() throws {
+    @Test func `pkg postinstall provisions barkvisor and both jobs`() throws {
         let script = try read("scripts/postinstall.sh")
-        #expect(!script.contains("BARKVISOR_USER="))
-        #expect(!script.contains("dscl"))
+        let handoff = try read("scripts/pkg-service-handoff.sh")
         #expect(!script.contains("_barkvisor"))
-        #expect(script.contains("/var/lib/barkvisor"))
-        #expect(script.contains("launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist"))
+        #expect(!handoff.contains("_barkvisor"))
+        #expect(handoff.contains("dscl"))
+        #expect(handoff.contains("/usr/bin/false"))
+        #expect(handoff.contains("/var/lib/barkvisor"))
+        #expect(handoff.contains("dev.barkvisor.daemon"))
+        #expect(handoff.contains("dev.barkvisor.server"))
+        #expect(handoff.contains("bootout dev.barkvisor"))
+        #expect(!handoff.contains("bootstrap dev.barkvisor\n"))
+        #expect(handoff.contains("schema-version"))
         #expect(script.contains("dev.barkvisor.helper"))
+        #expect(script.contains("pkg-service-handoff.sh"))
+        let schema = try #require(handoff.range(of: "schema-version"))
+        let chgrp = try #require(handoff.range(of: "chgrp"))
+        #expect(schema.lowerBound < chgrp.lowerBound)
     }
 }

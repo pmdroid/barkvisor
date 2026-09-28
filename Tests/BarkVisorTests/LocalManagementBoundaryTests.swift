@@ -403,18 +403,18 @@ struct LocalManagementBoundaryTests {
                 )[.posixPermissions] as? NSNumber
                 #expect(socketMode?.uint16Value == permissions.socketMode)
                 #expect(directoryMode?.uint16Value == permissions.directoryMode)
-                let applied = try LocalManagementSocketClient.exchange(
+                let applied = try await managementExchange(
                     path: path,
                     request: marker("sock-1", "kept", token: "token-a"),
                 )
-                let again = try LocalManagementSocketClient.exchange(
+                let again = try await managementExchange(
                     path: path,
                     request: marker("sock-1", "other", token: "token-a"),
                 )
                 #expect(applied.marker == "kept")
                 #expect(again.marker == "kept")
                 #expect(await session.effectCount() == 1)
-                let forged = try LocalManagementSocketClient.exchange(
+                let forged = try await managementExchange(
                     path: path,
                     request: request(
                         name: "applyMarker",
@@ -424,9 +424,9 @@ struct LocalManagementBoundaryTests {
                     ),
                 )
                 #expect(forged.rejection == LocalRejection.forgedIdentity.rawValue)
-                let raw = try rawExchange(path: path, payload: Data([0x7F, 0xFF, 0xFF, 0xFF]))
+                let raw = try await rawExchange(path: path, payload: Data([0x7F, 0xFF, 0xFF, 0xFF]))
                 #expect(raw.rejection == LocalRejection.payloadTooLarge.rawValue)
-                let broken = try rawExchange(path: path, payload: framed(Data("{".utf8)))
+                let broken = try await rawExchange(path: path, payload: framed(Data("{".utf8)))
                 #expect(broken.rejection == LocalRejection.malformed.rawValue)
                 #expect(await session.effectCount() == 1)
                 server.stop()
@@ -659,7 +659,18 @@ struct WorkloadSocketOperationTests {
         return data
     }
 
-    private func rawExchange(path: String, payload: Data) throws -> LocalManagementResponse {
+    private func managementExchange(
+        path: String,
+        request: LocalManagementRequest,
+    ) async throws -> LocalManagementResponse {
+        try await runSocketIO { try LocalManagementSocketClient.exchange(path: path, request: request) }
+    }
+
+    private func rawExchange(path: String, payload: Data) async throws -> LocalManagementResponse {
+        try await runSocketIO { try blockingRawExchange(path: path, payload: payload) }
+    }
+
+    private func blockingRawExchange(path: String, payload: Data) throws -> LocalManagementResponse {
         let fd = socket(PlatformSocket.unixFamily, PlatformSocket.stream, 0)
         guard fd >= 0 else { throw LocalManagementError.connectionLost }
         defer { close(fd) }
@@ -685,7 +696,7 @@ struct WorkloadSocketOperationTests {
         while !remaining.isEmpty {
             let wrote = remaining.withUnsafeBytes { raw -> Int in
                 guard let base = raw.baseAddress else { return -1 }
-                return write(fd, base, raw.count)
+                return send(fd, base, raw.count, Int32(MSG_NOSIGNAL))
             }
             if wrote <= 0 { throw LocalManagementError.connectionLost }
             remaining.removeFirst(wrote)

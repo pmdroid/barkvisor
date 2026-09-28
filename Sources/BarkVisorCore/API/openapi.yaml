@@ -2925,6 +2925,12 @@ components:
             $ref: "#/components/schemas/HealthCheck"
         updatedAt:
           type: string
+        updateStatus:
+          type: string
+          nullable: true
+        updateDetail:
+          type: string
+          nullable: true
 
     HealthCheck:
       type: object

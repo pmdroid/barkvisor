@@ -44,6 +44,19 @@ public enum PlatformSocket {
         #endif
     }
 
+    #if !os(Windows)
+        static func acceptBlocking(_ listener: Int32) -> Int32 {
+            let client = accept(listener, nil, nil)
+            guard client >= 0 else { return -1 }
+            let flags = fcntl(client, F_GETFL, 0)
+            guard flags >= 0, fcntl(client, F_SETFL, flags & ~O_NONBLOCK) >= 0 else {
+                close(client)
+                return -1
+            }
+            return client
+        }
+    #endif
+
     #if os(Windows)
         public static let unixPathMax = 108
 

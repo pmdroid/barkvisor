@@ -43,4 +43,15 @@ describe('pollUntilHealthy', () => {
     })
     expect(result).toBe('timeout')
   })
+
+  test('returns failed when the recorded update outcome failed', async () => {
+    const result = await pollUntilHealthy({
+      health: async () => 'failed',
+      now: () => 0,
+      sleep: async () => {},
+      intervalMs: 1,
+      timeoutMs: 10,
+    })
+    expect(result).toBe('failed')
+  })
 })

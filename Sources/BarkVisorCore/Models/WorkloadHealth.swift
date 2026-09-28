@@ -180,16 +180,22 @@ public struct ProcessHealthStatus: Codable, Equatable, Sendable {
     public var apiVersion: Int
     public var checks: [WorkloadHealthCheck]
     public var updatedAt: String
+    public var updateStatus: String?
+    public var updateDetail: String?
 
     public init(
         status: String,
         checks: [WorkloadHealthCheck],
         updatedAt: String,
         apiVersion: Int = APIContract.version,
+        updateStatus: String? = nil,
+        updateDetail: String? = nil,
     ) {
         self.status = status
         self.apiVersion = apiVersion
         self.checks = checks
         self.updatedAt = updatedAt
+        self.updateStatus = updateStatus
+        self.updateDetail = updateDetail
     }
 }

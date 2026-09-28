@@ -178,8 +178,9 @@ echo "Point a Device at this feed (package tag must be newer than the installed 
 echo "  Linux: add the line above to /etc/barkvisor/barkvisor.env, then"
 echo "         sudo systemctl restart barkvisor.service"
 echo "  macOS: add BARKVISOR_UPDATE_URL under EnvironmentVariables in"
-echo "         /Library/LaunchDaemons/dev.barkvisor.plist, then"
-echo "         sudo launchctl kickstart -k system/dev.barkvisor"
+echo "         /Library/LaunchDaemons/dev.barkvisor.daemon.plist and"
+echo "         /Library/LaunchDaemons/dev.barkvisor.server.plist, then"
+echo "         sudo bash /usr/local/libexec/barkvisor/pkg-service-handoff.sh"
 echo "  Any process: export the line above before start."
 echo
 echo "Dev builds (version contains \"dev\" or 0.0.0): Settings → Updates → Test update URL."

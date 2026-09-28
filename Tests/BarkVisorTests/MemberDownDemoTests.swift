@@ -65,7 +65,12 @@ struct MemberDownDemoTests {
         let rows = try await pool.read { try VM.fetchAll($0) }
         let local = localFacts(from: rows, at: now)
 
-        let report = await ctl.healthReport(listed: listed, local: local, bearer: "home-jwt")
+        let report = await ctl.healthReport(
+            listed: listed,
+            local: local,
+            bearer: "home-jwt",
+            probeBudgetNanoseconds: 120_000_000_000,
+        )
 
         #expect(report.devices.count == 2)
         let selfRow = try #require(report.devices.first { $0.role == "self" })
@@ -199,6 +204,7 @@ struct MemberDownDemoTests {
             listed: listed,
             local: localFacts(from: [], at: "2026-08-14T00:00:00Z"),
             bearer: nil,
+            probeBudgetNanoseconds: 120_000_000_000,
         )
 
         let timedOut = try #require(report.devices.first { $0.hostId == timeoutId })

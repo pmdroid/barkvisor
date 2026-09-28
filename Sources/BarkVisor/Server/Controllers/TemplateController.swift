@@ -137,7 +137,7 @@ struct TemplateController: RouteCollection {
 
     @Sendable
     func list(req: Vapor.Request) async throws -> [TemplateResponse] {
-        let inventory = HostInventoryService.snapshot()
+        let inventory = HostInventoryService.templateCatalogHost()
         try TemplateCompatibility.requireLocalHost(
             requestedHostId: req.query[String.self, at: "hostId"],
             inventory: inventory,
@@ -178,7 +178,7 @@ struct TemplateController: RouteCollection {
         }
         return TemplateResponse(
             from: template,
-            host: HostInventoryService.snapshot(),
+            host: HostInventoryService.templateCatalogHost(),
             catalogImages: catalogImages(for: template, from: repoImages),
         )
     }

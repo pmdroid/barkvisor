@@ -434,9 +434,12 @@ struct LinuxGuestScriptsTests {
             .sorted()
         #expect(names == [
             "api-contract.feature",
+            "create-vm-placement.feature",
             "cross-device.feature",
             "guest-boot.feature",
             "host-network-extra-ip.feature",
+            "placement-score.feature",
+            "template-list.feature",
         ])
     }
 
@@ -566,9 +569,8 @@ struct LinuxGuestScriptsTests {
             encoding: .utf8,
         )
         #expect(ci.contains("name: Lint & Format"))
-        #expect(ci.contains("name: Build"))
         #expect(ci.contains("name: Test"))
-        #expect(ci.contains("name: Linux Build"))
+        #expect(!ci.contains("runs-on: macos-"))
         #expect(!ci.contains("guest-boot"))
         #expect(!ci.contains("KVM_RUNNER_ENABLED"))
         #expect(!ci.contains("linux-guest-smoke"))

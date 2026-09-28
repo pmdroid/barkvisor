@@ -111,6 +111,6 @@ scripts/serve-local-updates.sh --dir build/linux-packages --tag v9.9.9
 
 For macOS, use `--dir build`. The script prints a loopback `BARKVISOR_UPDATE_URL` for a GitHub-shaped release feed.
 
-Set that variable in the test Device's service environment and restart it. Linux uses `/etc/barkvisor/barkvisor.env`; macOS uses `EnvironmentVariables` in `/Library/LaunchDaemons/dev.barkvisor.plist`. Development builds also offer **Test update URL** in Settings → Updates.
+Set that variable in the test Device's service environment and restart it. Linux uses `/etc/barkvisor/barkvisor.env`; macOS uses `EnvironmentVariables` in `/Library/LaunchDaemons/dev.barkvisor.daemon.plist` and `dev.barkvisor.server.plist`. Development builds also offer **Test update URL** in Settings → Updates.
 
 The feed listens on loopback. Run it on the test Device, or tunnel the port so the Device's loopback address reaches it. Remove the override after testing to return to GitHub Releases.

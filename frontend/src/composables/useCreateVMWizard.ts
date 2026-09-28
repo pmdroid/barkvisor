@@ -25,7 +25,7 @@ import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore, type HomeImage, type HomeTemplate } from '../stores/homeLibrary'
-import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
+import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch, templateDeclaredArches } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   createVMIncompatibilityReasons,
@@ -246,6 +246,21 @@ export function useCreateVMWizard(
     return hostImageArch.value
   })
 
+  const placementDeclaredArchitectures = computed(() => {
+    if (galleryKind.value === 'template' && selectedTemplate.value) {
+      return templateDeclaredArches(selectedTemplate.value)
+    }
+    const guest = effectiveGuestArch.value
+    return guest ? [guest] : []
+  })
+
+  const placementRequiredFeatures = computed(() => {
+    if (galleryKind.value === 'template' && selectedTemplate.value) {
+      return selectedTemplate.value.requiredFeatures ?? []
+    }
+    return []
+  })
+
   const cpuCount = ref(4)
   const memoryMB = ref(8192)
 
@@ -254,6 +269,8 @@ export function useCreateVMWizard(
     userOverrodeHost,
     initialHostId: opts.initialHostId,
     effectiveGuestArch,
+    declaredArchitectures: placementDeclaredArchitectures,
+    requiredFeatures: placementRequiredFeatures,
     memoryMB,
     osType,
     selectedLibraryKey,
@@ -1040,6 +1057,7 @@ export function useCreateVMWizard(
     vmMemCapGB,
     placementStepReached,
     placementScore,
+    placementRefreshing,
     deviceOptions,
     selectedDevice,
     selectedDeviceIncompatibility,

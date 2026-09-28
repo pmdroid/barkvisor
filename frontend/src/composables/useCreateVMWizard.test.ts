@@ -48,6 +48,15 @@ function mockCapabilitiesFetch() {
   }) as typeof fetch
 }
 
+async function waitUntil(pred: () => boolean, timeoutMs = 1_500) {
+  const start = Date.now()
+  while (!pred()) {
+    if (Date.now() - start >= timeoutMs) return
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 15))
+  }
+}
+
 async function waitReady(wizard: ReturnType<typeof useCreateVMWizard>) {
   const library = useHomeLibraryStore()
   for (let i = 0; i < 40; i++) {
@@ -223,6 +232,36 @@ describe('useCreateVMWizard (magazine)', () => {
     expect(wizard.showHostnameHint.value).toBe(true)
   })
 })
+
+function debianTemplate(): HomeTemplate {
+  return ubuntuTemplate({
+    id: 'tpl-debian',
+    slug: 'debian-13',
+    name: 'Debian 13',
+    imageSlug: 'debian-13-arm64',
+    architectures: ['arm64', 'x86_64'],
+    imageByArch: { arm64: 'debian-13-arm64', x86_64: 'debian-13-x86_64' },
+    requiredFeatures: ['kvm'],
+    catalogImages: [
+      {
+        slug: 'debian-13-arm64',
+        name: 'Debian 13',
+        imageType: 'cloud-image',
+        arch: 'arm64',
+        downloadUrl: 'https://example.test/debian-13-arm64.qcow2',
+        sha256: 'arm',
+      },
+      {
+        slug: 'debian-13-x86_64',
+        name: 'Debian 13',
+        imageType: 'cloud-image',
+        arch: 'x86_64',
+        downloadUrl: 'https://example.test/debian-13-x86_64.qcow2',
+        sha256: 'x86',
+      },
+    ],
+  })
+}
 
 function ubuntuTemplate(overrides: Partial<HomeTemplate> = {}): HomeTemplate {
   return {
@@ -526,6 +565,207 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(pc?.reasons.some((reason) => reason.includes('Architecture'))).toBe(true)
     expect(wizard.selectedHostId.value).toBe('pc')
     expect(wizard.selectedDeviceIncompatibility()).toMatch(/Architecture/)
+  })
+
+  test('dual-arch Debian posts both arches and leaves the x86 Device eligible', async () => {
+    const mismatch = 'Architecture (arm64) is not compatible with this Device (x86_64).'
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'zimaboard',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'linux', arch: 'x86_64' },
+      },
+    ]
+    const bodies: Array<Record<string, unknown>> = []
+    const prevPost = api.post
+    api.post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        bodies.push(body ?? {})
+        return Promise.resolve({ data: { recommendedHostId: 'desk', candidates: [] } })
+      }
+      return prevPost(url, body)
+    }) as typeof api.post
+    const library = useHomeLibraryStore()
+    catalogTemplates = [debianTemplate()]
+    library.templates = catalogTemplates
+    const devices = useDevicesStore()
+    devices.$patch({ devices: healthDevices, selfDevice: macSelf() })
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    await waitUntil(() => bodies.some((body) => Array.isArray(body.declaredArchitectures)
+      && (body.declaredArchitectures as string[]).includes('x86_64')))
+    const score = bodies.find((body) => Array.isArray(body.declaredArchitectures)
+      && (body.declaredArchitectures as string[]).includes('x86_64'))
+    expect(score?.declaredArchitectures).toEqual(['arm64', 'x86_64'])
+    expect(score?.requiredFeatures).toEqual(['kvm'])
+    const board = wizard.deviceOptions.value.find((option) => option.hostId === 'zimaboard')
+    expect(board?.compatible).toBe(true)
+    expect(board?.reasons).not.toContain(mismatch)
+  })
+
+  test('a new template score hides the previous architecture mismatch while it is in flight', async () => {
+    const mismatch = 'Architecture (arm64) is not compatible with this Device (x86_64).'
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'zimaboard',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'linux', arch: 'x86_64' },
+      },
+    ]
+    let releaseDual: (() => void) | undefined
+    const prevPost = api.post
+    api.post = mock((url: string, body?: { declaredArchitectures?: string[] }) => {
+      if (url === '/home/placement/score') {
+        const arches = body?.declaredArchitectures ?? []
+        if (arches.length < 2) {
+          return Promise.resolve({
+            data: {
+              recommendedHostId: 'desk',
+              candidates: [{
+                hostId: 'zimaboard',
+                role: 'member',
+                eligible: false,
+                recommended: false,
+                rank: 1,
+                reasons: [{ code: 'arch_mismatch', kind: 'hard', message: mismatch }],
+              }],
+            },
+          })
+        }
+        return new Promise((resolve) => {
+          releaseDual = () => resolve({
+            data: { recommendedHostId: 'zimaboard', candidates: [] },
+          })
+        })
+      }
+      return prevPost(url, body)
+    }) as typeof api.post
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate({ architectures: ['arm64'] })]
+    library.templates = catalogTemplates
+    const devices = useDevicesStore()
+    devices.$patch({ devices: healthDevices, selfDevice: macSelf() })
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    await waitUntil(() => {
+      const board = wizard.deviceOptions.value.find((option) => option.hostId === 'zimaboard')
+      return !!board?.reasons.includes(mismatch)
+    })
+    const debian = debianTemplate()
+    catalogTemplates = [debian]
+    library.templates = [debian]
+    wizard.selectGalleryTemplate(debian)
+    await waitUntil(() => releaseDual !== undefined)
+    const board = wizard.deviceOptions.value.find((option) => option.hostId === 'zimaboard')
+    expect(board?.reasons).not.toContain(mismatch)
+    expect(wizard.placementRefreshing.value).toBe(true)
+    releaseDual?.()
+    await waitUntil(() => !wizard.placementRefreshing.value)
+    const after = wizard.deviceOptions.value.find((option) => option.hostId === 'zimaboard')
+    expect(after?.reasons).not.toContain(mismatch)
+    expect(after?.compatible).toBe(true)
+  })
+
+  test('an arm64-only Library image still rejects an x86 Device', async () => {
+    const mismatch = 'Architecture (arm64) is not compatible with this Device (x86_64).'
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'zimaboard',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'linux', arch: 'x86_64' },
+      },
+    ]
+    const image = readyImage({
+      id: 'img-arm',
+      name: 'Debian arm64',
+      arch: 'arm64',
+      sourceUrl: 'https://example.test/debian-arm64.qcow2',
+      sha256: 'arm-only',
+    })
+    const bodies: Array<Record<string, unknown>> = []
+    const prevPost = api.post
+    api.post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        bodies.push(body ?? {})
+        return Promise.resolve({ data: { recommendedHostId: 'desk', candidates: [] } })
+      }
+      return prevPost(url, body)
+    }) as typeof api.post
+    const library = useHomeLibraryStore()
+    catalogImages = [image]
+    library.images = [{
+      ...image,
+      libraryKey: homeImageKey(image),
+      sourceHostIds: ['desk'],
+      copies: [{ hostId: 'desk', imageId: image.id, status: 'ready' }],
+    }]
+    const devices = useDevicesStore()
+    devices.$patch({ devices: healthDevices, selfDevice: macSelf() })
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryCustom()
+    await waitReady(wizard)
+    wizard.selectedImageId.value = homeImageKey(image)
+    await waitUntil(() => bodies.some((body) => {
+      const arches = body.declaredArchitectures as string[] | undefined
+      return arches?.length === 1 && arches[0] === 'arm64' && body.requiredFeatures === undefined
+    }))
+    const board = wizard.deviceOptions.value.find((option) => option.hostId === 'zimaboard')
+    expect(board?.reasons).toContain(mismatch)
+    expect(board?.compatible).toBe(false)
+  })
+
+  test('deploy to the x86 Device resolves the x86 catalog image', async () => {
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'zimaboard',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'linux', arch: 'x86_64' },
+      },
+    ]
+    const prevGet = api.get
+    api.get = mock((url: string) => {
+      if (url.includes('/home/devices/zimaboard/') && url.endsWith('/system/capabilities')) {
+        return Promise.resolve({
+          data: { hostArch: 'x86_64', hostCpuCount: 8, maxMemoryMB: 32768 },
+        })
+      }
+      return prevGet(url)
+    }) as typeof api.get
+    const library = useHomeLibraryStore()
+    catalogTemplates = [debianTemplate()]
+    library.templates = catalogTemplates
+    useSSHKeyStore().keys = [demoKey()]
+    const devices = useDevicesStore()
+    devices.$patch({ devices: healthDevices, selfDevice: macSelf() })
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'zimaboard' })
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    wizard.selectedSSHKeyId.value = 'k1'
+    wizard.goToDisk()
+    await waitReady(wizard)
+    await wizard.submit()
+    const deployCall = (api.post as ReturnType<typeof mock>).mock.calls.find((call) =>
+      String(call[0]).includes('/templates/deploy'),
+    )
+    expect(deployCall).toBeTruthy()
+    expect(String(deployCall![0])).toContain('/home/devices/zimaboard/')
+    const body = deployCall![1] as { recipe?: { image?: { slug?: string; arch?: string } } }
+    expect(body.recipe?.image?.slug).toBe('debian-13-x86_64')
+    expect(body.recipe?.image?.arch).toBe('x86_64')
   })
 
   test('SSH-needed template with no keys cannot proceed', async () => {

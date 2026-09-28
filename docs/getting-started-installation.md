@@ -40,7 +40,7 @@ Then [create your first VM](getting-started-quickstart.md).
 
 ## Updates
 
-Open **Settings → Updates**, click **Check**, then **Apply** when a newer release is available. BarkVisor verifies and installs the package, then restarts its background service. Your data stays in place and running VMs stay up.
+Open **Settings → Updates**, click **Check**, then **Apply** when a newer release is available. BarkVisor verifies and installs the package, then checks BarkDaemon, BarkServer, and the public health endpoint. Your data stays in place and running VMs stay up. A failed restart stays failed after the console reconnects.
 
 Update BarkVisor through this page, not through Homebrew. Homebrew manages the separate runtime packages.
 
@@ -48,7 +48,7 @@ Update BarkVisor through this page, not through Homebrew. Homebrew manages the s
 
 The installed data directory is `/var/lib/barkvisor`. It holds your database, VM disks, images, logs, and database backups. You can choose a different image folder under **Settings → Library**, and a default VM disk folder on the Device page.
 
-BarkVisor runs as a root LaunchDaemon named `dev.barkvisor`. It serves the console on port `7777`. NAT networking works without bridge configuration; for a bridge, see [Networks](using-networks.md).
+BarkDaemon runs as root and owns local management. BarkServer runs under the `barkvisor` UserName and serves the console on port `7777`. NAT networking works without bridge configuration; for a bridge, see [Networks](using-networks.md).
 
 ## Uninstalling
 

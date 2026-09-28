@@ -32,6 +32,20 @@ struct PlatformProcessTests {
         #endif
     }
 
+    @Test func `run times out a child that fills its pipes`() throws {
+        #if os(macOS) || os(Linux)
+            let started = Date()
+            #expect(throws: BarkVisorError.self) {
+                try PlatformProcess.run(
+                    path: "/bin/sh",
+                    arguments: ["-c", "dd if=/dev/zero bs=1024 count=200 status=none; exec sleep 30"],
+                    timeout: 1,
+                )
+            }
+            #expect(Date().timeIntervalSince(started) < 8)
+        #endif
+    }
+
     @Test func `arguments reads this process argv`() {
         #if os(macOS) || os(Linux)
             let pid = ProcessInfo.processInfo.processIdentifier
