@@ -41,6 +41,20 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
     public let httpPath: String?
     public let host: String?
 
+    /// Spec → column. The one adapter every spec write path uses.
+    ///
+    /// `WorkloadPortForward` has no `httpPath`, so a spec cannot set it: a
+    /// spec write clears any `httpPath` the column already held. `host` is the
+    /// bind address (absent = every IPv4 interface) and is carried verbatim.
+    public init(_ forward: WorkloadPortForward) {
+        self.init(
+            protocol: forward.proto,
+            hostPort: forward.hostPort,
+            guestPort: forward.guestPort,
+            host: forward.host,
+        )
+    }
+
     public init(
         protocol: String,
         hostPort: Int,
@@ -53,6 +67,38 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
         self.guestPort = guestPort
         self.httpPath = httpPath
         self.host = host
+    }
+
+    /// Merge semantics for a spec write whose `portForwards[].host` is omitted.
+    ///
+    /// A spec apply/PUT/PATCH replaces the whole list, so an element without
+    /// `host` would otherwise rebind an existing `127.0.0.1` publish to every
+    /// IPv4 interface without the client asking for it. Omitted means "unchanged
+    /// here": an omitted `host` inherits the bind of the `existing` rule it
+    /// replaces, matched on `proto` + `hostPort` + `guestPort`. To widen a bind
+    /// on purpose, send an explicit `host` (including `0.0.0.0`). A rule with
+    /// no `existing` counterpart is new, so it keeps the documented default
+    /// (absent = every IPv4 interface).
+    public static func inherited(
+        from incoming: [PortForwardRule],
+        existing: [PortForwardRule],
+    ) -> [PortForwardRule] {
+        guard !incoming.isEmpty, !existing.isEmpty else { return incoming }
+        return incoming.map { rule in
+            guard rule.host == nil else { return rule }
+            guard let prior = existing.first(where: {
+                $0.protocol.lowercased() == rule.protocol.lowercased()
+                    && $0.hostPort == rule.hostPort
+                    && $0.guestPort == rule.guestPort
+            }) else { return rule }
+            return PortForwardRule(
+                protocol: rule.protocol,
+                hostPort: rule.hostPort,
+                guestPort: rule.guestPort,
+                httpPath: rule.httpPath,
+                host: prior.host,
+            )
+        }
     }
 
     enum CodingKeys: String, CodingKey {

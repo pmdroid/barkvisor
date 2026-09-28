@@ -49,11 +49,7 @@ public enum WorkloadSpecProjector {
         let cdroms = vm.decodedISOIds.map {
             WorkloadDisk(role: "cdrom", imageId: $0)
         }
-        let forwards = vm.decodedPortForwards.map {
-            WorkloadPortForward(
-                hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol, host: $0.host,
-            )
-        }
+        let forwards = vm.decodedPortForwards.map(WorkloadPortForward.init)
         let network = WorkloadNetwork(
             // Implicit NAT when no networkId. Attached records project mode from
             // the Network row at apply/start time (fromVM has no DB).
@@ -178,9 +174,10 @@ public enum WorkloadSpecProjector {
         if spec.spec.networks.isEmpty == false {
             vm.networkId = net?.networkId
             vm.macAddress = net?.mac
-            let rules = (net?.portForwards ?? []).map {
-                PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-            }
+            let rules = PortForwardRule.inherited(
+                from: (net?.portForwards ?? []).map(PortForwardRule.init),
+                existing: vm.decodedPortForwards,
+            )
             vm.setPortForwards(rules.isEmpty ? nil : rules)
         }
 
@@ -256,9 +253,9 @@ public enum WorkloadSpecProjector {
                     throw BarkVisorError.badRequest("portForwards ports must be 1...65535")
                 }
             }
-            try PortRegistry.assertUnique(net.portForwards.map {
-                PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-            })
+            // Uniqueness is bind-aware: two forwards on one host port with
+            // different explicit binds do not overlap.
+            try PortRegistry.assertUnique(net.portForwards.map(PortForwardRule.init))
         }
         if let resolution = resolved.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)

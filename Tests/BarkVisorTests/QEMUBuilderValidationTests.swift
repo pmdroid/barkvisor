@@ -146,6 +146,53 @@ struct QEMUBuilderValidationTests {
         #expect(args.contains { $0.contains("hostfwd=tcp:127.0.0.1:8080-:80") })
     }
 
+    /// The direct-builder test above cannot catch a projection that drops
+    /// `host`: it hands the builder a spec that still holds the bind. This one
+    /// goes through the spec → column → spec path a real apply takes.
+    @Test func `hostfwd keeps the bind address after a spec apply round trip`() throws {
+        let submitted = netSpec(
+            mode: "nat",
+            forwards: [
+                WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                WorkloadPortForward(hostPort: 8_081, guestPort: 80, proto: "tcp"),
+            ],
+        )
+        // Persist through the apply adapter, then read back the way a start does.
+        var vm = VM(
+            id: "vm-bind",
+            name: "bind",
+            vmType: "linux-arm64",
+            state: "stopped",
+            cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+            memoryMb: 512,
+            bootDiskId: "disk-bind",
+            networkId: nil,
+            cloudInitPath: nil,
+            description: nil,
+            bootOrder: "cd",
+            displayResolution: nil,
+            additionalDiskIds: nil,
+            uefi: true,
+            tpmEnabled: false,
+            macAddress: nil,
+            sharedPaths: nil,
+            portForwards: "[]",
+            autoCreated: false,
+            pendingChanges: false,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+        )
+        try WorkloadSpecProjector.apply(submitted, to: &vm)
+        #expect(vm.portForwards?.contains("127.0.0.1") == true)
+
+        let (args, _) = try QEMUBuilder.networkArgs(
+            spec: WorkloadSpecProjector.fromVM(vm),
+            network: nil,
+        )
+        #expect(args.contains { $0.contains("hostfwd=tcp:127.0.0.1:8080-:80") })
+        #expect(args.contains { $0.contains("hostfwd=tcp::8081-:80") })
+    }
+
     @Test func `guest DNS is not an upstream resolver`() throws {
         let net = Network(
             id: "nat-1", name: "NAT", mode: "nat",

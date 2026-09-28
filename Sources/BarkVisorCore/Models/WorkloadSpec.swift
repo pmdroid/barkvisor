@@ -254,6 +254,17 @@ public struct WorkloadPortForward: Codable, Equatable, Sendable {
         self.host = host
     }
 
+    /// Column → spec. The one adapter every spec read path uses, so a stored
+    /// `host` bind survives the readback. `httpPath` has no spec field.
+    public init(_ rule: PortForwardRule) {
+        self.init(
+            hostPort: rule.hostPort,
+            guestPort: rule.guestPort,
+            proto: rule.protocol,
+            host: rule.host,
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case hostPort
         case guestPort

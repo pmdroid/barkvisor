@@ -158,6 +158,52 @@ final class WorkloadApplyServiceTests {
         #expect(unchanged.specGeneration == 2)
     }
 
+    @Test func `declarative apply keeps an explicit port forward bind`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-bind")
+        let createDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "bound"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp", "host": "127.0.0.1"],
+                    ],
+                ]],
+            ],
+        ]
+        let created = try await WorkloadApplyService.apply(
+            document: createDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        let afterCreate = try await fetchVM(created.id)
+        #expect(afterCreate.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+        // Spec export carries the bind back out.
+        #expect(
+            WorkloadSpecProjector.fromVM(afterCreate)
+                .spec.networks.first?.portForwards.first?.host == "127.0.0.1",
+        )
+
+        // A later declarative apply that does not mention the forward at all
+        // must not clear it.
+        let bump: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "bound"],
+            "spec": ["resources": ["cpu": fixtureCPUCount, "memoryMb": 1_024]],
+        ]
+        let updated = try await WorkloadApplyService.apply(
+            document: bump, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(updated.op == .updated)
+        let afterBump = try await fetchVM(created.id)
+        #expect(afterBump.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+        #expect(afterBump.memoryMb == 1_024)
+    }
+
     @Test func `dryRun create and update leave the database unchanged`() async throws {
         let diskID = try await insertFreeDisk(name: "boot-dry")
         let createDoc: [String: Any] = [

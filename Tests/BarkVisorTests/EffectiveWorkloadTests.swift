@@ -130,6 +130,28 @@ struct EffectiveWorkloadTests {
         #expect(noDefault.isoId == "iso-1")
     }
 
+    @Test func `createParams carries the spec bind address into the create params`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "bound"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                guestType: hostLinux,
+                networks: [
+                    WorkloadNetwork(
+                        mode: "nat",
+                        portForwards: [
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                            WorkloadPortForward(hostPort: 8_081, guestPort: 80, proto: "tcp"),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        let params = try EffectiveWorkloadPipeline.createParams(from: spec)
+        #expect(params.portForwards?.map(\.host) == ["127.0.0.1", nil])
+        #expect(params.portForwards?.map(\.hostPort) == [8_080, 8_081])
+    }
+
     @Test func `apply extras reject create without boot media`() {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "empty"),

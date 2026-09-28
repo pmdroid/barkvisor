@@ -186,11 +186,7 @@ public enum EffectiveWorkloadPipeline {
         if let iso = isoId, !iso.isEmpty {
             disks.append(WorkloadDisk(role: "cdrom", imageId: iso))
         }
-        let forwards = (portForwards ?? []).map {
-            WorkloadPortForward(
-                hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol, host: $0.host,
-            )
-        }
+        let forwards = (portForwards ?? []).map(WorkloadPortForward.init)
         let network = WorkloadNetwork(
             mode: networkId == nil ? NetworkMode.nat.rawValue : nil,
             networkId: networkId,
@@ -251,9 +247,7 @@ public enum EffectiveWorkloadPipeline {
         }
         let diskSizeGB = extras.diskSizeGB
             ?? (isoId == nil ? nil : extras.defaultISODiskSizeGB)
-        let forwards = spec.spec.networks.first?.portForwards.map {
-            PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-        }
+        let forwards = spec.spec.networks.first?.portForwards.map(PortForwardRule.init)
         let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
         let gpu = spec.spec.gpu.map { GPUPassthroughService.passthrough(from: $0) }
         let requestedID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines)

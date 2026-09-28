@@ -4189,7 +4189,11 @@ components:
         host:
           type: string
           nullable: true
-          description: Bind address for this publish. Absent means every IPv4 interface.
+          description: >-
+            Bind address for this publish. Absent means every IPv4 interface. On a
+            spec update, omitting `host` for a forward that already exists keeps that
+            forward's stored bind; send an explicit `host` (including `0.0.0.0`) to
+            change it.
 
     USBDevice:
       type: object

@@ -63,6 +63,27 @@ struct NetworkIntentTests {
         #expect(NetworkIntentBinding.overlaps(v6, v6Any))
     }
 
+    /// Two explicit interface binds on one host port are distinct publications;
+    /// only a wildcard on either side (or an exact bind match) collides.
+    @Test func `overlaps separates two explicit binds on one port`() throws {
+        let loopback = try NetworkIntent.publication(
+            bindAddress: "127.0.0.1", proto: "tcp", publishedPort: 8_080, targetPort: 80,
+        )
+        let lan = try NetworkIntent.publication(
+            bindAddress: "10.0.0.5", proto: "tcp", publishedPort: 8_080, targetPort: 8_080,
+        )
+        let loopbackAgain = try NetworkIntent.publication(
+            bindAddress: "127.0.0.1", proto: "tcp", publishedPort: 8_080, targetPort: 8_080,
+        )
+        let wildcard = try NetworkIntent.publication(
+            bindAddress: "0.0.0.0", proto: "tcp", publishedPort: 8_080, targetPort: 8_080,
+        )
+        #expect(!NetworkIntentBinding.overlaps(loopback, lan))
+        #expect(NetworkIntentBinding.overlaps(loopback, loopbackAgain))
+        #expect(NetworkIntentBinding.overlaps(wildcard, lan))
+        #expect(NetworkIntentBinding.overlaps(wildcard, loopback))
+    }
+
     @Test func `a failed claim releases only its own reservation`() throws {
         let pool = try tempPool()
         let held = try NetworkIntent.publication(
