@@ -275,6 +275,62 @@ struct VMProvisionRecoveryTests {
         await harness.tasks.cancelAll()
     }
 
+    @Test func `a delete that claims the row mid-clone leaves no orphan file`() async throws {
+        // Cancelling a task cannot stop the synchronous `qemu-img convert`, so the clone outlives
+        // the delete's disk removal. Whichever side runs last must clean up: the clone, once it
+        // finds its claim revoked, removes the file it produced.
+        let harness = try await ProvisionHarness()
+        try await harness.run(claim: .deleteWinsDuringClone) {
+            _ = try? await VMProvision.drive(
+                record: harness.operation, db: harness.db.pool, report: nil,
+            )
+        }
+        #expect(harness.clones == 1)
+        #expect(!FileManager.default.fileExists(atPath: harness.destination.path))
+        #expect(try await harness.state() != "stopped")
+    }
+
+    @Test func `a delete that claims the row before finalisation is not undone`() async throws {
+        // Regression: finalisation used to write `stopped` from a VM snapshot taken before the
+        // clone, so a delete landing in the window between that snapshot and the writes was
+        // silently reverted — leaving a row that looked startable while its disk was being
+        // removed. The claim is re-checked in the same transaction as the writes.
+        let harness = try await ProvisionHarness()
+        try await harness.run(claim: .deleteWinsBeforeFinalise) {
+            _ = try? await VMProvision.drive(
+                record: harness.operation, db: harness.db.pool, report: nil,
+            )
+        }
+        #expect(harness.clones == 1)
+        // The delete's `deleting` stands. `stopped` here would advertise a disk the delete is
+        // removing as startable — the exact harm the finding describes.
+        #expect(try await harness.state() == "deleting")
+        // The disk row is not marked ready either: the whole finalisation is skipped.
+        #expect(try await harness.disk()?.status == "creating")
+    }
+
+    @Test func `a provision that loses its claim resumes without resurrecting the row`() async throws {
+        // The same race through startup recovery: a delete closed the record, so the resumed
+        // provision must not resurrect the row and must not leave the clone's file behind.
+        let harness = try await ProvisionHarness()
+        try await harness.run(claim: .deleteWinsDuringClone) {
+            _ = try await WorkloadOperationRecovery.resume(
+                db: harness.db.pool, dataDir: harness.db.dir,
+            )
+        }
+        // `releaseUnownedDeletingRows` then releases the `deleting` row the simulated delete left
+        // with no open `vm.delete` of its own. What matters is that it is never `stopped` — that
+        // would advertise a disk the delete is removing as startable.
+        #expect(try await harness.state() != "stopped")
+        #expect(!FileManager.default.fileExists(atPath: harness.destination.path))
+        #expect(try await harness.disk()?.status != "ready")
+        let record = try #require(
+            try await WorkloadOperationStore.fetch(db: harness.db.pool, id: harness.operation.id),
+        )
+        // The clone's own checkpoints can no longer write, so the record is not left open.
+        #expect(record.isOpen == false)
+    }
+
     @Test func `a record with no stored intent fails instead of guessing`() async throws {
         let db = try makeDB()
         let vm = provisionVM(id: "no-intent", state: "provisioning", bootDiskID: nil)
@@ -412,6 +468,23 @@ private final class ProvisionHarness: @unchecked Sendable {
         cloneCount.value
     }
 
+    /// What the world does while the clone runs, to reproduce races a real daemon can hit.
+    enum ProvisionClaim {
+        /// Nothing intervenes: the clone keeps its claim.
+        case none
+
+        /// A delete claims the row and closes the record while the clone is in flight, exactly as
+        /// `VMLifecycleService.admitDelete` does. Cancelling cannot stop the synchronous
+        /// `qemu-img` call, so the write still lands after the claim has been revoked.
+        case deleteWinsDuringClone
+
+        /// The delete lands in the narrower window the clone's own checkpoint cannot cover: after
+        /// `disk_ready` is recorded and after the driver read its VM snapshot, but before the
+        /// finalisation transaction. This is the window that used to write a stale `stopped` over
+        /// the delete's `deleting`.
+        case deleteWinsBeforeFinalise
+    }
+
     /// `seeded: false` skips the mid-clone workload and record, leaving only a ready cloud image
     /// and the disk directory — the starting point for driving `createVM` itself.
     init(template: Bool = false, seeded: Bool = true) async throws {
@@ -513,47 +586,65 @@ private final class ProvisionHarness: @unchecked Sendable {
     @discardableResult
     func run(
         failingClone: Bool = false,
+        claim: ProvisionClaim = .none,
         _ body: @Sendable () async throws -> Void,
     ) async throws {
         if failingClone { failuresLeft.increment() }
         defer { failuresLeft.reset() }
-        let counter = cloneCount
-        let failures = failuresLeft
-        try await VMProvisionEffects.$clone.withValue({ _, dest, _ in
-            counter.increment()
-            if failures.consume() {
-                throw BarkVisorError.diskCreateFailed("no space left on device")
-            }
-            try Data("complete-clone".utf8).write(to: dest)
-        }) {
-            try await VMProvisionEffects.$virtualSize.withValue({ _ in 20 * 1_073_741_824 }) {
-                try await VMProvisionEffects.$destinationComplete.withValue({ _ in true }) {
-                    try await body()
-                }
-            }
-        }
+        _ = try await returningClaim(claim) { try await body() }
     }
 
     /// `run`, but returning whatever `body` returns.
     func returning<T: Sendable>(
+        claim: ProvisionClaim = .none,
         _ body: @Sendable () async throws -> T,
     ) async throws -> T {
-        try await withDiskEffects(body)
+        try await returningClaim(claim, body)
     }
 
-    private func withDiskEffects<T: Sendable>(
+    private func returningClaim<T: Sendable>(
+        _ claim: ProvisionClaim,
         _ body: @Sendable () async throws -> T,
     ) async throws -> T {
         let counter = cloneCount
         let failures = failuresLeft
+        // The clone hook is synchronous — that is the whole point of the race — so the delete is
+        // applied with a blocking GRDB write rather than awaited.
+        let pool = db.pool
+        let vmID = vm.id
+        let operationID = operation.id
+        let claimDelete: @Sendable () throws -> Void = {
+            // Mirrors `admitDelete`: the row is claimed `deleting` and the provision record is
+            // closed, which is what revokes the clone's claim.
+            try pool.write { database in
+                try database.execute(
+                    sql: "UPDATE vms SET state = 'deleting', updatedAt = ? WHERE id = ?",
+                    arguments: [iso8601.string(from: Date()), vmID],
+                )
+                try database.execute(
+                    sql: """
+                    UPDATE workload_operations
+                    SET status = 'failed', finishedAt = ?, updatedAt = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [iso8601.string(from: Date()), iso8601.string(from: Date()), operationID],
+                )
+            }
+        }
         return try await VMProvisionEffects.$clone.withValue({ _, dest, _ in
             counter.increment()
             if failures.consume() {
                 throw BarkVisorError.diskCreateFailed("no space left on device")
             }
             try Data("complete-clone".utf8).write(to: dest)
+            if claim == .deleteWinsDuringClone { try claimDelete() }
         }) {
-            try await VMProvisionEffects.$virtualSize.withValue({ _ in 20 * 1_073_741_824 }) {
+            try await VMProvisionEffects.$virtualSize.withValue({ _ in
+                // `finalise` reads the virtual size inside itself, just before its transaction —
+                // precisely the window a stale snapshot used to miss.
+                if claim == .deleteWinsBeforeFinalise { try claimDelete() }
+                return 20 * 1_073_741_824
+            }) {
                 try await VMProvisionEffects.$destinationComplete.withValue({ _ in true }) {
                     try await body()
                 }

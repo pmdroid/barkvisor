@@ -163,6 +163,7 @@ public enum VMProvision {
             )
             phase = phaseCloning
             try performClone(intent: intent, destination: destination)
+            try await discardIfClaimLost(record: record, destination: destination, db: db)
             try await checkpoint(
                 record: record, db: db, phase: phaseDiskReady, progress: 0.7, report: report,
             )
@@ -179,6 +180,7 @@ public enum VMProvision {
                 record: record, db: db, phase: phaseCloning, progress: 0.4, report: report,
             )
             try performClone(intent: intent, destination: destination)
+            try await discardIfClaimLost(record: record, destination: destination, db: db)
             try await checkpoint(
                 record: record, db: db, phase: phaseDiskReady, progress: 0.7, report: report,
             )
@@ -186,7 +188,11 @@ public enum VMProvision {
         }
 
         if rank(phase) < rank(phaseFinalised) {
-            try finalise(record: record, intent: intent, vm: vm, db: db)
+            guard try finalise(record: record, intent: intent, vm: vm, db: db) else {
+                // A delete claimed the row while the clone was running. Nothing was written, so
+                // the delete's `deleting` state and its disk removal stand.
+                throw WorkloadOperationInterrupted()
+            }
             try await checkpoint(
                 record: record, db: db, phase: phaseFinalised, progress: 0.95, report: report,
             )
@@ -195,20 +201,67 @@ public enum VMProvision {
         await report?(1)
     }
 
+    /// Whether this attempt may still write the workload's rows: its record is open and owned by
+    /// this attempt, and no delete has claimed the row.
+    ///
+    /// `deleting` is the only state from which a delete proceeds to remove the disk, so it is the
+    /// one state that must never be overwritten. `provisioning` and `error` are both legitimate: a
+    /// first run is `provisioning`, and a retry after a failed clone drives a row the failure
+    /// handler already moved to `error`.
+    private static func ownsClaim(record: WorkloadOperationRecord, db: DatabasePool) async throws -> Bool {
+        let vmID = record.workloadID
+        return try await db.read { db in
+            guard let row = try VM.fetchOne(db, key: vmID) else { return false }
+            guard row.state != "deleting" else { return false }
+            guard let op = try WorkloadOperationRecord.fetchOne(db, key: record.id) else { return false }
+            return op.attemptID == record.attemptID && op.isOpen
+        }
+    }
+
+    /// A delete that claimed the row cannot stop `qemu-img` — `cloneAndResize` is a synchronous
+    /// subprocess, so cancelling the task does not interrupt it. The clone therefore outlives the
+    /// delete's disk removal, and whichever side runs last must clean up. This is the clone side:
+    /// the file this attempt created is removed here rather than left orphaned next to a disk row
+    /// that no longer exists.
+    private static func discardIfClaimLost(
+        record: WorkloadOperationRecord,
+        destination: URL,
+        db: DatabasePool,
+    ) async throws {
+        guard try await ownsClaim(record: record, db: db) == false else { return }
+        try? FileManager.default.removeItem(at: destination)
+        throw WorkloadOperationInterrupted()
+    }
+
     /// Writes the rows the workload needs once the clone is on disk: the disk becomes `ready`
     /// with its real virtual size, and the VM leaves `provisioning` for `stopped` with a
     /// regenerated cloud-init seed when the intent asked for one.
+    ///
+    /// Returns `false` — writing nothing — when a delete claimed the row while the clone was
+    /// running. The claim check and both writes share one transaction, so a delete that lands
+    /// between them cannot be undone by a stale `stopped` write that would advertise a disk the
+    /// delete is removing as startable.
     private static func finalise(
         record: WorkloadOperationRecord,
         intent: WorkloadProvisionIntent,
         vm: VM,
         db: DatabasePool,
-    ) throws {
+    ) throws -> Bool {
         let sizeBytes = try readVirtualSize(URL(fileURLWithPath: intent.destinationPath))
         let ciPath = try cloudInitPath(intent: intent, vm: vm)
         let now = iso8601.string(from: Date())
         let diskID = intent.diskID
-        try db.write { db in
+        let vmID = record.workloadID
+        let attemptID = record.attemptID
+        let operationID = record.id
+        let committed = try db.write { db -> Bool in
+            guard let row = try VM.fetchOne(db, key: vmID), row.state != "deleting" else {
+                return false
+            }
+            guard let op = try WorkloadOperationRecord.fetchOne(db, key: operationID) else {
+                return false
+            }
+            guard op.attemptID == attemptID, op.isOpen else { return false }
             try db.execute(
                 sql: "UPDATE disks SET status = 'ready', sizeBytes = ? WHERE id = ?",
                 arguments: [sizeBytes, diskID],
@@ -216,15 +269,23 @@ public enum VMProvision {
             if let ciPath {
                 try db.execute(
                     sql: "UPDATE vms SET state = 'stopped', cloudInitPath = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [ciPath, now, record.workloadID],
+                    arguments: [ciPath, now, vmID],
                 )
             } else {
                 try db.execute(
                     sql: "UPDATE vms SET state = 'stopped', updatedAt = ? WHERE id = ?",
-                    arguments: [now, record.workloadID],
+                    arguments: [now, vmID],
                 )
             }
+            return true
         }
+        // A seed written for a claim we no longer hold would be an orphan directory.
+        if !committed, ciPath != nil {
+            try? FileManager.default.removeItem(
+                at: Config.dataDir.appendingPathComponent("cloud-init/\(vmID)"),
+            )
+        }
+        return committed
     }
 
     private static func cloudInitPath(intent: WorkloadProvisionIntent, vm: VM) throws -> String? {

@@ -360,8 +360,11 @@ public enum VMLifecycleService {
             await backgroundTasks.cancel(ApplicationLifecycleService.taskID(forCreate: id))
         }
         if hasResumableProvision {
-            // The clone loses its row the moment the delete claims it, so stop the worker and
-            // close its record rather than let it write a disk nobody is waiting for.
+            // Cancelling does not stop a clone already inside `qemu-img convert` — that call is a
+            // synchronous subprocess, so the write outlives the cancel. Closing the record is what
+            // actually revokes the claim: `VMProvision` re-checks it after the clone and removes the
+            // destination it produced, and its finalisation writes nothing. So the delete can
+            // remove the disk now without racing the clone into an orphan file or a stale `stopped`.
             await backgroundTasks.cancel(provisionTaskID(vmID: id))
             await failOpenProvision(id: id, db: db)
         }
