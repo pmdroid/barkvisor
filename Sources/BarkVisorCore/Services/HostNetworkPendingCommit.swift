@@ -218,6 +218,60 @@ public enum HostNetworkPendingCommitService {
         FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir))
     }
 
+    /// Records which operation kept this target's configuration.
+    ///
+    /// The stamp is per target, so on its own it cannot say which apply it belongs to. A
+    /// second apply on the same target inherits the first one's stamp, and anything that
+    /// reads the stamp as "these changes were kept" would settle the wrong operation. Only
+    /// the presence of the file is ever checked for existence, so writing the id into it
+    /// stays compatible with every reader.
+    public static func writeCommitStamp(
+        target: String,
+        operationId: String?,
+        dataDir: URL = Config.dataDir,
+    ) throws {
+        let path = LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir)
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let body = operationId ?? ""
+        try Data(body.utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
+    /// The operation that wrote this target's commit stamp. Nil when there is no stamp, and
+    /// also when the stamp predates stamping an id, so an unattributable stamp still counts.
+    public static func commitStampOwner(_ target: String, dataDir: URL = Config.dataDir) -> String? {
+        let path = LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        let owner = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return owner.isEmpty ? nil : owner
+    }
+
+    /// Removes a commit stamp that belongs to a different operation, so a new apply does
+    /// not inherit the previous one's confirmation.
+    @discardableResult
+    public static func clearStaleCommitStamp(
+        target: String,
+        operationId: String,
+        dataDir: URL = Config.dataDir,
+    ) -> Bool {
+        guard let owner = commitStampOwner(target, dataDir: dataDir) else {
+            try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.commitStampPath(
+                bridge: target,
+                dataDir: dataDir,
+            ))
+            return stampExists(target, dataDir: dataDir)
+        }
+        guard owner != operationId else { return false }
+        try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.commitStampPath(
+            bridge: target,
+            dataDir: dataDir,
+        ))
+        return true
+    }
+
     public static func claimPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
         dataDir.appendingPathComponent("host-network", isDirectory: true)
             .appendingPathComponent("\(target)-reverting").path
@@ -362,13 +416,8 @@ public enum HostNetworkPendingCommitService {
         #endif
     }
 
-    public static func keepNow(target: String) throws {
-        let stamp = LinuxHostBridgeApply.commitStampPath(bridge: target)
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
-        try Data().write(to: URL(fileURLWithPath: stamp), options: .atomic)
+    public static func keepNow(target: String, operationId: String? = nil) throws {
+        try writeCommitStamp(target: target, operationId: operationId)
         try? FileManager.default.removeItem(atPath: keepingPath(target))
         #if os(Linux)
             let unit = "barkvisor-\(target)-rollback"

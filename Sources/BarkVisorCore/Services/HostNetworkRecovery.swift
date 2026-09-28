@@ -160,6 +160,9 @@ public struct HostNetworkRecoverySweepResult: Equatable, Sendable {
 public struct HostNetworkRecoverySweepOptions {
     public var pendingCommits: [HostNetworkPendingCommit]?
     public var stampExists: ((String) -> Bool)?
+    /// Reads the operation that wrote a target's commit stamp. nil means every stamp counts
+    /// as unattributable, which is how a stamp written before ids were recorded behaves.
+    public var stampOwner: ((String) -> String?)?
     public var keepingExists: ((String) -> Bool)?
     public var restore: (HostNetworkSnapshot) throws -> Void
     public var persist: ((HostNetworkRecoveryRecord) throws -> Void)?
@@ -172,6 +175,7 @@ public struct HostNetworkRecoverySweepOptions {
     public init(
         pendingCommits: [HostNetworkPendingCommit]? = nil,
         stampExists: ((String) -> Bool)? = nil,
+        stampOwner: ((String) -> String?)? = nil,
         keepingExists: ((String) -> Bool)? = nil,
         restore: @escaping (HostNetworkSnapshot) throws -> Void = { try HostNetworkRecovery.restore($0) },
         persist: ((HostNetworkRecoveryRecord) throws -> Void)? = nil,
@@ -179,6 +183,7 @@ public struct HostNetworkRecoverySweepOptions {
     ) {
         self.pendingCommits = pendingCommits
         self.stampExists = stampExists
+        self.stampOwner = stampOwner
         self.keepingExists = keepingExists
         self.restore = restore
         self.persist = persist
@@ -223,6 +228,14 @@ public enum HostNetworkRecovery {
             startedAt: startedAt,
         )
         try save(record, dataDir: dataDir)
+        // A commit stamp is per target and a previous apply's stamp survives on macOS, so a
+        // new apply would inherit it and read as already confirmed. Every apply path records
+        // its operation here first, so this is the one place that can drop the stale one.
+        HostNetworkPendingCommitService.clearStaleCommitStamp(
+            target: target,
+            operationId: operationId,
+            dataDir: dataDir,
+        )
         return record
     }
 
@@ -359,6 +372,7 @@ public enum HostNetworkRecovery {
         // live Device's stamp while sweeping a temp directory.
         let stamped = options.stampExists ?? { HostNetworkPendingCommitService.stampExists($0, dataDir: dataDir) }
         let keeping = options.keepingExists ?? { HostNetworkPendingCommitService.keepingExists($0, dataDir: dataDir) }
+        let owner = options.stampOwner ?? { HostNetworkPendingCommitService.commitStampOwner($0, dataDir: dataDir) }
         let pendings = options.pendingCommits ?? HostNetworkPendingCommitService.listPending(dataDir: dataDir)
         // Read again inside the exclusion, where a commit that landed while the sweep was
         // queued shows up. A test that pins the list keeps it.
@@ -375,6 +389,7 @@ public enum HostNetworkRecovery {
                         dataDir: dataDir,
                         now: now,
                         stampExists: stamped,
+                        stampOwner: owner,
                         keepingExists: keeping,
                         restore: options.restore,
                         persist: options.persist ?? { try HostNetworkRecovery.save($0, dataDir: dataDir) },
@@ -416,6 +431,8 @@ public enum HostNetworkRecovery {
         var dataDir: URL
         var now: Date
         var stampExists: (String) -> Bool
+        /// The operation that wrote the target's commit stamp, nil when unattributable.
+        var stampOwner: (String) -> String?
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
         var persist: (HostNetworkRecoveryRecord) throws -> Void
@@ -475,10 +492,18 @@ public enum HostNetworkRecovery {
             // settled rather than waiting. Deferring instead would leave the record
             // unsettled forever, and retention keeps every settled record an unsettled one
             // depends on, so `list()` would never shrink.
+            //
+            // The stamp is per target, so it only confirms *this* operation when it names
+            // it. One left by an earlier apply says nothing about this snapshot, and
+            // settling on it would skip a restore that is still owed. A stamp too old to
+            // carry an id still counts, so an upgraded Device keeps its behaviour.
             if context.stampExists(current.target) {
-                try markConfirmed(current, context: context)
-                outcome = .confirmed
-                return
+                let owner = context.stampOwner(current.target)
+                if owner == nil || owner == current.operationId {
+                    try markConfirmed(current, context: context)
+                    outcome = .confirmed
+                    return
+                }
             }
             var next = current
             next.phase = HostNetworkRecoveryPhase.restoring

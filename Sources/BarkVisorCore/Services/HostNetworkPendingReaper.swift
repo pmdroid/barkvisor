@@ -144,7 +144,10 @@ public enum HostNetworkPendingReaper {
             case .waitForTry:
                 return true
             case .stampKeep:
-                try HostNetworkPendingCommitService.keepNow(target: pending.target)
+                try HostNetworkPendingCommitService.keepNow(
+                    target: pending.target,
+                    operationId: pending.operationId,
+                )
                 return true
             case .alreadyReverted:
                 return false

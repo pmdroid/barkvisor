@@ -266,6 +266,122 @@ struct HostNetworkRecoveryTests {
         #expect(record?.restoredAt == nil)
     }
 
+    /// A commit stamp is per target. On macOS a new apply does not clear the previous
+    /// one's stamp, so a second unconfirmed apply inherits it. The stamp says nothing about
+    /// the *new* operation's snapshot, and settling on it would skip a restore that is
+    /// still owed, including after a restart.
+    @Test func `a stamp from an earlier apply does not confirm a second one`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+
+        // First apply on en0, confirmed. It leaves a stamp naming itself.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-first",
+            generation: 1,
+            target: "en0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-120),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-300),
+        )
+        try HostNetworkRecovery.mark("op-first", phase: HostNetworkRecoveryPhase.confirmed, dataDir: data)
+        try HostNetworkPendingCommitService.writeCommitStamp(target: "en0", operationId: "op-first", dataDir: data)
+
+        // Second apply on the same Device, never confirmed, and its pending commit expires.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-second",
+            generation: 1,
+            target: "en0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-60),
+        )
+        try "applied-by-second".write(to: file, atomically: true, encoding: .utf8)
+
+        // Starting the second apply must not inherit the first one's confirmation.
+        #expect(!HostNetworkPendingCommitService.stampExists("en0", dataDir: data))
+
+        // With no stamp of its own, the expired second apply still owes a restore.
+        let swept = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(swept.restored == ["op-second"])
+        #expect(swept.confirmed.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "before")
+        #expect(HostNetworkRecovery.load(operationId: "op-second", dataDir: data)?.phase
+            == HostNetworkRecoveryPhase.restored)
+    }
+
+    /// The stamp names a *different* operation and is still on the target when the sweep
+    /// runs, so the sweep has to read who wrote it. Pins that on its own: the companion
+    /// test's stamp is cleared when the second apply begins, so it would pass here too.
+    @Test func `a stamp naming another operation does not confirm this one`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+        // Saved directly, so nothing clears the stamp on the way in.
+        try HostNetworkRecovery.save(
+            HostNetworkRecoveryRecord(
+                operationId: "op-x",
+                generation: 1,
+                target: "en2",
+                phase: HostNetworkRecoveryPhase.awaitingConfirmation,
+                deadline: Date().addingTimeInterval(-5),
+                snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+                startedAt: Date().addingTimeInterval(-120),
+            ),
+            dataDir: data,
+        )
+        try "applied-by-x".write(to: file, atomically: true, encoding: .utf8)
+        try HostNetworkPendingCommitService.writeCommitStamp(target: "en2", operationId: "op-other", dataDir: data)
+        #expect(HostNetworkPendingCommitService.stampExists("en2", dataDir: data))
+        #expect(HostNetworkPendingCommitService.commitStampOwner("en2", dataDir: data) == "op-other")
+
+        let swept = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(swept.restored == ["op-x"])
+        #expect(swept.confirmed.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "before")
+    }
+
+    /// A stamp written before ids were recorded cannot be attributed, and still confirms:
+    /// an upgraded Device must not start reverting operations a user already kept.
+    @Test func `a stamp with no recorded owner still confirms`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "before".write(to: file, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-old",
+            generation: 1,
+            target: "en1",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try "applied".write(to: file, atomically: true, encoding: .utf8)
+        // A legacy, empty stamp.
+        let stamp = URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: "en1", dataDir: data))
+        try FileManager.default.createDirectory(
+            at: stamp.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data().write(to: stamp, options: .atomic)
+        #expect(HostNetworkPendingCommitService.commitStampOwner("en1", dataDir: data) == nil)
+
+        let swept = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(swept.confirmed == ["op-old"])
+        #expect(swept.restored.isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "applied")
+    }
+
     @Test func `a declined exclusion leaves the record retryable`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)

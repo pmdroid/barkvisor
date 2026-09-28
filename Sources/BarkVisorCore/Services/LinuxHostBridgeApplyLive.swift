@@ -204,7 +204,10 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 if let operationId = pending.operationId {
                     try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.confirmed)
                 }
-                try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: target), "")
+                try HostNetworkPendingCommitService.writeCommitStamp(
+                    target: target,
+                    operationId: pending.operationId,
+                )
                 try? FileManager.default.removeItem(
                     atPath: HostNetworkPendingCommitService.keepingPath(target),
                 )
