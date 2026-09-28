@@ -243,9 +243,33 @@ public enum HostNetworkPendingCommitService {
     /// Serialises every host network apply and recovery restore. Re-entrant for the same
     /// thread; see `applyGate`.
     public static func withApplyGate(_ body: () throws -> Void) throws {
+        try withHostMutation(body)
+    }
+
+    /// `withApplyGate` for a body that produces a value.
+    public static func withHostMutation<T>(_ body: () throws -> T) throws -> T {
         applyGate.lock()
         defer { applyGate.unlock() }
-        try body()
+        return try body()
+    }
+
+    /// Runs a host-mutating step with applies excluded and the target's revert claim held.
+    ///
+    /// Lock order is always the apply gate and then the target claim, which is the order
+    /// `LinuxHostBridgeApplyLive` and `MacHostBridgeApply` take, so a mutation can never
+    /// deadlock against an apply. Returns nil without running the body when another holder
+    /// owns the claim.
+    @discardableResult
+    public static func withHostMutationGate<T>(
+        target: String,
+        dataDir: URL = Config.dataDir,
+        _ body: () throws -> T,
+    ) throws -> T? {
+        try withHostMutation {
+            guard claimRevert(target, dataDir: dataDir) else { return nil }
+            defer { releaseRevert(target, dataDir: dataDir) }
+            return try body()
+        }
     }
 
     private static func gate(for target: String) -> NSRecursiveLock {

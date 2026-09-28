@@ -27,38 +27,26 @@ public enum HostNetworkPendingReaper {
         let pendings = pendingWithoutStamp(dataDir: dataDir)
         let records = HostNetworkRecovery.list(dataDir: dataDir)
         for target in expireTargets(pendings: pendings, records: records) {
-            var claimed = false
-            defer {
-                if claimed { HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir) }
+            if !HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) {
+                for pending in pendings where pending.target == target && pending.expired {
+                    await expirePending(pending, db: db, dataDir: dataDir, options: options)
+                }
             }
-            // Re-check after claiming: a commit that landed while we waited owns the target.
-            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) { continue }
-            claimed = HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir)
-            guard claimed else { continue }
-            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) { continue }
-            // Re-read so a record that landed since the sweep started also blocks the
-            // host mutation below.
-            let current = HostNetworkRecovery.list(dataDir: dataDir)
-            for pending in pendings where pending.target == target && pending.expired {
-                // This revert deletes host files, and an expired pending can outlive a
-                // newer apply on an overlapping target: the pending file is gone once that
-                // apply runs, so nothing else stops this removal. The record sweep runs
-                // afterwards and cannot undo a deletion.
-                guard !hostMutationBlocked(pending, records: current) else { continue }
-                await expirePending(pending, db: db, dataDir: dataDir, options: options)
-            }
-            // Release the target claim before the record sweep. The sweep takes the same
-            // global apply gate an apply holds, and the apply path takes that gate *before*
-            // the target claim, so holding a claim across the gate would invert the order
-            // and can deadlock. The gate alone already excludes every apply, and the
-            // sweep re-reads ownership inside it.
-            HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir)
-            claimed = false
+            // The sweep restores snapshots under the same gate, and re-reads ownership
+            // inside it, so it does not need the per-target claim held across this call.
             HostNetworkRecovery.sweepExpired(
                 dataDir: dataDir,
                 now: Date(),
                 target: target,
-                options: HostNetworkRecoverySweepOptions(pendingCommits: pendings),
+                options: HostNetworkRecoverySweepOptions(
+                    pendingCommits: pendings,
+                    exclusive: { body in
+                        _ = try HostNetworkPendingCommitService.withHostMutationGate(
+                            target: target,
+                            dataDir: dataDir,
+                        ) { try body() }
+                    },
+                ),
             )
         }
     }
@@ -101,7 +89,28 @@ public enum HostNetworkPendingReaper {
             guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
                 return
             }
-            try options.revertHost(pending, attached)
+            // The ownership check and the host revert share one exclusion with applies, in
+            // the same lock order an apply uses. Re-reading the records before the gate
+            // would still leave a window for an apply on another target to write a record
+            // and its files in between, and deleting a file the record sweep cannot restore
+            // is the worse failure.
+            let reverted = try HostNetworkPendingCommitService.withHostMutationGate(
+                target: pending.target,
+                dataDir: dataDir,
+            ) {
+                // Re-check after taking the gate: an apply that landed while we waited
+                // owns these paths now.
+                guard !HostNetworkPendingCommitService.stampExists(pending.target, dataDir: dataDir) else {
+                    return false
+                }
+                let fresh = HostNetworkRecovery.list(dataDir: dataDir)
+                guard !hostMutationBlocked(pending, records: fresh, dataDir: dataDir) else {
+                    return false
+                }
+                try options.revertHost(pending, attached)
+                return true
+            } ?? false
+            guard reverted else { return }
             let still = try await pending.createdBridge
                 ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                 : 0
@@ -142,30 +151,79 @@ public enum HostNetworkPendingReaper {
         #endif
     }
 
-    /// True when another recovery record claims a path this pending's revert would remove.
+    /// True when a *newer* recovery record claims a path this pending's revert would
+    /// remove, so reverting would delete files the newer apply owns.
     ///
     /// On systemd-networkd a revert deletes `90-barkvisor-<bridge>.netdev`,
     /// `90-barkvisor-<bridge>.network` and the shared uplink unit
     /// `90-barkvisor-<nic>.network`, and every bridge snapshot also claims the fixed
-    /// `90-barkvisor-br0.*` units. So an expired pending for one bridge can delete files a
-    /// newer confirmed apply on another bridge owns, and the record sweep that follows
-    /// cannot restore a deleted file.
+    /// `90-barkvisor-br0.*` units, so two different targets routinely share paths.
     ///
-    /// Deliberately conservative: any other live claim blocks, not only a newer one. A
-    /// pending commit carries no apply timestamp to order it against, and not deleting a
-    /// host file is the safe direction. The common case, one apply with no competitor, is
-    /// unaffected.
+    /// Only a newer claim blocks. An older confirmed record shares those same paths but
+    /// was already applied and kept, so blocking on it would leave an expired bridge
+    /// configured forever. A pending that cannot be placed in apply order blocks on any
+    /// claim, because then nothing proves it is the newer of the pair.
     public static func hostMutationBlocked(
         _ pending: HostNetworkPendingCommit,
         records: [HostNetworkRecoveryRecord],
+        dataDir: URL = Config.dataDir,
     ) -> Bool {
         let paths = mutationPaths(for: pending, records: records)
         guard !paths.isEmpty else { return false }
-        return records.contains { record in
-            guard record.operationId != pending.operationId else { return false }
-            guard record.phase != HostNetworkRecoveryPhase.superseded else { return false }
-            return !record.claimedPaths.isDisjoint(with: paths)
+        let rivals = records.filter { record in
+            record.operationId != pending.operationId
+                && record.phase != HostNetworkRecoveryPhase.superseded
+                && !record.claimedPaths.isDisjoint(with: paths)
         }
+        guard !rivals.isEmpty else { return false }
+        guard let mine = applyOrder(of: pending, records: records, dataDir: dataDir) else {
+            return true
+        }
+        return rivals.contains { record in
+            let theirs = HostNetworkRecoveryOwnership.Order(
+                startedAt: record.startedAt,
+                operationId: record.operationId,
+            )
+            return HostNetworkRecoveryOwnership.Order.isNewer(theirs, than: mine)
+                || !HostNetworkRecoveryOwnership.Order.isConfidentlyOrdered(theirs, mine)
+        }
+    }
+
+    /// Where this pending sits in apply order. Its own recovery record carries the apply
+    /// timestamp; without one, the pending file's own modification date is the next best
+    /// durable proxy, since that file is written when the apply runs and removed on commit.
+    /// Nil when neither is available, which the caller treats as unorderable.
+    static func applyOrder(
+        of pending: HostNetworkPendingCommit,
+        records: [HostNetworkRecoveryRecord],
+        dataDir: URL,
+    ) -> HostNetworkRecoveryOwnership.Order? {
+        let operationId = pending.operationId ?? "pending-\(pending.target)"
+        if let record = records.first(where: { $0.operationId == operationId }), record.startedAt != nil {
+            return HostNetworkRecoveryOwnership.Order(
+                startedAt: record.startedAt,
+                operationId: operationId,
+            )
+        }
+        guard let modified = pendingFileModified(target: pending.target, dataDir: dataDir) else {
+            return nil
+        }
+        return HostNetworkRecoveryOwnership.Order(startedAt: modified, operationId: operationId)
+    }
+
+    private static func pendingFileModified(target: String, dataDir: URL) -> Date? {
+        let linux = URL(fileURLWithPath: HostNetworkPendingCommitService.linuxPendingPath(
+            bridge: target,
+            dataDir: dataDir,
+        ))
+        let mac = HostNetworkPendingCommitService.macPendingURL(device: target, dataDir: dataDir)
+        for url in [linux, mac] {
+            if let modified = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]
+                as? Date {
+                return modified
+            }
+        }
+        return nil
     }
 
     /// The host paths a pending revert would touch. Its own recovery record is the same

@@ -260,6 +260,151 @@ struct HostNetworkPendingReaperTests {
         #expect(reverts.targets == ["br0"])
     }
 
+    /// An older confirmed record shares the same fixed `90-barkvisor-br0.*` paths, because
+    /// every bridge snapshot claims them. Blocking on it would leave the expired bridge
+    /// configured forever: only a newer claim can supersede this pending.
+    @Test func `an older confirmed record does not block an expired pending`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        // Stands in for the fixed unit every bridge snapshot claims.
+        let shared = root.appendingPathComponent("etc/systemd/network/90-barkvisor-br0.network")
+        try FileManager.default.createDirectory(
+            at: shared.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = try tempPool()
+        try "shared".write(to: shared, atomically: true, encoding: .utf8)
+
+        // br0 applied and was confirmed earlier.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br0",
+            generation: 1,
+            target: "br0",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(-120),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-300),
+        )
+        try HostNetworkRecovery.mark("op-br0", phase: HostNetworkRecoveryPhase.confirmed, dataDir: data)
+
+        // br1 then applied, never confirmed, and has expired.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br1",
+            generation: 1,
+            target: "br1",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-120),
+        )
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "br1",
+                commitDeadline: Date().addingTimeInterval(-5),
+                rollbackSeconds: 60,
+                operationId: "op-br1",
+                generation: 1,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1", dataDir: data),
+        )
+
+        let pending = try #require(
+            HostNetworkPendingReaper.pendingWithoutStamp(dataDir: data).first { $0.operationId == "op-br1" },
+        )
+        #expect(!HostNetworkPendingReaper.hostMutationBlocked(pending, records: HostNetworkRecovery.list(dataDir: data)))
+
+        let reverts = RevertRecorder()
+        await HostNetworkPendingReaper.expire(
+            db: pool,
+            dataDir: data,
+            options: HostNetworkReapOptions(revertHost: reverts.record),
+        )
+        #expect(reverts.targets == ["br1"])
+    }
+
+    /// The ownership re-check and the revert share one exclusion with applies, in the same
+    /// lock order an apply uses. A concurrent apply on another target must not be able to
+    /// write a record and its files in between and then have them deleted.
+    @Test func `a concurrent apply cannot interleave between the check and a pending revert`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let shared = root.appendingPathComponent("etc/systemd/network/90-barkvisor-br0.network")
+        try FileManager.default.createDirectory(
+            at: shared.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = try tempPool()
+        try "shared".write(to: shared, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br1",
+            generation: 1,
+            target: "br1",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-120),
+        )
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "br1",
+                commitDeadline: Date().addingTimeInterval(-5),
+                rollbackSeconds: 60,
+                operationId: "op-br1",
+                generation: 1,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "br1", dataDir: data),
+        )
+
+        // A concurrent apply on another target holds the gate, then records a newer claim
+        // and writes the shared unit, as LinuxHostBridgeApplyLive does.
+        let holdsGate = DispatchSemaphore(value: 0)
+        let mayRelease = DispatchSemaphore(value: 0)
+        let applyDone = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            try? HostNetworkPendingCommitService.withApplyGate {
+                holdsGate.signal()
+                mayRelease.wait()
+                try? HostNetworkRecovery.begin(
+                    operationId: "op-br2",
+                    generation: 1,
+                    target: "br2",
+                    snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+                    deadline: Date().addingTimeInterval(60),
+                    dataDir: data,
+                    startedAt: Date(),
+                )
+                try? "confirmed-by-br2".write(to: shared, atomically: true, encoding: .utf8)
+            }
+            applyDone.signal()
+        }
+        #expect(holdsGate.wait(timeout: .now() + 30) == .success)
+
+        let reverts = RevertRecorder()
+        let sweepDone = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            Task {
+                await HostNetworkPendingReaper.expire(
+                    db: pool,
+                    dataDir: data,
+                    options: HostNetworkReapOptions(revertHost: reverts.record),
+                )
+                sweepDone.signal()
+            }
+        }
+        // The reap is blocked on the gate the concurrent apply holds.
+        #expect(sweepDone.wait(timeout: .now() + 0.3) == .timedOut)
+        #expect(reverts.targets.isEmpty)
+
+        mayRelease.signal()
+        #expect(applyDone.wait(timeout: .now() + 30) == .success)
+        #expect(sweepDone.wait(timeout: .now() + 30) == .success)
+        // The reap woke up, re-read ownership inside the gate, and found br2 newer.
+        #expect(reverts.targets.isEmpty)
+        #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br2")
+    }
+
     @Test func `only expired work claims a gate`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
