@@ -76,6 +76,17 @@ describe('formatPortForwards', () => {
   test('renders protocol host → guest', () => {
     expect(formatPortForwards([{ protocol: 'tcp', hostPort: 3389, guestPort: 3389 }])).toBe('tcp 3389 → 3389')
   })
+
+  test('a bind is hidden unless the caller asks for it', () => {
+    const rules = [{ protocol: 'tcp' as const, hostPort: 2222, guestPort: 22, host: '127.0.0.1' }]
+    expect(formatPortForwards(rules)).toBe('tcp 2222 → 22')
+    expect(formatPortForwards(rules, { showBind: true })).toBe('tcp 127.0.0.1:2222 → 22')
+  })
+
+  test('an unset or blank bind leaves the default rendering alone', () => {
+    expect(formatPortForwards([{ protocol: 'udp', hostPort: 53, guestPort: 53, host: null }], { showBind: true })).toBe('udp 53 → 53')
+    expect(formatPortForwards([{ protocol: 'udp', hostPort: 53, guestPort: 53, host: '  ' }], { showBind: true })).toBe('udp 53 → 53')
+  })
 })
 
 describe('parseLogDate', () => {

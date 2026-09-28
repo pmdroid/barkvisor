@@ -60,6 +60,25 @@ A **Bridge · Pending** entry means the Device's bridge is not ready. Select it 
 
 Attach a network in **Create VM** or on the VM's [detail page](using-vm-details.md). For NAT services such as SSH, configure a port forward there. Restart a running VM after changing its port forwards.
 
+## Port forward bind address
+
+Each NAT port forward can name the Device address it is published on. **Leave the bind empty to publish on every IPv4 interface** — that is the default, and what a VM created before binds existed uses.
+
+Set a bind when a port should be reachable only from one place on the Device. For example, to keep an SSH forward reachable from the Device itself without exposing it to the LAN:
+
+```text
+127.0.0.1:2222 → 22
+```
+
+The bind is shown read-only next to the other forwards on the VM's detail page. A VM with no bind renders exactly as before.
+
+Two rules are worth knowing:
+
+- Leaving the bind empty on an existing forward keeps whatever bind it already has. Widening it to every interface is a deliberate act: set the bind to `0.0.0.0`.
+- Two forwards may share a host port as long as they use different binds. When that is the case, a save that leaves a bind empty is rejected rather than guessing which publish the entry continues — name the bind on each entry.
+
+Applications publish their ports through their compose document, where the same idea is written as `host_ip` on the port mapping. The console's bound-ports editor edits that address too.
+
 ## Remove or revert changes
 
 **Revert**, where offered, removes BarkVisor's host-network configuration. Linux bridges also offer **Delete**. You must remove workload references before deleting a bridge in use.

@@ -37,6 +37,12 @@ const emit = defineEmits<{
   toggleUSBDevice: [dev: HostUSBDevice]
   openUSBPicker: []
 }>()
+
+/** `TCP 127.0.0.1:2222 → 22` when the rule carries a bind, otherwise `TCP 2222 → 22`. */
+function portForwardSummary(rule: PortForwardRule): string {
+  const bind = rule.host?.trim()
+  return `${rule.protocol.toUpperCase()} ${bind ? `${bind}:${rule.hostPort}` : rule.hostPort} → ${rule.guestPort}`
+}
 </script>
 
 <template>
@@ -85,7 +91,7 @@ const emit = defineEmits<{
           :key="i"
           style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border-subtle)"
         >
-          <span class="mono">{{ pf.protocol.toUpperCase() }} {{ pf.hostPort }} &rarr; {{ pf.guestPort }}</span>
+          <span class="mono">{{ portForwardSummary(pf) }}</span>
           <button class="btn-ghost btn-sm" style="color:var(--red);flex-shrink:0;margin-left:8px" @click="emit('removePortForward', i)">Remove</button>
         </div>
       </div>

@@ -57,12 +57,22 @@ export function formatCores(n: number | null | undefined): string {
   return n === 1 ? '1 core' : `${n} cores`
 }
 
+/**
+ * `showBind` prefixes a publish with the address it is bound to. A rule
+ * without a bind is published on every IPv4 interface, so it renders exactly
+ * as it did before binds existed — the caller opts in per view.
+ */
 export function formatPortForwards(
-  rules: Array<{ protocol?: string; proto?: string; hostPort: number; guestPort: number }> | null | undefined,
+  rules: Array<{ protocol?: string; proto?: string; hostPort: number; guestPort: number; host?: string | null }> | null | undefined,
+  options: { showBind?: boolean } = {},
 ): string {
   if (!rules?.length) return '—'
   return rules
-    .map((rule) => `${(rule.protocol || rule.proto || 'tcp').toLowerCase()} ${rule.hostPort} → ${rule.guestPort}`)
+    .map((rule) => {
+      const proto = (rule.protocol || rule.proto || 'tcp').toLowerCase()
+      const bind = options.showBind ? rule.host?.trim() : ''
+      return `${proto} ${bind ? `${bind}:${rule.hostPort}` : rule.hostPort} → ${rule.guestPort}`
+    })
     .join(', ')
 }
 

@@ -114,6 +114,11 @@ export interface WorkloadPortForward {
   hostPort: number
   guestPort: number
   proto: string
+  /**
+   * Bind address for this publish. Absent or empty means every IPv4
+   * interface, which is what a Workload created before binds existed uses.
+   */
+  host?: string | null
 }
 
 export interface WorkloadNetwork {
@@ -378,6 +383,12 @@ export interface PortForwardRule {
   hostPort: number
   guestPort: number
   httpPath?: string | null
+  /**
+   * Bind address for this publish. Absent or empty means every IPv4
+   * interface. A save omits the key rather than sending `null`, so the API
+   * inherits the stored bind instead of widening it.
+   */
+  host?: string | null
 }
 
 export interface GPUPassthroughDevice {
