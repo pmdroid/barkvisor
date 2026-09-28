@@ -536,6 +536,16 @@ public enum TemplateDeployService {
         )
         do {
             try await db.write { db in
+                // `resolveNetwork` ran in its own read, so a concurrent
+                // `NetworkService.update` could have withdrawn `hostfwd` since.
+                // Re-check here, in the transaction that persists the
+                // placeholder, or the deploy strands forwards on a network
+                // that cannot launch them (#634).
+                try VMLifecycleService.assertNetworkSupportsPortForwards(
+                    networkId: resolvedNetworkId,
+                    forwardCount: row.decodedPortForwards.count,
+                    db: db,
+                )
                 try disk.insert(db)
                 try row.insert(db)
                 try pending.insert(db)
