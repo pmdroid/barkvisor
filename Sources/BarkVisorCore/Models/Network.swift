@@ -73,24 +73,25 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
     ///
     /// A spec apply/PUT/PATCH replaces the whole list, so an element without
     /// `host` would otherwise rebind an existing `127.0.0.1` publish to every
-    /// IPv4 interface without the client asking for it. Omitted means "unchanged
-    /// here": an omitted `host` inherits the bind of the stored publication it
-    /// continues. Widening on purpose stays possible with an explicit `host`
-    /// (including `0.0.0.0`).
+    /// IPv4 interface without the client asking for it. Widening on purpose
+    /// stays possible with an explicit `host` (including `0.0.0.0`).
     ///
-    /// A publish is identified by where it is *published* (`proto` + `hostPort`),
-    /// not by where it lands, so a retargeted `guestPort` still continues the
-    /// same publication and keeps its bind. Which stored publication is being
-    /// continued is resolved in order:
+    /// A publish is identified by where it is *published* (`proto` + `hostPort`).
+    /// An omitted `host` can only be resolved when that host port carries a
+    /// single stored publication, which the entry then unambiguously continues
+    /// and keeps the bind of — including across a `guestPort` retarget.
     ///
-    /// 1. exactly one stored rule on this `proto` + `hostPort` — unambiguous;
-    /// 2. otherwise the one that also repeats this `guestPort` — but only when
-    ///    that repeat is itself unique. Two stored rules can share
-    ///    `proto` + `hostPort` + `guestPort` while binding different addresses
-    ///    (127.0.0.1:8080→80 and 10.0.0.5:8080→80 are disjoint, so both are
-    ///    valid), and then `guestPort` identifies neither of them;
-    /// 3. otherwise **ambiguous**, and rejected rather than guessed, because any
-    ///    choice silently moves a bind the client did not mention.
+    /// `guestPort` is deliberately **not** used to narrow the candidates. The
+    /// same request may change it, so a guest port that happens to match one
+    /// stored rule is no evidence that the entry continues *that* rule: it may
+    /// just as well be a retarget of a different one. With stored
+    /// `127.0.0.1:8080→80` and `10.0.0.5:8080→81`, a lone `8080→81` entry can
+    /// mean "retarget the loopback publish and drop the other" or "keep the
+    /// second publish and drop loopback", and swapping the guest ports of two
+    /// omitted entries reads as a reordering rather than the retarget it is.
+    /// Any choice among several publications moves a bind the client never
+    /// mentioned, so the omission is **rejected** and the client is asked to
+    /// name the bind on each entry.
     ///
     /// A rule with no stored rule on its host port is new and keeps the
     /// documented default (absent = every IPv4 interface).
@@ -105,23 +106,16 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
                 Self.normalizedProtocol($0.protocol) == Self.normalizedProtocol(rule.protocol)
                     && $0.hostPort == rule.hostPort
             }
-            guard !onPort.isEmpty else { return rule }
-            let repeats = onPort.filter { $0.guestPort == rule.guestPort }
-            // A single stored rule continues unambiguously. Otherwise the
-            // guest port only disambiguates when it picks out exactly one
-            // stored rule; two rules on the same port and guest port are two
-            // publications, and guessing one of them moves a bind the client
-            // never mentioned.
-            let prior: PortForwardRule? = onPort.count == 1
-                ? onPort[0]
-                : (repeats.count == 1 ? repeats[0] : nil)
-            guard let prior else {
-                throw BarkVisorError.badRequest(
-                    "portForwards entry \(rule.hostPort)/\(rule.protocol) → \(rule.guestPort) omits "
-                        + "host, but this workload already publishes that host port on "
-                        + "\(onPort.count) binds (\(binds(onPort).joined(separator: ", "))). "
-                        + "Send host on each entry to say which bind it continues.",
-                )
+            guard let prior = onPort.count == 1 ? onPort[0] : nil else {
+                guard onPort.isEmpty else {
+                    throw BarkVisorError.badRequest(
+                        "portForwards entry \(rule.hostPort)/\(rule.protocol) → \(rule.guestPort) "
+                            + "omits host, but this workload already publishes that host port on "
+                            + "\(onPort.count) binds (\(binds(onPort).joined(separator: ", "))). "
+                            + "Send host on each entry to say which bind it continues.",
+                    )
+                }
+                return rule
             }
             return rule.replacingHost(prior.host)
         }

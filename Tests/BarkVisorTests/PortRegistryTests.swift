@@ -366,10 +366,11 @@ final class PortRegistryTests {
         #expect(error?.code == "port_in_use")
     }
 
-    /// Validating raw incoming rules would see two wildcards on one host port
-    /// and reject the update, even though the stored binds they continue are
-    /// disjoint and the write is a no-op.
-    @Test func `update VMSpec accepts a payload that omits both distinct binds`() async throws {
+    /// The stored binds are disjoint, so raw validation would see two wildcards
+    /// and call them duplicates. They are not resolvable either: the same
+    /// payload could be swapping the guest ports, so the client is asked to name
+    /// the binds rather than having one picked for it.
+    @Test func `update VMSpec reports ambiguity for a payload omitting two distinct binds`() async throws {
         try await insertVM(
             id: "vm-binds", name: "Two binds",
             portForwards: [
@@ -381,8 +382,6 @@ final class PortRegistryTests {
         let occupant = try #require(stored)
         var spec = WorkloadSpecProjector.fromVM(occupant)
         spec.spec.guestType = hostLinux
-        // The same two forwards with `host` omitted: each continues its own
-        // publication, so the effective binds stay disjoint.
         spec.spec.networks = [
             WorkloadNetwork(
                 mode: "nat",
@@ -392,10 +391,13 @@ final class PortRegistryTests {
                 ],
             ),
         ]
-        let updated = try await VMLifecycleService.updateVMSpec(
-            id: "vm-binds", spec: spec, db: self.dbPool,
-        )
-        #expect(updated.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-binds", spec: spec, db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
     }
 
     /// The failure the reviewer found: the two stored rules are disjoint, so an
