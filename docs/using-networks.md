@@ -72,10 +72,9 @@ Set a bind when a port should be reachable only from one place on the Device. Fo
 
 The bind is shown read-only next to the other forwards on the VM's detail page. A VM with no bind renders exactly as before.
 
-Two rules are worth knowing:
+Widening a bind is deliberate. Clearing the box on a forward that already has a bind **keeps that bind**; to publish on every IPv4 interface instead, type `0.0.0.0`. A forward with no bind to begin with stays on every IPv4 interface.
 
-- Leaving the bind empty on an existing forward keeps whatever bind it already has. Widening it to every interface is a deliberate act: set the bind to `0.0.0.0`.
-- Two forwards may share a host port as long as they use different binds. When that is the case, a save that leaves a bind empty is rejected rather than guessing which publish the entry continues — name the bind on each entry.
+Two forwards may share a host port as long as they use different binds. When you edit such a workload through **Edit**, each forward keeps its own bind because the console sends the bind it is showing you.
 
 Applications publish their ports through their compose document, where the same idea is written as `host_ip` on the port mapping. The console's bound-ports editor edits that address too.
 

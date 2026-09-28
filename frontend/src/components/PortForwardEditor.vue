@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import type { PortForwardRule } from '../api/types'
-import { applyPortForwardBind, type BindableRule, type BindField } from '../utils/portForwardBind'
+import { applyPortForwardBind, portForwardBind, type BindableRule, type BindField } from '../utils/portForwardBind'
 import AppSelect from './ui/AppSelect.vue'
 
 const props = withDefaults(defineProps<{ bindField?: BindField }>(), { bindField: 'host' })
 const model = defineModel<BindableRule[]>({ default: () => [] })
 
+// The binds each rule was opened with. This modal is created fresh per open,
+// so this snapshot is the state the operator started from, and emptying a box
+// can fall back to it instead of silently widening the publish.
+const openedBinds = model.value.map((rule) => portForwardBind(rule, props.bindField))
+
 function addRule() {
   model.value = [...model.value, { protocol: 'tcp', hostPort: 0, guestPort: 0 }]
+  openedBinds.push('')
 }
 
 function removeRule(index: number) {
   model.value = model.value.filter((_, i) => i !== index)
+  openedBinds.splice(index, 1)
 }
 
 function updateRule(index: number, field: keyof PortForwardRule, value: any) {
@@ -22,7 +29,7 @@ function updateRule(index: number, field: keyof PortForwardRule, value: any) {
 
 function setBind(index: number, raw: string) {
   const rules = [...model.value]
-  rules[index] = applyPortForwardBind(rules[index], props.bindField, raw)
+  rules[index] = applyPortForwardBind(rules[index], props.bindField, raw, openedBinds[index])
   model.value = rules
 }
 </script>
@@ -40,7 +47,7 @@ function setBind(index: number, raw: string) {
         :value="rule[bindField] ?? ''"
         @input="setBind(i, ($event.target as HTMLInputElement).value)"
         placeholder="Every interface"
-        title="Bind address on the Device. Leave empty to publish on every IPv4 interface, or enter an address such as 127.0.0.1."
+        title="Bind address on the Device. Empty publishes on every IPv4 interface. To widen a bind that is already set, type 0.0.0.0."
         spellcheck="false"
         autocomplete="off"
         style="width:150px;font-size:13px"
@@ -55,6 +62,7 @@ function setBind(index: number, raw: string) {
     <button class="btn-ghost btn-sm" @click="addRule">+ Add Rule</button>
     <p style="color:var(--text-dim);font-size:11px;margin:6px 0 0">
       Bind address is optional. Empty means the port is published on every IPv4 interface of the Device.
+      To widen an existing bind, type <span class="mono">0.0.0.0</span> — clearing the box keeps the current bind.
     </p>
   </div>
 </template>
