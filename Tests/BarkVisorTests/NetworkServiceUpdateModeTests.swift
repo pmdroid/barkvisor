@@ -214,86 +214,9 @@ final class NetworkServiceUpdateModeTests {
         #expect(try await claims().contains { $0.hostPort == 9_300 && $0.workloadId == "vm-mode-7" })
     }
 
-    /// Attach a forwarding Workload the way the create seam does: the network
-    /// fetch, the mode guard, and the insert in one write transaction. Returns
-    /// whether the attach persisted.
-    private static func attachForwardingWorkload(
-        pool: DatabasePool,
-        networkID: String,
-        id: String,
-        hostPort: Int,
-    ) async -> Bool {
-        do {
-            try await pool.write { db in
-                guard let network = try Network.fetchOne(db, key: networkID) else {
-                    throw BarkVisorError.notFound()
-                }
-                try NetworkCapability.requirePortForwardsAllowed(count: 1, network: network)
-                var vm = VM(
-                    id: id, name: "racer", vmType: "linux-arm64", state: "stopped",
-                    cpuCount: 2, memoryMb: 1_024, bootDiskId: nil,
-                    networkId: networkID, cloudInitPath: nil,
-                    description: nil, bootOrder: "cd", displayResolution: "1280x800",
-                    additionalDiskIds: nil, uefi: true, tpmEnabled: false,
-                    macAddress: nil, sharedPaths: nil, portForwards: nil,
-                    autoCreated: false, pendingChanges: false,
-                    createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
-                )
-                vm.setPortForwards([PortForwardRule(protocol: "tcp", hostPort: hostPort, guestPort: 80)])
-                try vm.insert(db)
-            }
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    /// Flip a network to isolated. Returns whether the mode change persisted.
-    private static func flipToIsolated(pool: DatabasePool, _ id: String) async -> Bool {
-        do {
-            _ = try await NetworkService.update(
-                UpdateNetworkParams(
-                    id: id, name: nil, mode: "isolated",
-                    bridge: nil, macAddress: nil, dnsServer: nil,
-                ),
-                db: pool,
-            )
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    @Test func `concurrent attach versus mode change resolves to one winner`() async throws {
-        // Both writers serialize on the same pool, so the pair is either
-        // "isolated with nothing attached" or "NAT with the Workload attached"
-        // — never a half-applied state.
-        let pool = dbPool
-        for attempt in 0 ..< 20 {
-            let networkID = "net-race-\(attempt)"
-            let vmID = "vm-race-\(attempt)"
-            try await seedNetwork(networkID, mode: "nat")
-
-            async let attachedOK = Self.attachForwardingWorkload(
-                pool: pool, networkID: networkID, id: vmID, hostPort: 9_400,
-            )
-            async let flippedOK = Self.flipToIsolated(pool: pool, networkID)
-            let attach = await attachedOK
-            let flip = await flippedOK
-
-            let network = try await dbPool.read { db in try Network.fetchOne(db, key: networkID) }
-            let vm = try await dbPool.read { db in try VM.fetchOne(db, key: vmID) }
-            if flip {
-                // The mode change won, so the attach must have been rejected.
-                #expect(attach == false)
-                #expect(network?.mode == "isolated")
-                #expect(vm == nil)
-            } else {
-                // The attach won, so the mode change must have been rejected.
-                #expect(attach)
-                #expect(network?.mode == "nat")
-                #expect(vm?.decodedPortForwards.count == 1)
-            }
-        }
-    }
+    // The create-side half of this race — the interleaving that a
+    // network-update guard alone cannot close, because `createVM` validates in
+    // one transaction and inserts in another — lives in
+    // `VMLifecycleNetworkModeRaceTests`, which drives the real
+    // `VMLifecycleService.createVM`.
 }
