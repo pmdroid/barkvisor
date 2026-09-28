@@ -82,7 +82,7 @@ final class VMLifecycleRecoveryTests {
             diskID: "disk-1",
             diskPath: diskPath.path,
             db: dbPool,
-            error: BarkVisorError.internalError("boom"),
+            message: "clone failed",
         )
 
         let vm = try await dbPool.read { db in
@@ -356,6 +356,178 @@ final class VMLifecycleRecoveryTests {
         #expect(VMLifecycleService.canDelete(recoveryVM(state: "stopped")))
     }
 
+    @Test func `canDelete admits a VM whose clone is still owned by a provision record`() {
+        // A crash mid-clone leaves the row `provisioning` under an open `vm.provision` record.
+        // That record will finish or fail the clone, so a delete is not racing an unowned task.
+        #expect(VMLifecycleService.canDelete(
+            recoveryVM(state: "provisioning"), hasResumableProvision: true,
+        ))
+        // Both recovery outcomes already land in an admissible state, so they need no extra flag.
+        #expect(VMLifecycleService.canDelete(recoveryVM(state: "stopped")))
+        #expect(VMLifecycleService.canDelete(recoveryVM(state: "error")))
+        // Without a record, `provisioning` has no owner and stays refused.
+        #expect(!VMLifecycleService.canDelete(
+            recoveryVM(state: "provisioning"), hasResumableProvision: false,
+        ))
+        // A resumable provision never unlocks any other state.
+        #expect(!VMLifecycleService.canDelete(
+            recoveryVM(state: "running"), hasResumableProvision: true,
+        ))
+        #expect(!VMLifecycleService.canDelete(
+            recoveryVM(state: "starting"), hasResumableProvision: true,
+        ))
+    }
+
+    @Test func `resetStaleVMStates leaves provisioning and deleting to their durable owners`() async throws {
+        // `resetStaleVMStates` owns only the states a dead QEMU process left behind. Resetting
+        // `provisioning` would advertise a half-written disk as startable, and resetting
+        // `deleting` would resurrect a row mid-teardown — both are owned by durable operations
+        // that `WorkloadOperationRecovery` resumes. This is the coverage gap that keeps the
+        // ownership claim honest.
+        let now = "2026-01-01T00:00:00Z"
+        let cases: [(id: String, state: String, expected: String)] = [
+            ("stale-running", "running", "stopped"),
+            ("stale-starting", "starting", "stopped"),
+            ("stale-stopping", "stopping", "stopped"),
+            ("owned-provisioning", "provisioning", "provisioning"),
+            ("owned-deleting", "deleting", "deleting"),
+            ("already-stopped", "stopped", "stopped"),
+        ]
+        let pool = dbPool
+        let dir = tmpDir
+        try await pool.write { db in
+            for testCase in cases {
+                try Disk(
+                    id: "disk-\(testCase.id)",
+                    name: "boot",
+                    path: dir.appendingPathComponent("\(testCase.id).qcow2").path,
+                    sizeBytes: 1_024,
+                    format: "qcow2",
+                    vmId: testCase.id,
+                    autoCreated: false,
+                    status: "ready",
+                    createdAt: now,
+                ).insert(db)
+                try VM(
+                    id: testCase.id,
+                    name: testCase.id,
+                    vmType: "linux-arm64",
+                    state: testCase.state,
+                    cpuCount: 2,
+                    memoryMb: 2_048,
+                    bootDiskId: "disk-\(testCase.id)",
+                    isoIds: nil,
+                    networkId: nil,
+                    cloudInitPath: nil,
+                    description: nil,
+                    bootOrder: nil,
+                    displayResolution: nil,
+                    additionalDiskIds: nil,
+                    uefi: true,
+                    tpmEnabled: false,
+                    macAddress: nil,
+                    sharedPaths: nil,
+                    portForwards: nil,
+                    usbDevices: nil,
+                    autoCreated: false,
+                    pendingChanges: false,
+                    createdAt: now,
+                    updatedAt: now,
+                ).insert(db)
+            }
+        }
+
+        let monitor = VMProcessMonitor(dbPool: pool)
+        await monitor.resetStaleVMStates(excluding: [])
+        for testCase in cases {
+            let stored = try await pool.read { db in try VM.fetchOne(db, key: testCase.id) }
+            #expect(stored?.state == testCase.expected, "\(testCase.id) was reset")
+        }
+
+        // A reconnected workload is left alone even in a state this method owns.
+        try await pool.write { db in
+            try db.execute(sql: "UPDATE vms SET state = 'running' WHERE id = 'stale-running'")
+        }
+        await monitor.resetStaleVMStates(excluding: ["stale-running"])
+        #expect(
+            try await pool.read { db in try VM.fetchOne(db, key: "stale-running") }?.state
+                == "running",
+        )
+    }
+
+    @Test func `a provisioning VM with no open provision record is released on startup`() async throws {
+        // Nothing owns the claim: the create died between admitting the record and inserting the
+        // row, or the record reached a terminal state. The row must not stay `provisioning`.
+        let pool = dbPool
+        let dir = tmpDir
+        try await pool.write { db in
+            try Disk(
+                id: "disk-stranded-prov",
+                name: "boot",
+                path: dir.appendingPathComponent("stranded-prov.qcow2").path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: "vm-stranded-prov",
+                autoCreated: false,
+                status: "creating",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+            try recoveryVM(
+                id: "vm-stranded-prov", state: "provisioning", bootDiskId: "disk-stranded-prov",
+            ).insert(db)
+        }
+        // The record exists but is closed, so it cannot own the claim.
+        let accepted = try await WorkloadOperationStore.accept(
+            db: pool,
+            idempotencyKey: "provision-dead",
+            workloadID: "vm-stranded-prov",
+            kind: WorkloadOperationKind.vmProvision,
+            requestedGeneration: 1,
+        )
+        _ = try await WorkloadOperationStore.fail(
+            db: pool,
+            operationID: accepted.record.id,
+            attemptID: accepted.record.attemptID,
+            phase: VMProvision.phaseCloning,
+            recoveryOutcome: VMProvision.outcomeIncomplete,
+            error: "clone failed",
+        )
+        await WorkloadOperationRecovery.resume(db: pool, dataDir: dir)
+        let stored = try await pool.read { db in try VM.fetchOne(db, key: "vm-stranded-prov") }
+        #expect(stored?.state == "error")
+        // `error` is admitted by both start and delete, so the workload is usable again.
+        #expect(try VMLifecycleService.canDelete(#require(stored)))
+    }
+
+    @Test func `a template placeholder provisioning with no provision record is not released`() async throws {
+        // A template deploy parks its placeholder in `provisioning` while the image downloads.
+        // The `pending_deploys` row is that window's owner, so recovery must leave it alone.
+        let pool = dbPool
+        let dir = tmpDir
+        try await pool.write { db in
+            try Disk(
+                id: "disk-template-prov",
+                name: "boot",
+                path: dir.appendingPathComponent("template-prov.qcow2").path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: "vm-template-prov",
+                autoCreated: false,
+                status: "creating",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+            try recoveryVM(
+                id: "vm-template-prov", state: "provisioning", bootDiskId: "disk-template-prov",
+            ).insert(db)
+            try PendingDeploy(
+                vmId: "vm-template-prov", imageId: "image-1", payload: "{}", createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        await WorkloadOperationRecovery.resume(db: pool, dataDir: dir)
+        let stored = try await pool.read { db in try VM.fetchOne(db, key: "vm-template-prov") }
+        #expect(stored?.state == "provisioning")
+    }
+
     @Test func `canDelete admits a deleting workload that has a resumable delete`() {
         // A row left `deleting` by a crash is not a conflict: the durable record is the
         // resumption handle, and both a replay and a retry must be allowed through.
@@ -466,15 +638,15 @@ private func recoveryApp(id: String = "whoami-app", state: String) -> VM {
     )
 }
 
-private func recoveryVM(state: String) -> VM {
+private func recoveryVM(id: String = "vm-box", state: String, bootDiskId: String = "disk-1") -> VM {
     VM(
-        id: "vm-box",
+        id: id,
         name: "box",
         vmType: "linux-arm64",
         state: state,
         cpuCount: 2,
         memoryMb: 2_048,
-        bootDiskId: "disk-1",
+        bootDiskId: bootDiskId,
         isoIds: nil,
         networkId: nil,
         cloudInitPath: nil,

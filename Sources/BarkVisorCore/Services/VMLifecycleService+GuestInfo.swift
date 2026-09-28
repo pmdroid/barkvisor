@@ -4,12 +4,16 @@ import GRDB
 // MARK: - Failure Handlers
 
 extension VMLifecycleService {
+    /// Resets a workload whose cloud-image clone failed: the partial destination and the
+    /// generated seed are removed, the disk row goes back to `creating` so a retry re-clones it,
+    /// and the VM lands in `error` — a state start and delete both accept, so the workload is
+    /// never stranded behind a half-written disk.
     static func handleProvisionFailure(
         vmID: String,
         diskID: String,
         diskPath: String,
         db: DatabasePool,
-        error: Error,
+        message: String,
     ) async {
         try? FileManager.default.removeItem(atPath: diskPath)
         try? FileManager.default.removeItem(
@@ -28,7 +32,7 @@ extension VMLifecycleService {
                     arguments: [diskID],
                 )
             }
-            Log.vm.error("Provisioning failed for VM \(vmID): \(error)", vm: vmID)
+            Log.vm.error("Provisioning failed for VM \(vmID): \(message)", vm: vmID)
         } catch {
             Log.vm.error("Failed to mark provisioning failure for VM \(vmID): \(error)", vm: vmID)
         }

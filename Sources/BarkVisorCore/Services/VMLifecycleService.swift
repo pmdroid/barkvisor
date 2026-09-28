@@ -44,8 +44,9 @@ public enum VMLifecycleService {
             macAddress: macAddress,
         )
 
-        try await insertVMAndDisk(vm: vm, disk: bootDisk.newDisk, cloudInitPath: cloudInitPath, db: db)
-
+        // The durable clone record is accepted *before* the row reaches `provisioning`, so a
+        // daemon death at any later point leaves a record the next startup resumes.
+        var provision: AcceptedProvision?
         if bootDisk.isCloudImageMode {
             let destPath = bootDisk.newDisk.map { URL(fileURLWithPath: $0.path) }
                 ?? DiskSettings.fileURL(
@@ -53,10 +54,31 @@ public enum VMLifecycleService {
                     format: "qcow2",
                     directory: DiskSettings.defaultDirectory,
                 )
-            let taskID = try await submitProvisioningTask(
-                vmID: vmID, params: params, diskID: bootDisk.diskID,
+            provision = try await acceptProvision(
+                vmID: vmID,
+                params: params,
+                diskID: bootDisk.diskID,
                 destPath: destPath,
-                cloudImagePath: bootDisk.cloudImagePath ?? "", db: db, backgroundTasks: backgroundTasks,
+                cloudImagePath: bootDisk.cloudImagePath ?? "",
+                generation: vm.specGeneration,
+                backgroundTasks: backgroundTasks,
+                db: db,
+            )
+        }
+
+        do {
+            try await insertVMAndDisk(vm: vm, disk: bootDisk.newDisk, cloudInitPath: cloudInitPath, db: db)
+        } catch {
+            // No row means nothing to resume: close the record so it cannot strand a later start.
+            if let provision {
+                await provision.abandon(reason: error.localizedDescription)
+            }
+            throw error
+        }
+
+        if let provision {
+            let taskID = await submitProvisioningTask(
+                provision: provision, backgroundTasks: backgroundTasks,
             )
             return .provisioning(taskID: taskID, vm: vm)
         }
@@ -308,7 +330,17 @@ public enum VMLifecycleService {
             )
         }
 
-        guard canDelete(vm, hasResumableDelete: true) else {
+        // A durable `vm.provision` record owns a `provisioning` row, so a delete is not racing
+        // an unowned background task: the record will be failed and the row released below.
+        var hasResumableProvision = false
+        if vm.state == "provisioning" {
+            hasResumableProvision = try await WorkloadOperationStore.openOperation(
+                db: db, workloadID: id, kind: WorkloadOperationKind.vmProvision,
+            ) != nil
+        }
+        guard canDelete(
+            vm, hasResumableDelete: true, hasResumableProvision: hasResumableProvision,
+        ) else {
             try await refuseDelete(record: attempt, db: db, state: vm.state)
             throw BarkVisorError.conflict(
                 vm.isApplication
@@ -321,9 +353,17 @@ public enum VMLifecycleService {
             throw BarkVisorError.conflict("VM is currently starting or running")
         }
 
-        try await markVMAsDeleting(id: id, db: db)
+        try await markVMAsDeleting(
+            id: id, db: db, hasResumableProvision: hasResumableProvision,
+        )
         if vm.isApplication {
             await backgroundTasks.cancel(ApplicationLifecycleService.taskID(forCreate: id))
+        }
+        if hasResumableProvision {
+            // The clone loses its row the moment the delete claims it, so stop the worker and
+            // close its record rather than let it write a disk nobody is waiting for.
+            await backgroundTasks.cancel(provisionTaskID(vmID: id))
+            await failOpenProvision(id: id, db: db)
         }
         await submitDeleteTask(
             id: id,
@@ -337,6 +377,23 @@ public enum VMLifecycleService {
         )
 
         return (taskID: taskID, vmName: vm.name, operationID: deleteOperationID)
+    }
+
+    /// Closes an open `vm.provision` record so the next startup does not resume a clone for a
+    /// workload that is being deleted. The row is the only thing the clone writes, so dropping
+    /// the record is enough: the delete removes the partial destination with the disk.
+    private static func failOpenProvision(id: String, db: DatabasePool) async {
+        guard let open = try? await WorkloadOperationStore.openOperation(
+            db: db, workloadID: id, kind: WorkloadOperationKind.vmProvision,
+        ) else { return }
+        _ = try? await WorkloadOperationStore.fail(
+            db: db,
+            operationID: open.id,
+            attemptID: open.attemptID,
+            phase: open.phase,
+            recoveryOutcome: VMProvision.outcomeIncomplete,
+            error: "Workload was deleted while its disk was being cloned",
+        )
     }
 
     private static func specGeneration(id: String, db: DatabasePool) async throws -> Int {
@@ -651,78 +708,72 @@ extension VMLifecycleService {
     }
 
     // swiftlint:disable:next function_parameter_count
-    fileprivate static func submitProvisioningTask(
+    fileprivate static func acceptProvision(
         vmID: String,
         params: CreateVMParams,
         diskID: String,
         destPath: URL,
         cloudImagePath: String,
-        db: DatabasePool,
+        generation: Int,
         backgroundTasks: BackgroundTaskManager,
-    ) async throws -> String {
-        let taskID = "disk-clone:\(vmID)"
-        let capturedDiskSizeGB = params.diskSizeGB
-        let diskPath = destPath
-        let sshKeys = params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? []
-        let userData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let vmName = params.name
-        let hasCloudInit = !sshKeys.isEmpty || !(userData ?? "").isEmpty
-
-        await backgroundTasks.submit(taskID, kind: .vmProvision) { @Sendable in
-            do {
-                try DiskService.cloneAndResize(
-                    sourcePath: cloudImagePath, destPath: diskPath, sizeGB: capturedDiskSizeGB,
-                )
-                let diskSize = try DiskService.getVirtualSize(path: diskPath.path)
-                let mac = try await db.read { db in
-                    try VM.fetchOne(db, key: vmID)?.macAddress
-                }
-
-                let ciPath: String? =
-                    if hasCloudInit {
-                        try CloudInitService.generateISO(
-                            vmID: vmID, vmName: vmName,
-                            sshKeys: sshKeys, userData: userData,
-                            instanceID: vmID,
-                            macAddress: mac,
-                        ).path
-                    } else {
-                        nil
-                    }
-
-                let now = iso8601.string(from: Date())
-                try await db.write { db in
-                    try db.execute(
-                        sql: "UPDATE disks SET status = 'ready', sizeBytes = ? WHERE id = ?",
-                        arguments: [diskSize, diskID],
-                    )
-                    if let ciPath {
-                        try db.execute(
-                            sql:
-                            "UPDATE vms SET state = 'stopped', cloudInitPath = ?, updatedAt = ? WHERE id = ?",
-                            arguments: [ciPath, now, vmID],
-                        )
-                    } else {
-                        try db.execute(
-                            sql: "UPDATE vms SET state = 'stopped', updatedAt = ? WHERE id = ?",
-                            arguments: [now, vmID],
-                        )
-                    }
-                }
-            } catch {
-                await handleProvisionFailure(
-                    vmID: vmID,
-                    diskID: diskID,
-                    diskPath: diskPath.path,
-                    db: db,
-                    error: error,
-                )
-                throw error
+        db: DatabasePool,
+    ) async throws -> AcceptedProvision? {
+        let intent = WorkloadProvisionIntent(
+            sourceImagePath: cloudImagePath,
+            destinationPath: destPath.path,
+            diskID: diskID,
+            sizeGB: params.diskSizeGB,
+            vmName: params.name,
+            sshAuthorizedKeys: params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? [],
+            userData: params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines),
+        )
+        let acceptance = try await WorkloadOperationStore.accept(
+            db: db,
+            idempotencyKey: nil,
+            workloadID: vmID,
+            kind: WorkloadOperationKind.vmProvision,
+            requestedGeneration: generation,
+            inputPayload: WorkloadProvisionIntent.encode(intent),
+        )
+        let taskID = provisionTaskID(vmID: vmID)
+        guard acceptance.started else {
+            // A replay must not steal the attempt from a worker still running the clone: that
+            // worker's next checkpoint would fail and abandon the row in `provisioning`. Only an
+            // open record with no live worker (a crash left it orphaned) needs a new attempt.
+            if let live = await backgroundTasks.status(taskID),
+               live.status == .running || live.status == .queued {
+                return nil
             }
+            let attempt = try await WorkloadOperationStore.beginReplacement(
+                db: db, operationID: acceptance.record.id,
+            )
+            return AcceptedProvision(record: attempt, taskID: taskID, db: db)
+        }
+        return AcceptedProvision(record: acceptance.record, taskID: taskID, db: db)
+    }
+
+    fileprivate static func provisionTaskID(vmID: String) -> String {
+        "disk-clone:\(vmID)"
+    }
+
+    fileprivate static func submitProvisioningTask(
+        provision: AcceptedProvision,
+        backgroundTasks: BackgroundTaskManager,
+    ) async -> String {
+        await backgroundTasks.submit(provision.taskID, kind: .vmProvision) { @Sendable in
+            // A clone failure is recorded by `VMProvision` itself: it removes the partial
+            // destination, resets the disk row, and moves the workload to `error` so start and
+            // delete both work again. The task only re-throws so the in-memory task reports it.
+            try await VMProvision.run(
+                operationID: provision.record.id,
+                attemptID: provision.record.attemptID,
+                backgroundTasks: backgroundTasks,
+                taskID: provision.taskID,
+                db: provision.db,
+            )
             return nil
         }
-
-        return taskID
+        return provision.taskID
     }
 
     fileprivate static func completePlaceholderIfNeeded(
@@ -744,6 +795,14 @@ extension VMLifecycleService {
             return (vm, disk)
         }
         guard let (existing, disk) = placeholder else { return nil }
+
+        // The placeholder is already whole: a durable `vm.provision` finished the clone before
+        // the daemon died, and the resume marker only outlived it. Re-running the lifecycle would
+        // push the row back into `provisioning` and clone the same image a second time.
+        if disk.status == "ready", existing.state != "provisioning" {
+            await TemplateDeployService.settlePending(vmID: vmID, failure: nil, db: db)
+            return .created(existing)
+        }
 
         let bootDisk: BootDiskResult
         if params.cloudImageId != nil {
@@ -811,20 +870,57 @@ extension VMLifecycleService {
         vm.syncSpecProjection(bumpGeneration: true)
         let row = vm
 
+        let provision: AcceptedProvision? = if bootDisk.isCloudImageMode {
+            // Accepted before the row is rewritten, so the clone window always has a record.
+            try await acceptProvision(
+                vmID: vmID,
+                params: params,
+                diskID: disk.id,
+                destPath: URL(fileURLWithPath: disk.path),
+                cloudImagePath: bootDisk.cloudImagePath ?? "",
+                generation: row.specGeneration,
+                backgroundTasks: backgroundTasks,
+                db: db,
+            )
+        } else {
+            nil
+        }
+
         try await db.write { db in
             try row.update(db)
         }
 
-        if bootDisk.isCloudImageMode {
-            let destPath = URL(fileURLWithPath: disk.path)
-            let taskID = try await submitProvisioningTask(
-                vmID: vmID, params: params, diskID: disk.id,
-                destPath: destPath,
-                cloudImagePath: bootDisk.cloudImagePath ?? "", db: db, backgroundTasks: backgroundTasks,
+        if let provision {
+            let taskID = await submitProvisioningTask(
+                provision: provision, backgroundTasks: backgroundTasks,
             )
             return .provisioning(taskID: taskID, vm: row)
         }
+        if bootDisk.isCloudImageMode {
+            // A live worker already owns this clone; the row is still `provisioning` under it.
+            return .provisioning(taskID: provisionTaskID(vmID: vmID), vm: row)
+        }
         return .created(row)
+    }
+}
+
+/// A `vm.provision` record a create request owns, together with the in-memory task that drives
+/// it. `record` is the attempt this request may write; a newer attempt supersedes it.
+struct AcceptedProvision {
+    let record: WorkloadOperationRecord
+    let taskID: String
+    let db: DatabasePool
+
+    /// Closes a record whose workload row never landed, so a later start has nothing to resume.
+    func abandon(reason: String) async {
+        _ = try? await WorkloadOperationStore.fail(
+            db: db,
+            operationID: record.id,
+            attemptID: record.attemptID,
+            phase: record.phase,
+            recoveryOutcome: VMProvision.outcomeWorkloadMissing,
+            error: reason,
+        )
     }
 }
 

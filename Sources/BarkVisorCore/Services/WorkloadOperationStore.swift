@@ -14,6 +14,58 @@ public enum WorkloadOperationKind {
     public static let appTeardown = "appTeardown"
     public static let vmStart = "vm.start"
     public static let vmDelete = "vm.delete"
+    public static let vmProvision = "vm.provision"
+}
+
+/// The clone a `vm.provision` operation was accepted for (BV-07). Stored in
+/// `workload_operations.inputPayload` so a provision resumed after a crash knows what to
+/// clone, where to clone it, and which cloud-init seed to build — with no in-memory context.
+public struct WorkloadProvisionIntent: Codable, Sendable, Equatable {
+    public var sourceImagePath: String
+    public var destinationPath: String
+    public var diskID: String
+    public var sizeGB: Int?
+    public var vmName: String
+    public var sshAuthorizedKeys: [String]
+    public var userData: String?
+
+    public init(
+        sourceImagePath: String,
+        destinationPath: String,
+        diskID: String,
+        sizeGB: Int?,
+        vmName: String,
+        sshAuthorizedKeys: [String] = [],
+        userData: String? = nil,
+    ) {
+        self.sourceImagePath = sourceImagePath
+        self.destinationPath = destinationPath
+        self.diskID = diskID
+        self.sizeGB = sizeGB
+        self.vmName = vmName
+        self.sshAuthorizedKeys = sshAuthorizedKeys
+        self.userData = userData
+    }
+
+    public var hasCloudInit: Bool {
+        !sshAuthorizedKeys.isEmpty
+            || !(userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    public static func encode(_ intent: WorkloadProvisionIntent) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(intent)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw BarkVisorError.internalError("Provision intent could not be encoded")
+        }
+        return json
+    }
+
+    public static func decode(_ payload: String?) -> WorkloadProvisionIntent? {
+        guard let payload, let data = payload.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WorkloadProvisionIntent.self, from: data)
+    }
 }
 
 /// The request a `vm.delete` operation was accepted for (BV-06). Stored in
@@ -107,6 +159,12 @@ public struct WorkloadOperationRecord: Codable, Sendable, FetchableRecord, Persi
         return WorkloadDeleteIntent.decode(inputPayload)
     }
 
+    /// The clone intent persisted at acceptance, if any.
+    public var provisionIntent: WorkloadProvisionIntent? {
+        guard kind == WorkloadOperationKind.vmProvision else { return nil }
+        return WorkloadProvisionIntent.decode(inputPayload)
+    }
+
     public func taskEvent() -> BackgroundTaskManager.TaskEvent {
         let mapped: BackgroundTaskManager.TaskStatus = switch status {
         case WorkloadOperationStatus.completed:
@@ -123,6 +181,8 @@ public struct WorkloadOperationRecord: Codable, Sendable, FetchableRecord, Persi
             BackgroundTaskManager.TaskKind.appUpdate.rawValue
         case WorkloadOperationKind.vmDelete:
             BackgroundTaskManager.TaskKind.vmDelete.rawValue
+        case WorkloadOperationKind.vmProvision:
+            BackgroundTaskManager.TaskKind.vmProvision.rawValue
         default:
             kind
         }

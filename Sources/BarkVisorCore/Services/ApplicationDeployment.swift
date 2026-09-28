@@ -366,6 +366,10 @@ enum ApplicationDeployment {
         // process instead of being resumed.
         case WorkloadOperationKind.vmDelete:
             try await VMDelete.recover(record: record, db: db, dataDir: dataDir)
+        // Same trap: without an explicit case a provision is probed for a live QEMU process
+        // (there is none) and the record is failed instead of the clone being resumed.
+        case WorkloadOperationKind.vmProvision:
+            try await VMProvision.recover(record: record, db: db)
         default:
             if record.kind.hasPrefix("vm.") {
                 try await adoptVM(record: record, db: db, dataDir: dataDir)
@@ -1152,6 +1156,7 @@ public enum WorkloadOperationRecovery {
     public static func resume(db: DatabasePool, dataDir: URL = Config.dataDir) async {
         await ApplicationDeployment.recoverOpen(db: db, dataDir: dataDir)
         await releaseUnownedDeletingRows(db: db)
+        await releaseUnownedProvisioningRows(db: db)
     }
 
     /// A row still marked `deleting` with no open `vm.delete` record has no owner — the
@@ -1186,6 +1191,52 @@ public enum WorkloadOperationRecovery {
             } catch {
                 Log.vm.error(
                     "Failed to release workload \(vm.id) from deleting: \(error.localizedDescription)",
+                    vm: vm.id,
+                )
+            }
+        }
+    }
+
+    /// A row still `provisioning` with no open `vm.provision` record and no template marker has
+    /// no owner: the operation that claimed it reached a terminal state, or the create was
+    /// interrupted between admitting the record and inserting the row. Reset it to `error` so
+    /// start and delete both work again instead of the row being stranded.
+    ///
+    /// A template deploy is exempt because its placeholder legitimately sits `provisioning` while
+    /// the image is still downloading — that is what the `pending_deploys` row means.
+    static func releaseUnownedProvisioningRows(db: DatabasePool) async {
+        let stranded: [VM]
+        do {
+            stranded = try await db.read { db in
+                try VM.filter(Column("state") == "provisioning").fetchAll(db)
+            }
+        } catch {
+            Log.vm.error("Failed to list provisioning workloads: \(error.localizedDescription)")
+            return
+        }
+        for vm in stranded where !vm.isApplication {
+            do {
+                let owned = try await WorkloadOperationStore.openOperation(
+                    db: db, workloadID: vm.id, kind: WorkloadOperationKind.vmProvision,
+                ) != nil
+                guard !owned else { continue }
+                let templatePending = try await db.read { db in
+                    try PendingDeploy.filter(PendingDeploy.Columns.vmId == vm.id).fetchOne(db) != nil
+                }
+                guard !templatePending else { continue }
+                try await db.write { db in
+                    try db.execute(
+                        sql: "UPDATE vms SET state = 'error', updatedAt = ? WHERE id = ?",
+                        arguments: [iso8601.string(from: Date()), vm.id],
+                    )
+                }
+                Log.vm.warning(
+                    "Released workload \(vm.id) left in provisioning by a clone with no open operation",
+                    vm: vm.id,
+                )
+            } catch {
+                Log.vm.error(
+                    "Failed to release workload \(vm.id) from provisioning: \(error.localizedDescription)",
                     vm: vm.id,
                 )
             }

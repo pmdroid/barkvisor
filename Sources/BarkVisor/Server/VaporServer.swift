@@ -90,6 +90,12 @@ public final class VaporServer: @unchecked Sendable {
         app.middleware.use(setup)
 
         let services = await createServices(app: app, database: database)
+        // `reconnectOrCleanup` only resets the states a dead QEMU process owned
+        // (`running`/`starting`/`stopping`). `provisioning` and `deleting` belong to the durable
+        // `vm.provision` and `vm.delete` records, so this pass cannot race their recovery — and it
+        // runs first so a live process is adopted before anything inspects state. The recovery
+        // below must stay ahead of `reconcile` and `startEligible`, the two callers that act on a
+        // recovered state.
         await services.processMonitor.reconnectOrCleanup()
         await WorkloadOperationRecovery.resume(db: database.pool)
         await ApplicationLifecycleService.reconcile(
