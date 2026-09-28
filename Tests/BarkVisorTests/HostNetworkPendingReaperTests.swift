@@ -141,6 +141,125 @@ struct HostNetworkPendingReaperTests {
             == HostNetworkRecoveryPhase.mutating)
     }
 
+    /// An expired pending commit outlives a newer apply: the pending file is replaced when
+    /// the newer apply runs, so nothing else stops the older revert. On systemd-networkd
+    /// that revert deletes `90-barkvisor-<bridge>.network` and the shared uplink unit, and
+    /// every bridge snapshot also claims the fixed `90-barkvisor-br0.*` units, so it can
+    /// delete files the newer apply owns. The record sweep runs afterwards and cannot
+    /// restore a deleted file.
+    @Test func `an expired pending does not revert paths a newer operation owns`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        // Stands in for the shared units a systemd-networkd revert removes.
+        let shared = root.appendingPathComponent("etc/systemd/network/90-barkvisor-br0.network")
+        let uplink = root.appendingPathComponent("etc/systemd/network/90-barkvisor-enp3s0.network")
+        try FileManager.default.createDirectory(
+            at: shared.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = try tempPool()
+        try "shared-before".write(to: shared, atomically: true, encoding: .utf8)
+        try "uplink-before".write(to: uplink, atomically: true, encoding: .utf8)
+
+        // The expired operation on br0, which captured the shared units.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br0",
+            generation: 1,
+            target: "br0",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path, uplink.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-120),
+        )
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "br0",
+                commitDeadline: Date().addingTimeInterval(-5),
+                rollbackSeconds: 60,
+                operationId: "op-br0",
+                generation: 1,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "br0", dataDir: data),
+        )
+        try "applied-by-br0".write(to: shared, atomically: true, encoding: .utf8)
+
+        // A newer apply on br1 applies and confirms, claiming the same shared unit.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br1",
+            generation: 1,
+            target: "br1",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(60),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-60),
+        )
+        try HostNetworkRecovery.mark("op-br1", phase: HostNetworkRecoveryPhase.confirmed, dataDir: data)
+        try "confirmed-by-br1".write(to: shared, atomically: true, encoding: .utf8)
+
+        let records = HostNetworkRecovery.list(dataDir: data)
+        let expiredPending = try #require(
+            HostNetworkPendingReaper.pendingWithoutStamp(dataDir: data)
+                .first { $0.operationId == "op-br0" },
+        )
+        // The decision is the guarantee: the real revert would delete host files, so it
+        // cannot be executed in a test.
+        #expect(HostNetworkPendingReaper.hostMutationBlocked(expiredPending, records: records))
+        // With no competitor the revert still runs, so expiry is not disabled.
+        #expect(!HostNetworkPendingReaper.hostMutationBlocked(expiredPending, records: []))
+
+        // Whether the reaper actually decided to revert is the observable behaviour. The
+        // real revert is stubbed, because it would delete host files and a test cannot run
+        // it; `requireHostMutation` would throw first anyway and hide the call.
+        let reverts = RevertRecorder()
+        await HostNetworkPendingReaper.expire(
+            db: pool,
+            dataDir: data,
+            options: HostNetworkReapOptions(revertHost: reverts.record),
+        )
+        #expect(reverts.targets.isEmpty)
+        #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br1")
+        #expect(try String(contentsOf: uplink, encoding: .utf8) == "uplink-before")
+        #expect(HostNetworkRecovery.load(operationId: "op-br0", dataDir: data)?.phase
+            == HostNetworkRecoveryPhase.superseded)
+    }
+
+    /// The same expired pending, with no newer operation to block it, still reverts. Guards
+    /// against "fixing" the overlap by never reverting anything.
+    @Test func `an expired pending with no competitor still reverts`() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let file = root.appendingPathComponent("nic.txt")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = try tempPool()
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-solo",
+            generation: 1,
+            target: "br0",
+            snapshot: HostNetworkRecovery.capture(paths: [file.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+        )
+        try HostNetworkPendingCommitService.write(
+            HostNetworkPendingCommit(
+                target: "br0",
+                commitDeadline: Date().addingTimeInterval(-5),
+                rollbackSeconds: 60,
+                operationId: "op-solo",
+                generation: 1,
+            ),
+            to: HostNetworkPendingCommitService.linuxPendingPath(bridge: "br0", dataDir: data),
+        )
+        let reverts = RevertRecorder()
+        await HostNetworkPendingReaper.expire(
+            db: pool,
+            dataDir: data,
+            options: HostNetworkReapOptions(revertHost: reverts.record),
+        )
+        #expect(reverts.targets == ["br0"])
+    }
+
     @Test func `only expired work claims a gate`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let data = root.appendingPathComponent("data", isDirectory: true)
@@ -224,6 +343,24 @@ struct HostNetworkPendingReaperTests {
                 records: HostNetworkRecovery.list(dataDir: data),
             ).isEmpty,
         )
+    }
+
+    /// Records which targets the reaper decided to revert, across threads.
+    private final class RevertRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [String] = []
+
+        var targets: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return seen
+        }
+
+        func record(_ pending: HostNetworkPendingCommit, _ attached: Int) throws {
+            lock.lock()
+            seen.append(pending.target)
+            lock.unlock()
+        }
     }
 
     private func tempPool() throws -> DatabasePool {

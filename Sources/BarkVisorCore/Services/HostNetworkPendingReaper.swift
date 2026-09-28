@@ -4,8 +4,26 @@ import GRDB
     import Glibc
 #endif
 
+/// Seam for the one step in a reap that writes the host. Injectable so a test can observe
+/// whether the reaper decided to revert, without touching real networking.
+public struct HostNetworkReapOptions {
+    public var revertHost: (HostNetworkPendingCommit, Int) throws -> Void
+
+    public init(
+        revertHost: @escaping (HostNetworkPendingCommit, Int) throws -> Void = { pending, attached in
+            try HostNetworkPendingReaper.revertHost(pending, attached: attached)
+        },
+    ) {
+        self.revertHost = revertHost
+    }
+}
+
 public enum HostNetworkPendingReaper {
-    public static func expire(db: DatabasePool, dataDir: URL = Config.dataDir) async {
+    public static func expire(
+        db: DatabasePool,
+        dataDir: URL = Config.dataDir,
+        options: HostNetworkReapOptions = HostNetworkReapOptions(),
+    ) async {
         let pendings = pendingWithoutStamp(dataDir: dataDir)
         let records = HostNetworkRecovery.list(dataDir: dataDir)
         for target in expireTargets(pendings: pendings, records: records) {
@@ -18,8 +36,16 @@ public enum HostNetworkPendingReaper {
             claimed = HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir)
             guard claimed else { continue }
             if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) { continue }
+            // Re-read so a record that landed since the sweep started also blocks the
+            // host mutation below.
+            let current = HostNetworkRecovery.list(dataDir: dataDir)
             for pending in pendings where pending.target == target && pending.expired {
-                await expirePending(pending, db: db, dataDir: dataDir)
+                // This revert deletes host files, and an expired pending can outlive a
+                // newer apply on an overlapping target: the pending file is gone once that
+                // apply runs, so nothing else stops this removal. The record sweep runs
+                // afterwards and cannot undo a deletion.
+                guard !hostMutationBlocked(pending, records: current) else { continue }
+                await expirePending(pending, db: db, dataDir: dataDir, options: options)
             }
             // Release the target claim before the record sweep. The sweep takes the same
             // global apply gate an apply holds, and the apply path takes that gate *before*
@@ -62,6 +88,7 @@ public enum HostNetworkPendingReaper {
         _ pending: HostNetworkPendingCommit,
         db: DatabasePool,
         dataDir: URL,
+        options: HostNetworkReapOptions,
     ) async {
         do {
             let bridge = workloadBridgeName(pending)
@@ -74,7 +101,7 @@ public enum HostNetworkPendingReaper {
             guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
                 return
             }
-            try revertHost(pending, attached: attached)
+            try options.revertHost(pending, attached)
             let still = try await pending.createdBridge
                 ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                 : 0
@@ -113,6 +140,53 @@ public enum HostNetworkPendingReaper {
         #else
             return false
         #endif
+    }
+
+    /// True when another recovery record claims a path this pending's revert would remove.
+    ///
+    /// On systemd-networkd a revert deletes `90-barkvisor-<bridge>.netdev`,
+    /// `90-barkvisor-<bridge>.network` and the shared uplink unit
+    /// `90-barkvisor-<nic>.network`, and every bridge snapshot also claims the fixed
+    /// `90-barkvisor-br0.*` units. So an expired pending for one bridge can delete files a
+    /// newer confirmed apply on another bridge owns, and the record sweep that follows
+    /// cannot restore a deleted file.
+    ///
+    /// Deliberately conservative: any other live claim blocks, not only a newer one. A
+    /// pending commit carries no apply timestamp to order it against, and not deleting a
+    /// host file is the safe direction. The common case, one apply with no competitor, is
+    /// unaffected.
+    public static func hostMutationBlocked(
+        _ pending: HostNetworkPendingCommit,
+        records: [HostNetworkRecoveryRecord],
+    ) -> Bool {
+        let paths = mutationPaths(for: pending, records: records)
+        guard !paths.isEmpty else { return false }
+        return records.contains { record in
+            guard record.operationId != pending.operationId else { return false }
+            guard record.phase != HostNetworkRecoveryPhase.superseded else { return false }
+            return !record.claimedPaths.isDisjoint(with: paths)
+        }
+    }
+
+    /// The host paths a pending revert would touch. Its own recovery record is the same
+    /// source of truth the record sweep uses, so the two agree by construction; a pending
+    /// with no record falls back to the bridge's canonical unit paths.
+    static func mutationPaths(
+        for pending: HostNetworkPendingCommit,
+        records: [HostNetworkRecoveryRecord],
+    ) -> Set<String> {
+        if let operationId = pending.operationId,
+           let record = records.first(where: { $0.operationId == operationId }) {
+            return record.claimedPaths
+        }
+        let bridge = workloadBridgeName(pending)
+        let nic = LinuxHostBridgeApply.readOwnerMarker(bridge: pending.target)?.uplink ?? pending.target
+        return [
+            LinuxHostBridgeApply.netplanPath(bridge: bridge),
+            LinuxHostBridgeApply.networkdNetdevPath(bridge: bridge),
+            LinuxHostBridgeApply.networkdNetworkPath(bridge: bridge),
+            LinuxHostBridgeApply.networkdPortPath(nic: nic),
+        ]
     }
 
     public static func pendingWithoutStamp(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
