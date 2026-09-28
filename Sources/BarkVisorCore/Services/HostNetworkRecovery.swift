@@ -1,7 +1,5 @@
 import Foundation
 
-/// Durable per-operation record of a host network apply, and the sweep that settles it
-/// once its confirmation window closes.
 public struct HostNetworkSnapshot: Codable, Equatable, Sendable {
     public var files: [String: String]
     public var absentPaths: [String]
@@ -159,6 +157,9 @@ public struct HostNetworkRecoverySweepOptions {
     }
 }
 
+/// Durable per-operation record of a host network apply, and the sweep that settles it
+/// once its confirmation window closes. Records are one JSON file per operation under
+/// `{dataDir}/host-network/recovery/`, so an upgraded Device needs no migration.
 public enum HostNetworkRecovery {
     public static func capture(paths: [String], aclContents: String? = nil) -> HostNetworkSnapshot {
         var files: [String: String] = [:]
