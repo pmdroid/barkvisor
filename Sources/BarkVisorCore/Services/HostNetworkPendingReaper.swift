@@ -16,7 +16,7 @@ public enum HostNetworkPendingReaper {
                 continue
             }
             for pending in pendings where pending.target == target && pending.expired {
-                await expirePending(pending, db: db)
+                await expirePending(pending, db: db, dataDir: dataDir)
             }
             // Recovery records run inside the same per-target gate, so a snapshot is never
             // written while another revert or commit owns the target.
@@ -50,13 +50,17 @@ public enum HostNetworkPendingReaper {
         return targets
     }
 
-    private static func expirePending(_ pending: HostNetworkPendingCommit, db: DatabasePool) async {
+    private static func expirePending(
+        _ pending: HostNetworkPendingCommit,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async {
         do {
             let bridge = workloadBridgeName(pending)
             let attached = try await pending.createdBridge
                 ? (NetworkService.attachedWorkloadCount(bridge: bridge, db: db))
                 : 0
-            if try await settleExpired(pending, db: db) {
+            if try await settleExpired(pending, db: db, dataDir: dataDir) {
                 return
             }
             guard PendingNetworkUsePolicy.expiryAction(attachedWorkloads: attached) == .revert else {
@@ -80,6 +84,7 @@ public enum HostNetworkPendingReaper {
     public static func settleExpired(
         _ pending: HostNetworkPendingCommit,
         db _: DatabasePool,
+        dataDir: URL = Config.dataDir,
     ) async throws -> Bool {
         #if os(Linux)
             guard let pid = pending.netplanPid, pid > 0 else { return false }
@@ -87,7 +92,7 @@ public enum HostNetworkPendingReaper {
             switch LinuxHostBridgeApply.netplanExpireAction(
                 pidAlive: alive,
                 pidIsNetplan: LinuxHostBridgeApply.isNetplanProcess(pid: pid),
-                keeping: HostNetworkPendingCommitService.keepingExists(pending.target),
+                keeping: HostNetworkPendingCommitService.keepingExists(pending.target, dataDir: dataDir),
             ) {
             case .waitForTry:
                 return true
