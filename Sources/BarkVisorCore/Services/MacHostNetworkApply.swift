@@ -271,13 +271,6 @@ import Foundation
             ].map(String.init).joined(separator: ".")
         }
 
-        private static func validateIPv4(_ value: String, label: String) throws {
-            let parts = value.split(separator: ".")
-            guard parts.count == 4, parts.allSatisfy({ Int($0).map { (0 ... 255).contains($0) } == true }) else {
-                throw BarkVisorError.badRequest("\(label) must be a valid IPv4 address")
-            }
-        }
-
         public static func apply(
             device: String,
             service: String,

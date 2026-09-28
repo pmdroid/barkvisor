@@ -54,7 +54,7 @@ The installed BarkVisor service starts socket_vmnet. You can use a supported LAN
 
 The **VM networks** tab lists the network records VMs can use.
 
-Click **Create Network**, choose a Device and mode, then fill in the available fields. For bridged mode, choose a bridge configured under **Host interfaces**. NAT and isolated networks offer a DNS server field.
+Click **Create Network**, choose a Device and mode, then fill in the available fields. For bridged mode, choose a bridge configured under **Host interfaces**. NAT and isolated networks offer a DNS server field. That value is the **guest-visible virtual nameserver** (QEMU's `dns=`), the address the guest queries — not the host's upstream resolver. Enter a dotted-quad IPv4 address such as `10.0.2.3`; leave it empty to use the emulator default.
 
 A **Bridge · Pending** entry means the Device's bridge is not ready. Select it to open the relevant host interface. NAT remains available while bridge setup is incomplete.
 

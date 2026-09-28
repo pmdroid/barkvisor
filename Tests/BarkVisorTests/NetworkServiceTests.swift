@@ -189,6 +189,59 @@ final class NetworkServiceTests {
         #expect(error?.httpStatus == 400)
     }
 
+    /// Empty octets used to pass create/update and then break the next VM start.
+    @Test func `create rejects DNS with empty octets`() async {
+        for malformed in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3."] {
+            let error = await #expect(throws: BarkVisorError.self, "\(malformed) should be rejected") {
+                try await NetworkService.create(
+                    CreateNetworkParams(
+                        name: "test-\(malformed)", mode: "nat", bridge: nil,
+                        macAddress: nil, dnsServer: malformed,
+                    ),
+                    db: self.dbPool,
+                )
+            }
+            #expect(error?.httpStatus == 400)
+        }
+    }
+
+    @Test func `update rejects DNS with empty octets`() async throws {
+        let network = try await NetworkService.create(
+            CreateNetworkParams(name: "update-dns", mode: "nat", bridge: nil, macAddress: nil, dnsServer: "8.8.8.8"),
+            db: dbPool,
+        )
+        for malformed in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3."] {
+            let error = await #expect(throws: BarkVisorError.self, "\(malformed) should be rejected") {
+                try await NetworkService.update(
+                    UpdateNetworkParams(
+                        id: network.id, name: nil, mode: nil, bridge: nil,
+                        macAddress: nil, dnsServer: malformed,
+                    ),
+                    db: self.dbPool,
+                )
+            }
+            #expect(error?.httpStatus == 400)
+        }
+        // The rejected update left the stored value untouched.
+        let reloaded = try await dbPool.read { db in try Network.fetchOne(db, key: network.id) }
+        #expect(reloaded?.dnsServer == "8.8.8.8")
+    }
+
+    @Test func `valid DNS round-trips unchanged`() async throws {
+        for value in ["0.0.0.0", "255.255.255.255", "10.0.2.3", "192.168.1.1"] {
+            let network = try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "valid-\(value)", mode: "nat", bridge: nil,
+                    macAddress: nil, dnsServer: value,
+                ),
+                db: dbPool,
+            )
+            #expect(network.dnsServer == value)
+            let reloaded = try await dbPool.read { db in try Network.fetchOne(db, key: network.id) }
+            #expect(reloaded?.dnsServer == value)
+        }
+    }
+
     @Test func `create with invalid MAC`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(

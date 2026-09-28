@@ -119,6 +119,31 @@ struct ValidationTests {
         #expect(throws: (any Error).self) { try validateDNS("01.02.03.04") }
     }
 
+    /// Empty octets slipped through the old permissive split (`1..2.3.4` looked
+    /// like four numbers), so a network could be written that then failed at launch.
+    @Test func `DNS with empty octets is rejected`() {
+        for malformed in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3.", "..1.2.3", "1.2.3.4.", ".", "1.2.3..4", "1.2.3.4."] {
+            #expect(throws: BarkVisorError.self, "\(malformed) should be rejected") { try validateDNS(malformed) }
+        }
+    }
+
+    /// The write path and the launch path must agree, so a value accepted here
+    /// never fails at VM start and a legacy bad row still does.
+    @Test func `write and launch paths agree on the dotted-quad rule`() {
+        for candidate in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3.", "01.02.03.04", "256.0.0.0", "1.2.3"] {
+            #expect(throws: BarkVisorError.self, "validateDNS(\(candidate))") { try validateDNS(candidate) }
+            #expect(throws: BarkVisorError.self, "requireIPv4(\(candidate))") {
+                try NetworkIntentBinding.requireIPv4(candidate, label: "Guest-visible DNS")
+            }
+        }
+        for candidate in ["0.0.0.0", "255.255.255.255", "10.0.2.3", "192.168.1.1", "8.8.8.8"] {
+            #expect(throws: Never.self, "validateDNS(\(candidate))") { try validateDNS(candidate) }
+            #expect(throws: Never.self, "requireIPv4(\(candidate))") {
+                try NetworkIntentBinding.requireIPv4(candidate, label: "Guest-visible DNS")
+            }
+        }
+    }
+
     // MARK: - validateMAC
 
     @Test func `valid MAC`() {

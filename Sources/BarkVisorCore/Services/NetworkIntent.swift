@@ -272,13 +272,15 @@ public enum NetworkIntentBinding {
         return false
     }
 
+    /// Enforce the one strict dotted-quad rule shared with the write path
+    /// (`isStrictIPv4`). Rows written before that rule was strict can still fail
+    /// here; the error names the field so the value is repairable.
     public static func requireIPv4(_ raw: String, label: String) throws {
-        let parts = normalize(raw).split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 4, parts.allSatisfy({ part in
-            guard let value = Int(part), (0 ... 255).contains(value) else { return false }
-            return String(value) == part
-        }) else {
-            throw BarkVisorError.badRequest("\(label) must be an IPv4 address")
+        let value = normalize(raw)
+        guard isStrictIPv4(value) else {
+            throw BarkVisorError.badRequest(
+                "\(label) must be an IPv4 address in dotted-quad form (got '\(value)')",
+            )
         }
     }
 
