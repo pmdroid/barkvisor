@@ -159,6 +159,10 @@ public struct HostNetworkRecoverySweepOptions {
     public var keepingExists: ((String) -> Bool)?
     public var restore: (HostNetworkSnapshot) throws -> Void
     public var persist: ((HostNetworkRecoveryRecord) throws -> Void)?
+    /// Exclusion held across the ownership re-check and the host write. Defaults to the
+    /// same gate every host network apply holds, so an apply on an overlapping target
+    /// cannot interleave.
+    public var exclusive: ((@escaping () throws -> Void) throws -> Void)?
 
     public init(
         pendingCommits: [HostNetworkPendingCommit]? = nil,
@@ -166,12 +170,14 @@ public struct HostNetworkRecoverySweepOptions {
         keepingExists: ((String) -> Bool)? = nil,
         restore: @escaping (HostNetworkSnapshot) throws -> Void = { try HostNetworkRecovery.restore($0) },
         persist: ((HostNetworkRecoveryRecord) throws -> Void)? = nil,
+        exclusive: ((@escaping () throws -> Void) throws -> Void)? = nil,
     ) {
         self.pendingCommits = pendingCommits
         self.stampExists = stampExists
         self.keepingExists = keepingExists
         self.restore = restore
         self.persist = persist
+        self.exclusive = exclusive
     }
 }
 
@@ -352,9 +358,7 @@ public enum HostNetworkRecovery {
         prune(dataDir: dataDir, now: now)
         let onDisk = list(dataDir: dataDir)
         let ownership = HostNetworkRecoveryOwnership(records: onDisk)
-        let candidates = onDisk
-            .filter { target == nil || $0.target == target }
-            .sorted { ownership.order(of: $0) < ownership.order(of: $1) }
+        let candidates = onDisk.filter { target == nil || $0.target == target }
         for record in candidates {
             do {
                 switch try settle(
@@ -367,8 +371,9 @@ public enum HostNetworkRecovery {
                         keepingExists: keeping,
                         restore: options.restore,
                         persist: options.persist ?? { try HostNetworkRecovery.save($0, dataDir: dataDir) },
-                        // Re-read ownership immediately before the write, so an apply that
-                        // landed while this sweep was running still wins.
+                        exclusive: options.exclusive ?? { body in try HostNetworkPendingCommitService.withApplyGate(body) },
+                        // Re-read ownership inside that section, immediately before the
+                        // write, so an apply that landed while this sweep was running wins.
                         outranked: {
                             ownership.isOutranked(record, in: HostNetworkRecoveryOwnership(records: list(dataDir: dataDir)))
                         },
@@ -403,6 +408,8 @@ public enum HostNetworkRecovery {
         var keepingExists: (String) -> Bool
         var restore: (HostNetworkSnapshot) throws -> Void
         var persist: (HostNetworkRecoveryRecord) throws -> Void
+        /// Runs the re-check and the write with host network applies excluded.
+        var exclusive: (@escaping () throws -> Void) throws -> Void
         var outranked: () -> Bool
     }
 
@@ -436,16 +443,28 @@ public enum HostNetworkRecovery {
         // Best effort: failing to note the attempt must not stop the restore, which is the
         // safe direction when the host is mid-change.
         try? context.persist(next)
-        if context.outranked() {
-            try markSuperseded(record, context: context)
-            return .superseded
+        var outcome: Settlement = .deferred
+        var restoreError: Error?
+        // The re-check and the write share one exclusion with host network applies, so a
+        // concurrent apply on an overlapping target cannot write between them. Re-reading
+        // the records alone would still leave that window open.
+        try context.exclusive {
+            if context.outranked() {
+                try markSuperseded(record, context: context)
+                outcome = .superseded
+                return
+            }
+            do {
+                try context.restore(record.snapshot)
+            } catch {
+                restoreError = error
+            }
         }
-        do {
-            try context.restore(record.snapshot)
-        } catch {
+        if case .superseded = outcome { return .superseded }
+        if let restoreError {
             next.phase = HostNetworkRecoveryPhase.restoreFailed
             next.restoreAttempts += 1
-            next.lastRestoreError = String(describing: error)
+            next.lastRestoreError = String(describing: restoreError)
             try? context.persist(next)
             return .failed
         }

@@ -11,20 +11,32 @@ import Foundation
 /// Orders records and tracks what each one claims, so a sweep can tell whether a record
 /// is still the newest claimant of everything it would write.
 struct HostNetworkRecoveryOwnership {
-    struct Order: Comparable {
-        let generation: Int
-        let startedAt: Date
+    /// Apply order, taken from the wall clock the apply began.
+    ///
+    /// `generation` is deliberately not part of this. It comes from each request
+    /// (`request.generation ?? 1`), so it is per target and per caller: an old br0 record
+    /// can carry generation 2 while a much newer br1 record carries 1, and comparing
+    /// generations across targets would hand the older apply the win. Only the apply
+    /// timestamp orders records globally.
+    struct Order {
+        let startedAt: Date?
         let operationId: String
 
-        static func < (lhs: Order, rhs: Order) -> Bool {
-            if lhs.generation != rhs.generation { return lhs.generation < rhs.generation }
-            if lhs.startedAt != rhs.startedAt { return lhs.startedAt < rhs.startedAt }
-            return lhs.operationId < rhs.operationId
+        /// Records written before `startedAt` existed cannot be placed in apply order, and
+        /// a record that cannot be placed must never win a claim it might be overriding.
+        static func isConfidentlyOrdered(_ lhs: Order, _ rhs: Order) -> Bool {
+            lhs.startedAt != nil && rhs.startedAt != nil
+        }
+
+        /// Deterministic, but only trustworthy when both sides carry a timestamp.
+        static func isNewer(_ lhs: Order, than rhs: Order) -> Bool {
+            if let lhsStarted = lhs.startedAt, let rhsStarted = rhs.startedAt, lhsStarted != rhsStarted {
+                return lhsStarted > rhsStarted
+            }
+            return lhs.operationId > rhs.operationId
         }
     }
 
-    /// A record predates `startedAt` when an older daemon wrote it. Such a record must
-    /// never outrank a newer one, so it sorts oldest of all.
     private let orders: [String: Order]
     private let claims: [String: Set<String>]
 
@@ -33,8 +45,7 @@ struct HostNetworkRecoveryOwnership {
         var claims: [String: Set<String>] = [:]
         for record in records {
             orders[record.operationId] = Order(
-                generation: record.generation,
-                startedAt: record.startedAt ?? .distantPast,
+                startedAt: record.startedAt,
                 operationId: record.operationId,
             )
             // A superseded record never wrote and never will, so it owns nothing and
@@ -52,15 +63,13 @@ struct HostNetworkRecoveryOwnership {
     }
 
     func order(of record: HostNetworkRecoveryRecord) -> Order {
-        orders[record.operationId] ?? Order(
-            generation: record.generation,
-            startedAt: record.startedAt ?? .distantPast,
-            operationId: record.operationId,
-        )
+        orders[record.operationId] ?? Order(startedAt: record.startedAt, operationId: record.operationId)
     }
 
-    /// True when some strictly newer record claims this record's target or any path in
-    /// its snapshot, on any target.
+    /// True when this record is not provably the newest claimant of everything it would
+    /// write. That is the case when a strictly newer record claims its target or one of
+    /// its snapshot paths, and also when a competing record cannot be placed in apply
+    /// order at all, because then nothing proves this one is the newer of the pair.
     func isOutranked(_ record: HostNetworkRecoveryRecord) -> Bool {
         isOutranked(record, in: self)
     }
@@ -72,7 +81,10 @@ struct HostNetworkRecoveryOwnership {
         guard !mine.isEmpty else { return false }
         let order = fresh.order(of: record)
         return fresh.orders.contains { id, other in
-            other > order && !(fresh.claims[id] ?? []).isDisjoint(with: mine)
+            guard !(fresh.claims[id] ?? []).isDisjoint(with: mine) else { return false }
+            guard id != record.operationId else { return false }
+            return Order.isNewer(other, than: order)
+                || !Order.isConfidentlyOrdered(other, order)
         }
     }
 }

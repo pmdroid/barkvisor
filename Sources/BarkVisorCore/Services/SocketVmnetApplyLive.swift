@@ -35,7 +35,12 @@ public enum SocketVmnetApplyLive {
         let operationId = mutator == nil
             ? try prepareSocketRecovery(request: request, probe: resolved)
             : nil
-        try writer.apply(request: request, probe: resolved, plan: plan)
+        // This writes host files, so it runs under the same apply gate the recovery sweep
+        // holds while restoring. MacHostBridgeApply already wraps its own call in that
+        // gate; taking it here as well covers the direct controller path.
+        try HostNetworkPendingCommitService.withApplyGate {
+            try writer.apply(request: request, probe: resolved, plan: plan)
+        }
         if let operationId {
             try? HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.awaitingConfirmation)
         }

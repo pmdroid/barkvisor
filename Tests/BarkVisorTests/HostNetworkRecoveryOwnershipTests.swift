@@ -164,6 +164,129 @@ struct HostNetworkRecoveryOwnershipTests {
         }
     }
 
+    /// The ownership re-check and the host write must share one exclusion, or a concurrent
+    /// apply on an overlapping target can write the shared file in between and be undone by
+    /// the older snapshot. Re-reading the records alone still leaves that window.
+    @Test func `a concurrent apply on an overlapping target cannot interleave with a restore`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let shared = root.appendingPathComponent("etc/systemd/network/90-barkvisor-br0.network")
+        try FileManager.default.createDirectory(
+            at: shared.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "shared-before".write(to: shared, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br0",
+            generation: 1,
+            target: "br0",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-120),
+        )
+        try "applied-by-br0".write(to: shared, atomically: true, encoding: .utf8)
+
+        // Stand in for a host network apply: hold the gate every apply holds, then save a
+        // newer record and write the shared file, as LinuxHostBridgeApplyLive does.
+        let holdsGate = DispatchSemaphore(value: 0)
+        let mayRelease = DispatchSemaphore(value: 0)
+        let applyFinished = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            try? HostNetworkPendingCommitService.withApplyGate {
+                holdsGate.signal()
+                mayRelease.wait()
+                try? HostNetworkRecovery.begin(
+                    operationId: "op-br1",
+                    generation: 1,
+                    target: "br1",
+                    snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+                    deadline: Date().addingTimeInterval(60),
+                    dataDir: data,
+                    startedAt: Date(),
+                )
+                try? "confirmed-by-br1".write(to: shared, atomically: true, encoding: .utf8)
+            }
+            applyFinished.signal()
+        }
+        #expect(holdsGate.wait(timeout: .now() + 30) == .success)
+
+        // The sweep must not restore while the apply holds the gate.
+        let probe = RestoreProbe()
+        let sweepFinished = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            let result = HostNetworkRecovery.sweepExpired(
+                dataDir: data,
+                now: Date(),
+                options: HostNetworkRecoverySweepOptions(restore: probe.restore),
+            )
+            probe.record(result)
+            sweepFinished.signal()
+        }
+        // The sweep is blocked on the gate the apply holds.
+        #expect(sweepFinished.wait(timeout: .now() + 0.3) == .timedOut)
+        #expect(probe.restoreCount == 0)
+        #expect(try String(contentsOf: shared, encoding: .utf8) == "applied-by-br0")
+
+        mayRelease.signal()
+        #expect(applyFinished.wait(timeout: .now() + 30) == .success)
+        #expect(sweepFinished.wait(timeout: .now() + 30) == .success)
+        #expect(probe.restoreCount == 0)
+        // The sweep woke up, re-read ownership inside the gate, found br1 newer, and left
+        // br1's configuration alone.
+        #expect(probe.result?.restored.isEmpty == true)
+        #expect(probe.result?.superseded == ["op-br0"])
+        #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br1")
+    }
+
+    /// `generation` comes from each request, so an old br0 record can carry generation 2
+    /// while a much newer br1 record carries 1. Comparing generations across targets would
+    /// hand the older apply the win over the shared networkd files.
+    @Test func `apply order across targets ignores per-request generations`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let data = root.appendingPathComponent("data", isDirectory: true)
+        let shared = root.appendingPathComponent("etc/systemd/network/90-barkvisor-br0.network")
+        try FileManager.default.createDirectory(
+            at: shared.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "shared-before".write(to: shared, atomically: true, encoding: .utf8)
+
+        // The older apply on br0 recorded a higher generation than the newer one on br1.
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br0",
+            generation: 2,
+            target: "br0",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(-5),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-120),
+        )
+        try "applied-by-br0".write(to: shared, atomically: true, encoding: .utf8)
+        _ = try HostNetworkRecovery.begin(
+            operationId: "op-br1",
+            generation: 1,
+            target: "br1",
+            snapshot: HostNetworkRecovery.capture(paths: [shared.path]),
+            deadline: Date().addingTimeInterval(60),
+            dataDir: data,
+            startedAt: Date().addingTimeInterval(-60),
+        )
+        try HostNetworkRecovery.mark("op-br1", phase: HostNetworkRecoveryPhase.confirmed, dataDir: data)
+        try "confirmed-by-br1".write(to: shared, atomically: true, encoding: .utf8)
+
+        let first = HostNetworkRecovery.sweepExpired(dataDir: data, now: Date())
+        #expect(first.superseded == ["op-br0"])
+        #expect(first.restored.isEmpty)
+        #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br1")
+        for _ in 0 ..< 2 {
+            #expect(HostNetworkRecovery.sweepExpired(dataDir: data, now: Date()).isEmpty)
+            #expect(try String(contentsOf: shared, encoding: .utf8) == "confirmed-by-br1")
+        }
+    }
+
     /// Pruning the terminal record removed the only ownership evidence, so a surviving
     /// `restore_failed` record became the owner once the stamp was cleared.
     @Test func `retention keeps the ownership evidence a retrying record still needs`() throws {
@@ -300,6 +423,38 @@ struct HostNetworkRecoveryOwnershipTests {
                 now: Date(),
                 dataDir: data,
             )
+        }
+    }
+
+    /// Records what a sweep did, across the thread the sweep runs on.
+    private final class RestoreProbe: @unchecked Sendable {
+        private let lock = NSLock()
+        private var restores = 0
+        private var outcome: HostNetworkRecoverySweepResult?
+
+        var restoreCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return restores
+        }
+
+        var result: HostNetworkRecoverySweepResult? {
+            lock.lock()
+            defer { lock.unlock() }
+            return outcome
+        }
+
+        func restore(_ snapshot: HostNetworkSnapshot) throws {
+            lock.lock()
+            restores += 1
+            lock.unlock()
+            try HostNetworkRecovery.restore(snapshot)
+        }
+
+        func record(_ result: HostNetworkRecoverySweepResult) {
+            lock.lock()
+            outcome = result
+            lock.unlock()
         }
     }
 }

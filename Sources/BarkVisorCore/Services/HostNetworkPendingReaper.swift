@@ -9,17 +9,25 @@ public enum HostNetworkPendingReaper {
         let pendings = pendingWithoutStamp(dataDir: dataDir)
         let records = HostNetworkRecovery.list(dataDir: dataDir)
         for target in expireTargets(pendings: pendings, records: records) {
-            guard HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir) else { continue }
-            defer { HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir) }
-            // Re-check after claiming: a commit that landed while we waited owns the target.
-            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) {
-                continue
+            var claimed = false
+            defer {
+                if claimed { HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir) }
             }
+            // Re-check after claiming: a commit that landed while we waited owns the target.
+            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) { continue }
+            claimed = HostNetworkPendingCommitService.claimRevert(target, dataDir: dataDir)
+            guard claimed else { continue }
+            if HostNetworkPendingCommitService.stampExists(target, dataDir: dataDir) { continue }
             for pending in pendings where pending.target == target && pending.expired {
                 await expirePending(pending, db: db, dataDir: dataDir)
             }
-            // Recovery records run inside the same per-target gate, so a snapshot is never
-            // written while another revert or commit owns the target.
+            // Release the target claim before the record sweep. The sweep takes the same
+            // global apply gate an apply holds, and the apply path takes that gate *before*
+            // the target claim, so holding a claim across the gate would invert the order
+            // and can deadlock. The gate alone already excludes every apply, and the
+            // sweep re-reads ownership inside it.
+            HostNetworkPendingCommitService.releaseRevert(target, dataDir: dataDir)
+            claimed = false
             HostNetworkRecovery.sweepExpired(
                 dataDir: dataDir,
                 now: Date(),
