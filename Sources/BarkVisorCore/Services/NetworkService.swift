@@ -112,63 +112,104 @@ public enum NetworkService {
     }
 
     /// Update a network's fields after validation.
+    ///
+    /// The whole read-validate-write cycle runs inside one write transaction
+    /// (BV-03 / #634). A separate `db.read` would leave a window in which a
+    /// Workload could attach with port forwards between the attached-Workload
+    /// check and the mutation, persisting a network/Workload pair that can no
+    /// longer launch. GRDB serializes writers, so holding the write lock is
+    /// what makes concurrent attachment versus mode change resolve to one
+    /// winner instead of a half-applied state.
     public static func update(
         _ params: UpdateNetworkParams,
         db: DatabasePool,
     ) async throws -> Network {
-        let network = try await db.read { db in try Network.fetchOne(db, key: params.id) }
-        guard var network else { throw BarkVisorError.notFound() }
-        guard !network.isDefault else {
-            throw BarkVisorError.forbidden("The default \(network.mode) network cannot be modified")
-        }
-
-        if let name = params.name { network.name = name }
-        if let mode = params.mode {
-            try NetworkCapability.requireMode(mode)
-            network.mode = mode
-        }
-        if let bridge = params.bridge {
-            if !bridge.isEmpty { try validateBridgeName(bridge) }
-            network.bridge = bridge
-        }
-        if let mac = params.macAddress {
-            if !mac.isEmpty { try validateMAC(mac) }
-            network.macAddress = mac
-        }
-        if let dns = params.dnsServer {
-            if !dns.isEmpty { try validateDNS(dns) }
-            network.dnsServer = dns
-        }
-
-        let mode = try NetworkCapability.parse(network.mode)
-        if mode == .bridged {
-            let bridge = network.bridge ?? ""
-            if bridge.isEmpty {
-                throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+        try await db.write { db in
+            guard var network = try Network.fetchOne(db, key: params.id) else {
+                throw BarkVisorError.notFound()
             }
-            try NetworkCapability.requireBridgedInterface(bridge)
-        } else {
-            if let requested = params.bridge, !requested.isEmpty {
-                throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
+            guard !network.isDefault else {
+                throw BarkVisorError.forbidden("The default \(network.mode) network cannot be modified")
             }
-            network.bridge = nil
-        }
 
-        if mode == .bridged, let bridge = network.bridge, !bridge.isEmpty {
-            let conflict = try await db.read { db in
-                try Network
+            let previousMode = network.mode
+            if let name = params.name { network.name = name }
+            if let mode = params.mode {
+                try NetworkCapability.requireMode(mode)
+                network.mode = mode
+            }
+            if let bridge = params.bridge {
+                if !bridge.isEmpty { try validateBridgeName(bridge) }
+                network.bridge = bridge
+            }
+            if let mac = params.macAddress {
+                if !mac.isEmpty { try validateMAC(mac) }
+                network.macAddress = mac
+            }
+            if let dns = params.dnsServer {
+                if !dns.isEmpty { try validateDNS(dns) }
+                network.dnsServer = dns
+            }
+
+            let mode = try NetworkCapability.parse(network.mode)
+            if mode == .bridged {
+                let bridge = network.bridge ?? ""
+                if bridge.isEmpty {
+                    throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+                }
+                try NetworkCapability.requireBridgedInterface(bridge)
+            } else {
+                if let requested = params.bridge, !requested.isEmpty {
+                    throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
+                }
+                network.bridge = nil
+            }
+
+            if mode == .bridged, let bridge = network.bridge, !bridge.isEmpty {
+                let conflict = try Network
                     .filter(Column("bridge") == bridge)
                     .filter(Column("id") != params.id)
                     .fetchOne(db)
+                try HostBridgeFactsService.requireUnusedBridgedInterface(bridge, occupiedBy: conflict)
             }
-            try HostBridgeFactsService.requireUnusedBridgedInterface(bridge, occupiedBy: conflict)
-        }
 
-        let updatedNetwork = network
-        try await db.write { db in
-            try updatedNetwork.update(db)
+            // A mode that still publishes hostfwd is a widening move: attached
+            // Workloads stay launchable. Only a mode change that withdraws
+            // port forwards needs the attached-Workload check, so metadata-only
+            // edits on a network that already has stranded forwards still work.
+            if network.mode != previousMode {
+                try requireModeChangeKeepsAttachedWorkloadsLaunchable(
+                    networkID: params.id, proposedMode: mode, db: db,
+                )
+            }
+
+            try network.update(db)
+            return network
         }
-        return network
+    }
+
+    /// Attached Workloads keep their own port-forward rules; a mode change
+    /// cannot rewrite them. Reject a move to a mode without `hostfwd` while any
+    /// attached Workload still has forwards, because otherwise the row pair
+    /// persists a combination that `QEMUBuilder` refuses at next start, and
+    /// `PortRegistry.claims` silently stops counting the Workload even though a
+    /// running QEMU still holds the socket.
+    private static func requireModeChangeKeepsAttachedWorkloadsLaunchable(
+        networkID: String,
+        proposedMode: NetworkMode,
+        db: Database,
+    ) throws {
+        guard !proposedMode.allowsPortForwards else { return }
+        let attached = try VM.filter(Column("networkId") == networkID).fetchAll(db)
+        let stranded = attached.filter { !$0.decodedPortForwards.isEmpty }
+        guard !stranded.isEmpty else { return }
+        let names = stranded.map { "\"\($0.name)\"" }.sorted().joined(separator: ", ")
+        throw BarkVisorError.conflict(
+            "Cannot change network mode to '\(proposedMode.rawValue)': "
+                + "\(stranded.count) attached Workload(s) still use port forwards (\(names)). "
+                + "Port forwards require NAT. Remove their port forwards or move them to "
+                + "another network first.",
+        )
     }
 
     /// Delete a network, checking for attached VMs.
