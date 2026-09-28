@@ -84,7 +84,11 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
     /// continued is resolved in order:
     ///
     /// 1. exactly one stored rule on this `proto` + `hostPort` — unambiguous;
-    /// 2. otherwise the one that also repeats this `guestPort` — unambiguous;
+    /// 2. otherwise the one that also repeats this `guestPort` — but only when
+    ///    that repeat is itself unique. Two stored rules can share
+    ///    `proto` + `hostPort` + `guestPort` while binding different addresses
+    ///    (127.0.0.1:8080→80 and 10.0.0.5:8080→80 are disjoint, so both are
+    ///    valid), and then `guestPort` identifies neither of them;
     /// 3. otherwise **ambiguous**, and rejected rather than guessed, because any
     ///    choice silently moves a bind the client did not mention.
     ///
@@ -101,19 +105,23 @@ public struct PortForwardRule: Codable, Equatable, Sendable {
                 Self.normalizedProtocol($0.protocol) == Self.normalizedProtocol(rule.protocol)
                     && $0.hostPort == rule.hostPort
             }
-            guard let prior = onPort.count == 1
+            guard !onPort.isEmpty else { return rule }
+            let repeats = onPort.filter { $0.guestPort == rule.guestPort }
+            // A single stored rule continues unambiguously. Otherwise the
+            // guest port only disambiguates when it picks out exactly one
+            // stored rule; two rules on the same port and guest port are two
+            // publications, and guessing one of them moves a bind the client
+            // never mentioned.
+            let prior: PortForwardRule? = onPort.count == 1
                 ? onPort[0]
-                : onPort.first(where: { $0.guestPort == rule.guestPort })
-            else {
-                guard onPort.isEmpty else {
-                    throw BarkVisorError.badRequest(
-                        "portForwards entry \(rule.hostPort)/\(rule.protocol) omits host, but this "
-                            + "workload already publishes that host port on several binds "
-                            + "(\(binds(onPort).joined(separator: ", "))). "
-                            + "Send host to choose the one to keep.",
-                    )
-                }
-                return rule
+                : (repeats.count == 1 ? repeats[0] : nil)
+            guard let prior else {
+                throw BarkVisorError.badRequest(
+                    "portForwards entry \(rule.hostPort)/\(rule.protocol) → \(rule.guestPort) omits "
+                        + "host, but this workload already publishes that host port on "
+                        + "\(onPort.count) binds (\(binds(onPort).joined(separator: ", "))). "
+                        + "Send host on each entry to say which bind it continues.",
+                )
             }
             return rule.replacingHost(prior.host)
         }

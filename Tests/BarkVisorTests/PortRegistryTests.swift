@@ -398,6 +398,56 @@ final class PortRegistryTests {
         #expect(updated.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
     }
 
+    /// The failure the reviewer found: the two stored rules are disjoint, so an
+    /// omission has to be reported as ambiguous — never resolved onto one bind,
+    /// which would read back as a duplicate.
+    @Test func `update VMSpec reports ambiguity instead of a false duplicate`() async throws {
+        try await insertVM(
+            id: "vm-samegp", name: "Same guest port",
+            portForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "10.0.0.5"),
+            ],
+        )
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-samegp") }
+        let occupant = try #require(stored)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        spec.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-samegp", spec: spec, db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+
+        // Naming both binds explicitly is accepted and round-trips.
+        var explicit = WorkloadSpecProjector.fromVM(occupant)
+        explicit.spec.guestType = hostLinux
+        explicit.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "10.0.0.5"),
+                ],
+            ),
+        ]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-samegp", spec: explicit, db: self.dbPool,
+        )
+        #expect(updated.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
     @Test func `flat update keeps an explicit bind unchanged`() async throws {
         try await insertVM(
             id: "vm-ha", name: "Home Assistant",

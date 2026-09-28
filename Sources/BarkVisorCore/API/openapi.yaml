@@ -4193,9 +4193,10 @@ components:
             Bind address for this publish. Absent means every IPv4 interface. On a
             spec update, omitting `host` for a publish this workload already has keeps
             that publish's stored bind, including when only `guestPort` changes. When
-            one host port is already published on several binds, an omitted `host` is
-            ambiguous and rejected. Send an explicit `host` (including `0.0.0.0`) to
-            choose or to change a bind.
+            one host port is already published on more than one bind, an omitted
+            `host` is ambiguous and rejected — send `host` on each entry to say which
+            bind it continues. Send an explicit `host` (including `0.0.0.0`) to choose
+            or to change a bind.
 
     USBDevice:
       type: object
