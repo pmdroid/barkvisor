@@ -235,6 +235,63 @@ struct SocketVmnetApplyTests {
         }
     }
 
+    /// `MacHostBridgeApply` holds the apply gate and then calls `SocketVmnetApplyLive.run`
+    /// for a synthetic bridge, which takes that same gate again for the direct controller
+    /// path. The nesting is normal, so the gate must be re-entrant or every macOS synthetic
+    /// bridge apply hangs. Runs on a thread with a timeout so a regression is reported.
+    /// If the gate ever stops being re-entrant, the nested thread deadlocks while holding
+    /// a process-global lock, so the process cannot exit and the run ends as a CI timeout
+    /// rather than a clean assertion failure. That is the loudest signal available for a
+    /// lock that wedges the whole process; there is no in-process way to assert against
+    /// it and recover.
+    @Test func `socket_vmnet apply nests inside the apply gate MacHostBridgeApply holds`() {
+        let recorder = RecordingSocketVmnetMutator()
+        let finished = DispatchSemaphore(value: 0)
+        let outcome = ApplyOutcome()
+        Thread.detachNewThread {
+            outcome.record {
+                try HostNetworkPendingCommitService.withApplyGate {
+                    try SocketVmnetApplyLive.run(
+                        request: SocketVmnetApplyRequest(action: .setup, interface: "en0"),
+                        probe: probe(),
+                        mutator: recorder,
+                    )
+                }
+            }
+            finished.signal()
+        }
+        #expect(finished.wait(timeout: .now() + 30) == .success)
+        #expect(outcome.failure == nil)
+        #expect(recorder.steps.contains { $0.contains("action=setup") })
+    }
+
+    /// The gate is re-entrant for one thread, but still excludes another: the recovery
+    /// sweep depends on that second property to keep a restore out of an apply's way.
+    @Test func `the apply gate still excludes a second thread`() {
+        let holdsGate = DispatchSemaphore(value: 0)
+        let mayRelease = DispatchSemaphore(value: 0)
+        let firstDone = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            try? HostNetworkPendingCommitService.withApplyGate {
+                holdsGate.signal()
+                mayRelease.wait()
+            }
+            firstDone.signal()
+        }
+        #expect(holdsGate.wait(timeout: .now() + 30) == .success)
+
+        let secondEntered = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            try? HostNetworkPendingCommitService.withApplyGate {
+                secondEntered.signal()
+            }
+        }
+        #expect(secondEntered.wait(timeout: .now() + 0.3) == .timedOut)
+        mayRelease.signal()
+        #expect(firstDone.wait(timeout: .now() + 30) == .success)
+        #expect(secondEntered.wait(timeout: .now() + 30) == .success)
+    }
+
     @Test func `uninstall keeps leftover helper plists and adds socket-vmnet cleanup`() throws {
         let script = try String(
             contentsOf: URL(fileURLWithPath: #filePath)
@@ -248,5 +305,27 @@ struct SocketVmnetApplyTests {
         #expect(script.contains("dev.barkvisor.socket-vmnet.*.plist"))
         #expect(!script.contains("sudo brew install"))
         #expect(!script.contains("HelperXPCClient"))
+    }
+
+    /// Carries an error out of the thread that runs a nested apply.
+    private final class ApplyOutcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var text: String?
+
+        var failure: String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return text
+        }
+
+        func record(_ body: () throws -> Void) {
+            do {
+                try body()
+            } catch {
+                lock.lock()
+                text = String(describing: error)
+                lock.unlock()
+            }
+        }
     }
 }

@@ -232,10 +232,16 @@ public enum HostNetworkPendingCommitService {
         FileManager.default.fileExists(atPath: keepingPath(target, dataDir: dataDir))
     }
 
-    private static let applyGate = NSLock()
+    /// Re-entrant on purpose. `MacHostBridgeApply` holds this gate and then calls
+    /// `SocketVmnetApplyLive.run`, which takes it again to cover the direct controller
+    /// path, so the same thread reaching it twice is normal rather than a bug. A second
+    /// thread still blocks, which is the exclusion the recovery sweep relies on.
+    private static let applyGate = NSRecursiveLock()
     private static let gateTableLock = NSLock()
     private nonisolated(unsafe) static var gates: [String: NSRecursiveLock] = [:]
 
+    /// Serialises every host network apply and recovery restore. Re-entrant for the same
+    /// thread; see `applyGate`.
     public static func withApplyGate(_ body: () throws -> Void) throws {
         applyGate.lock()
         defer { applyGate.unlock() }
