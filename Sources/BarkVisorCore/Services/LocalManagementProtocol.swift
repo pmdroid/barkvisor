@@ -14,6 +14,27 @@ public enum ServiceProcessRoleError: Error, Equatable, Sendable {
 }
 
 public enum BarkServerStartup {
+    public static func waitForDaemon(path: String, timeout: Duration = .seconds(30)) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while true {
+            try Task.checkCancellation()
+            do {
+                let response = try LocalManagementSocketClient.exchange(
+                    path: path,
+                    request: LocalManagementRequest(
+                        requestId: "startup", operationId: "startup", name: "protocolVersion",
+                    ),
+                )
+                try requireHandshake(response)
+                return
+            } catch LocalManagementError.connectionLost {
+                guard clock.now < deadline else { throw LocalManagementError.connectionLost }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
     public static func refuseRoot(euid: UInt32) throws {
         if euid == 0 {
             throw ServiceProcessRoleError.serverRefusesRoot

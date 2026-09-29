@@ -312,7 +312,7 @@ private final class HomeDevicesMTLSCache: @unchecked Sendable {
     private var cached: (key: String, client: AgentMTLSClient)?
 
     func client(dataDir: URL, hostId: String) throws -> AgentMTLSClient {
-        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+        let receipt = try PairingService.loadReceipt(dataDir: dataDir)
         let key = "\(dataDir.path)|\(hostId)|\(receipt?.issuedFingerprint ?? "-")"
         lock.lock()
         if let cached, cached.key == key {
@@ -322,7 +322,7 @@ private final class HomeDevicesMTLSCache: @unchecked Sendable {
         }
         lock.unlock()
         let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
-        let presented = AgentPlaneCertificates.presentationCertificatePEM(
+        let presented = try AgentPlaneCertificates.presentationCertificatePEM(
             material: material,
             receipt: receipt,
         )

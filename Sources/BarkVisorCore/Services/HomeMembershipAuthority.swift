@@ -688,6 +688,7 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         if !ledger.sharedSigningMaterialRetired {
             let joined = PairingService.hasPairedReceipt(dataDir: dataDir) || !ledger.members.isEmpty
             if joined, Config.loadJWTSecret(from: dataDir) != nil {
+                try HomeMemberHop.preserveLegacyJWTSecret(dataDir: dataDir)
                 let secret = PlatformRandom.secureBase64(byteCount: 32)
                 try Config.persistJWTSecret(secret, to: dataDir)
             }
