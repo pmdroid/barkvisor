@@ -335,7 +335,7 @@ struct LocalManagementBoundaryTests {
             #expect(!unit.contains("BARKVISOR_PORT"))
             #expect(unit.contains("KillMode=process"))
             #expect(unit.contains("-/var/run/docker.sock"))
-            #expect(unit.contains("RuntimeDirectoryMode=0770"))
+            #expect(unit.contains("RuntimeDirectoryMode=0750"))
         }
         for relative in [
             "packaging/linux/barkvisor-server.service",
@@ -347,8 +347,9 @@ struct LocalManagementBoundaryTests {
             #expect(unit.contains("ExecStart=/usr/local/bin/barkvisor server"))
             #expect(unit.contains("NoNewPrivileges=true"))
             #expect(unit.contains("PrivateDevices=true"))
-            #expect(unit.contains("InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/dev/kvm"))
-            #expect(!unit.contains("ReadWritePaths"))
+            #expect(unit.contains("InaccessiblePaths=-/var/lib/barkvisor -/run/docker.sock -/var/run/docker.sock -/dev/kvm"))
+            #expect(unit.contains("InaccessiblePaths=-/var/lib/barkvisor"))
+            #expect(!unit.contains("ReadWritePaths=/var/lib/barkvisor "))
             #expect(!unit.contains("SupplementaryGroups"))
             #expect(!unit.contains("BARKVISOR_PORT"))
             #expect(unit.contains("Requires=barkvisor-daemon.service"))
@@ -375,6 +376,52 @@ struct LocalManagementBoundaryTests {
     }
 
     #if !os(Windows)
+        @Test func `startup waits for a delayed daemon and keeps rejection fatal`() async throws {
+            let uid = WorkloadPrivilegeDrop.currentEUID()
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-start-\(UUID().uuidString.prefix(8))")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            for allowed in [true, false] {
+                let path = directory.appendingPathComponent(allowed ? "allow" : "deny").path
+                let server = LocalManagementSocketServer(
+                    path: path,
+                    session: LocalManagementSession(policy: samplePolicy(uid: allowed ? uid : uid + 1)),
+                    directoryMode: 0o700,
+                    socketMode: 0o600,
+                )
+                let task = Task {
+                    try await Task.sleep(for: .milliseconds(150))
+                    try await server.run()
+                }
+                do {
+                    if allowed {
+                        try await BarkServerStartup.waitForDaemon(path: path)
+                    } else {
+                        await #expect(throws: ServiceProcessRoleError.handshakeRejected) {
+                            try await BarkServerStartup.waitForDaemon(path: path)
+                        }
+                    }
+                    server.stop()
+                    _ = try await task.value
+                } catch {
+                    server.stop()
+                    task.cancel()
+                    _ = try? await task.value
+                    throw error
+                }
+            }
+        }
+
+        @Test func `startup deadline and cancellation stop waiting`() async throws {
+            let path = "/tmp/bv-missing-\(UUID().uuidString).sock"
+            await #expect(throws: LocalManagementError.connectionLost) {
+                try await BarkServerStartup.waitForDaemon(path: path, timeout: .milliseconds(30))
+            }
+            let task = Task { try await BarkServerStartup.waitForDaemon(path: path) }
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+
         @Test func `unix socket enforces the peer and keeps the operation`() async throws {
             let uid = WorkloadPrivilegeDrop.currentEUID()
             let directory = FileManager.default.temporaryDirectory

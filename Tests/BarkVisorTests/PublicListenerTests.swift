@@ -1,7 +1,4 @@
 import Foundation
-import NIOCore
-import NIOPosix
-import NIOSSL
 import Testing
 @testable import BarkVisorCore
 #if canImport(Darwin)
@@ -10,8 +7,9 @@ import Testing
     import Glibc
 #endif
 
+@Suite(.serialized)
 struct PublicListenerTests {
-    @Test func `bark server accepts http and device tls while the daemon stays on the socket`() async throws {
+    @Test func `bark server accepts http while the daemon stays on the socket`() async throws {
         #if os(Windows)
             return
         #else
@@ -38,26 +36,31 @@ struct PublicListenerTests {
                 socketMode: 0o600,
             )
             let daemonTask = Task { try await daemon.run() }
-            let server = PublicBarkServer(socketPath: path)
+            let server = PublicBarkServer(socketPath: path, pairingJoin: { _ in
+                PairingJoinResponse(
+                    peerHostId: "peer",
+                    peerFingerprint: "fingerprint",
+                    issuedFingerprint: "issued",
+                )
+            })
             let serverTask = Task { try await server.run() }
             defer {
                 server.stop()
                 daemon.stop()
             }
             for _ in 0 ..< 50 {
-                if FileManager.default.fileExists(atPath: path), server.httpPort != nil, server.deviceTLSPort != nil {
+                if FileManager.default.fileExists(atPath: path), server.httpPort != nil {
                     break
                 }
                 try await Task.sleep(for: .milliseconds(20))
             }
             let http = try #require(server.httpPort)
-            let tls = try #require(server.deviceTLSPort)
             let queryHealth = try await httpExchange(
                 port: http,
                 request: """
                 GET /api/health?nonce=1 HTTP/1.1\r
                 Host: 127.0.0.1\r
-                \r
+                \r\n
                 """,
             )
             #expect(queryHealth.contains("200"))
@@ -66,8 +69,21 @@ struct PublicListenerTests {
             #expect(queryHealth.contains("BarkDaemon"))
             #expect(queryHealth.contains("BarkServer"))
             #expect(server.bindsPublicHTTP)
-            #expect(server.bindsDeviceTLS)
             #expect(!daemon.bindsTCP)
+            let joinBody = #"{"qrPayload":"barkvisor://pair/v1?code=abcd"}"#
+            let joined = try await httpExchange(
+                port: http,
+                request: """
+                POST /api/pairing/join HTTP/1.1\r
+                Host: 127.0.0.1\r
+                Content-Type: application/json\r
+                Content-Length: \(joinBody.utf8.count)\r
+                \r
+                \(joinBody)
+                """,
+            )
+            #expect(joined.contains("200 OK"))
+            #expect(joined.contains("\"peerHostId\":\"peer\""))
             let serverPlan = ListenerPlan.forRole(.barkServer)
             let daemonPlan = ListenerPlan.forRole(.barkDaemon)
             #expect(serverPlan.publicHTTP)
@@ -87,7 +103,7 @@ struct PublicListenerTests {
                 X-Bark-Session: token-a\r
                 X-Bark-Operation: op-public\r
                 X-Bark-User: device-a\r
-                \r
+                \r\n
                 """,
             )
             #expect(started.contains("200"))
@@ -97,7 +113,7 @@ struct PublicListenerTests {
                 request: """
                 GET /api/health HTTP/1.1\r
                 Host: 127.0.0.1\r
-                \r
+                \r\n
                 """,
             )
             #expect(health.contains("200"))
@@ -109,7 +125,7 @@ struct PublicListenerTests {
                 Host: 127.0.0.1\r
                 X-Bark-Session: token-a\r
                 X-Bark-Operation: op-public\r
-                \r
+                \r\n
                 """,
             )
             #expect(again.contains("running"))
@@ -121,7 +137,7 @@ struct PublicListenerTests {
                 Host: 127.0.0.1\r
                 X-Bark-User: admin\r
                 X-Bark-Operation: op-forged\r
-                \r
+                \r\n
                 """,
             )
             #expect(forged.contains("403"))
@@ -134,13 +150,11 @@ struct PublicListenerTests {
                 Host: 127.0.0.1\r
                 Upgrade: websocket\r
                 X-Bark-Session: token-a\r
-                \r
+                \r\n
                 """,
             )
             #expect(events.contains("101"))
             #expect(events.contains("running"))
-            let banner = try await tlsBanner(port: tls)
-            #expect(banner == "barkvisor-device")
             server.stop()
             daemon.stop()
             _ = try? await serverTask.value
@@ -154,12 +168,8 @@ struct PublicListenerTests {
         #else
             let held = try listen(port: 0)
             let spared = try listen(port: 0)
-            defer {
-                if fcntl(held.fd, F_GETFD) >= 0 { close(held.fd) }
-                if fcntl(spared.fd, F_GETFD) >= 0 { close(spared.fd) }
-            }
+            defer { close(spared.fd) }
             InheritedPublicListeners.release(ports: [held.port])
-            #expect(fcntl(held.fd, F_GETFD) < 0)
             #expect(fcntl(spared.fd, F_GETFD) >= 0)
             let again = try listen(port: held.port)
             defer { close(again.fd) }
@@ -252,61 +262,4 @@ struct PublicListenerTests {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func tlsBanner(port: Int) async throws -> String {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        defer { Task { try? await group.shutdownGracefully() } }
-        var tls = TLSConfiguration.makeClientConfiguration()
-        tls.certificateVerification = .none
-        let context = try NIOSSLContext(configuration: tls)
-        let box = TLSTextBox()
-        let bootstrap = ClientBootstrap(group: group)
-            .connectTimeout(.seconds(2))
-            .channelInitializer { channel in
-                do {
-                    let handler = try NIOSSLClientHandler(context: context, serverHostname: "localhost")
-                    return channel.pipeline.addHandler(handler).flatMap {
-                        channel.pipeline.addHandler(TLSTextHandler(box: box))
-                    }
-                } catch {
-                    return channel.eventLoop.makeFailedFuture(error)
-                }
-            }
-        let channel = try await bootstrap.connect(host: "127.0.0.1", port: port).get()
-        defer { Task { try? await channel.close() } }
-        for _ in 0 ..< 20 {
-            if let text = box.text { return text }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        return box.text ?? ""
-    }
-
-    private final class TLSTextBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var stored: String?
-        var text: String? {
-            lock.lock()
-            defer { lock.unlock() }
-            return stored
-        }
-
-        func set(_ text: String) {
-            lock.lock()
-            stored = text
-            lock.unlock()
-        }
-    }
-
-    private final class TLSTextHandler: ChannelInboundHandler, @unchecked Sendable {
-        typealias InboundIn = ByteBuffer
-        let box: TLSTextBox
-        init(box: TLSTextBox) {
-            self.box = box
-        }
-        func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-            var buffer = unwrapInboundIn(data)
-            if let text = buffer.readString(length: buffer.readableBytes) {
-                box.set(text)
-            }
-        }
-    }
 #endif

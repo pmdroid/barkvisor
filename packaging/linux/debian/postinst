@@ -56,7 +56,9 @@ case "$1" in
         exit 1
       fi
     fi
-    install -d -o barkvisor -g barkvisor -m 0755 "$DATA_DIR" "$RUN_DIR"
+    install -d -o root -g barkvisor -m 0755 "$DATA_DIR"
+    install -d -o root -g barkvisor -m 0750 "$RUN_DIR"
+    install -d -o root -g root -m 0700 "$DATA_DIR/home-ca" "$DATA_DIR/agent"
     if [ ! -f "$schema_file" ]; then
       printf '1\n' > "$schema_file"
       chown barkvisor:barkvisor "$schema_file" 2>/dev/null || true

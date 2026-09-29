@@ -344,8 +344,8 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
 
     static func mtlsConfiguration(dataDir: URL, hostId: String) throws -> TLSConfiguration {
         let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
-        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
-        let presented = AgentPlaneCertificates.presentationCertificatePEM(
+        let receipt = try PairingService.loadReceipt(dataDir: dataDir)
+        let presented = try AgentPlaneCertificates.presentationCertificatePEM(
             material: material,
             receipt: receipt,
         )

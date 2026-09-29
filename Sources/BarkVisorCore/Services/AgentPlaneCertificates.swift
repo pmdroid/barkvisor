@@ -8,19 +8,22 @@ import X509
 /// still present that issued leaf (same `device.key`) and trust the
 /// issuer Home CA, or two Homes cannot verify each other.
 public enum AgentPlaneCertificates {
+    public enum PresentationError: Error, LocalizedError {
+        case issuedCertificateDoesNotMatchDeviceKey
+
+        public var errorDescription: String? {
+            "Pairing-issued certificate does not match the persisted device key"
+        }
+    }
     /// Leaf to present on 7778 / as the mTLS client cert.
     /// Prefers the pairing-issued cert when it matches `device.key`.
     public static func presentationCertificatePEM(
         material: HomeCertificateMaterial,
         receipt: PairingPeerReceipt?,
-    ) -> String {
-        guard let receipt,
-              certificateMatchesKey(
-                  receipt.issuedCertificatePEM,
-                  keyPEM: material.deviceKeyPEM,
-              )
-        else {
-            return material.deviceCertificatePEM
+    ) throws -> String {
+        guard let receipt else { return material.deviceCertificatePEM }
+        guard certificateMatchesKey(receipt.issuedCertificatePEM, keyPEM: material.deviceKeyPEM) else {
+            throw PresentationError.issuedCertificateDoesNotMatchDeviceKey
         }
         return receipt.issuedCertificatePEM
     }

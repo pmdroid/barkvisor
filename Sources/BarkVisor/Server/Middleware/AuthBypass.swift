@@ -3,6 +3,10 @@ import Foundation
 import GRDB
 import Vapor
 
+struct LoopbackDaemonSocket: StorageKey {
+    typealias Value = Bool
+}
+
 enum AuthBypass {
     static let syntheticUserId = "local-bypass"
     static let syntheticUsername = "local"
@@ -19,7 +23,8 @@ enum AuthBypass {
     }
 
     static func peerIP(_ request: Request) -> String? {
-        request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
+        if request.application.storage[LoopbackDaemonSocket.self] == true { return "127.0.0.1" }
+        return request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
     }
 
     static func isProxied(_ request: Request) -> Bool {

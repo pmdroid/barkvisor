@@ -8,7 +8,7 @@ Requires=barkvisor-daemon.service
 Type=simple
 User=barkvisor
 Group=barkvisor
-WorkingDirectory=/var/lib/barkvisor
+WorkingDirectory=/
 Environment=HOME=/var/lib/barkvisor
 Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
 Environment=BARKVISOR_SOCKET_DIR=/var/run/barkvisor
@@ -33,7 +33,7 @@ LockPersonality=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 UMask=0077
-InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/dev/kvm
+InaccessiblePaths=-/var/lib/barkvisor -/run/docker.sock -/var/run/docker.sock -/dev/kvm
 LimitNOFILE=65536
 
 [Install]
