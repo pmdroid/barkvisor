@@ -693,9 +693,9 @@ struct HomeOllamaController: RouteCollection {
         guard let timeoutSeconds else {
             return try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
         }
-        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+        let receipt = try PairingService.loadReceipt(dataDir: dataDir)
         let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
-        return AgentMTLSClient(
+        return try AgentMTLSClient(
             material: material,
             presentationCertificatePEM: AgentPlaneCertificates.presentationCertificatePEM(
                 material: material,

@@ -24,6 +24,7 @@ public final class AgentTLSServer: @unchecked Sendable {
     private var presentationCertificatePEM: String
     private let pins: PeerPinStore
     private let hostname: String
+    private let unixSocketPath: String?
     private var listenPort: Int
     private let database: DatabasePool?
     private let dataDir: URL?
@@ -45,11 +46,13 @@ public final class AgentTLSServer: @unchecked Sendable {
         database: DatabasePool? = nil,
         vmState: (any VMStateQuerying)? = nil,
         consoleBuffers: ConsoleBufferManager? = nil,
+        unixSocketPath: String? = nil,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
         self.pins = pins
         self.hostname = hostname
+        self.unixSocketPath = unixSocketPath
         self.listenPort = port
         self.dataDir = dataDir
         self.hostId = hostId
@@ -85,8 +88,8 @@ public final class AgentTLSServer: @unchecked Sendable {
     public func reloadFromDisk(now: Date = Date()) async throws {
         guard let dataDir, let hostId else { return }
         let fresh = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId, now: now)
-        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
-        let presented = AgentPlaneCertificates.presentationCertificatePEM(
+        let receipt = try PairingService.loadReceipt(dataDir: dataDir)
+        let presented = try AgentPlaneCertificates.presentationCertificatePEM(
             material: fresh,
             receipt: receipt,
         )
@@ -161,7 +164,15 @@ public final class AgentTLSServer: @unchecked Sendable {
         let app = try await Vapor.Application.make(env)
         do {
             try configure(app)
-            try await app.startup()
+            if let unixSocketPath {
+                try? FileManager.default.removeItem(atPath: unixSocketPath)
+            }
+            if unixSocketPath != nil {
+                try await app.asyncBoot()
+                try await app.server.start(address: nil)
+            } else {
+                try await app.startup()
+            }
         } catch {
             try? await app.asyncShutdown()
             throw error
@@ -178,6 +189,7 @@ public final class AgentTLSServer: @unchecked Sendable {
 
     func shutdownListener() async {
         guard let app else { return }
+        if unixSocketPath != nil { await app.server.shutdown() }
         try? await app.asyncShutdown()
         self.app = nil
         self.boundPort = nil
@@ -251,6 +263,10 @@ public final class AgentTLSServer: @unchecked Sendable {
 
         app.http.server.configuration.hostname = hostname
         app.http.server.configuration.port = listenPort
+        if let unixSocketPath {
+            app.http.server.configuration.address = .unixDomainSocket(path: unixSocketPath)
+            app.http.server.configuration.tcpNoDelay = false
+        }
         app.http.server.configuration.supportVersions = [.one]
         app.http.server.configuration.tlsConfiguration = tls
         app.http.server.configuration.customCertificateVerifyCallbackWithMetadata = { certs, promise in
@@ -336,6 +352,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         database: DatabasePool? = nil,
         vmState: (any VMStateQuerying)? = nil,
         consoleBuffers: ConsoleBufferManager? = nil,
+        unixSocketPath: String? = nil,
     ) async -> AgentTLSServer? {
         if port != 0, Config.port != 0, port == Config.port {
             Log.server.error(
@@ -347,8 +364,8 @@ public final class AgentTLSServer: @unchecked Sendable {
             let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
             let pins = PeerPinStore(dataDir: dataDir)
             _ = try pins.load()
-            let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
-            let presented = AgentPlaneCertificates.presentationCertificatePEM(
+            let receipt = try PairingService.loadReceipt(dataDir: dataDir)
+            let presented = try AgentPlaneCertificates.presentationCertificatePEM(
                 material: material,
                 receipt: receipt,
             )
@@ -363,6 +380,7 @@ public final class AgentTLSServer: @unchecked Sendable {
                 database: database,
                 vmState: vmState,
                 consoleBuffers: consoleBuffers,
+                unixSocketPath: unixSocketPath,
             )
             try await server.start()
             return server

@@ -1,9 +1,4 @@
-import Crypto
 import Foundation
-import NIOCore
-import NIOPosix
-import NIOSSL
-import X509
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
@@ -11,23 +6,20 @@ import X509
 #endif
 
 public final class PublicBarkServer: @unchecked Sendable {
+    public typealias PairingJoinHandler = @Sendable (PairingJoinRequest) async throws -> PairingJoinResponse
     public let socketPath: String
     public private(set) var httpPort: Int?
-    public private(set) var deviceTLSPort: Int?
     public var bindsPublicHTTP: Bool {
         httpPort != nil
-    }
-    public var bindsDeviceTLS: Bool {
-        deviceTLSPort != nil
     }
     private let lock = NSLock()
     private var httpFD: Int32 = -1
     private var stopped = false
-    private var tlsGroup: MultiThreadedEventLoopGroup?
-    private var tlsChannel: Channel?
+    private let pairingJoin: PairingJoinHandler?
 
-    public init(socketPath: String) {
+    public init(socketPath: String, pairingJoin: PairingJoinHandler? = nil) {
         self.socketPath = socketPath
+        self.pairingJoin = pairingJoin
     }
 
     public func stop() {
@@ -40,13 +32,11 @@ public final class PublicBarkServer: @unchecked Sendable {
                 _ = shutdown(fd, Int32(SHUT_RDWR))
             #endif
         }
-        tlsChannel?.close(promise: nil)
     }
 
-    public func run(httpPort requestedHTTP: Int = 0, deviceTLSPort requestedTLS: Int = 0) async throws {
+    public func run(httpPort requestedHTTP: Int = 0) async throws {
         #if os(Windows)
             _ = requestedHTTP
-            _ = requestedTLS
             throw LocalManagementError.unavailable
         #else
             let http = try PublicHTTP.bind(port: requestedHTTP)
@@ -55,7 +45,6 @@ public final class PublicBarkServer: @unchecked Sendable {
                 close(http.fd)
                 forgetHTTP()
             }
-            try await bindDeviceTLS(port: requestedTLS)
             let fd = http.fd
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 Thread.detachNewThread { [self] in
@@ -64,7 +53,6 @@ public final class PublicBarkServer: @unchecked Sendable {
                         if client < 0 { continue }
                         serve(client)
                     }
-                    shutdownTLS()
                     continuation.resume()
                 }
             }
@@ -90,34 +78,32 @@ public final class PublicBarkServer: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func shutdownTLS() {
-        let channel = tlsChannel
-        let group = tlsGroup
-        channel?.close(promise: nil)
-        try? group?.syncShutdownGracefully()
-    }
-
     #if !os(Windows)
-        private func bindDeviceTLS(port: Int) async throws {
-            let material = try PublicTLS.material()
-            let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            tlsGroup = group
-            let bootstrap = ServerBootstrap(group: group)
-                .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-                .childChannelInitializer { channel in
-                    channel.pipeline.addHandler(NIOSSLServerHandler(context: material.context)).flatMap {
-                        channel.pipeline.addHandler(PublicTLSBanner())
-                    }
-                }
-            let channel = try await bootstrap.bind(host: "127.0.0.1", port: port).get()
-            tlsChannel = channel
-            deviceTLSPort = channel.localAddress?.port
-        }
-
         private func serve(_ client: Int32) {
             defer { close(client) }
             guard let request = PublicHTTP.readRequest(client) else { return }
-            let response = handle(request)
+            let response: String
+            if request.method == "POST", request.path == LocalPairingJoin.path, let body = request.body,
+               let pairingJoin,
+               let payload = try? JSONDecoder().decode(PairingJoinRequest.self, from: body) {
+                let semaphore = DispatchSemaphore(value: 0)
+                let result = MutexBox<String>(PublicHTTP.json(status: 400, body: #"{"reason":"Pairing join failed"}"#))
+                Task.detached {
+                    do {
+                        let joined = try await pairingJoin(payload)
+                        let encoded = try JSONEncoder().encode(joined)
+                        result.value = PublicHTTP.json(status: 200, body: String(decoding: encoded, as: UTF8.self))
+                    } catch {
+                        let reason = PublicHTTP.jsonString(error.localizedDescription)
+                        result.value = PublicHTTP.json(status: 400, body: #"{"reason":"\#(reason)"}"#)
+                    }
+                    semaphore.signal()
+                }
+                semaphore.wait()
+                response = result.value
+            } else {
+                response = handle(request)
+            }
             PublicHTTP.write(client, response)
         }
 
@@ -243,6 +229,7 @@ public final class PublicBarkServer: @unchecked Sendable {
         var claim: String?
         var operationID: String?
         var upgradeWebSocket: Bool
+        var body: Data?
 
         var workloadID: String? {
             let parts = path.split(separator: "/").map(String.init)
@@ -260,6 +247,28 @@ public final class PublicBarkServer: @unchecked Sendable {
             case "delete": return "workload.delete"
             case "events": return "workload.events"
             default: return nil
+            }
+        }
+    }
+
+    private final class MutexBox<Value>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: Value
+
+        init(_ value: Value) {
+            stored = value
+        }
+
+        var value: Value {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return stored
+            }
+            set {
+                lock.lock()
+                stored = newValue
+                lock.unlock()
             }
         }
     }
@@ -309,13 +318,21 @@ public final class PublicBarkServer: @unchecked Sendable {
         static func readRequest(_ fd: Int32) -> PublicHTTPRequest? {
             var data = Data()
             var buffer = [UInt8](repeating: 0, count: 4_096)
-            let count = buffer.withUnsafeMutableBytes { raw -> Int in
-                guard let base = raw.baseAddress else { return -1 }
-                return read(fd, base, raw.count)
+            let separator = [UInt8]("\r\n\r\n".utf8)
+            while data.count < 16_384 {
+                let count = buffer.withUnsafeMutableBytes { raw -> Int in
+                    guard let base = raw.baseAddress else { return -1 }
+                    return read(fd, base, raw.count)
+                }
+                guard count > 0 else { return nil }
+                data.append(contentsOf: buffer.prefix(count))
+                if data.count >= separator.count,
+                   data.suffix(separator.count).elementsEqual(separator) || data.range(of: Data(separator)) != nil {
+                    break
+                }
             }
-            guard count > 0 else { return nil }
-            data.append(contentsOf: buffer.prefix(count))
-            let text = String(decoding: data, as: UTF8.self)
+            guard let headerEnd = data.range(of: Data(separator)) else { return nil }
+            let text = String(decoding: data[..<headerEnd.lowerBound], as: UTF8.self)
             let lines = text.components(separatedBy: "\r\n")
             guard let first = lines.first else { return nil }
             let bits = first.split(separator: " ")
@@ -327,6 +344,17 @@ public final class PublicBarkServer: @unchecked Sendable {
                     headers[pair[0].lowercased()] = pair[1].trimmingCharacters(in: .whitespaces)
                 }
             }
+            let contentLength = Int(headers["content-length"] ?? "0") ?? -1
+            guard (0 ... 65_536).contains(contentLength) else { return nil }
+            let bodyStart = headerEnd.upperBound
+            while data.count - bodyStart < contentLength {
+                let count = buffer.withUnsafeMutableBytes { raw -> Int in
+                    guard let base = raw.baseAddress else { return -1 }
+                    return read(fd, base, raw.count)
+                }
+                guard count > 0 else { return nil }
+                data.append(contentsOf: buffer.prefix(count))
+            }
             return PublicHTTPRequest(
                 method: String(bits[0]),
                 path: String(bits[1]),
@@ -334,6 +362,7 @@ public final class PublicBarkServer: @unchecked Sendable {
                 claim: headers["x-bark-user"],
                 operationID: headers["x-bark-operation"],
                 upgradeWebSocket: headers["upgrade"]?.lowercased() == "websocket",
+                body: contentLength > 0 ? data[bodyStart ..< bodyStart + contentLength] : nil,
             )
         }
 
@@ -377,7 +406,10 @@ public final class PublicBarkServer: @unchecked Sendable {
                 switch status {
                 case 200: "OK"
                 case 503: "Service Unavailable"
-                default: "Forbidden"
+                case 400: "Bad Request"
+                case 403: "Forbidden"
+                case 404: "Not Found"
+                default: "Internal Server Error"
                 }
             return """
             HTTP/1.1 \(status) \(reason)\r
@@ -418,46 +450,4 @@ public final class PublicBarkServer: @unchecked Sendable {
         }
     }
 
-    enum PublicTLS {
-        static func material() throws -> (context: NIOSSLContext, certificatePEM: String) {
-            let key = Certificate.PrivateKey(P256.Signing.PrivateKey())
-            let name = try DistinguishedName { CommonName("BarkServer") }
-            let certificate = try Certificate(
-                version: .v3,
-                serialNumber: Certificate.SerialNumber(1),
-                publicKey: key.publicKey,
-                notValidBefore: Date().addingTimeInterval(-60),
-                notValidAfter: Date().addingTimeInterval(86_400 * 365 * 10),
-                issuer: name,
-                subject: name,
-                signatureAlgorithm: .ecdsaWithSHA256,
-                extensions: Certificate.Extensions {
-                    Critical(BasicConstraints.notCertificateAuthority)
-                    KeyUsage(digitalSignature: true)
-                },
-                issuerPrivateKey: key,
-            )
-            let certPEM = try certificate.serializeAsPEM().pemString
-            let keyPEM = try key.serializeAsPEM().pemString
-            let nioCert = try NIOSSLCertificate(bytes: Array(certPEM.utf8), format: .pem)
-            let nioKey = try NIOSSLPrivateKey(bytes: Array(keyPEM.utf8), format: .pem)
-            let tls = TLSConfiguration.makeServerConfiguration(
-                certificateChain: [.certificate(nioCert)],
-                privateKey: .privateKey(nioKey),
-            )
-            let context = try NIOSSLContext(configuration: tls)
-            return (context, certPEM)
-        }
-    }
-
-    private final class PublicTLSBanner: ChannelInboundHandler, @unchecked Sendable {
-        typealias InboundIn = ByteBuffer
-        typealias OutboundOut = ByteBuffer
-
-        func channelActive(context: ChannelHandlerContext) {
-            var buffer = context.channel.allocator.buffer(capacity: 16)
-            buffer.writeString("barkvisor-device")
-            context.writeAndFlush(wrapOutboundOut(buffer), promise: nil)
-        }
-    }
 #endif

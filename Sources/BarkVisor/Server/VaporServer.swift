@@ -25,7 +25,10 @@ public final class VaporServer: @unchecked Sendable {
     /// The UI can check this to display a warning banner to the user.
     private(set) var startupWarning: String?
 
-    public init() {
+    private let daemonPaths: DaemonAPIPaths?
+
+    public init(daemonPaths: DaemonAPIPaths? = nil) {
+        self.daemonPaths = daemonPaths
         self.keys = JWTKeyCollection()
     }
 
@@ -38,7 +41,8 @@ public final class VaporServer: @unchecked Sendable {
         if let pointer = getenv("BARKVISOR_PROCESS_ROLE") {
             let raw = String(cString: pointer)
             if let role = ServiceProcessRole(rawValue: raw),
-               !VaporListenerGate.authoritativeStartAllowed(role: role) {
+               !VaporListenerGate.authoritativeStartAllowed(role: role),
+               !(role == .barkDaemon && daemonPaths != nil) {
                 throw ServiceProcessRoleError.serverCannotOpenAuthoritativeState
             }
         }
@@ -48,7 +52,11 @@ public final class VaporServer: @unchecked Sendable {
         )
         await keys.add(hmac: .init(from: Config.jwtSecret), digestAlgorithm: .sha256)
 
-        let app = try await Vapor.Application.make(.production)
+        var environment = Environment.production
+        if daemonPaths != nil {
+            environment.commandInput = CommandInput(arguments: ["barkvisor-daemon"])
+        }
+        let app = try await Vapor.Application.make(environment)
         do {
             try await bootstrap(app: app)
         } catch {
@@ -171,7 +179,15 @@ public final class VaporServer: @unchecked Sendable {
             }
         }
 
-        try await app.startup()
+        if let daemonPaths {
+            try? FileManager.default.removeItem(atPath: daemonPaths.privateHTTP)
+        }
+        if daemonPaths != nil {
+            try await app.asyncBoot()
+            try await app.server.start(address: nil)
+        } else {
+            try await app.startup()
+        }
         self.app = app
         if let bound = app.http.server.shared.localAddress?.port {
             Config.adoptBoundHTTPPort(bound)
@@ -185,6 +201,7 @@ public final class VaporServer: @unchecked Sendable {
             database: database.pool,
             vmState: services.manager,
             consoleBuffers: services.consoleBuffers,
+            unixSocketPath: daemonPaths?.privateAgent,
         )
         if let bound = self.agentTLSServer?.boundPort {
             Config.adoptBoundAgentPort(bound)
@@ -267,6 +284,11 @@ public final class VaporServer: @unchecked Sendable {
     private func configureMiddleware(app: Vapor.Application) {
         app.http.server.configuration.hostname = "0.0.0.0"
         app.http.server.configuration.port = Config.port
+        if let daemonPaths {
+            app.http.server.configuration.address = .unixDomainSocket(path: daemonPaths.privateHTTP)
+            app.http.server.configuration.tcpNoDelay = false
+            app.storage[LoopbackDaemonSocket.self] = true
+        }
         app.routes.defaultMaxBodySize = "1mb"
 
         app.middleware.use(StructuredErrorMiddleware())
@@ -642,6 +664,7 @@ public final class VaporServer: @unchecked Sendable {
             self.agentTLSServer = nil
         }
         if let app {
+            if daemonPaths != nil { await app.server.shutdown() }
             try? await app.asyncShutdown()
             self.app = nil
         }

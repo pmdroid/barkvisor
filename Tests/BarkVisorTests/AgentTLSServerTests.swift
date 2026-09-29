@@ -158,7 +158,7 @@ struct AgentTLSServerTests {
             hostname: "127.0.0.1",
             port: 0,
         )
-        let joinerPresented = AgentPlaneCertificates.presentationCertificatePEM(
+        let joinerPresented = try AgentPlaneCertificates.presentationCertificatePEM(
             material: joiner,
             receipt: receipt,
         )
@@ -498,6 +498,29 @@ struct AgentTLSServerTests {
             #expect(body.hostId == issuerId)
             #expect(body.fingerprint == issuer.deviceFingerprint)
             await server.stop()
+
+            let restarted = try #require(await AgentTLSServer.startDetached(
+                dataDir: joinerDir,
+                hostId: joinerId,
+                hostname: "127.0.0.1",
+                port: 0,
+            ))
+            do {
+                #expect(restarted.presentedCertificatePEMForTesting == issuedPEM.pem)
+                let restartedPort = try #require(restarted.boundPort)
+                let afterRestart = try await getWhoami(
+                    port: restartedPort,
+                    trust: ca,
+                    clientCert: homeCert,
+                    clientKey: homeKey,
+                )
+                #expect(afterRestart.hostId == issuerId)
+                #expect(afterRestart.fingerprint == issuer.deviceFingerprint)
+                await restarted.stop()
+            } catch {
+                await restarted.stop()
+                throw error
+            }
         } catch {
             await server.stop()
             throw error

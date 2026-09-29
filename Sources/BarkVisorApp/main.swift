@@ -387,7 +387,7 @@ func waitForManagementShutdown() async {
 
 func superviseUntilSignal(
     run: @escaping @Sendable () async throws -> Void,
-    stop: @escaping @Sendable () -> Void,
+    stop: @escaping @Sendable () async -> Void,
 ) async throws {
     #if os(Windows)
         try await run()
@@ -399,17 +399,16 @@ func superviseUntilSignal(
             }
             group.addTask {
                 await waitForManagementShutdown()
-                stop()
             }
             do {
                 try await group.next()
             } catch {
-                stop()
+                await stop()
                 signalManagementShutdown()
                 group.cancelAll()
                 throw error
             }
-            stop()
+            await stop()
             signalManagementShutdown()
             group.cancelAll()
         }
@@ -428,65 +427,11 @@ struct DaemonCommand: AsyncParsableCommand {
         #else
             InheritedPublicListeners.release(ports: [Config.port, Config.agentPort])
             setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkDaemon.rawValue, 1)
-            let euid = WorkloadPrivilegeDrop.currentEUID()
-            let permissions = SocketPermissionPlan.forDaemonEUID(euid)
-            let policy = LocalManagementPolicy(
-                allowedPeerUIDs: LocalManagementPeers.allowlist(
-                    daemonEUID: euid,
-                    serverUID: WorkloadPrivilegeDrop.uid(forUser: "barkvisor"),
-                ),
-                memberships: [],
-                resources: ResourcePolicy(allowedRoots: [], allowedMounts: [], allowedDevices: []),
-            )
-            let database = try AppDatabase(path: Config.dbPath.path)
-            try database.migrate()
-            let manager = VMManager(dbPool: database.pool)
-            let tasks = BackgroundTaskManager()
-            let operations = try DurableOperationFile(
-                url: Config.dataDir.appendingPathComponent("socket-operations.json"),
-            )
-            let driver = LiveWorkloadSocketDriver(
-                db: database.pool,
-                vmManager: manager,
-                tasks: tasks,
-            )
-            let facts = try await DaemonRecovery.facts(db: database.pool)
-            let plan = await DaemonRecovery.reconcile(
-                records: operations.all(),
-                running: facts.running,
-                present: facts.present,
-            )
-            for record in plan.records {
-                await operations.save(record)
-            }
-            for command in plan.commands {
-                guard let current = await operations.find(operationID: command.operationID) else { continue }
-                var finished = current
-                do {
-                    let snapshot = try await driver.perform(command)
-                    finished.phase = "completed"
-                    finished.state = snapshot.state
-                    finished.runtime = snapshot.runtime
-                } catch {
-                    finished.phase = "failed"
-                    finished.state = "failed"
-                }
-                await operations.save(finished)
-            }
-            let server = LocalManagementSocketServer(
-                path: ManagementSocketPath.path(socketDir: Config.socketDir),
-                session: LocalManagementSession(
-                    policy: policy,
-                    operationStore: operations,
-                    workloadDriver: driver,
-                ),
-                directoryMode: permissions.directoryMode,
-                socketMode: permissions.socketMode,
-            )
+            let daemon = SplitBarkDaemon(socketDirectory: Config.socketDir)
             try await superviseUntilSignal {
-                try await server.run()
+                try await daemon.run()
             } stop: {
-                server.stop()
+                await daemon.stop()
             }
         #endif
     }
@@ -505,22 +450,40 @@ struct ServerCommand: AsyncParsableCommand {
             InheritedPublicListeners.release(ports: [Config.port, Config.agentPort])
             setenv("BARKVISOR_PROCESS_ROLE", ServiceProcessRole.barkServer.rawValue, 1)
             try BarkServerStartup.refuseRoot(euid: WorkloadPrivilegeDrop.currentEUID())
-            let handshake = try LocalManagementSocketClient.exchange(
+            try await BarkServerStartup.waitForDaemon(
                 path: ManagementSocketPath.path(socketDir: Config.socketDir),
-                request: LocalManagementRequest(
-                    requestId: "startup",
-                    operationId: "startup",
-                    name: "protocolVersion",
-                ),
             )
-            try BarkServerStartup.requireHandshake(handshake)
-            let publicServer = PublicBarkServer(
-                socketPath: ManagementSocketPath.path(socketDir: Config.socketDir),
+            let paths = DaemonAPIPaths(directory: Config.socketDir)
+            let socketOwner = try FileManager.default.attributesOfItem(atPath: paths.directory.path)
+            guard let daemonUID = (socketOwner[.ownerAccountID] as? NSNumber)?.uint32Value else {
+                throw ServiceProcessRoleError.handshakeRejected
+            }
+            let http = UnixSocketRelay(
+                listener: .tcp(host: "127.0.0.1", port: Config.port),
+                destination: paths.http,
+                destinationUID: daemonUID,
+            )
+            let agent = UnixSocketRelay(
+                listener: .tcp(host: "0.0.0.0", port: Config.agentPort),
+                destination: paths.agent,
+                destinationUID: daemonUID,
             )
             try await superviseUntilSignal {
-                try await publicServer.run(httpPort: Config.port, deviceTLSPort: Config.agentPort)
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask { try await http.run() }
+                    group.addTask { try await agent.run() }
+                    do {
+                        try await group.next()
+                    } catch {
+                        http.stop()
+                        agent.stop()
+                        group.cancelAll()
+                        throw error
+                    }
+                }
             } stop: {
-                publicServer.stop()
+                http.stop()
+                agent.stop()
             }
         #endif
     }

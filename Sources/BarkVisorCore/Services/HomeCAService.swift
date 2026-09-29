@@ -218,6 +218,13 @@ public enum HomeCAService {
             if !certificateNeedsRenewal(cert, now: now, renewalWindow: deviceRenewalWindow) {
                 return loaded
             }
+            return try renewAndPersistDeviceCert(
+                dataDir: dataDir,
+                hostId: hostId,
+                ca: ca,
+                keyPEM: loaded.keyPEM,
+                now: now,
+            )
         }
 
         return try mintAndPersistDeviceCert(dataDir: dataDir, hostId: hostId, ca: ca, now: now)
@@ -358,23 +365,23 @@ public enum HomeCAService {
         let created = try mintCAInMemory(now: now)
         let certURL = agentDirectory(in: dataDir)
             .appendingPathComponent(deviceCertificateFileName)
+        let keyURL = agentDirectory(in: dataDir).appendingPathComponent(deviceKeyFileName)
         let device: DeviceFiles?
         if FileManager.default.fileExists(atPath: certURL.path) {
             let certPEM = try String(contentsOf: certURL, encoding: .utf8)
+            let keyPEM = try String(contentsOf: keyURL, encoding: .utf8)
             let cert = try Certificate(pemEncoded: certPEM)
             guard let rotationHostId = DeviceTrust.hostId(from: cert) else {
                 throw HomeCAError.corruptMaterial("device.crt SAN missing after Home CA rotation")
             }
+            let csrPEM = try makeDeviceCSR(hostId: rotationHostId, keyPEM: keyPEM)
             let issued = try issueDeviceCert(
                 hostId: rotationHostId,
-                csrPEM: nil,
+                csrPEM: csrPEM,
                 caCert: created.certificate,
                 caKey: created.key,
                 now: now,
             )
-            guard let keyPEM = issued.privateKeyPEM else {
-                throw HomeCAError.persistFailed("Issued local device cert without a private key")
-            }
             device = DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
         } else {
             device = nil
@@ -521,6 +528,27 @@ public enum HomeCAService {
             to: dir.appendingPathComponent(deviceKeyFileName),
             permissions: 0o600,
         )
+        try incrementSerial(in: dataDir)
+        return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+    }
+
+    private static func renewAndPersistDeviceCert(
+        dataDir: URL,
+        hostId: String,
+        ca: CAFiles,
+        keyPEM: String,
+        now: Date,
+    ) throws -> DeviceFiles {
+        let csr = try makeDeviceCSR(hostId: hostId, keyPEM: keyPEM)
+        let issued = try issueDeviceCert(
+            hostId: hostId,
+            csrPEM: csr,
+            caCert: ca.certificate,
+            caKey: ca.key,
+            now: now,
+        )
+        let certURL = agentDirectory(in: dataDir).appendingPathComponent(deviceCertificateFileName)
+        try writeAtomic(Data(issued.certificatePEM.utf8), to: certURL, permissions: 0o644)
         try incrementSerial(in: dataDir)
         return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
     }
