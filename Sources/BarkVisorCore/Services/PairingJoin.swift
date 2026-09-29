@@ -51,6 +51,7 @@ extension PairingService {
             issuedFingerprint: response.issuedFingerprint,
             agentPort: response.agentPort,
             pairedAt: iso8601.string(from: now),
+            legacyJWTSecret: response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
         )
         // Receipt first: issuedCertificatePEM / agentPort are required by
         // downstream agent/mTLS. A later pin failure can retry; a pin
@@ -345,9 +346,13 @@ extension PairingService {
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
             )
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: url.deletingLastPathComponent().path,
+            )
             let data = try JSONEncoder().encode(receipt)
             try data.write(to: url, options: [.atomic])
-            try? FileManager.default.setAttributes(
+            try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
                 ofItemAtPath: url.path,
             )

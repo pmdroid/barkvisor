@@ -220,6 +220,7 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
     public var issuedFingerprint: String
     public var agentPort: Int
     public var pairedAt: String
+    public var legacyJWTSecret: String?
 
     public init(
         peerHostId: String,
@@ -230,6 +231,7 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         issuedFingerprint: String,
         agentPort: Int = Config.agentPort,
         pairedAt: String,
+        legacyJWTSecret: String? = nil,
     ) {
         self.peerHostId = peerHostId
         self.peerFingerprint = peerFingerprint
@@ -239,11 +241,13 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         self.issuedFingerprint = issuedFingerprint
         self.agentPort = agentPort
         self.pairedAt = pairedAt
+        self.legacyJWTSecret = legacyJWTSecret
     }
 
     enum CodingKeys: String, CodingKey {
         case peerHostId, peerFingerprint, caCertificatePEM, caFingerprint
         case issuedCertificatePEM, issuedFingerprint, agentPort, pairedAt
+        case legacyJWTSecret
     }
 
     public init(from decoder: Decoder) throws {
@@ -256,5 +260,6 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         self.issuedFingerprint = try container.decode(String.self, forKey: .issuedFingerprint)
         self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
         self.pairedAt = try container.decode(String.self, forKey: .pairedAt)
+        self.legacyJWTSecret = try container.decodeIfPresent(String.self, forKey: .legacyJWTSecret)
     }
 }

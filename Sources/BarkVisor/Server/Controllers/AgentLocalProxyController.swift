@@ -369,9 +369,15 @@ struct AgentLocalProxyController: RouteCollection {
             }
         }
         if HomeMembershipAuthority.ledgerExists(dataDir: Config.dataDir) {
-            throw Abort(
-                .unauthorized,
-                reason: "Member hop credential is not bound to the presented Device",
+            guard let certificate = req.mtlsPeerCertificatePEM else {
+                throw Abort(.unauthorized, reason: "Client certificate required")
+            }
+            return try await HomeMemberHop.localLegacyToken(
+                dataDir: Config.dataDir,
+                localHostId: Config.hostId,
+                peerHostId: peer.hostId,
+                peerCertificatePEM: certificate,
+                token: token,
             )
         }
         return token
