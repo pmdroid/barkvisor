@@ -170,6 +170,9 @@ public final class VaporServer: @unchecked Sendable {
                 onPairingJoined: { [weak self] in
                     await self?.reloadAgentTLSAfterJoin()
                 },
+                onCertificateRenewed: { [weak self] in
+                    await self?.reloadAgentTLSAfterRenewal()
+                },
             ),
         )
 
@@ -219,6 +222,16 @@ public final class VaporServer: @unchecked Sendable {
     }
 
     private func reloadAgentTLSAfterJoin() async {
+        await reloadAgentTLS(reason: "after pairing join")
+    }
+
+    /// A renewed receipt changes the leaf this Device presents, so the agent
+    /// listener has to rebind before the next peer connects to it.
+    private func reloadAgentTLSAfterRenewal() async {
+        await reloadAgentTLS(reason: "after certificate renewal")
+    }
+
+    private func reloadAgentTLS(reason: String) async {
         let server: AgentTLSServer? = tlsReloadStateLock.withLock {
             if agentTLSServer == nil {
                 pendingAgentTLSReload = true
@@ -228,10 +241,10 @@ public final class VaporServer: @unchecked Sendable {
         guard let server else { return }
         do {
             try await server.reloadFromDisk()
-            Log.server.info("Agent mTLS identity reloaded after pairing join")
+            Log.server.info("Agent mTLS identity reloaded \(reason)")
         } catch {
             Log.server.warning(
-                "Agent mTLS reload after join failed (hourly reload will retry): \(error.localizedDescription)",
+                "Agent mTLS reload \(reason) failed (hourly reload will retry): \(error.localizedDescription)",
             )
         }
     }

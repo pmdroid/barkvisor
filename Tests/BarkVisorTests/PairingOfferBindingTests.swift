@@ -72,7 +72,7 @@ struct PairingOfferBindingTests {
             ),
             offers: offers,
         )
-        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
+        #expect(try PeerPinStore(dataDir: dir).load().count == 2)
         let firstCert = try Certificate(pemEncoded: first.issuedCertificatePEM)
         let replayedCert = try Certificate(pemEncoded: replayed.issuedCertificatePEM)
         let joinerCert = try Certificate(pemEncoded: joiner.deviceCertificatePEM)

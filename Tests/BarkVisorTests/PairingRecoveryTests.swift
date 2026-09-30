@@ -94,10 +94,14 @@ struct PairingRecoveryTests {
             offers: offers,
         )
 
-        let pins = try PeerPinStore(dataDir: issuerDir).load()
-        #expect(pins.count == 1)
-        #expect(pins[0].hostId == joinerId)
-        #expect(pins[0].fingerprint == rotated.deviceFingerprint)
+        // The Home pins the certificate the joiner brought and the leaf it
+        // issued for that joiner, so the member can present either.
+        let pins = try PeerPinStore(dataDir: issuerDir).fingerprints(forHostId: joinerId)
+        #expect(pins.count == 2)
+        #expect(pins.first == rotated.deviceFingerprint)
+        let admitted = try HomeMembershipAuthority(dataDir: issuerDir)
+            .memberFingerprints(hostId: joinerId)
+        #expect(pins == admitted)
         #expect(try PeerPinStore(dataDir: issuerDir).contains(fingerprint: firstFP) == false)
 
         let row = try #require(try DeviceRegistry(dataDir: issuerDir).record(forHostId: joinerId))

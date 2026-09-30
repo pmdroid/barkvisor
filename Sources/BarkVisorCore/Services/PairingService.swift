@@ -287,6 +287,12 @@ public enum PairingService {
                 fingerprint: presented.fingerprint,
                 now: input.now,
             )
+            try authority.admitMemberCertificate(
+                hostId: joinerHostId,
+                fingerprints: [presented.fingerprint, replayed.issuedFingerprint],
+                now: input.now,
+                pins: pinStore,
+            )
             return try attachIdentity(
                 replayed,
                 input: input,
@@ -354,6 +360,15 @@ public enum PairingService {
             try? authority.abortAdmission(hostId: joinerHostId, exchangeId: consumed.codeHash)
             throw error
         }
+        // The joiner presents the leaf issued above, not the certificate it
+        // brought, so the Home admits both. Without this the member could not
+        // authenticate on the agent plane, and never renew (issue #740).
+        try authority.admitMemberCertificate(
+            hostId: joinerHostId,
+            fingerprints: [presented.fingerprint, issued.fingerprint],
+            now: input.now,
+            pins: pinStore,
+        )
         return try attachIdentity(
             PairingRedeemResponse(
                 hostId: input.issuerHostId,
@@ -423,8 +438,7 @@ public enum PairingService {
         guard PairingCode.hashesEqual(incoming, offer.codeHash) else {
             return nil
         }
-        guard let pin = try pins.pin(forHostId: joinerHostId),
-              pin.fingerprint == fingerprint.lowercased() else {
+        guard try pins.fingerprints(forHostId: joinerHostId).contains(fingerprint.lowercased()) else {
             return nil
         }
         let csr = try validateCSR(csrPEM)

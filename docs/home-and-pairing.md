@@ -34,6 +34,16 @@ Workloads continue running on their own Devices if another Device goes offline. 
 
 Use the sidebar's Device selector to show **All** Devices or filter to one. Create VM and Create App have their own Device pickers.
 
+## Certificate renewal
+
+Pairing issues each Device a certificate signed by the Home it joined, and that is the certificate the Device presents to the rest of the Home. The Home records the exact certificate, so a Device cannot swap in a locally issued one and stay paired.
+
+Before that certificate expires, the Device renews it with the Home it joined, over the same authenticated channel it uses for everything else. The Device key, its identity, its workloads, and its data do not change: only the certificate is replaced, and the Home admits the new one together with the old. Nothing is copied, moved, or re-entered.
+
+Renewal is automatic. It starts 30 days before the certificate expires and is retried until it succeeds, so an offline Home, a restart, or a temporary refusal only delays it. If the Home has been removed from the pairing, the Device stops trying and needs to be paired again.
+
+A Home running **1.0.0-alpha.13** does not offer the renewal exchange. A Device paired with it keeps using the certificate it already has until you update the Home or pair again; there is nothing to configure.
+
 ## Phone sign-in
 
 **Settings → Pairing** also has **Phone sign-in**. This QR signs the native Console app into your Home. It is a login offer, not an offer to add another Device.

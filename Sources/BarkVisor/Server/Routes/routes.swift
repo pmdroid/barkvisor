@@ -22,6 +22,28 @@ struct RouteDependencies {
     let pairingOffers: PairingOfferStore
     let jwt: JWTAuthMiddleware
     let onPairingJoined: @Sendable () async -> Void
+    let onCertificateRenewed: @Sendable () async -> Void
+}
+
+/// One line per renewal attempt. A Home that cannot renew is a standing
+/// condition, not an error to spam: the loop already spaces the retries.
+func logCertificateRenewal(_ outcome: CertificateRenewalOutcome?) {
+    switch outcome {
+    case .none, .notPaired, .notDue:
+        break
+    case let .renewed(fingerprint, validUntil):
+        Log.server.info("Renewed the Home-issued Device certificate (\(fingerprint)) until \(validUntil)")
+    case .unsupportedIssuer:
+        Log.server.warning(
+            "The paired Home does not support certificate renewal; keeping the issued certificate until it expires",
+        )
+    case let .issuerUnreachable(reason):
+        Log.server.warning("Home certificate renewal could not reach the Home: \(reason)")
+    case let .denied(reason):
+        Log.server.error("Home certificate renewal refused: \(reason)")
+    case let .failed(reason):
+        Log.server.error("Home certificate renewal failed: \(reason)")
+    }
 }
 
 func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
@@ -117,6 +139,24 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             interval: HomeDeviceReachabilityMonitor.refreshIntervalNanoseconds,
         ) {
             await homeDevices.refreshReachability()
+        }
+    }
+    // The Home-issued leaf this Device presents expires; renew it with the
+    // issuing Home before that (issue #740). Best effort: an offline Home
+    // only means the next tick tries again.
+    let certificateRenewal = HomeCertificateRenewalLoop(
+        dataDir: Config.dataDir,
+        hostId: Config.hostId,
+        clientProvider: { try HomeDevicesMTLS.client(dataDir: Config.dataDir, hostId: Config.hostId) },
+        onRenewed: deps.onCertificateRenewed,
+    )
+    Task {
+        await logCertificateRenewal(certificateRenewal.tick())
+        await deps.backgroundTasks.schedulePeriodicTask(
+            id: "home-certificate-renewal",
+            interval: UInt64(HomeCertificateRenewalLoop.defaultInterval * 1_000_000_000),
+        ) {
+            await logCertificateRenewal(certificateRenewal.tick())
         }
     }
     try protected.register(collection: AppIngressController())

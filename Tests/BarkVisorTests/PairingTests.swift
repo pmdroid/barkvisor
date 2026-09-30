@@ -126,7 +126,7 @@ struct PairingTests {
             offers: offers,
         )
         #expect(replayed.hostId == issuerId)
-        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
+        #expect(try PeerPinStore(dataDir: dir).load().count == 2)
 
         let short = try PairingService.issue(
             PairingService.IssueInput(

@@ -4,6 +4,8 @@ Release notes for BarkVisor. The [user guides](using-overview.md) describe curre
 
 ## Unreleased
 
+- Paired Devices renew their Home-issued certificate with the Home before it expires, over the agent plane. The Device key, identity, and data stay the same; the Home admits the replacement certificate together with the previous one. A Home that cannot renew (for example 1.0.0-alpha.13) leaves the Device on its existing certificate.
+
 ## 1.0.0-alpha.13 — 2026-09-19
 
 - Windows zip packages compile.

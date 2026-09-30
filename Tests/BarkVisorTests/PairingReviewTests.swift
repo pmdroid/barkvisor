@@ -65,8 +65,11 @@ struct PairingReviewTests {
         group.wait()
         let wins = box.outcomes.compactMap { try? $0.get() }
         #expect(wins.count == 1)
+        // One member, two admitted fingerprints: the certificate it brought
+        // and the leaf this Home issued for it.
         let pins = try PeerPinStore(dataDir: dir).load()
-        #expect(pins.count == 1)
+        #expect(pins.count == 2)
+        #expect(Set(pins.map(\.hostId)).count == 1)
         #expect(try offers.load()?.consumedAt != nil)
     }
 
@@ -143,7 +146,7 @@ struct PairingReviewTests {
                 offers: offers,
             )
         }
-        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
+        #expect(try PeerPinStore(dataDir: dir).load().count == 2)
     }
 
     @Test func `receipt persist failure does not leave a peer pin`() async throws {

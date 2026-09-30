@@ -300,7 +300,9 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         guard pending.status == "pending" || pending.status == "active" else {
             throw BarkVisorError.forbidden("Removed membership cannot be restored by committing an old exchange")
         }
-        guard pending.exchangeId == exchange, pending.keyFingerprints == [key] else {
+        // The record also carries the leaves the Home issued for this Device,
+        // so the exchange only has to be bound to the key that was presented.
+        guard pending.exchangeId == exchange, pending.keyFingerprints.contains(key) else {
             throw BarkVisorError.forbidden("Pairing exchange is not bound to this Device key")
         }
         if pending.status == "active" {
@@ -407,6 +409,142 @@ public final class HomeMembershipAuthority: @unchecked Sendable {
         ledger.lastSnapshotAt = now.timeIntervalSince1970
         try persistLocked(ledger)
         return ledger
+    }
+
+    /// Whole-certificate fingerprints this member may present, in the order
+    /// the Home admitted them. Index 0 is the certificate the member presented
+    /// at pairing; later entries are the leaves the Home issued for it.
+    public func memberFingerprints(hostId: String) throws -> [String] {
+        let target = normalize(hostId)
+        let ledger = try load()
+        guard let index = index(of: target, in: ledger.members) else {
+            throw BarkVisorError.forbidden("Unknown Device is not a Home member")
+        }
+        return ledger.members[index].keyFingerprints
+    }
+
+    /// Admit exactly `fingerprints` for a member: the ledger record and the
+    /// pin store move to that set in one locked step.
+    ///
+    /// Pins are written first because a stale pin set is the safe direction —
+    /// it can only under-authorize — while a stale ledger could admit a
+    /// certificate the Home no longer pins. Pairing uses this to record the
+    /// certificate the member brought *and* the one the Home issued for it.
+    @discardableResult
+    public func admitMemberCertificate(
+        hostId: String,
+        fingerprints: [String],
+        now: Date = Date(),
+        pins: PeerPinStore? = nil,
+        writer: MembershipWriter = .daemon,
+    ) throws -> HomeMembershipLedger {
+        try requireDaemon(writer)
+        let target = normalize(hostId)
+        let wanted = orderedUnique(fingerprints)
+        guard !target.isEmpty, !wanted.isEmpty else {
+            throw BarkVisorError.badRequest("Device id and certificate fingerprint are required")
+        }
+        let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
+        lock.lock()
+        defer { lock.unlock() }
+        var ledger = try loadOrEmptyLocked(now: now)
+        let position = try memberIndex(target, in: ledger)
+        return try applyFingerprintsLocked(
+            wanted,
+            hostId: target,
+            ledger: &ledger,
+            index: position,
+            now: now,
+            pinStore: pinStore,
+        )
+    }
+
+    /// Swap the leaf a member presents for a freshly issued one.
+    ///
+    /// The previous leaf stays admitted so a renewal whose response was lost
+    /// can be retried with it; older leaves are dropped once the cap is hit
+    /// (``HomeCertificateRenewal/admittedFingerprints(previous:superseding:issued:maximum:)``).
+    /// Read and both writes happen under one lock, so two overlapping
+    /// renewals cannot leave the member holding a certificate the Home no
+    /// longer admits.
+    @discardableResult
+    public func renewMemberCertificate(
+        hostId: String,
+        superseding: String,
+        issued: String,
+        now: Date = Date(),
+        pins: PeerPinStore? = nil,
+        writer: MembershipWriter = .daemon,
+        maximumAdmitted: Int = HomeCertificateRenewal.admittedFingerprintsPerMember,
+    ) throws -> HomeMembershipLedger {
+        try requireDaemon(writer)
+        let target = normalize(hostId)
+        let replacement = issued.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !target.isEmpty, !replacement.isEmpty else {
+            throw BarkVisorError.badRequest("Device id and certificate fingerprint are required")
+        }
+        let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
+        lock.lock()
+        defer { lock.unlock() }
+        var ledger = try loadOrEmptyLocked(now: now)
+        let position = try memberIndex(target, in: ledger)
+        let wanted = HomeCertificateRenewal.admittedFingerprints(
+            previous: ledger.members[position].keyFingerprints,
+            superseding: superseding,
+            issued: replacement,
+            maximum: max(1, maximumAdmitted),
+        )
+        return try applyFingerprintsLocked(
+            wanted,
+            hostId: target,
+            ledger: &ledger,
+            index: position,
+            now: now,
+            pinStore: pinStore,
+        )
+    }
+
+    /// Caller holds `lock`.
+    private func memberIndex(_ hostId: String, in ledger: HomeMembershipLedger) throws -> Int {
+        guard let position = index(of: hostId, in: ledger.members) else {
+            throw BarkVisorError.forbidden("Unknown Device cannot present a Home certificate")
+        }
+        let status = ledger.members[position].status
+        guard status == "active" || status == "pending" else {
+            throw BarkVisorError.forbidden("Removed member cannot renew a Home certificate")
+        }
+        return position
+    }
+
+    /// Caller holds `lock`. Pins land first: a pin set that lags membership can
+    /// only under-authorize, and every fingerprint in `wanted` is already
+    /// proven at this point.
+    private func applyFingerprintsLocked(
+        _ wanted: [String],
+        hostId: String,
+        ledger: inout HomeMembershipLedger,
+        index: Int,
+        now: Date,
+        pinStore: PeerPinStore,
+    ) throws -> HomeMembershipLedger {
+        ledger.revision += 1
+        ledger.members[index].keyFingerprints = wanted
+        ledger.members[index].revision = ledger.revision
+        ledger.lastSnapshotAt = now.timeIntervalSince1970
+        try pinStore.set(hostId: hostId, fingerprints: wanted, now: now)
+        try persistLocked(ledger)
+        return ledger
+    }
+
+    private func orderedUnique(_ fingerprints: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in fingerprints {
+            let fingerprint = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !fingerprint.isEmpty, seen.insert(fingerprint).inserted else { continue }
+            result.append(fingerprint)
+        }
+        return result
     }
 
     public func authorizeCertificate(

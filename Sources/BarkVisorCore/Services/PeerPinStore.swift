@@ -89,6 +89,50 @@ public final class PeerPinStore: @unchecked Sendable {
         return entry
     }
 
+    /// Replace every pin row for one peer with exactly `fingerprints`.
+    ///
+    /// Membership and pins record the same whole-certificate fingerprints, so
+    /// a renewal rewrites the peer's rows in one write instead of appending
+    /// rows that would keep a superseded certificate trusted. Rows for other
+    /// Devices and rows for a different Device holding the same fingerprint
+    /// are left alone so this never widens trust.
+    @discardableResult
+    public func set(
+        hostId: String,
+        fingerprints: [String],
+        now: Date = Date(),
+    ) throws -> [PeerPin] {
+        let wanted = orderedUnique(fingerprints)
+        lock.lock()
+        defer { lock.unlock() }
+        var pins = try loadLocked()
+        pins.removeAll { $0.hostId.caseInsensitiveCompare(hostId) == .orderedSame }
+        for fingerprint in wanted {
+            pins.append(
+                PeerPin(hostId: hostId, fingerprint: fingerprint, pinnedAt: iso8601.string(from: now)),
+            )
+        }
+        try persistLocked(pins)
+        return pins.filter { $0.hostId.caseInsensitiveCompare(hostId) == .orderedSame }
+    }
+
+    /// Pin rows recorded for one peer, in insertion order.
+    public func fingerprints(forHostId hostId: String) throws -> [String] {
+        try load().filter { $0.hostId.caseInsensitiveCompare(hostId) == .orderedSame }
+            .map(\.fingerprint)
+    }
+
+    private func orderedUnique(_ fingerprints: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in fingerprints {
+            let fingerprint = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !fingerprint.isEmpty, seen.insert(fingerprint).inserted else { continue }
+            result.append(fingerprint)
+        }
+        return result
+    }
+
     public func unpin(hostId: String) throws {
         lock.lock()
         defer { lock.unlock() }

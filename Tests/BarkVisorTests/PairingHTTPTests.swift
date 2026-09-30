@@ -115,7 +115,7 @@ struct PairingHTTPTests {
                 offers: offers,
             )
         }
-        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
+        #expect(try PeerPinStore(dataDir: dir).load().count == 2)
     }
 
     @Test func `pairing HTTP client does not follow redirects`() async throws {

@@ -158,6 +158,61 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     }
 }
 
+/// Member → issuer request for a replacement Home-issued leaf.
+///
+/// Sent over the agent plane only: the request itself carries no credential,
+/// the mTLS client certificate is the proof. `csrPEM` is bound to the key of
+/// the certificate the member presented, so a renewal never changes the
+/// Device key and the Home keeps pinning the same identity.
+public struct AgentCertificateRenewRequest: Codable, Sendable, Equatable {
+    public var hostId: String
+    public var csrPEM: String
+    public var apiVersion: Int?
+
+    public init(
+        hostId: String,
+        csrPEM: String,
+        apiVersion: Int? = APIContract.version,
+    ) {
+        self.hostId = hostId
+        self.csrPEM = csrPEM
+        self.apiVersion = apiVersion
+    }
+}
+
+/// Issuer → member replacement leaf plus the CA that signed it.
+/// `hostId` is the issuing Home, matching ``PairingRedeemResponse``.
+public struct AgentCertificateRenewResponse: Codable, Sendable, Equatable {
+    public var hostId: String
+    public var certificatePEM: String
+    public var fingerprint: String
+    public var caCertificatePEM: String
+    public var caFingerprint: String
+    public var notValidAfter: String
+    public var membershipRevision: Int
+    public var apiVersion: Int
+
+    public init(
+        hostId: String,
+        certificatePEM: String,
+        fingerprint: String,
+        caCertificatePEM: String,
+        caFingerprint: String,
+        notValidAfter: String,
+        membershipRevision: Int,
+        apiVersion: Int = APIContract.version,
+    ) {
+        self.hostId = hostId
+        self.certificatePEM = certificatePEM
+        self.fingerprint = fingerprint
+        self.caCertificatePEM = caCertificatePEM
+        self.caFingerprint = caFingerprint
+        self.notValidAfter = notValidAfter
+        self.membershipRevision = membershipRevision
+        self.apiVersion = apiVersion
+    }
+}
+
 /// Local join request: QR URI and/or structured fields.
 public struct PairingJoinRequest: Codable, Sendable, Equatable {
     public var qrPayload: String?
@@ -221,6 +276,10 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
     public var agentPort: Int
     public var pairedAt: String
     public var legacyJWTSecret: String?
+    /// When the Home last replaced `issuedCertificatePEM` through the
+    /// renewal exchange. `nil` for a receipt that still carries the
+    /// certificate issued during pairing.
+    public var renewedAt: String?
 
     public init(
         peerHostId: String,
@@ -232,6 +291,7 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         agentPort: Int = Config.agentPort,
         pairedAt: String,
         legacyJWTSecret: String? = nil,
+        renewedAt: String? = nil,
     ) {
         self.peerHostId = peerHostId
         self.peerFingerprint = peerFingerprint
@@ -242,12 +302,13 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         self.agentPort = agentPort
         self.pairedAt = pairedAt
         self.legacyJWTSecret = legacyJWTSecret
+        self.renewedAt = renewedAt
     }
 
     enum CodingKeys: String, CodingKey {
         case peerHostId, peerFingerprint, caCertificatePEM, caFingerprint
         case issuedCertificatePEM, issuedFingerprint, agentPort, pairedAt
-        case legacyJWTSecret
+        case legacyJWTSecret, renewedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -261,5 +322,6 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
         self.pairedAt = try container.decode(String.self, forKey: .pairedAt)
         self.legacyJWTSecret = try container.decodeIfPresent(String.self, forKey: .legacyJWTSecret)
+        self.renewedAt = try container.decodeIfPresent(String.self, forKey: .renewedAt)
     }
 }
