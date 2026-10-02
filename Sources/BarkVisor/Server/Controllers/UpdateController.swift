@@ -82,7 +82,7 @@ struct UpdateController: RouteCollection {
             return (channel?.value, autoCheck?.value, url?.value)
         }
         return UpdateSettingsResponse(
-            channel: settings.0 ?? "stable",
+            channel: settings.0 ?? UpdateChannel.defaultChannel(for: Config.version).rawValue,
             autoCheck: settings.1 == "true",
             isDevBuild: Config.isDevBuild,
             updateURL: Config.isDevBuild ? settings.2 : nil,
@@ -117,7 +117,9 @@ struct UpdateController: RouteCollection {
             let url = try AppSetting.fetchOne(db, key: "update_url")
             return (channel, url)
         }
-        let channel = UpdateChannel(rawValue: channelSetting?.value ?? "stable") ?? .stable
+        let channel = UpdateChannel(
+            rawValue: channelSetting?.value ?? UpdateChannel.defaultChannel(for: Config.version).rawValue,
+        ) ?? .stable
         let urlOverride = Config.isDevBuild ? urlSetting?.value : nil
         return (channel, urlOverride)
     }
