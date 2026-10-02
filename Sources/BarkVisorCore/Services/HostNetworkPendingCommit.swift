@@ -143,40 +143,35 @@ public enum HostNetworkPendingCommitService {
     }
 
     public static func listLinuxPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
-        let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        var result: [HostNetworkPendingCommit] = []
-        for name in names where name.hasSuffix("-pending.json") {
-            let path = "\(dir)/\(name)"
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-                  let pending = try? JSONDecoder().decode(HostNetworkPendingCommit.self, from: data)
-            else { continue }
-            result.append(pending)
-        }
-        return result
+        listPending(dataDir: dataDir)
     }
 
-    public static func writeLinux(_ pending: HostNetworkPendingCommit) throws {
-        if let other = blockingPending(target: pending.target, existing: listLinuxPending()) {
+    public static func writeLinux(_ pending: HostNetworkPendingCommit, dataDir: URL = Config.dataDir) throws {
+        if let other = blockingPending(target: pending.target, existing: listLinuxPending(dataDir: dataDir)) {
             throw BarkVisorError.conflict(
                 "A host network apply is already pending for \(other.target). Keep or Revert it first.",
             )
         }
-        let path = linuxPendingPath(bridge: pending.target)
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
         try FileManager.default.createDirectory(
             atPath: "/run/barkvisor",
+            withIntermediateDirectories: true,
+        )
+        try write(pending, to: linuxPendingPath(bridge: pending.target, dataDir: dataDir))
+    }
+
+    /// Persists a pending commit without any host-side setup, so a test can stage one in a
+    /// temp data directory.
+    public static func write(_ pending: HostNetworkPendingCommit, to path: String) throws {
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
         let data = try JSONEncoder().encode(pending)
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
-    public static func clearLinux(bridge: String) {
-        try? FileManager.default.removeItem(atPath: linuxPendingPath(bridge: bridge))
+    public static func clearLinux(bridge: String, dataDir: URL = Config.dataDir) {
+        try? FileManager.default.removeItem(atPath: linuxPendingPath(bridge: bridge, dataDir: dataDir))
     }
 
     #if os(macOS)
@@ -192,13 +187,7 @@ public enum HostNetworkPendingCommitService {
                     "A host network apply is already pending for \(other.target). Keep or Revert it first.",
                 )
             }
-            let url = macPendingURL(device: pending.target)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-            )
-            let data = try JSONEncoder().encode(pending)
-            try data.write(to: url, options: .atomic)
+            try write(pending, to: macPendingURL(device: pending.target).path)
         }
 
         public static func clearMac(device: String) {
@@ -207,6 +196,11 @@ public enum HostNetworkPendingCommitService {
     #endif
 
     public static func listMacPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
+        listPending(dataDir: dataDir)
+    }
+
+    /// Every pending commit on this Device, whichever platform wrote it.
+    public static func listPending(dataDir: URL = Config.dataDir) -> [HostNetworkPendingCommit] {
         let dir = dataDir.appendingPathComponent("host-network", isDirectory: true).path
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         var result: [HostNetworkPendingCommit] = []
@@ -220,8 +214,62 @@ public enum HostNetworkPendingCommitService {
         return result
     }
 
-    public static func stampExists(_ target: String) -> Bool {
-        FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target))
+    public static func stampExists(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
+        FileManager.default.fileExists(atPath: LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir))
+    }
+
+    /// Records which operation kept this target's configuration.
+    ///
+    /// The stamp is per target, so on its own it cannot say which apply it belongs to. A
+    /// second apply on the same target inherits the first one's stamp, and anything that
+    /// reads the stamp as "these changes were kept" would settle the wrong operation. Only
+    /// the presence of the file is ever checked for existence, so writing the id into it
+    /// stays compatible with every reader.
+    public static func writeCommitStamp(
+        target: String,
+        operationId: String?,
+        dataDir: URL = Config.dataDir,
+    ) throws {
+        let path = LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir)
+        try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let body = operationId ?? ""
+        try Data(body.utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
+    /// The operation that wrote this target's commit stamp. Nil when there is no stamp, and
+    /// also when the stamp predates stamping an id, so an unattributable stamp still counts.
+    public static func commitStampOwner(_ target: String, dataDir: URL = Config.dataDir) -> String? {
+        let path = LinuxHostBridgeApply.commitStampPath(bridge: target, dataDir: dataDir)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        let owner = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return owner.isEmpty ? nil : owner
+    }
+
+    /// Removes a commit stamp that belongs to a different operation, so a new apply does
+    /// not inherit the previous one's confirmation.
+    @discardableResult
+    public static func clearStaleCommitStamp(
+        target: String,
+        operationId: String,
+        dataDir: URL = Config.dataDir,
+    ) -> Bool {
+        guard let owner = commitStampOwner(target, dataDir: dataDir) else {
+            try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.commitStampPath(
+                bridge: target,
+                dataDir: dataDir,
+            ))
+            return stampExists(target, dataDir: dataDir)
+        }
+        guard owner != operationId else { return false }
+        try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.commitStampPath(
+            bridge: target,
+            dataDir: dataDir,
+        ))
+        return true
     }
 
     public static func claimPath(_ target: String, dataDir: URL = Config.dataDir) -> String {
@@ -234,18 +282,48 @@ public enum HostNetworkPendingCommitService {
             .appendingPathComponent("\(target)-keeping").path
     }
 
-    public static func keepingExists(_ target: String) -> Bool {
-        FileManager.default.fileExists(atPath: keepingPath(target))
+    public static func keepingExists(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
+        FileManager.default.fileExists(atPath: keepingPath(target, dataDir: dataDir))
     }
 
-    private static let applyGate = NSLock()
+    /// Re-entrant on purpose. `MacHostBridgeApply` holds this gate and then calls
+    /// `SocketVmnetApplyLive.run`, which takes it again to cover the direct controller
+    /// path, so the same thread reaching it twice is normal rather than a bug. A second
+    /// thread still blocks, which is the exclusion the recovery sweep relies on.
+    private static let applyGate = NSRecursiveLock()
     private static let gateTableLock = NSLock()
     private nonisolated(unsafe) static var gates: [String: NSRecursiveLock] = [:]
 
+    /// Serialises every host network apply and recovery restore. Re-entrant for the same
+    /// thread; see `applyGate`.
     public static func withApplyGate(_ body: () throws -> Void) throws {
+        try withHostMutation(body)
+    }
+
+    /// `withApplyGate` for a body that produces a value.
+    public static func withHostMutation<T>(_ body: () throws -> T) throws -> T {
         applyGate.lock()
         defer { applyGate.unlock() }
-        try body()
+        return try body()
+    }
+
+    /// Runs a host-mutating step with applies excluded and the target's revert claim held.
+    ///
+    /// Lock order is always the apply gate and then the target claim, which is the order
+    /// `LinuxHostBridgeApplyLive` and `MacHostBridgeApply` take, so a mutation can never
+    /// deadlock against an apply. Returns nil without running the body when another holder
+    /// owns the claim.
+    @discardableResult
+    public static func withHostMutationGate<T>(
+        target: String,
+        dataDir: URL = Config.dataDir,
+        _ body: () throws -> T,
+    ) throws -> T? {
+        try withHostMutation {
+            guard claimRevert(target, dataDir: dataDir) else { return nil }
+            defer { releaseRevert(target, dataDir: dataDir) }
+            return try body()
+        }
     }
 
     private static func gate(for target: String) -> NSRecursiveLock {
@@ -257,10 +335,10 @@ public enum HostNetworkPendingCommitService {
         return lock
     }
 
-    public static func claimRevert(_ target: String) -> Bool {
+    public static func claimRevert(_ target: String, dataDir: URL = Config.dataDir) -> Bool {
         let lock = gate(for: target)
         lock.lock()
-        let path = claimPath(target)
+        let path = claimPath(target, dataDir: dataDir)
         let fm = FileManager.default
         try? fm.createDirectory(
             at: URL(fileURLWithPath: path).deletingLastPathComponent(),
@@ -300,8 +378,8 @@ public enum HostNetworkPendingCommitService {
         }
     }
 
-    public static func releaseRevert(_ target: String) {
-        let path = claimPath(target)
+    public static func releaseRevert(_ target: String, dataDir: URL = Config.dataDir) {
+        let path = claimPath(target, dataDir: dataDir)
         let myPid = String(ProcessInfo.processInfo.processIdentifier)
         let owner = (try? String(contentsOfFile: "\(path)/pid", encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -338,13 +416,8 @@ public enum HostNetworkPendingCommitService {
         #endif
     }
 
-    public static func keepNow(target: String) throws {
-        let stamp = LinuxHostBridgeApply.commitStampPath(bridge: target)
-        try FileManager.default.createDirectory(
-            at: URL(fileURLWithPath: stamp).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-        )
-        try Data().write(to: URL(fileURLWithPath: stamp), options: .atomic)
+    public static func keepNow(target: String, operationId: String? = nil) throws {
+        try writeCommitStamp(target: target, operationId: operationId)
         try? FileManager.default.removeItem(atPath: keepingPath(target))
         #if os(Linux)
             let unit = "barkvisor-\(target)-rollback"

@@ -528,14 +528,9 @@ import Foundation
                     if let operationId = pending.operationId {
                         try HostNetworkRecovery.mark(operationId, phase: HostNetworkRecoveryPhase.confirmed)
                     }
-                    try FileManager.default.createDirectory(
-                        at: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device))
-                            .deletingLastPathComponent(),
-                        withIntermediateDirectories: true,
-                    )
-                    try Data().write(
-                        to: URL(fileURLWithPath: LinuxHostBridgeApply.commitStampPath(bridge: resolved.device)),
-                        options: .atomic,
+                    try HostNetworkPendingCommitService.writeCommitStamp(
+                        target: resolved.device,
+                        operationId: pending.operationId,
                     )
                     HostNetworkRollbackLaunchd.disarm(target: resolved.device)
                     HostNetworkPendingCommitService.clearMac(device: resolved.device)
