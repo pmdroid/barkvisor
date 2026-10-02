@@ -244,6 +244,25 @@ struct BlockDeviceHostUseTests {
         }
     }
 
+    @Test func `mounted numbered whole device preserves unused disks`() throws {
+        try withDevices(["sda", "sdb", "zd0", "zd1"]) { root in
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: "/dev/zd0 /data ext4 rw 0 0\n")
+            #expect(devices.first { $0.name == "zd0" }?.attachable == false)
+            #expect(devices.first { $0.name == "zd1" }?.attachable == true)
+            #expect(devices.first { $0.name == "sdb" }?.attachable == true)
+        }
+    }
+
+    @Test func `mounted numbered whole device partition excludes its parent`() throws {
+        try withDevices(["sdb", "zd0", "zd1"]) { root in
+            try addDirectory("zd0/zd0p1/holders", root: root)
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: "/dev/zd0p1 /data ext4 rw 0 0\n")
+            #expect(devices.first { $0.name == "zd0" }?.attachable == false)
+            #expect(devices.first { $0.name == "zd1" }?.attachable == true)
+            #expect(devices.first { $0.name == "sdb" }?.attachable == true)
+        }
+    }
+
     private func withDevices(_ names: [String], body: (URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("block-usage-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
