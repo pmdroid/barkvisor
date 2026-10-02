@@ -158,6 +158,109 @@ final class WorkloadApplyServiceTests {
         #expect(unchanged.specGeneration == 2)
     }
 
+    @Test func `declarative apply keeps an explicit port forward bind`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-bind")
+        let createDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "bound"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp", "host": "127.0.0.1"],
+                    ],
+                ]],
+            ],
+        ]
+        let created = try await WorkloadApplyService.apply(
+            document: createDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        let afterCreate = try await fetchVM(created.id)
+        #expect(afterCreate.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+        // Spec export carries the bind back out.
+        #expect(
+            WorkloadSpecProjector.fromVM(afterCreate)
+                .spec.networks.first?.portForwards.first?.host == "127.0.0.1",
+        )
+
+        // A later declarative apply that does not mention the forward at all
+        // must not clear it.
+        let bump: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "bound"],
+            "spec": ["resources": ["cpu": fixtureCPUCount, "memoryMb": 1_024]],
+        ]
+        let updated = try await WorkloadApplyService.apply(
+            document: bump, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(updated.op == .updated)
+        let afterBump = try await fetchVM(created.id)
+        #expect(afterBump.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+        #expect(afterBump.memoryMb == 1_024)
+    }
+
+    /// The declarative path goes through `evaluate(document:existing:)`, which
+    /// must reach the same conclusion as `apply`: an omitted `host` on a host
+    /// port with two stored binds is ambiguous, not a silent reordering.
+    @Test func `declarative apply reports ambiguity rather than reordering binds`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-twobinds")
+        let createDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "twobinds"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp", "host": "127.0.0.1"],
+                        ["hostPort": 8_080, "guestPort": 8_080, "proto": "tcp", "host": "10.0.0.5"],
+                    ],
+                ]],
+            ],
+        ]
+        let created = try await WorkloadApplyService.apply(
+            document: createDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        #expect(created.op == .created)
+        let afterCreate = try await fetchVM(created.id)
+        #expect(afterCreate.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+
+        // A dry run that swaps the guest ports and omits `host` on both is
+        // reported as ambiguous, not applied as a reordering.
+        let reapply: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "twobinds"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [
+                        ["hostPort": 8_080, "guestPort": 8_080, "proto": "tcp"],
+                        ["hostPort": 8_080, "guestPort": 80, "proto": "tcp"],
+                    ],
+                ]],
+            ],
+        ]
+        await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: reapply, dryRun: true, db: dbPool, backgroundTasks: backgroundTasks,
+            )
+        }
+        // Nothing moved.
+        let afterDryRun = try await fetchVM(created.id)
+        #expect(afterDryRun.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+        #expect(afterDryRun.decodedPortForwards.map(\.guestPort) == [80, 8_080])
+    }
+
     @Test func `dryRun create and update leave the database unchanged`() async throws {
         let diskID = try await insertFreeDisk(name: "boot-dry")
         let createDoc: [String: Any] = [

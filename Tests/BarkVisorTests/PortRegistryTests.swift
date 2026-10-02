@@ -307,6 +307,195 @@ final class PortRegistryTests {
         #expect(error?.code == "port_in_use")
     }
 
+    @Test func `spec validate accepts one host port on two non-overlapping binds`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "binds"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                guestType: hostLinux,
+                networks: [
+                    WorkloadNetwork(
+                        mode: "nat",
+                        portForwards: [
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp", host: "10.0.0.5"),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        #expect(throws: Never.self) { try WorkloadSpecProjector.validate(spec) }
+    }
+
+    @Test func `spec validate rejects an explicit bind that overlaps another`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "overlap"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                guestType: hostLinux,
+                networks: [
+                    WorkloadNetwork(
+                        mode: "nat",
+                        portForwards: [
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp"),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+        #expect(error?.code == "port_in_use")
+    }
+
+    @Test func `assertUnique separates binds on one host port`() throws {
+        #expect(throws: Never.self) {
+            try PortRegistry.assertUnique([
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 8_080, host: "10.0.0.5"),
+            ])
+        }
+        let error = #expect(throws: BarkVisorError.self) {
+            try PortRegistry.assertUnique([
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 8_080, host: "127.0.0.1"),
+            ])
+        }
+        #expect(error?.code == "port_in_use")
+    }
+
+    /// The stored binds are disjoint, so raw validation would see two wildcards
+    /// and call them duplicates. They are not resolvable either: the same
+    /// payload could be swapping the guest ports, so the client is asked to name
+    /// the binds rather than having one picked for it.
+    @Test func `update VMSpec reports ambiguity for a payload omitting two distinct binds`() async throws {
+        try await insertVM(
+            id: "vm-binds", name: "Two binds",
+            portForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 8_080, host: "10.0.0.5"),
+            ],
+        )
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-binds") }
+        let occupant = try #require(stored)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        spec.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-binds", spec: spec, db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+    }
+
+    /// The failure the reviewer found: the two stored rules are disjoint, so an
+    /// omission has to be reported as ambiguous — never resolved onto one bind,
+    /// which would read back as a duplicate.
+    @Test func `update VMSpec reports ambiguity instead of a false duplicate`() async throws {
+        try await insertVM(
+            id: "vm-samegp", name: "Same guest port",
+            portForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "127.0.0.1"),
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80, host: "10.0.0.5"),
+            ],
+        )
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-samegp") }
+        let occupant = try #require(stored)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        spec.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-samegp", spec: spec, db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+
+        // Naming both binds explicitly is accepted and round-trips.
+        var explicit = WorkloadSpecProjector.fromVM(occupant)
+        explicit.spec.guestType = hostLinux
+        explicit.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "10.0.0.5"),
+                ],
+            ),
+        ]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-samegp", spec: explicit, db: self.dbPool,
+        )
+        #expect(updated.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    @Test func `flat update keeps an explicit bind unchanged`() async throws {
+        try await insertVM(
+            id: "vm-ha", name: "Home Assistant",
+            portForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_123, guestPort: 8_123, host: "127.0.0.1"),
+            ],
+        )
+        // A flat update that omits portForwards must not touch the stored bind.
+        let untouched = try await VMLifecycleService.updateVM(
+            id: "vm-ha", params: UpdateVMParams(description: "same"), db: self.dbPool,
+        )
+        #expect(untouched.decodedPortForwards.first?.host == "127.0.0.1")
+        // An explicit bind in the flat payload is stored verbatim.
+        let updated = try await VMLifecycleService.updateVM(
+            id: "vm-ha",
+            params: UpdateVMParams(
+                portForwards: [
+                    PortForwardRule(protocol: "tcp", hostPort: 8_124, guestPort: 8_124, host: "10.0.0.5"),
+                ],
+            ),
+            db: self.dbPool,
+        )
+        #expect(updated.decodedPortForwards.map(\.host) == ["10.0.0.5"])
+    }
+
+    @Test func `update VMSpec stores an explicit bind and keeps it through the readback`() async throws {
+        try await insertVM(id: "vm-bind", name: "Bound", portForwards: nil)
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-bind") }
+        let occupant = try #require(stored)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        spec.spec.networks = [
+            WorkloadNetwork(
+                mode: "nat",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                ],
+            ),
+        ]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-bind", spec: spec, db: self.dbPool,
+        )
+        #expect(updated.decodedPortForwards.first?.host == "127.0.0.1")
+        #expect(WorkloadSpecProjector.fromVM(updated).spec.networks.first?.portForwards.first?.host == "127.0.0.1")
+    }
+
     // MARK: - nextFree (PAS-228)
 
     @Test func `nextFree uses preferred when unclaimed`() async throws {

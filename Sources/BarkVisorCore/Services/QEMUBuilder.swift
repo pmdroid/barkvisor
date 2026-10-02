@@ -536,7 +536,7 @@ public enum QEMUBuilder {
         }
         let publications = try forwards.map { rule in
             try NetworkIntent.publication(
-                bindAddress: rule.host ?? "0.0.0.0",
+                bindAddress: rule.host ?? PortRegistry.wildcardBind,
                 proto: rule.proto,
                 publishedPort: rule.hostPort,
                 targetPort: rule.guestPort,

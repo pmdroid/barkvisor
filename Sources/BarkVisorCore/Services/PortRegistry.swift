@@ -23,7 +23,7 @@ public struct PortClaim: Sendable, Equatable {
         workloadKind: String,
         workloadId: String,
         workloadName: String,
-        bindAddress: String = "0.0.0.0",
+        bindAddress: String = PortRegistry.wildcardBind,
     ) {
         self.hostPort = hostPort
         self.proto = proto
@@ -40,6 +40,10 @@ public struct PortClaim: Sendable, Equatable {
 /// `nextFree` is guest-port-first, then the next unused host port (PAS-228).
 /// App ports stay deferred.
 public enum PortRegistry {
+    /// The bind a rule without an explicit `host` publishes on. Shared with
+    /// `PortForwardRule.inherited` so "absent" and "explicit 0.0.0.0" are one value.
+    public static let wildcardBind = "0.0.0.0"
+
     /// Claims from VMs whose effective mode allows port forwards (NAT / implicit NAT).
     public static func claims(db: Database, excludingVM: String? = nil) throws -> [PortClaim] {
         let networks = try Dictionary(
@@ -59,7 +63,7 @@ public enum PortRegistry {
                         workloadKind: vm.isApplication ? "workload" : "vm",
                         workloadId: vm.id,
                         workloadName: vm.name,
-                        bindAddress: rule.host ?? "0.0.0.0",
+                        bindAddress: rule.host ?? wildcardBind,
                     ),
                 )
             }
@@ -79,7 +83,7 @@ public enum PortRegistry {
         for rule in rules {
             let proto = normalizedProtocol(rule.protocol)
             let requested = try NetworkIntent.publication(
-                bindAddress: rule.host ?? "0.0.0.0",
+                bindAddress: rule.host ?? wildcardBind,
                 proto: proto,
                 publishedPort: rule.hostPort,
                 targetPort: rule.guestPort,
@@ -161,7 +165,7 @@ public enum PortRegistry {
         for rule in rules {
             let proto = normalizedProtocol(rule.protocol)
             let publication = try NetworkIntent.publication(
-                bindAddress: rule.host ?? "0.0.0.0",
+                bindAddress: rule.host ?? wildcardBind,
                 proto: proto,
                 publishedPort: rule.hostPort,
                 targetPort: rule.guestPort,

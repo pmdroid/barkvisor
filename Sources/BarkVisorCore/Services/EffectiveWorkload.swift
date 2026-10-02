@@ -120,13 +120,20 @@ public enum EffectiveWorkloadPipeline {
     }
 
     /// Validate then resolve. Use for documents and create.
+    ///
+    /// `existingForwards` is the record's stored `portForwards` on an update, so
+    /// validation judges an omitted `host` as the bind it inherits rather than as
+    /// a wildcard that collides with the bind it continues.
     public static func evaluate(
         _ spec: WorkloadSpec,
         existingID: String? = nil,
+        existingForwards: [PortForwardRule]? = nil,
         storedDocument: WorkloadSpec? = nil,
         host: WorkloadSpecResolver.HostCapabilities = .current,
     ) throws -> EffectiveWorkload {
-        try WorkloadSpecProjector.validate(spec, existingID: existingID)
+        try WorkloadSpecProjector.validate(
+            spec, existingID: existingID, existingForwards: existingForwards,
+        )
         // validate() already applied current-host overlay checks; resolve uses platform.
         var effective = try resolve(spec, host: host.platform)
         effective.storedDocument = storedDocument
@@ -144,7 +151,12 @@ public enum EffectiveWorkloadPipeline {
                 base: WorkloadSpecProjector.fromVM(existing),
                 overlay: document,
             )
-            return try evaluate(merged, existingID: existing.id, host: host)
+            return try evaluate(
+                merged,
+                existingID: existing.id,
+                existingForwards: existing.decodedPortForwards,
+                host: host,
+            )
         }
         let spec = try WorkloadSpecDocument.decode(document)
         return try evaluate(spec, host: host)
@@ -186,11 +198,7 @@ public enum EffectiveWorkloadPipeline {
         if let iso = isoId, !iso.isEmpty {
             disks.append(WorkloadDisk(role: "cdrom", imageId: iso))
         }
-        let forwards = (portForwards ?? []).map {
-            WorkloadPortForward(
-                hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol, host: $0.host,
-            )
-        }
+        let forwards = (portForwards ?? []).map(WorkloadPortForward.init)
         let network = WorkloadNetwork(
             mode: networkId == nil ? NetworkMode.nat.rawValue : nil,
             networkId: networkId,
@@ -251,9 +259,7 @@ public enum EffectiveWorkloadPipeline {
         }
         let diskSizeGB = extras.diskSizeGB
             ?? (isoId == nil ? nil : extras.defaultISODiskSizeGB)
-        let forwards = spec.spec.networks.first?.portForwards.map {
-            PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-        }
+        let forwards = spec.spec.networks.first?.portForwards.map(PortForwardRule.init)
         let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
         let gpu = spec.spec.gpu.map { GPUPassthroughService.passthrough(from: $0) }
         let requestedID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines)

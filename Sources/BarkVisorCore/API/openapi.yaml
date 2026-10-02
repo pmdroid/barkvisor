@@ -4189,7 +4189,15 @@ components:
         host:
           type: string
           nullable: true
-          description: Bind address for this publish. Absent means every IPv4 interface.
+          description: >-
+            Bind address for this publish. Absent means every IPv4 interface. On a
+            spec update, an omitted `host` keeps the stored bind when that host port
+            carries a single stored publish, including when only `guestPort` changes.
+            When the host port is already published on more than one bind, an omitted
+            `host` is ambiguous — `guestPort` cannot say which publish the entry
+            continues, because the same request may change it — and the update is
+            rejected. Send `host` on each entry to say which bind it continues, or
+            `0.0.0.0` to publish on every IPv4 interface.
 
     USBDevice:
       type: object

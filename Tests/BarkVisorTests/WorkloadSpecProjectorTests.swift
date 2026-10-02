@@ -40,6 +40,14 @@ struct WorkloadSpecProjectorTests {
         )
     }
 
+    /// Same fixture as `makeVM()` plus an explicit bind address, so the
+    /// `host` column is exercised by the round-trip assertions.
+    private func makeBoundVM() -> VM {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"}]"#
+        return vm
+    }
+
     @Test func `fromVM maps every column without host-only required fields`() {
         let spec = WorkloadSpecProjector.fromVM(makeVM())
         #expect(spec.apiVersion == WorkloadSpec.currentAPIVersion)
@@ -95,12 +103,297 @@ struct WorkloadSpecProjectorTests {
         #expect(vm.macAddress == "52:54:00:12:34:56")
         #expect(vm.decodedSharedPaths == ["/Users/test/share"])
         #expect(vm.decodedPortForwards.first?.guestPort == 80)
+        #expect(vm.decodedPortForwards.first?.host == nil)
         #expect(vm.decodedUSBDevices.first?.productId == "0x5678")
         // Host-only columns preserved
         #expect(vm.state == "running")
         #expect(vm.pendingChanges)
         #expect(vm.autoCreated == false)
         #expect(vm.specGeneration == 3)
+    }
+
+    @Test func `round trip apply keeps an explicit bind address`() throws {
+        var vm = makeBoundVM()
+        #expect(vm.decodedPortForwards.first?.host == "127.0.0.1")
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        #expect(spec.spec.networks.first?.portForwards.first?.host == "127.0.0.1")
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.first?.host == "127.0.0.1")
+        // GET reads the bind back out of the column.
+        #expect(WorkloadSpecProjector.fromVM(vm).spec.networks.first?.portForwards.first?.host == "127.0.0.1")
+    }
+
+    @Test func `apply writes an explicit bind and an interface name`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                mac: "52:54:00:12:34:56",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                    WorkloadPortForward(hostPort: 8_081, guestPort: 80, proto: "tcp", host: "10.0.0.5"),
+                ],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    @Test func `apply does not broaden a bind when the spec omits host`() throws {
+        var vm = makeBoundVM()
+        // PATCH-shaped overlay: the same forward, no `host` key.
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp")],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+    }
+
+    /// A publish is identified by where it is published, not where it lands, so
+    /// changing guestPort continues the same publication and keeps its bind.
+    @Test func `apply keeps the bind when only guestPort changes`() throws {
+        var vm = makeBoundVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 81, proto: "tcp")],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1"])
+        #expect(vm.decodedPortForwards.first?.guestPort == 81)
+    }
+
+    /// One host port already published on several binds: an omitted `host` has
+    /// no single right answer, so it must be rejected rather than guessed.
+    @Test func `apply rejects an ambiguous omitted bind`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":8080,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 90, proto: "tcp")],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.errorDescription?.contains("Send host on each entry") == true)
+        // The stored binds are untouched.
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    /// The exact-repeat case stays unambiguous even with two binds on the port:
+    /// each rule continues the one publication it repeats.
+    /// Distinct stored guest ports do not make the omission resolvable either:
+    /// the same request could be swapping them rather than repeating them, and
+    /// only an explicit `host` says which bind each entry continues.
+    @Test func `apply rejects omitted binds when the stored guest ports differ`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":8080,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    /// The reviewer's case: stored `127.0.0.1:8080→80` and `10.0.0.5:8080→81`,
+    /// and a lone `8080→81` entry with `host` omitted. It can mean "retarget the
+    /// loopback publish and drop the other" or "keep 10.0.0.5 and drop
+    /// loopback". Resolving it to 10.0.0.5 would silently move intent off
+    /// loopback, so it has to be rejected.
+    @Test func `apply rejects an omitted bind matching another publication's guest port`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":81,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 81, proto: "tcp")],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    /// Swapping the guest ports of two omitted entries is a retarget, not a
+    /// reordering, and must not be silently applied as one.
+    @Test func `apply rejects a guest port swap that omits both binds`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":81,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 81, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(error?.code == "bad_request")
+        // The retarget is not applied: the stored guest ports stay as they were.
+        #expect(vm.decodedPortForwards.map(\.guestPort) == [80, 81])
+    }
+
+    /// Two valid forwards can share proto + hostPort + guestPort while binding
+    /// different addresses, because disjoint binds do not overlap. `guestPort`
+    /// then identifies neither, so an omitted `host` must not pick one.
+    @Test func `apply rejects an omitted bind when the guest port matches two publications`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        // One entry omitting host, unchanged in every other respect.
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp")],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(error?.code == "bad_request")
+        #expect(error?.errorDescription?.contains("Send host on each entry") == true)
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    /// The same collision with both entries omitted must not collapse onto one
+    /// bind and come back as a false `port_in_use`.
+    @Test func `apply rejects an unchanged payload that omits two same-guestPort binds`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp"),
+                ],
+            ),
+        ]
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        // A clear ambiguity, not `port_in_use` from two rules collapsed onto
+        // the same bind.
+        #expect(error?.code == "bad_request")
+        #expect(error?.code != "port_in_use")
+        #expect(vm.decodedPortForwards.map(\.host) == ["127.0.0.1", "10.0.0.5"])
+    }
+
+    /// Naming the binds explicitly is the documented way out, and it round-trips.
+    @Test func `apply accepts explicit binds when the guest port matches two publications`() throws {
+        var vm = makeVM()
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"127.0.0.1"},{"protocol":"tcp","hostPort":8080,"guestPort":80,"host":"10.0.0.5"}]"#
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "10.0.0.5"),
+                    WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                ],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        // Reordered deliberately: an explicit host always wins.
+        #expect(vm.decodedPortForwards.map(\.host) == ["10.0.0.5", "127.0.0.1"])
+    }
+
+    @Test func `apply widens a bind only when the spec asks for it`() throws {
+        var vm = makeBoundVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "0.0.0.0")],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.map(\.host) == ["0.0.0.0"])
+    }
+
+    @Test func `apply keeps the default bind for a new forward without host`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.networks = [
+            WorkloadNetwork(
+                networkId: "net-1",
+                portForwards: [WorkloadPortForward(hostPort: 9_090, guestPort: 90, proto: "tcp")],
+            ),
+        ]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.decodedPortForwards.map(\.host) == [nil])
+    }
+
+    @Test func `validate accepts one host port on two different binds`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "two-binds"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                networks: [
+                    WorkloadNetwork(
+                        mode: "nat",
+                        portForwards: [
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp", host: "10.0.0.5"),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        #expect(throws: Never.self) { try WorkloadSpecProjector.validate(spec) }
+    }
+
+    @Test func `validate still rejects overlapping binds on one host port`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "overlap"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                networks: [
+                    WorkloadNetwork(
+                        mode: "nat",
+                        portForwards: [
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp", host: "127.0.0.1"),
+                            WorkloadPortForward(hostPort: 8_080, guestPort: 8_080, proto: "tcp"),
+                        ],
+                    ),
+                ],
+            ),
+        )
+        let error = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+        #expect(error?.code == "port_in_use")
     }
 
     @Test func `status uses closed state enum`() {
