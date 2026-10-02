@@ -155,8 +155,8 @@ public enum BlockDeviceService {
     ) -> String? {
         let node = URL(fileURLWithPath: path).resolvingSymlinksInPath().lastPathComponent
         guard !node.isEmpty else { return nil }
-        let whole = wholeDiskName(from: node)
-        if let root = rootDiskName(from: mounts), whole == root {
+        let whole = wholeDeviceName(from: node, root: root, fileManager: fileManager)
+        if let root = rootDiskName(from: mounts, root: root, fileManager: fileManager), whole == root {
             return "Host root disk"
         }
         guard let zpoolStatus else { return "Cannot verify host storage use" }
@@ -165,19 +165,19 @@ public enum BlockDeviceService {
         if used.contains(node) {
             return "Device is mounted on the host"
         }
-        if used.contains(where: { wholeDiskName(from: $0) == whole }) {
+        if used.contains(where: { wholeDeviceName(from: $0, root: root, fileManager: fileManager) == whole }) {
             return "Device is in use by the host"
         }
         do {
             let dependencies = try deviceDependencies(used, root: root, fileManager: fileManager)
-            if dependencies.contains(where: { wholeDiskName(from: $0) == whole }) {
+            if dependencies.contains(where: { wholeDeviceName(from: $0, root: root, fileManager: fileManager) == whole }) {
                 return "Device is in use by the host"
             }
-            let dir = sysfsDirectory(node: whole, root: root)
+            let dir = sysfsDirectory(node: whole, root: root, fileManager: fileManager)
             if fileManager.fileExists(atPath: dir.path) {
                 var members = [dir]
                 let children = try fileManager.contentsOfDirectory(atPath: dir.path)
-                members += children.filter { $0 != whole && wholeDiskName(from: $0) == whole }
+                members += children.filter { $0 != whole && wholeDeviceName(from: $0, root: root, fileManager: fileManager) == whole }
                     .map { dir.appendingPathComponent($0) }
                 for member in members {
                     let holders = member.appendingPathComponent("holders")
@@ -246,8 +246,13 @@ public enum BlockDeviceService {
         return output
     }
 
-    private static func sysfsDirectory(node: String, root: URL) -> URL {
-        let whole = wholeDiskName(from: node)
+    private static func wholeDeviceName(from node: String, root: URL, fileManager: FileManager) -> String {
+        if fileManager.fileExists(atPath: root.appendingPathComponent(node).path) { return node }
+        return wholeDiskName(from: node)
+    }
+
+    private static func sysfsDirectory(node: String, root: URL, fileManager: FileManager) -> URL {
+        let whole = wholeDeviceName(from: node, root: root, fileManager: fileManager)
         let dir = root.appendingPathComponent(whole)
         return node == whole ? dir : dir.appendingPathComponent(node)
     }
@@ -261,7 +266,7 @@ public enum BlockDeviceService {
         var pending = Array(names)
         while let node = pending.popLast() {
             guard seen.insert(node).inserted else { continue }
-            let dir = sysfsDirectory(node: node, root: root)
+            let dir = sysfsDirectory(node: node, root: root, fileManager: fileManager)
             guard fileManager.fileExists(atPath: dir.path) else {
                 let mapper = try fileManager.contentsOfDirectory(atPath: root.path).first {
                     node.hasPrefix("mapper/") && $0.hasPrefix("dm-")
@@ -272,7 +277,7 @@ public enum BlockDeviceService {
                 pending.append(mapper)
                 continue
             }
-            let whole = wholeDiskName(from: node)
+            let whole = wholeDeviceName(from: node, root: root, fileManager: fileManager)
             if whole != node { pending.append(whole) }
             let backingDevices = dir.appendingPathComponent("slaves")
             if whole == node {
@@ -321,14 +326,21 @@ public enum BlockDeviceService {
         return skipped.contains { name == $0 || name.hasPrefix($0) }
     }
 
-    public static func rootDiskName(from mounts: String) -> String? {
+    public static func rootDiskName(
+        from mounts: String,
+        root: URL = sysBlockRoot,
+        fileManager: FileManager = .default,
+    ) -> String? {
         for line in mounts.split(separator: "\n", omittingEmptySubsequences: true) {
             let parts = line.split(whereSeparator: \.isWhitespace)
             guard parts.count >= 2 else { continue }
             guard parts[1] == "/" else { continue }
             let source = String(parts[0])
             guard source.hasPrefix("/dev/") else { continue }
-            return wholeDiskName(from: URL(fileURLWithPath: source).resolvingSymlinksInPath().lastPathComponent)
+            return wholeDeviceName(
+                from: URL(fileURLWithPath: source).resolvingSymlinksInPath().lastPathComponent,
+                root: root, fileManager: fileManager,
+            )
         }
         return nil
     }
