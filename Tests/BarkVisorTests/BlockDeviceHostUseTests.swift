@@ -215,6 +215,35 @@ struct BlockDeviceHostUseTests {
         }
     }
 
+    @Test func `ordinary proc mount targets preserve unused disks`() throws {
+        try withDevices(["sda", "sdb"]) { root in
+            let mounts = """
+            /dev/sda / ext4 rw 0 0
+            devpts /dev/pts devpts rw 0 0
+            tmpfs /dev/shm tmpfs rw 0 0
+            tmpfs /dev tmpfs rw 0 0
+            """
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: mounts)
+            #expect(devices.first { $0.name == "sda" }?.attachable == false)
+            #expect(devices.first { $0.name == "sdb" }?.attachable == true)
+        }
+    }
+
+    @Test func `mounted loop and optical devices preserve unused physical disks`() throws {
+        #expect(BlockDeviceService.wholeDiskName(from: "loop0") == "loop0")
+        #expect(BlockDeviceService.wholeDiskName(from: "sr0") == "sr0")
+        try withDevices(["sda", "sdb", "loop0", "sr0"]) { root in
+            let mounts = """
+            /dev/sda / ext4 rw 0 0
+            /dev/loop0 /snap/example squashfs ro 0 0
+            /dev/sr0 /media/iso iso9660 ro 0 0
+            """
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: mounts)
+            #expect(devices.first { $0.name == "sda" }?.attachable == false)
+            #expect(devices.first { $0.name == "sdb" }?.attachable == true)
+        }
+    }
+
     private func withDevices(_ names: [String], body: (URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("block-usage-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
