@@ -584,6 +584,9 @@ public enum TemplateDeployService {
                     db: db,
                 )
                 let localImage = try await waitUntilImageReady(imageId: imageId, db: db)
+                // The marker stays until the clone reaches a terminal state; `VMProvision`
+                // clears it. Clearing it here would leave a crash during the clone with a
+                // half-written disk and no resume marker at all.
                 _ = try await createViaLifecycle(
                     options: payload.options,
                     template: payload.template,
@@ -592,7 +595,6 @@ public enum TemplateDeployService {
                     backgroundTasks: backgroundTasks,
                     db: db,
                 )
-                try await clearPending(vmID: vmID, db: db)
                 return nil
             } catch {
                 await failPending(
@@ -642,19 +644,24 @@ public enum TemplateDeployService {
     }
 
     private static func failPending(vmID: String, message: String, db: DatabasePool) async {
-        let now = iso8601.string(from: Date())
-        try? await db.write { db in
-            try db.execute(
-                sql: "UPDATE vms SET state = 'error', description = ?, updatedAt = ? WHERE id = ?",
-                arguments: [message, now, vmID],
-            )
-            try PendingDeploy.filter(PendingDeploy.Columns.vmId == vmID).deleteAll(db)
-        }
+        await settlePending(vmID: vmID, failure: message, db: db)
     }
 
-    private static func clearPending(vmID: String, db: DatabasePool) async throws {
-        try await db.write { db in
+    /// Closes a template deploy's resume marker once the work it guards reached a terminal state.
+    ///
+    /// The row is the resume handle for the whole deploy, including the cloud-image clone, so it
+    /// is cleared only when a durable `vm.provision` finishes (or fails) and never while a clone
+    /// is still outstanding. `failure` marks the workload `error` with that message first.
+    public static func settlePending(vmID: String, failure: String?, db: DatabasePool) async {
+        let now = iso8601.string(from: Date())
+        try? await db.write { db in
             try PendingDeploy.filter(PendingDeploy.Columns.vmId == vmID).deleteAll(db)
+            if let failure {
+                try db.execute(
+                    sql: "UPDATE vms SET state = 'error', description = ?, updatedAt = ? WHERE id = ?",
+                    arguments: [failure, now, vmID],
+                )
+            }
         }
     }
 

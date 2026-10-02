@@ -9,11 +9,23 @@ extension VMLifecycleService {
     /// by an operation that will either resume or fail, so neither a replay nor a retry is a
     /// conflicting second delete. Without a record, `deleting` still means a delete is in
     /// flight under a key this caller does not own.
-    static func canDelete(_ vm: VM, hasResumableDelete: Bool = false) -> Bool {
+    ///
+    /// `hasResumableProvision` is the same idea for `provisioning`: a durable `vm.provision`
+    /// record owns that row and will either finish the clone or fail it, so the delete is not
+    /// racing an unowned background task. A successful recovery leaves the row `stopped` and a
+    /// failed one leaves it `error` — both already admitted above — so this only covers the
+    /// window where the clone is still outstanding or its own row reset could not land.
+    static func canDelete(
+        _ vm: VM,
+        hasResumableDelete: Bool = false,
+        hasResumableProvision: Bool = false,
+    ) -> Bool {
         switch vm.state {
         case "stopped", "error":
             return true
-        case "provisioning", "starting":
+        case "provisioning":
+            return vm.isApplication || hasResumableProvision
+        case "starting":
             return vm.isApplication
         case "deleting":
             return hasResumableDelete
@@ -22,10 +34,18 @@ extension VMLifecycleService {
         }
     }
 
-    static func markVMAsDeleting(id: String, db: DatabasePool) async throws {
+    static func markVMAsDeleting(
+        id: String,
+        db: DatabasePool,
+        hasResumableProvision: Bool = false,
+    ) async throws {
         let marked = try await db.write { db -> Bool in
             guard let current = try VM.fetchOne(db, key: id),
-                  canDelete(current, hasResumableDelete: true)
+                  canDelete(
+                      current,
+                      hasResumableDelete: true,
+                      hasResumableProvision: hasResumableProvision,
+                  )
             else {
                 return false
             }

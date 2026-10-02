@@ -134,7 +134,22 @@ public actor VMProcessMonitor {
         return true
     }
 
-    private func resetStaleVMStates(excluding reconnectedIDs: Set<String>) async {
+    /// Resets rows a dead process left `running`/`starting`/`stopping` back to `stopped`.
+    ///
+    /// `provisioning` and `deleting` are deliberately **not** touched. Those states are owned by
+    /// durable operations — `vm.provision` and `vm.delete` — which `WorkloadOperationRecovery`
+    /// resumes on startup. A template deploy also parks its placeholder in `provisioning` while
+    /// the image is still downloading, before any clone record exists. Resetting either here would
+    /// race that recovery and can strand a workload: `provisioning` reset to `stopped` would
+    /// advertise a half-written disk as startable, and `deleting` reset to `stopped` would
+    /// resurrect a row mid-teardown.
+    ///
+    /// The startup order therefore only has to hold for the states this method *does* own, and it
+    /// does: `VaporServer` runs `WorkloadOperationRecovery.resume(db:)` after
+    /// `reconnectOrCleanup()` — which only ever touches the states listed above — and before
+    /// `ApplicationLifecycleService.reconcile` and `WorkloadAutostart.startEligible`, the two
+    /// places that act on a recovered state.
+    func resetStaleVMStates(excluding reconnectedIDs: Set<String>) async {
         do {
             try await dbPool.write { db in
                 let staleVMs = try VM.filter(["running", "starting", "stopping"].contains(Column("state")))

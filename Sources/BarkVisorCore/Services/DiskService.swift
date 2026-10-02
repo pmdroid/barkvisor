@@ -145,6 +145,23 @@ public enum DiskService {
         try WorkloadPrivilegeDrop.handoffWritable(destPath)
     }
 
+    /// Whether a destination already holds a readable image. Used to decide if an interrupted
+    /// clone can be trusted as-is: a truncated or half-written qcow2 fails the header read, while
+    /// a complete clone reports a positive virtual size.
+    public static func verifyClonedImage(path: String) -> Bool {
+        guard let qemuImg = try? resolveQEMUImg() else { return false }
+        let result = try? PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["info", "--output=json", "-U", path],
+            timeout: 60,
+        )
+        guard let result, result.succeeded,
+              let json = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
+              let virtualSize = jsonInt64(json["virtual-size"])
+        else { return false }
+        return virtualSize > 0
+    }
+
     static func verifyGuestPartitionTable(path: String, qemuImg: URL) throws {
         let result = try PlatformProcess.run(
             executable: qemuImg,
