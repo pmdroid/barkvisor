@@ -106,7 +106,7 @@ The package grants the VM user access through the `kvm` and, where available, `d
 
 An API-only Device runs workloads but does not serve the web console. Manage it through another paired Device.
 
-Disable the console services before enabling the API-only service. For split packages:
+Enable only one service mode. Disable the console services before enabling the API-only service. For split packages:
 
 ```sh
 sudo systemctl disable --now barkvisor-server.service barkvisor-daemon.service
