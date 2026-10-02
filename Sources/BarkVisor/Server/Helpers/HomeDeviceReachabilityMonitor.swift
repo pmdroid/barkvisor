@@ -44,6 +44,10 @@ actor HomeDeviceReachabilityMonitor {
         return report
     }
 
+    func inflightWaiterCount() -> Int {
+        inflight?.waiterCount() ?? 0
+    }
+
     func replace(_ devices: [HomeDeviceHealthSnapshot]) {
         statusByHostId = Dictionary(
             uniqueKeysWithValues: devices.compactMap { device in
@@ -76,7 +80,7 @@ actor HomeDeviceReachabilityMonitor {
 
 private final class ReportBridge: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<HomeDeviceHealthReport, Never>?
+    private var waiters: [CheckedContinuation<HomeDeviceHealthReport, Never>] = []
     private var report: HomeDeviceHealthReport?
 
     func wait() async -> HomeDeviceHealthReport {
@@ -87,17 +91,25 @@ private final class ReportBridge: @unchecked Sendable {
                 continuation.resume(returning: report)
                 return
             }
-            self.continuation = continuation
+            waiters.append(continuation)
             lock.unlock()
         }
+    }
+
+    func waiterCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return waiters.count
     }
 
     func succeed(_ report: HomeDeviceHealthReport) {
         lock.lock()
         self.report = report
-        let continuation = self.continuation
-        self.continuation = nil
+        let pending = waiters
+        waiters.removeAll()
         lock.unlock()
-        continuation?.resume(returning: report)
+        for waiter in pending {
+            waiter.resume(returning: report)
+        }
     }
 }
