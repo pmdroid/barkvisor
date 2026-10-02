@@ -186,6 +186,24 @@ struct BlockDeviceHostUseTests {
         #expect(status == nil)
     }
 
+    @Test func `sd disk names ending in p keep their partition holders`() throws {
+        #expect(BlockDeviceService.wholeDiskName(from: "sdp1") == "sdp")
+        try withDevices(["sdp", "sdb", "dm-0"]) { root in
+            try addDirectory("sdp/sdp1/holders/dm-0", root: root)
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: "/dev/dm-0 /data ext4 rw 0 0\n")
+            #expect(devices.first { $0.name == "sdp" }?.attachable == false)
+            #expect(devices.first { $0.name == "sdb" }?.attachable == true)
+        }
+    }
+
+    @Test func `unresolved imported ZFS member protects all candidate disks`() throws {
+        try withDevices(["sda", "sdb"]) { root in
+            let status = "pool: tank\n/dev/disk/by-id/missing-fixture-\(UUID().uuidString) ONLINE 0 0 0\n"
+            let devices = BlockDeviceService.listSysfsDevices(root: root, zpoolStatus: status)
+            #expect(devices.map(\.attachable) == [false, false])
+        }
+    }
+
     private func withDevices(_ names: [String], body: (URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("block-usage-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
