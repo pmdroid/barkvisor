@@ -190,6 +190,7 @@ final class ApplicationLifecycleServiceTests {
         let dataDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bv-app-down-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dataDir) }
+        let db = try makeAppDatabase(in: dataDir)
         let id = "app-delete"
         let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -205,9 +206,157 @@ final class ApplicationLifecycleServiceTests {
             withIntermediateDirectories: true,
         )
         try Data("volume".utf8).write(to: marker)
-        await ApplicationLifecycleService.down(vm: applicationVM(id: id), dataDir: dataDir)
+        await #expect(throws: BarkVisorError.self) {
+            try await ApplicationLifecycleService.down(
+                vm: applicationVM(id: id), db: db, dataDir: dataDir,
+            )
+        }
         #expect(FileManager.default.fileExists(atPath: dir.path))
         #expect(FileManager.default.fileExists(atPath: marker.path))
+        let teardown = try await teardownRecord(id: id, db: db)
+        #expect(teardown?.status == WorkloadOperationStatus.failed)
+        #expect(teardown?.recoveryOutcome == ApplicationReadiness.outcomeCleanupIncomplete)
+        #expect(teardown?.isRetryable == true)
+    }
+
+    @Test func `delete keeps the app row until compose down succeeds`() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-app-row-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let db = try makeAppDatabase(in: dataDir)
+        let id = "app-teardown-row"
+        let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "services: {}\n".write(
+            to: dir.appendingPathComponent("compose.yml"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        let marker = dir.appendingPathComponent("volumes").appendingPathComponent("keep.txt")
+        try FileManager.default.createDirectory(
+            at: marker.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("volume".utf8).write(to: marker)
+
+        var vm = applicationVM(id: id)
+        vm.state = "stopped"
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":58432,"guestPort":80}]"#
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let previous = ComposeRuntime.runner
+        defer { ComposeRuntime.runner = previous }
+        let manager = VMManager(dbPool: db)
+        let tasks = BackgroundTaskManager()
+        defer { Task { await tasks.cancelAll() } }
+
+        ComposeRuntime.runner = FailingComposeRunner()
+        let failed = try await VMLifecycleService.deleteVM(
+            id: id, keepDisk: false, vmManager: manager, backgroundTasks: tasks,
+            db: db, dataDir: dataDir, operationID: "teardown-attempt-1",
+        )
+        #expect(await settledStatus(tasks, failed.taskID) == .failed)
+
+        #expect(try await db.read { db in try VM.fetchOne(db, key: id) } != nil)
+        #expect(FileManager.default.fileExists(atPath: dir.path))
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        let recorded = try await teardownRecord(id: id, db: db)
+        #expect(recorded?.status == WorkloadOperationStatus.failed)
+        #expect(recorded?.recoveryOutcome == ApplicationReadiness.outcomeCleanupIncomplete)
+        #expect(recorded?.isRetryable == true)
+        let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.contains { $0.hostPort == 58_432 && $0.workloadId == id })
+        let rule = PortForwardRule(protocol: "tcp", hostPort: 58_432, guestPort: 80)
+        await #expect(throws: BarkVisorError.self) {
+            try await PortRegistry.assertAvailable([rule], db: db)
+        }
+        try await PortRegistry.assertAvailable([rule], excludingVM: id, db: db)
+
+        let compose = TeardownComposeStub()
+        ComposeRuntime.runner = compose
+        let retried = try await VMLifecycleService.deleteVM(
+            id: id, keepDisk: false, vmManager: manager, backgroundTasks: tasks,
+            db: db, dataDir: dataDir, operationID: "teardown-attempt-2",
+        )
+        #expect(await settledStatus(tasks, retried.taskID) == .completed)
+        #expect(compose.down == 1)
+        #expect(try await db.read { db in try VM.fetchOne(db, key: id) } == nil)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        #expect(try await teardownRecord(id: id, db: db)?.status == WorkloadOperationStatus.completed)
+
+        // Replaying the finished key must not run compose down a second time.
+        try await ApplicationLifecycleService.down(
+            vm: seed, db: db, dataDir: dataDir, operationID: "teardown-attempt-2",
+        )
+        #expect(compose.down == 1)
+    }
+
+    @Test func `delete keeps the app row when containers stay running after stop`() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-app-stuck-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let db = try makeAppDatabase(in: dataDir)
+        let id = "app-teardown-stuck"
+        let dir = ComposeRuntime.projectDirectory(id: id, dataDir: dataDir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "services: {}\n".write(
+            to: dir.appendingPathComponent("compose.yml"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        let marker = dir.appendingPathComponent("volumes").appendingPathComponent("keep.txt")
+        try FileManager.default.createDirectory(
+            at: marker.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try Data("volume".utf8).write(to: marker)
+
+        var vm = applicationVM(id: id)
+        vm.state = "stopped"
+        vm.portForwards = #"[{"protocol":"tcp","hostPort":58433,"guestPort":80}]"#
+        let seed = vm
+        try await db.write { db in try seed.insert(db) }
+
+        let previous = ComposeRuntime.runner
+        defer { ComposeRuntime.runner = previous }
+        // `compose stop` succeeds, but `ps` still reports the container as running.
+        let compose = TeardownComposeStub(keepsRunningAfterStop: true)
+        ComposeRuntime.runner = compose
+        let tasks = BackgroundTaskManager()
+        defer { Task { await tasks.cancelAll() } }
+        let result = try await VMLifecycleService.deleteVM(
+            id: id, keepDisk: false, vmManager: VMManager(dbPool: db),
+            backgroundTasks: tasks, db: db, dataDir: dataDir, operationID: "stuck-attempt-1",
+        )
+        #expect(await settledStatus(tasks, result.taskID) == .failed)
+
+        // The row and its port claim must survive: the containers may still hold 58433.
+        #expect(compose.stop > 0)
+        #expect(compose.down == 0)
+        #expect(try await db.read { db in try VM.fetchOne(db, key: id) } != nil)
+        #expect(FileManager.default.fileExists(atPath: dir.path))
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        let claims = try await db.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.contains { $0.hostPort == 58_433 && $0.workloadId == id })
+        let recorded = try await teardownRecord(id: id, db: db)
+        #expect(recorded?.status == WorkloadOperationStatus.failed)
+        #expect(recorded?.recoveryOutcome == ApplicationReadiness.outcomeCleanupIncomplete)
+        #expect(recorded?.isRetryable == true)
+
+        // Once the container really is gone, the retry finishes the teardown and the row.
+        compose.keepsRunningAfterStop = false
+        let retried = try await VMLifecycleService.deleteVM(
+            id: id, keepDisk: false, vmManager: VMManager(dbPool: db),
+            backgroundTasks: tasks, db: db, dataDir: dataDir, operationID: "stuck-attempt-2",
+        )
+        #expect(await settledStatus(tasks, retried.taskID) == .completed)
+        #expect(compose.down == 1)
+        #expect(try await db.read { db in try VM.fetchOne(db, key: id) } == nil)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
     @Test func `reconcile writes docker state while the daemon stays up`() async throws {
@@ -813,6 +962,36 @@ private final class DeleteDuringPullComposeRunner: ComposeCommandRunning, @unche
         }
         return CommandResult(exitCode: 0, stdout: Data(), stderr: Data())
     }
+}
+
+private func makeAppDatabase(in dataDir: URL) throws -> DatabasePool {
+    try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+    let pool = try DatabasePool(path: dataDir.appendingPathComponent("test.sqlite").path)
+    try AppDatabase.makeMigrator().migrate(pool)
+    return pool
+}
+
+private func teardownRecord(id: String, db: DatabasePool) async throws -> WorkloadOperationRecord? {
+    try await db.read { db in
+        try WorkloadOperationRecord
+            .filter(Column("workloadID") == id && Column("kind") == WorkloadOperationKind.appTeardown)
+            .order(Column("createdAt").desc)
+            .fetchOne(db)
+    }
+}
+
+private func settledStatus(
+    _ tasks: BackgroundTaskManager,
+    _ taskID: String,
+) async -> BackgroundTaskManager.TaskStatus? {
+    for _ in 0 ..< 300 {
+        if let event = await tasks.status(taskID),
+           event.status == .completed || event.status == .failed || event.status == .cancelled {
+            return event.status
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return nil
 }
 
 private struct FailingComposeRunner: ComposeCommandRunning {

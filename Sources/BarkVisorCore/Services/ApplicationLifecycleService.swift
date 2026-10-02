@@ -348,34 +348,102 @@ public enum ApplicationLifecycleService {
         return try ComposeRuntime.followLogs(id: vm.id, project: project, tail: tail, dataDir: dataDir)
     }
 
+    /// Tears an application down through a durable `appTeardown` operation so a compose
+    /// failure keeps the row — and its port claims — alive and retryable.
     public static func down(
         vm: VM,
-        dataDir: URL = Config.dataDir,
+        db: DatabasePool,
+        dataDir: URL,
         operations: WorkloadOperationCoordinator? = nil,
         operationID: String? = nil,
         holdingSlot: Bool = false,
-    ) async {
+    ) async throws {
+        let resolved = WorkloadOperationCoordinator.makeOperationID(
+            supplied: operationID, action: "down", workloadID: vm.id,
+        )
+        let teardown: @Sendable () async throws -> Void = {
+            try await teardownDurably(
+                vm: vm,
+                db: db,
+                dataDir: dataDir,
+                idempotencyKey: resolved,
+            )
+        }
         if holdingSlot {
-            downLocked(vm: vm, dataDir: dataDir)
+            try await teardown()
         } else {
             let operations = operations ?? WorkloadOperationCoordinator()
-            let operationID = WorkloadOperationCoordinator.makeOperationID(
-                supplied: operationID, action: "down", workloadID: vm.id,
-            )
             let generation = vm.specGeneration
             let state = vm.state
-            try? await operations.perform(
+            try await operations.perform(
                 workloadID: vm.id,
-                operationID: operationID,
+                operationID: resolved,
                 kind: .delete,
                 load: {
                     LeaseObservation(generation: generation, state: state, exists: true)
                 },
             ) { _ in
-                downLocked(vm: vm, dataDir: dataDir)
+                try await teardown()
             }
         }
         await metricsCollector?.stop(vmID: vm.id)
+    }
+
+    private static func teardownDurably(
+        vm: VM,
+        db: DatabasePool,
+        dataDir: URL,
+        idempotencyKey: String?,
+    ) async throws {
+        if let open = try await WorkloadOperationStore.openOperation(
+            db: db, workloadID: vm.id, kind: WorkloadOperationKind.appTeardown,
+        ) {
+            try await runTeardown(record: open, superseded: true, vm: vm, db: db, dataDir: dataDir)
+            return
+        }
+        let acceptance = try await WorkloadOperationStore.accept(
+            db: db,
+            idempotencyKey: idempotencyKey,
+            workloadID: vm.id,
+            kind: WorkloadOperationKind.appTeardown,
+            requestedGeneration: vm.specGeneration,
+            projectPath: ComposeRuntime.projectDirectory(id: vm.id, dataDir: dataDir).path,
+        )
+        if !acceptance.started {
+            guard acceptance.record.status != WorkloadOperationStatus.completed else {
+                Log.vm.info("Application \(vm.id) teardown already completed", vm: vm.id)
+                return
+            }
+            try await runTeardown(
+                record: acceptance.record, superseded: true, vm: vm, db: db, dataDir: dataDir,
+            )
+            return
+        }
+        try await runTeardown(
+            record: acceptance.record, superseded: false, vm: vm, db: db, dataDir: dataDir,
+        )
+    }
+
+    /// Runs the teardown phases under `record`. A record that is not a fresh acceptance
+    /// gets a replacement attempt first, so a stale in-memory callback from an earlier
+    /// request cannot finish the operation out from under this one.
+    private static func runTeardown(
+        record: WorkloadOperationRecord,
+        superseded: Bool,
+        vm: VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
+        let attempt = superseded
+            ? try await WorkloadOperationStore.beginReplacement(db: db, operationID: record.id)
+            : record
+        try await ApplicationDeployment.continueTeardown(
+            record: attempt,
+            vm: vm,
+            db: db,
+            dataDir: dataDir,
+            finishCleanup: true,
+        )
     }
 
     public static func refreshState(vm: inout VM, db: DatabasePool, dataDir: URL = Config.dataDir) async throws {
@@ -742,18 +810,6 @@ extension ApplicationLifecycleService {
             vm: &vm, namedVolumes: named, db: db, dataDir: dataDir, generation: lease.generation,
         )
         try await refreshCatalogDigest(vm: &vm, db: db, dataDir: dataDir, generation: lease.generation)
-    }
-
-    private static func downLocked(vm: VM, dataDir: URL) {
-        let project = projectName(vm)
-        do {
-            try ComposeRuntime.down(id: vm.id, project: project, dataDir: dataDir)
-            ComposeRuntime.removeProject(id: vm.id, dataDir: dataDir)
-        } catch {
-            let message = (error as? BarkVisorError)?.errorDescription ?? error.localizedDescription
-            Log.vm.warning("Application \(vm.id) compose down failed: \(message)", vm: vm.id)
-            return
-        }
     }
 
     private static func recordLifecycleError(

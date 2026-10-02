@@ -359,12 +359,16 @@ final class VMLifecycleRecoveryTests {
         }
         try await Task.sleep(nanoseconds: 50_000_000)
 
+        let compose = TeardownComposeStub()
+        ComposeRuntime.runner = compose
+        defer { ComposeTestIsolation.installFailFast() }
         let result = try await VMLifecycleService.deleteVM(
             id: vm.id,
             keepDisk: false,
             vmManager: VMManager(dbPool: dbPool),
             backgroundTasks: tasks,
             db: dbPool,
+            dataDir: tmpDir,
         )
         #expect(result.vmName == vm.name)
         let create = await tasks.status(ApplicationLifecycleService.taskID(forCreate: vm.id))
@@ -393,6 +397,7 @@ final class VMLifecycleRecoveryTests {
                 vmManager: VMManager(dbPool: self.dbPool),
                 backgroundTasks: BackgroundTaskManager(),
                 db: self.dbPool,
+                dataDir: self.tmpDir,
             )
         }
         guard case let .conflict(message) = error else {
