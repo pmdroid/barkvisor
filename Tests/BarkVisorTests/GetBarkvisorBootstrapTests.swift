@@ -48,7 +48,9 @@ struct GetBarkvisorBootstrapTests {
         for needle in [
             "uname -m",
             "dpkg -i",
-            "systemctl enable --now barkvisor-daemon.service barkvisor-server.service",
+            "barkvisor-daemon.service",
+            "barkvisor-server.service",
+            "barkvisor.service",
             "installer -pkg",
             "-target /",
             "/api/health",
@@ -83,7 +85,7 @@ struct GetBarkvisorBootstrapTests {
         ])
         #expect(out.0 == 0, "dry-run exit \(out.0): \(out.1)")
         #expect(out.1.contains("DRY_RUN: dpkg -i"))
-        #expect(out.1.contains("systemctl enable --now barkvisor-daemon.service barkvisor-server.service"))
+        #expect(out.1.contains("services from <release-deb>"))
         #expect(out.1.contains("/api/health"))
         #expect(out.1.contains("DRY_RUN OK"))
         #expect(!out.1.contains("brew install"))
@@ -208,7 +210,7 @@ struct GetBarkvisorBootstrapTests {
         #expect(out.0 != 0, "dead health port should fail: \(out.1)")
         #expect(out.1.contains("checksum OK"))
         #expect(out.1.contains("SKIP_INSTALL: dpkg -i"))
-        #expect(out.1.contains("systemctl enable --now barkvisor-daemon.service barkvisor-server.service"))
+        #expect(out.1.contains("SKIP_INSTALL: service activation"))
         #expect(out.1.contains("did not answer"))
         #expect(out.1.contains("/api/health"))
         #expect(!out.1.contains("cluster"))
@@ -282,6 +284,76 @@ struct GetBarkvisorBootstrapTests {
         #expect(out.1.contains("release v9.9.9"))
         #expect(out.1.contains("barkvisor_9.9.9_arm64.deb"))
         #expect(out.1.contains("checksum OK"))
+    }
+
+    @Test func `legacy deb starts only combined console service`() throws {
+        let out = try installWithUnits(["barkvisor.service", "barkvisor-agent.service"])
+        #expect(out.0 == 0, "legacy install failed: \(out.1)")
+        #expect(out.1.contains("SYSTEMCTL: enable --now barkvisor.service\n"))
+        #expect(!out.1.contains("enable --now barkvisor-agent.service"))
+        #expect(!out.1.contains("enable --now barkvisor-daemon.service"))
+        #expect(out.1.contains("Open http://localhost:58888 to finish setup."))
+    }
+
+    @Test func `split deb starts daemon and server and disables combined modes`() throws {
+        let out = try installWithUnits([
+            "barkvisor.service", "barkvisor-agent.service",
+            "barkvisor-daemon.service", "barkvisor-server.service",
+        ])
+        #expect(out.0 == 0, "split install failed: \(out.1)")
+        #expect(out.1.contains("SYSTEMCTL: disable --now barkvisor.service\n"))
+        #expect(out.1.contains("SYSTEMCTL: disable --now barkvisor-agent.service\n"))
+        #expect(out.1.contains("SYSTEMCTL: enable --now barkvisor-daemon.service barkvisor-server.service\n"))
+        #expect(!out.1.contains("enable --now barkvisor.service"))
+        #expect(!out.1.contains("enable --now barkvisor-agent.service"))
+    }
+
+    @Test func `split deb selects packaged services despite stale installed combined unit`() throws {
+        let out = try installWithUnits(["barkvisor-daemon.service", "barkvisor-server.service"])
+        #expect(out.0 == 0, "split install failed: \(out.1)")
+        #expect(out.1.contains("SYSTEMCTL: enable --now barkvisor-daemon.service barkvisor-server.service\n"))
+        #expect(!out.1.contains("enable --now barkvisor.service"))
+    }
+
+    @Test func `incomplete split deb refuses to activate legacy services`() throws {
+        let out = try installWithUnits(["barkvisor.service", "barkvisor-daemon.service"])
+        #expect(out.0 != 0, "incomplete package must fail: \(out.1)")
+        #expect(!out.1.contains("SYSTEMCTL: enable --now"))
+    }
+
+    private func installWithUnits(_ units: [String]) throws -> (Int32, String) {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("bootstrap-units-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let bin = tmp.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let mocks = [
+            "dpkg-deb": "printf '%s\\n' \"$BOOTSTRAP_UNIT_FILES\"\n",
+            "dpkg": "printf 'DPKG: %s\\n' \"$*\"\n",
+            "id": "printf '0\\n'\n",
+            "systemctl": "if [ \"$1\" = cat ]; then exit 0; fi\nprintf 'SYSTEMCTL: %s\\n' \"$*\"\n",
+        ]
+        for (name, body) in mocks {
+            let file = bin.appendingPathComponent(name)
+            try Data(body.utf8).write(to: file)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        let pkg = tmp.appendingPathComponent("barkvisor_1.0.0_amd64.deb")
+        try Data("package-bytes".utf8).write(to: pkg)
+        let sha = tmp.appendingPathComponent("\(pkg.lastPathComponent).sha256")
+        try Data("\(try sha256Hex(of: pkg))  \(pkg.lastPathComponent)\n".utf8).write(to: sha)
+        return try run(args: ["--yes", "--port", "58888"], extraEnv: [
+            "PATH": "\(bin.path):\(ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")",
+            "BOOTSTRAP_UNIT_FILES": units.map { "-rw-r--r-- root/root 0 2026-01-01 00:00 ./lib/systemd/system/\($0)" }.joined(separator: "\n"),
+            "BARKVISOR_BOOTSTRAP_OS": "Linux",
+            "BARKVISOR_BOOTSTRAP_ARCH": "amd64",
+            "BARKVISOR_BOOTSTRAP_DISTRO": "debian",
+            "BARKVISOR_ASSET_URL": pkg.path,
+            "BARKVISOR_CHECKSUM_URL": sha.path,
+            "BARKVISOR_BOOTSTRAP_TMPDIR": tmp.appendingPathComponent("work").path,
+            "BARKVISOR_BOOTSTRAP_SKIP_INSTALL": "0",
+            "BARKVISOR_BOOTSTRAP_SKIP_HEALTH": "1",
+        ])
     }
 
     private func sha256Hex(of file: URL) throws -> String {
