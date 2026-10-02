@@ -443,17 +443,19 @@ struct VMController: RouteCollection {
         let keepDisk = (try? req.query.get(Bool.self, at: "keepDisk")) ?? false
 
         let operationID = Self.operationID(req, action: "delete", workloadID: id)
-        let (taskID, vmName) = try await VMLifecycleService.deleteVM(
+        let result = try await VMLifecycleService.deleteVM(
             id: id, keepDisk: keepDisk, vmManager: vmManager,
             backgroundTasks: backgroundTasks, db: req.db, dataDir: Config.dataDir,
             operationID: operationID,
         )
 
         AuditService.log(
-            action: "vm.delete", resourceType: "vm", resourceId: id, resourceName: vmName, req: req,
+            action: "vm.delete", resourceType: "vm", resourceId: id, resourceName: result.vmName, req: req,
         )
 
-        let response = try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
+        let response = try Response.json(
+            TaskAcceptedResponse(taskID: result.taskID), status: .accepted,
+        )
         response.headers.replaceOrAdd(
             name: WorkloadOperationCoordinator.operationHeaderName, value: operationID,
         )

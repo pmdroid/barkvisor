@@ -13,6 +13,35 @@ public enum WorkloadOperationKind {
     public static let appUpdate = "appUpdate"
     public static let appTeardown = "appTeardown"
     public static let vmStart = "vm.start"
+    public static let vmDelete = "vm.delete"
+}
+
+/// The request a `vm.delete` operation was accepted for (BV-06). Stored in
+/// `workload_operations.inputPayload` so a delete resumed after a crash keeps the
+/// caller's intent instead of guessing it.
+public struct WorkloadDeleteIntent: Codable, Sendable, Equatable {
+    public var keepDisk: Bool
+    public var vmName: String
+
+    public init(keepDisk: Bool, vmName: String) {
+        self.keepDisk = keepDisk
+        self.vmName = vmName
+    }
+
+    public static func encode(_ intent: WorkloadDeleteIntent) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(intent)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw BarkVisorError.internalError("Delete intent could not be encoded")
+        }
+        return json
+    }
+
+    public static func decode(_ payload: String?) -> WorkloadDeleteIntent? {
+        guard let payload, let data = payload.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WorkloadDeleteIntent.self, from: data)
+    }
 }
 
 public enum WorkloadOperationDedup {
@@ -55,6 +84,8 @@ public struct WorkloadOperationRecord: Codable, Sendable, FetchableRecord, Persi
     public var idempotencyKey: String
     public var recoveryOutcome: String?
     public var resultPayload: String?
+    /// The request this operation was accepted for. `resultPayload` stays completion output.
+    public var inputPayload: String?
     public var error: String?
     public var projectPath: String?
     public var dataRestored: Int
@@ -70,6 +101,12 @@ public struct WorkloadOperationRecord: Codable, Sendable, FetchableRecord, Persi
         status == WorkloadOperationStatus.failed || isOpen
     }
 
+    /// The delete intent persisted at acceptance, if any.
+    public var deleteIntent: WorkloadDeleteIntent? {
+        guard kind == WorkloadOperationKind.vmDelete else { return nil }
+        return WorkloadDeleteIntent.decode(inputPayload)
+    }
+
     public func taskEvent() -> BackgroundTaskManager.TaskEvent {
         let mapped: BackgroundTaskManager.TaskStatus = switch status {
         case WorkloadOperationStatus.completed:
@@ -81,9 +118,14 @@ public struct WorkloadOperationRecord: Codable, Sendable, FetchableRecord, Persi
         default:
             .running
         }
-        let taskKind = kind == WorkloadOperationKind.appUpdate
-            ? BackgroundTaskManager.TaskKind.appUpdate.rawValue
-            : kind
+        let taskKind = switch kind {
+        case WorkloadOperationKind.appUpdate:
+            BackgroundTaskManager.TaskKind.appUpdate.rawValue
+        case WorkloadOperationKind.vmDelete:
+            BackgroundTaskManager.TaskKind.vmDelete.rawValue
+        default:
+            kind
+        }
         return BackgroundTaskManager.TaskEvent(
             taskID: id,
             kind: taskKind,
@@ -118,6 +160,7 @@ public enum WorkloadOperationStore {
         kind: String,
         requestedGeneration: Int,
         projectPath: String? = nil,
+        inputPayload: String? = nil,
     ) async throws -> WorkloadOperationAcceptance {
         try await db.write { db in
             if let idempotencyKey,
@@ -154,6 +197,7 @@ public enum WorkloadOperationStore {
                 idempotencyKey: idempotencyKey ?? id,
                 recoveryOutcome: nil,
                 resultPayload: nil,
+                inputPayload: inputPayload,
                 error: nil,
                 projectPath: projectPath,
                 dataRestored: 0,
@@ -175,6 +219,19 @@ public enum WorkloadOperationStore {
     public static func fetch(db: DatabasePool, id: String) async throws -> WorkloadOperationRecord? {
         try await db.read { db in
             try WorkloadOperationRecord.fetchOne(db, key: id)
+        }
+    }
+
+    /// Looks an operation up by the idempotency key a request was accepted with. Used to find
+    /// the record a replayed `X-BarkVisor-Operation-Id` owns.
+    public static func record(
+        db: DatabasePool,
+        idempotencyKey: String,
+    ) async throws -> WorkloadOperationRecord? {
+        try await db.read { db in
+            try WorkloadOperationRecord
+                .filter(Column("idempotencyKey") == idempotencyKey)
+                .fetchOne(db)
         }
     }
 

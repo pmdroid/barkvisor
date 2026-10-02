@@ -3,11 +3,17 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+@Suite(.serialized)
 final class VMLifecycleRecoveryTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
 
-    init() throws {
+    /// The delete tests install process-global compose/docker stubs, so this suite has to hold
+    /// the same gate as the other suites that do. Without it, two suites swap each other's
+    /// runner mid-test and a teardown reads another suite's `ps` output.
+    init() async throws {
+        await ComposeSerialGate.acquire()
+        ComposeTestIsolation.installFailFast()
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         tmpDir = tmp
@@ -21,6 +27,8 @@ final class VMLifecycleRecoveryTests {
 
     deinit {
         try? FileManager.default.removeItem(at: tmpDir)
+        ComposeTestIsolation.installFailFast()
+        Task { await ComposeSerialGate.release() }
     }
 
     @Test func `handle provision failure marks VM error and removes disk file`() async throws {
@@ -346,6 +354,24 @@ final class VMLifecycleRecoveryTests {
         #expect(!VMLifecycleService.canDelete(recoveryVM(state: "provisioning")))
         #expect(!VMLifecycleService.canDelete(recoveryVM(state: "starting")))
         #expect(VMLifecycleService.canDelete(recoveryVM(state: "stopped")))
+    }
+
+    @Test func `canDelete admits a deleting workload that has a resumable delete`() {
+        // A row left `deleting` by a crash is not a conflict: the durable record is the
+        // resumption handle, and both a replay and a retry must be allowed through.
+        #expect(VMLifecycleService.canDelete(
+            recoveryApp(state: "deleting"), hasResumableDelete: true,
+        ))
+        #expect(VMLifecycleService.canDelete(
+            recoveryVM(state: "deleting"), hasResumableDelete: true,
+        ))
+        // A `deleting` row still blocks every other transition.
+        #expect(!VMLifecycleService.canDelete(
+            recoveryApp(state: "deleting"), hasResumableDelete: false,
+        ))
+        #expect(!VMLifecycleService.canDelete(
+            recoveryApp(state: "running"), hasResumableDelete: true,
+        ))
     }
 
     @Test func `deleteVM removes a provisioning application and cancels create`() async throws {

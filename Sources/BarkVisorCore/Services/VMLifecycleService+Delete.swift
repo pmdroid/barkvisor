@@ -4,12 +4,19 @@ import GRDB
 // MARK: - Delete VM Helpers
 
 extension VMLifecycleService {
-    static func canDelete(_ vm: VM) -> Bool {
+    /// `hasResumableDelete` admits a row already marked `deleting` when a durable `vm.delete`
+    /// record exists for it. That is the interrupted-delete case: the row is already claimed
+    /// by an operation that will either resume or fail, so neither a replay nor a retry is a
+    /// conflicting second delete. Without a record, `deleting` still means a delete is in
+    /// flight under a key this caller does not own.
+    static func canDelete(_ vm: VM, hasResumableDelete: Bool = false) -> Bool {
         switch vm.state {
         case "stopped", "error":
             return true
         case "provisioning", "starting":
             return vm.isApplication
+        case "deleting":
+            return hasResumableDelete
         default:
             return false
         }
@@ -17,7 +24,9 @@ extension VMLifecycleService {
 
     static func markVMAsDeleting(id: String, db: DatabasePool) async throws {
         let marked = try await db.write { db -> Bool in
-            guard let current = try VM.fetchOne(db, key: id), canDelete(current) else {
+            guard let current = try VM.fetchOne(db, key: id),
+                  canDelete(current, hasResumableDelete: true)
+            else {
                 return false
             }
             try db.execute(
@@ -48,6 +57,17 @@ extension VMLifecycleService {
                 holdingSlot: holdingSlot,
             )
         }
+        try await removeDeleteDisks(vm: vm, keepDisk: keepDisk, db: db)
+        try await releaseDeleteResources(vm: vm, db: db, dataDir: dataDir)
+    }
+
+    /// Detaches the boot disk (or deletes it) and releases the workload's additional disks.
+    /// Idempotent: an already-detached or already-deleted disk is a no-op.
+    static func removeDeleteDisks(
+        vm: VM,
+        keepDisk: Bool,
+        db: DatabasePool,
+    ) async throws {
         if let bootDiskId = vm.bootDiskId, !bootDiskId.isEmpty {
             try await deleteOrDetachBootDisk(
                 bootDiskId: bootDiskId, vmID: vm.id, keepDisk: keepDisk, db: db,
@@ -62,7 +82,16 @@ extension VMLifecycleService {
                 }
             }
         }
+    }
 
+    /// Releases the host resources a delete holds: VFIO bindings, per-VM state directories,
+    /// and the auto-created network when this workload was its last user. Every step tolerates
+    /// a partial previous run.
+    static func releaseDeleteResources(
+        vm: VM,
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws {
         GPUPassthroughService.releaseVFIO(vm.decodedGPUDevices)
 
         if vm.cloudInitPath != nil {

@@ -362,6 +362,10 @@ enum ApplicationDeployment {
             )
         case WorkloadOperationKind.vmStart:
             try await adoptVM(record: record, db: db, dataDir: dataDir)
+        // Must stay above the `vm.` prefix fallback, or a delete is probed for a live QEMU
+        // process instead of being resumed.
+        case WorkloadOperationKind.vmDelete:
+            try await VMDelete.recover(record: record, db: db, dataDir: dataDir)
         default:
             if record.kind.hasPrefix("vm.") {
                 try await adoptVM(record: record, db: db, dataDir: dataDir)
@@ -1147,5 +1151,44 @@ public enum VMAdoptionProbe {
 public enum WorkloadOperationRecovery {
     public static func resume(db: DatabasePool, dataDir: URL = Config.dataDir) async {
         await ApplicationDeployment.recoverOpen(db: db, dataDir: dataDir)
+        await releaseUnownedDeletingRows(db: db)
+    }
+
+    /// A row still marked `deleting` with no open `vm.delete` record has no owner — the
+    /// operation that claimed it reached a terminal state or was never durable. Reset it to
+    /// `error` so the workload is startable and deletable again instead of wedged.
+    static func releaseUnownedDeletingRows(db: DatabasePool) async {
+        let stranded: [VM]
+        do {
+            stranded = try await db.read { db in
+                try VM.filter(Column("state") == "deleting").fetchAll(db)
+            }
+        } catch {
+            Log.vm.error("Failed to list deleting workloads: \(error.localizedDescription)")
+            return
+        }
+        for vm in stranded {
+            do {
+                let open = try await WorkloadOperationStore.openOperation(
+                    db: db, workloadID: vm.id, kind: WorkloadOperationKind.vmDelete,
+                )
+                guard open == nil else { continue }
+                try await db.write { db in
+                    try db.execute(
+                        sql: "UPDATE vms SET state = 'error', updatedAt = ? WHERE id = ?",
+                        arguments: [iso8601.string(from: Date()), vm.id],
+                    )
+                }
+                Log.vm.warning(
+                    "Released workload \(vm.id) left in deleting by a delete with no open operation",
+                    vm: vm.id,
+                )
+            } catch {
+                Log.vm.error(
+                    "Failed to release workload \(vm.id) from deleting: \(error.localizedDescription)",
+                    vm: vm.id,
+                )
+            }
+        }
     }
 }

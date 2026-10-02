@@ -287,10 +287,14 @@ final class ApplicationLifecycleServiceTests {
         #expect(!FileManager.default.fileExists(atPath: marker.path))
         #expect(try await teardownRecord(id: id, db: db)?.status == WorkloadOperationStatus.completed)
 
-        // Replaying the finished key must not run compose down a second time.
-        try await ApplicationLifecycleService.down(
-            vm: seed, db: db, dataDir: dataDir, operationID: "teardown-attempt-2",
+        // Replaying the finished delete key must not run compose down a second time. The key
+        // is bound to the `vm.delete` record, so the replay resolves against that record.
+        let replayed = try await VMLifecycleService.deleteVM(
+            id: id, keepDisk: false, vmManager: manager, backgroundTasks: tasks,
+            db: db, dataDir: dataDir, operationID: "teardown-attempt-2",
         )
+        #expect(replayed.operationID == "teardown-attempt-2")
+        #expect(await settledStatus(tasks, replayed.taskID) == .completed)
         #expect(compose.down == 1)
     }
 
