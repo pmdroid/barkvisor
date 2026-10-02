@@ -637,6 +637,13 @@ extension VMLifecycleService {
     ) async throws {
         do {
             try await db.write { db in
+                // Re-check the network here, not just in `validateCreateVMInputs`:
+                // that pre-flight read has already released the pool, so a
+                // concurrent `NetworkService.update` could have withdrawn
+                // `hostfwd` since (#634).
+                try assertNetworkSupportsPortForwards(
+                    networkId: vm.networkId, forwardCount: vm.decodedPortForwards.count, db: db,
+                )
                 try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
                 try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: vm.id, db: db)
                 if let d = disk {
@@ -818,6 +825,15 @@ extension VMLifecycleService {
         let row = vm
 
         try await db.write { db in
+            // The rebuild restores the deploy's original port forwards from
+            // `params`, not from the placeholder row, which a concurrent
+            // `updateVM` may have cleared. That clears the forwards the
+            // network-update guard reads, so the network may have been switched
+            // to isolated in the meantime. Validate the row about to be written
+            // here, in the transaction that writes it (#634).
+            try assertNetworkSupportsPortForwards(
+                networkId: row.networkId, forwardCount: row.decodedPortForwards.count, db: db,
+            )
             try row.update(db)
         }
 
@@ -910,24 +926,38 @@ extension VMLifecycleService {
         }
     }
 
+    /// Network existence and mode/forwards compatibility for a VM row that is
+    /// about to be persisted.
+    ///
+    /// **Must** be called inside the write transaction that inserts or updates
+    /// the row (#634). The pre-flight in `validateCreateVMInputs` reads the
+    /// network in its own transaction, so without this the create seam could
+    /// validate NAT, lose the write lock to a `NetworkService.update` that
+    /// flips the mode to isolated, and then insert a forwarding VM against a
+    /// network that can no longer launch it — while a running QEMU still held
+    /// the port socket `PortRegistry.claims` had just stopped counting.
+    static func assertNetworkSupportsPortForwards(
+        networkId: String?,
+        forwardCount: Int,
+        db: Database,
+    ) throws {
+        guard let networkId else { return } // implicit NAT always publishes hostfwd
+        guard let network = try Network.fetchOne(db, key: networkId) else {
+            throw BarkVisorError.notFound("Network not found")
+        }
+        try NetworkCapability.requirePortForwardsAllowed(count: forwardCount, network: network)
+    }
+
     fileprivate static func validateUpdateReferences(
         params: UpdateVMParams,
         vm: VM,
         db: Database,
     ) throws {
-        let networkId = params.networkId ?? vm.networkId
-        let network: Network? =
-            if let networkId {
-                try Network.fetchOne(db, key: networkId)
-            } else {
-                nil
-            }
-        if networkId != nil, network == nil {
-            throw BarkVisorError.notFound("Network not found")
-        }
         let forwardCount =
             params.portForwards?.count ?? vm.decodedPortForwards.count
-        try NetworkCapability.requirePortForwardsAllowed(count: forwardCount, network: network)
+        try assertNetworkSupportsPortForwards(
+            networkId: params.networkId ?? vm.networkId, forwardCount: forwardCount, db: db,
+        )
         let rules = params.portForwards ?? vm.decodedPortForwards
         try PortRegistry.assertAvailable(rules, excludingVM: vm.id, db: db)
         if let diskIds = params.additionalDiskIds, !diskIds.isEmpty {
