@@ -177,6 +177,7 @@ struct BlockDeviceServiceTests {
                 openReadWrite: { _ in
                     throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
                 },
+                hostUse: { _ in nil },
             )
             Issue.record("expected additionalDiskArgs to throw")
         } catch let BarkVisorError.badRequest(msg) {
@@ -200,8 +201,27 @@ struct BlockDeviceServiceTests {
             status: "ready",
             createdAt: "2026-01-01T00:00:00Z",
         )
-        let args = try QEMUBuilder.additionalDiskArgs([disk], openReadWrite: { _ in })
+        let args = try QEMUBuilder.additionalDiskArgs([disk], openReadWrite: { _ in }, hostUse: { _ in nil })
         #expect(args.contains("-drive"))
         #expect(args.contains { $0.contains("file=/dev/sdb") })
+    }
+    @Test func `additionalDiskArgs rejects fresh host use before opening the device`() {
+        let disk = Disk(
+            id: "d1", name: "passthrough", path: "/dev/sdb", sizeBytes: 1_024,
+            format: "raw", vmId: "vm-1", autoCreated: false, status: "ready",
+            createdAt: "2026-01-01T00:00:00Z",
+        )
+        do {
+            _ = try QEMUBuilder.additionalDiskArgs(
+                [disk],
+                openReadWrite: { _ in Issue.record("must reject host use before opening the device") },
+                hostUse: { _ in "Device is in use by the host" },
+            )
+            Issue.record("expected host use rejection")
+        } catch let BarkVisorError.badRequest(reason) {
+            #expect(reason == "Device is in use by the host")
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
     }
 }
