@@ -401,7 +401,7 @@ function openPortForwardEditor(draft?: PortForwardRule) {
 async function savePortForwards() {
   pfSaving.value = true
   try {
-    await patchWorkload({ portForwards: editPortForwards.value } as any)
+    await patchWorkload({ portForwards: editPortForwards.value })
     showPortForwardEditor.value = false
     await refreshWorkload()
     if (vm.value?.state === 'running') {
@@ -2156,7 +2156,7 @@ const healthBanner = computed(() => {
             <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row">
               <span class="detail-label">Port Forwards</span>
               <span class="detail-editable">
-                <span>{{ formatPortForwards(vm.portForwards) }}</span>
+                <span>{{ formatPortForwards(vm.portForwards, { showBind: true }) }}</span>
                 <button type="button" class="fact-edit" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</button>
               </span>
             </div>
@@ -2759,7 +2759,7 @@ const healthBanner = computed(() => {
     max-width="520px"
     @close="!appPortSaving && (showAppPortsEditor = false)"
   >
-    <PortForwardEditor v-model="appPortsDraft" />
+    <PortForwardEditor v-model="appPortsDraft" bind-field="hostIP" />
     <p v-if="!appPortsDraftValid" style="color:var(--red);font-size:12px;margin-top:8px">
       Every binding needs a host port and a container port between 1 and 65535.
     </p>
