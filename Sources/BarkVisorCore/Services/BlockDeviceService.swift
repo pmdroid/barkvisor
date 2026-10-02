@@ -285,11 +285,10 @@ public enum BlockDeviceService {
     public static func usedDeviceNames(from text: String) -> Set<String> {
         var names = Set<String>()
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            for token in line.split(whereSeparator: \.isWhitespace) {
-                let source = String(token)
-                guard source.hasPrefix("/dev/") else { continue }
-                names.insert(String(URL(fileURLWithPath: source).resolvingSymlinksInPath().path.dropFirst(5)))
-            }
+            guard let token = line.split(whereSeparator: \.isWhitespace).first else { continue }
+            let source = String(token)
+            guard source.hasPrefix("/dev/") else { continue }
+            names.insert(String(URL(fileURLWithPath: source).resolvingSymlinksInPath().path.dropFirst(5)))
         }
         return names
     }
@@ -338,7 +337,7 @@ public enum BlockDeviceService {
         if let range = node.range(of: #"(?<=\d)p\d+$"#, options: .regularExpression) {
             return String(node[..<range.lowerBound])
         }
-        if node.hasPrefix("dm-") || node.hasPrefix("md") { return node }
+        if shouldSkip(node) { return node }
         if let range = node.range(of: #"\d+$"#, options: .regularExpression),
            node.range(of: #"nvme|mmcblk"#, options: .regularExpression) == nil {
             return String(node[..<range.lowerBound])
