@@ -6,6 +6,8 @@ struct BlockDeviceHostUseTests {
     @Test func `partition backing active mapper is excluded`() throws {
         try withDevices(["sda", "sdb", "dm-0"]) { root in
             try addDirectory("sda/sda2/holders/dm-0", root: root)
+            try addDirectory("dm-0/dm", root: root)
+            try "ubuntu--vg-ubuntu--lv\n".write(to: root.appendingPathComponent("dm-0/dm/name"), atomically: true, encoding: .utf8)
             let devices = BlockDeviceService.listSysfsDevices(
                 root: root, mounts: "/dev/mapper/ubuntu--vg-ubuntu--lv / ext4 rw 0 0\n",
             )
@@ -56,6 +58,7 @@ struct BlockDeviceHostUseTests {
 
     @Test func `imported ZFS pool members and spares are excluded`() throws {
         try withDevices(["sda", "sdb", "sdc", "sdd"]) { root in
+            try addDirectory("sdb/sdb1/holders", root: root)
             let status = """
               pool: tank
             config:
@@ -198,9 +201,17 @@ struct BlockDeviceHostUseTests {
 
     @Test func `unresolved imported ZFS member protects all candidate disks`() throws {
         try withDevices(["sda", "sdb"]) { root in
-            let status = "pool: tank\n/dev/disk/by-id/missing-fixture-\(UUID().uuidString) ONLINE 0 0 0\n"
+            let status = "pool: tank\n/dev/disk/by-id/sdb ONLINE 0 0 0\n"
             let devices = BlockDeviceService.listSysfsDevices(root: root, zpoolStatus: status)
             #expect(devices.map(\.attachable) == [false, false])
+        }
+    }
+
+    @Test func `missing member dependency directory remains unknown`() throws {
+        try withDevices(["sda", "sdb"]) { root in
+            try FileManager.default.removeItem(at: root.appendingPathComponent("sdb/slaves"))
+            let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: "/dev/sdb /data ext4 rw 0 0\n")
+            #expect(devices.first { $0.name == "sda" }?.attachable == false)
         }
     }
 

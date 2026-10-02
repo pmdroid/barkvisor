@@ -261,10 +261,21 @@ public enum BlockDeviceService {
         var pending = Array(names)
         while let node = pending.popLast() {
             guard seen.insert(node).inserted else { continue }
+            let dir = sysfsDirectory(node: node, root: root)
+            guard fileManager.fileExists(atPath: dir.path) else {
+                let mapper = try fileManager.contentsOfDirectory(atPath: root.path).first {
+                    node.hasPrefix("mapper/") && $0.hasPrefix("dm-")
+                        && sysfsText(at: root.appendingPathComponent("\($0)/dm/name"), fileManager: fileManager) == URL(fileURLWithPath: node)
+                        .lastPathComponent
+                }
+                guard let mapper else { throw BarkVisorError.badRequest("Cannot verify host storage use") }
+                pending.append(mapper)
+                continue
+            }
             let whole = wholeDiskName(from: node)
             if whole != node { pending.append(whole) }
-            let backingDevices = sysfsDirectory(node: node, root: root).appendingPathComponent("slaves")
-            if fileManager.fileExists(atPath: backingDevices.path) {
+            let backingDevices = dir.appendingPathComponent("slaves")
+            if whole == node {
                 pending += try fileManager.contentsOfDirectory(atPath: backingDevices.path)
             }
         }
@@ -277,7 +288,7 @@ public enum BlockDeviceService {
             for token in line.split(whereSeparator: \.isWhitespace) {
                 let source = String(token)
                 guard source.hasPrefix("/dev/") else { continue }
-                names.insert(URL(fileURLWithPath: source).resolvingSymlinksInPath().lastPathComponent)
+                names.insert(String(URL(fileURLWithPath: source).resolvingSymlinksInPath().path.dropFirst(5)))
             }
         }
         return names
@@ -324,7 +335,7 @@ public enum BlockDeviceService {
     }
 
     public static func wholeDiskName(from node: String) -> String {
-        if let range = node.range(of: #"p\d+$"#, options: .regularExpression) {
+        if let range = node.range(of: #"(?<=\d)p\d+$"#, options: .regularExpression) {
             return String(node[..<range.lowerBound])
         }
         if node.hasPrefix("dm-") || node.hasPrefix("md") { return node }
