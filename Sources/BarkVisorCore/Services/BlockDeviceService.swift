@@ -247,9 +247,9 @@ public enum BlockDeviceService {
     }
 
     private static func sysfsDirectory(node: String, root: URL) -> URL {
-        let direct = root.appendingPathComponent(node)
-        if FileManager.default.fileExists(atPath: direct.path) { return direct }
-        return root.appendingPathComponent(wholeDiskName(from: node)).appendingPathComponent(node)
+        let whole = wholeDiskName(from: node)
+        let dir = root.appendingPathComponent(whole)
+        return node == whole ? dir : dir.appendingPathComponent(node)
     }
 
     private static func deviceDependencies(
