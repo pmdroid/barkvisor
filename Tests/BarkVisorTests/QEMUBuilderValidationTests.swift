@@ -23,6 +23,46 @@ struct QEMUBuilderValidationTests {
         #expect(throws: (any Error).self) { try validateIPv4("") }
     }
 
+    @Test func `empty octets are invalid I pv 4`() {
+        for malformed in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3.", "..1.2.3", "1.2.3.4.", "1.2.3.4."] {
+            #expect(throws: BarkVisorError.self, "\(malformed) should be rejected") {
+                try validateIPv4(malformed)
+            }
+        }
+    }
+
+    /// A row written before the write path was strict must fail at launch with a
+    /// message naming the network and the DNS field, so it is repairable instead
+    /// of surfacing as an opaque QEMU argument failure.
+    @Test func `legacy malformed DNS row fails launch with a repairable message`() throws {
+        for malformed in ["1..2.3.4", "1.2..4", ".1.2.3", "1.2.3."] {
+            let net = Network(
+                id: "nat-legacy", name: "Legacy NAT", mode: "nat",
+                bridge: nil, macAddress: nil, dnsServer: malformed,
+                autoCreated: false, isDefault: false,
+            )
+            let err = #expect(throws: BarkVisorError.self) {
+                _ = try QEMUBuilder.networkArgs(spec: netSpec(mode: "nat"), network: net)
+            }
+            let message = err?.errorDescription ?? ""
+            #expect(message.contains("Legacy NAT"), "message should name the network: \(message)")
+            #expect(message.contains("DNS"), "message should name the field: \(message)")
+            #expect(message.contains(malformed), "message should quote the bad value: \(message)")
+        }
+    }
+
+    @Test func `legacy malformed DNS row fails launch for isolated too`() throws {
+        let net = Network(
+            id: "iso-legacy", name: "Legacy Private", mode: "isolated",
+            bridge: nil, macAddress: nil, dnsServer: "1..2.3.4",
+            autoCreated: false, isDefault: false,
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.networkArgs(spec: netSpec(mode: "isolated"), network: net)
+        }
+        #expect((err?.errorDescription ?? "").contains("Legacy Private"))
+    }
+
     // MARK: - Port Validation
 
     @Test func `valid port`() {

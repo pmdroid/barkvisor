@@ -92,15 +92,27 @@ public func validateDNS(_ dns: String) throws {
     try validateIPv4(dns, label: "DNS server")
 }
 
-/// Validate a dotted-quad IPv4 address (no leading zeros).
+/// The single strict dotted-quad IPv4 rule, shared by the write path
+/// (`validateIPv4` / `validateDNS`), the launch path
+/// (`NetworkIntentBinding.requireIPv4`), and host network apply.
+///
+/// Exactly four octets, each 0...255 in plain decimal with no leading zeros.
+/// Empty octets are rejected, so leading (`".1.2.3"`), trailing (`"1.2.3."`),
+/// and repeated (`"1..2.3.4"`) dots fail. Anything a write path accepts is
+/// therefore valid at launch, and a legacy bad row still fails — loudly and
+/// with the offending value in the message.
+public func isStrictIPv4(_ value: String) -> Bool {
+    let octets = value.split(separator: ".", omittingEmptySubsequences: false)
+    guard octets.count == 4 else { return false }
+    return octets.allSatisfy { octet in
+        guard let n = Int(octet), (0 ... 255).contains(n) else { return false }
+        return String(n) == octet
+    }
+}
+
+/// Validate a dotted-quad IPv4 address (no leading zeros, no empty octets).
 public func validateIPv4(_ ip: String, label: String = "IPv4 address") throws {
-    let parts = ip.split(separator: ".")
-    guard parts.count == 4,
-          parts.allSatisfy({ part in
-              guard let n = UInt16(part), n <= 255 else { return false }
-              return part == String(n)
-          })
-    else {
+    guard isStrictIPv4(ip) else {
         throw BarkVisorError.badRequest("\(label) must be a valid IPv4 address (got '\(ip)')")
     }
 }

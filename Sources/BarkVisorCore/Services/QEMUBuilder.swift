@@ -528,6 +528,12 @@ public enum QEMUBuilder {
         mode: NetworkMode,
     ) throws -> String {
         let guest = network?.dnsServer?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Validate the stored value before resolve() so a row written before the
+        // write path was strict fails with a message naming the network and the
+        // DNS field, not a generic QEMU argument error.
+        if let guest, !guest.isEmpty, let network {
+            try validateIPv4(guest, label: "DNS server on network '\(network.name)'")
+        }
         let publications = try forwards.map { rule in
             try NetworkIntent.publication(
                 bindAddress: rule.host ?? "0.0.0.0",
@@ -546,7 +552,6 @@ public enum QEMUBuilder {
         )
         var suffix = ""
         if let dns = plan.guestDNS {
-            try validateIPv4(dns)
             suffix += ",dns=\(dns)"
         }
         for publication in plan.publications {
