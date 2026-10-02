@@ -303,6 +303,9 @@ struct GetBarkvisorBootstrapTests {
         #expect(out.0 == 0, "split install failed: \(out.1)")
         #expect(out.1.contains("SYSTEMCTL: disable --now barkvisor.service\n"))
         #expect(out.1.contains("SYSTEMCTL: disable --now barkvisor-agent.service\n"))
+        let disabled = try #require(out.1.range(of: "SYSTEMCTL: disable --now barkvisor-agent.service"))
+        let installed = try #require(out.1.range(of: "DPKG: -i"))
+        #expect(disabled.lowerBound < installed.lowerBound)
         #expect(out.1.contains("SYSTEMCTL: enable --now barkvisor-daemon.service barkvisor-server.service\n"))
         #expect(!out.1.contains("enable --now barkvisor.service"))
         #expect(!out.1.contains("enable --now barkvisor-agent.service"))
@@ -341,7 +344,7 @@ struct GetBarkvisorBootstrapTests {
         let pkg = tmp.appendingPathComponent("barkvisor_1.0.0_amd64.deb")
         try Data("package-bytes".utf8).write(to: pkg)
         let sha = tmp.appendingPathComponent("\(pkg.lastPathComponent).sha256")
-        try Data("\(try sha256Hex(of: pkg))  \(pkg.lastPathComponent)\n".utf8).write(to: sha)
+        try Data("\(sha256Hex(of: pkg))  \(pkg.lastPathComponent)\n".utf8).write(to: sha)
         return try run(args: ["--yes", "--port", "58888"], extraEnv: [
             "PATH": "\(bin.path):\(ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")",
             "BOOTSTRAP_UNIT_FILES": units.map { "-rw-r--r-- root/root 0 2026-01-01 00:00 ./lib/systemd/system/\($0)" }.joined(separator: "\n"),

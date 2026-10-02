@@ -25,10 +25,29 @@ Download the `.deb` for your architecture from [Releases](https://github.com/pmd
 
 ```sh
 sudo apt install ./barkvisor_<version>_amd64.deb
-sudo systemctl enable --now barkvisor-daemon.service barkvisor-server.service
 ```
 
 Replace the filename with the one you downloaded. Use the `arm64` package on an ARM64 Device. APT supports [installing a local package](https://wiki.debian.org/AptCLI) and its dependencies.
+
+Start the services included in your package. Check their names with:
+
+```sh
+dpkg -L barkvisor | grep '/systemd/system/.*service$'
+```
+
+For packages with `barkvisor-daemon.service` and `barkvisor-server.service`:
+
+```sh
+sudo systemctl enable --now barkvisor-daemon.service barkvisor-server.service
+```
+
+For packages with `barkvisor.service`, including `v1.0.0-alpha.13`:
+
+```sh
+sudo systemctl enable --now barkvisor.service
+```
+
+Use the matching console services. Keep `barkvisor-agent.service` disabled when running the console.
 
 ## 2. Complete setup
 
@@ -46,20 +65,22 @@ Open **Settings → Updates**, click **Check**, then **Apply**. BarkVisor verifi
 
 The installed data directory is `/var/lib/barkvisor`. It contains the database, images, VM disks, logs, and database backups. Choose an image folder under **Settings → Library**, or a default VM disk folder on the Device page.
 
-BarkVisor runs as a root systemd service. VM processes drop to the configured QEMU user. Service configuration is in `/etc/barkvisor/barkvisor.env`.
+Combined packages run BarkVisor as a root systemd service. Split packages run the privileged daemon as root and the web server as the `barkvisor` user. VM processes drop to the configured QEMU user. Service configuration is in `/etc/barkvisor/barkvisor.env`.
 
-To check the service or read its logs:
-
-```sh
-systemctl status barkvisor.service
-journalctl -u barkvisor.service -f
-```
-
-Restart the service after changing its configuration:
+For split packages, check both services or read their logs:
 
 ```sh
-sudo systemctl restart barkvisor.service
+systemctl status barkvisor-daemon.service barkvisor-server.service
+journalctl -u barkvisor-daemon.service -u barkvisor-server.service -f
 ```
+
+Restart both services after changing their configuration:
+
+```sh
+sudo systemctl restart barkvisor-daemon.service barkvisor-server.service
+```
+
+For combined packages such as `v1.0.0-alpha.13`, use `barkvisor.service` in the status, journal, and restart commands.
 
 Use the console's **Stop** action to shut down VMs. Stopping the BarkVisor service alone leaves them running.
 
@@ -85,10 +106,21 @@ The package grants the VM user access through the `kvm` and, where available, `d
 
 An API-only Device runs workloads but does not serve the web console. Manage it through another paired Device.
 
-The package includes both service definitions. Enable only one:
+Disable the console services before enabling the API-only service. For split packages:
+
+```sh
+sudo systemctl disable --now barkvisor-server.service barkvisor-daemon.service
+```
+
+For combined packages such as `v1.0.0-alpha.13`:
 
 ```sh
 sudo systemctl disable --now barkvisor.service
+```
+
+Then start the API-only service and join your Home:
+
+```sh
 sudo systemctl enable --now barkvisor-agent.service
 barkvisor-agent join --code 'barkvisor://pair/v1?…'
 ```
