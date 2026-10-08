@@ -337,6 +337,7 @@ extension PairingService {
         )
         response.jwtSecret = identity.jwtSecret.isEmpty ? nil : identity.jwtSecret
         response.adminUser = identity.adminUser
+        response.passkey = identity.passkey
     }
 
     static func persistReceipt(_ receipt: PairingPeerReceipt, dataDir: URL) throws {
@@ -557,7 +558,7 @@ extension PairingService {
                 )
             }
             do {
-                try upsertAdmin(admin, db: db, now: now)
+                try upsertAdmin(admin, passkey: response.passkey, db: db, now: now)
             } catch {
                 if !secret.isEmpty {
                     if let previousSecret {
@@ -594,7 +595,7 @@ extension PairingService {
         }
     }
 
-    static func upsertAdmin(_ admin: PairingAdminUser, db: DatabasePool, now: Date) throws {
+    static func upsertAdmin(_ admin: PairingAdminUser, passkey: PairingPasskey? = nil, db: DatabasePool, now: Date) throws {
         let parsed = try parsedAdmin(admin)
         do {
             enum WriteResult {
@@ -608,6 +609,9 @@ extension PairingService {
                 if var existing = try User.fetchOne(db, key: parsed.id) {
                     existing.password = parsed.hash
                     try existing.update(db)
+                    if let passkey {
+                        try upsertPasskey(passkey, userId: parsed.id, db: db)
+                    }
                     return .ok
                 }
                 try User(
@@ -617,6 +621,9 @@ extension PairingService {
                     createdAt: iso8601.string(from: now),
                     role: UserRole.admin.rawValue,
                 ).insert(db)
+                if let passkey {
+                    try upsertPasskey(passkey, userId: parsed.id, db: db)
+                }
                 return .ok
             }
             if case .mismatch = result {
@@ -654,5 +661,24 @@ extension PairingService {
             return existing.username != username
         }
         return try User.filter(User.Columns.username == username).fetchOne(db) != nil
+    }
+}
+
+extension PairingService {
+    static func upsertPasskey(_ passkey: PairingPasskey, userId: String, db: Database) throws {
+        if var existing = try PasskeyCredential.filter(PasskeyCredential.Columns.credentialId == passkey.credentialId).fetchOne(db) {
+            existing.userId = userId
+            existing.publicKey = passkey.publicKey
+            existing.signCount = passkey.signCount
+            existing.name = passkey.name
+            existing.transports = passkey.transports
+            try existing.update(db)
+            return
+        }
+        try PasskeyCredential(
+            id: passkey.id, userId: userId, credentialId: passkey.credentialId,
+            publicKey: passkey.publicKey, signCount: passkey.signCount, name: passkey.name,
+            createdAt: passkey.createdAt, transports: passkey.transports,
+        ).insert(db)
     }
 }
