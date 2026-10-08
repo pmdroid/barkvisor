@@ -574,13 +574,13 @@ public enum DiskService {
         let running = await request.vmState.allRunningVMs()
         if let live = attachments.first(where: { running[$0.vmId] != nil }) {
             try await request.qmpDiskService.resizeDisk(vmID: live.vmId, disk: disk, sizeBytes: newSizeBytes)
+            disk.sizeBytes = newSizeBytes
         } else if attachments.isEmpty {
             try resize(path: disk.path, sizeGB: request.sizeGB)
+            disk.sizeBytes = try getVirtualSize(path: disk.path)
         } else {
             throw BarkVisorError.conflict("Disk is attached to a stopped VM")
         }
-
-        disk.sizeBytes = try getVirtualSize(path: disk.path)
 
         let updatedDisk = disk
         try await db.write { db in try updatedDisk.update(db) }
