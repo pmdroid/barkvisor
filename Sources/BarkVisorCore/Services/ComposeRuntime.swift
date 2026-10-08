@@ -46,6 +46,13 @@ public enum ComposeRuntime {
         return "barkvisor-\(compact)"
     }
 
+    public static func composeProjectTaken(id: String, existing: [String]) -> Bool {
+        let want = composeProjectName(id: id)
+        return existing.contains { other in
+            other != id && composeProjectName(id: other) == want
+        }
+    }
+
     public static func writeProject(
         id: String,
         yaml: String,

@@ -12,4 +12,9 @@ struct ComposeProjectIdentityTests {
         #expect(names[0] != names[1])
         #expect(names[1] != names[2])
     }
+
+    @Test func `create rejects an ID that maps to an existing project`() {
+        #expect(ComposeRuntime.composeProjectTaken(id: "app-a", existing: ["appha"]))
+        #expect(!ComposeRuntime.composeProjectTaken(id: "app-a", existing: ["AppA"]))
+    }
 }
