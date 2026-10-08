@@ -27,8 +27,16 @@ function Wait-BarkVisorServiceRemoved {
 
 Wait-BarkVisorServiceRemoved
 
+$owned = @()
+$pidRoot = Join-Path $env:ProgramData "BarkVisor\pids"
+if (Test-Path -LiteralPath $pidRoot) {
+    Get-ChildItem -LiteralPath $pidRoot -Filter *.pid -ErrorAction SilentlyContinue | ForEach-Object {
+        $raw = Get-Content -LiteralPath $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($raw -match '^[0-9]+$') { $owned += [int]$raw }
+    }
+}
 Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ProcessName -like "qemu-system*"
+    $_.ProcessName -like "qemu-system*" -and $owned -contains $_.Id
 } | ForEach-Object {
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
 }
