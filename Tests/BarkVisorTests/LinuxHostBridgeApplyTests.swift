@@ -394,11 +394,13 @@ struct LinuxHostBridgeApplyTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         try """
+        # managed-by: barkvisor
         [NetDev]
         Name=br0
         Kind=bridge
         """.write(toFile: "\(dir.path)/10-br0.netdev", atomically: true, encoding: .utf8)
         try """
+        # managed-by: barkvisor
         [Match]
         Name=enp2s0
 
@@ -406,6 +408,7 @@ struct LinuxHostBridgeApplyTests {
         Bridge=br0
         """.write(toFile: "\(dir.path)/20-enp2s0.network", atomically: true, encoding: .utf8)
         try """
+        # managed-by: barkvisor
         [Match]
         Name=br0
 
@@ -500,14 +503,14 @@ struct LinuxHostBridgeApplyTests {
         #expect(!restore.contains("rm -rf /etc/systemd/network/20-enp2s0.network.d/90-barkvisor-aliases.conf"))
     }
 
-    @Test func `acl tag without marker is leftover we can delete`() throws {
+    @Test func `ACL tag does not prove creation but tagged persistence can`() throws {
         let tagged = LinuxHostBridgeApply.ownership(
             bridge: "br0",
             marker: nil,
             acl: "# barkvisor:allow-br0\nallow br0\n",
         )
         #expect(tagged.owned)
-        #expect(tagged.createdBridge)
+        #expect(!tagged.createdBridge)
         let foreign = LinuxHostBridgeApply.ownership(
             bridge: "br0",
             marker: nil,
@@ -538,6 +541,13 @@ struct LinuxHostBridgeApplyTests {
         Name=br0
         Kind=bridge
         """.write(toFile: "\(dir.path)/10-br0.netdev", atomically: true, encoding: .utf8)
+        #expect(!LinuxHostBridgeApply.leftoverHostBridge(bridge: "br0", dir: dir.path))
+        try """
+        # managed-by: barkvisor
+        [NetDev]
+        Name=br0
+        Kind=bridge
+        """.write(toFile: "\(dir.path)/90-barkvisor-br0.netdev", atomically: true, encoding: .utf8)
         #expect(LinuxHostBridgeApply.leftoverHostBridge(bridge: "br0", dir: dir.path))
         #expect(!LinuxHostBridgeApply.leftoverHostBridge(bridge: "br1", dir: dir.path))
     }

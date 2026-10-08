@@ -243,7 +243,7 @@ public enum LinuxHostBridgeApply {
         let leftover = leftoverPersist
         return (
             owned: marker != nil || tagged || leftover,
-            createdBridge: marker?.createdBridge == true || (marker == nil && (tagged || leftover)),
+            createdBridge: marker?.createdBridge == true || (marker == nil && leftover),
         )
     }
 
@@ -288,7 +288,10 @@ public enum LinuxHostBridgeApply {
         var rewrite: [String] = []
         for name in names.sorted() {
             let path = "\(dir)/\(name)"
-            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8),
+                  text.split(whereSeparator: \.isNewline).contains(where: {
+                      $0.trimmingCharacters(in: .whitespaces) == "# managed-by: barkvisor"
+                  }) else { continue }
             if name.hasSuffix(".netdev"),
                hasNetworkAssignment(text, key: "Name", value: bridge),
                hasNetworkAssignment(text, key: "Kind", value: "bridge") {
