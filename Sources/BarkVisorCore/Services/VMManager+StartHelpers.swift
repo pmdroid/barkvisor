@@ -27,8 +27,12 @@ public struct VMSockets: Sendable {
         [vnc, serial, qmp, event, guestAgent, monitor]
     }
 
+    public static func endpointToken(vmID: String) -> String {
+        vmID.replacingOccurrences(of: "-", with: "").lowercased()
+    }
+
     public init(vmID: String) {
-        let shortID = String(vmID.prefix(12))
+        let shortID = Self.endpointToken(vmID: vmID)
         self.workloadID = vmID
         self.shortID = shortID
         vnc = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock")
@@ -64,7 +68,8 @@ public struct VMSockets: Sendable {
 
     public func owned(by workloadID: String) -> Bool {
         if self.workloadID == workloadID { return true }
-        return !shortID.isEmpty && shortID == String(workloadID.prefix(12))
+        let token = Self.endpointToken(vmID: workloadID)
+        return !shortID.isEmpty && (shortID == token || shortID == String(workloadID.prefix(12)))
     }
 
     public func setOwnerOnlyPermissions() {

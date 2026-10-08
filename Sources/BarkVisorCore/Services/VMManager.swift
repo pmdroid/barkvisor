@@ -214,8 +214,7 @@ public actor VMManager: VMStateQuerying {
             return
         }
         if let sockets = VMSockets(qmpSocketPath: running.qmpSocketPath),
-           sockets.shortID.count == 12,
-           sockets.shortID != String(vmID.prefix(12)) {
+           !sockets.owned(by: vmID) {
             Log.vm.error(
                 "Refusing sockets \(running.qmpSocketPath) for Workload \(vmID)",
                 vm: vmID,
