@@ -567,10 +567,17 @@ public enum DiskService {
 
         let newSizeBytes = Int64(request.sizeGB) * 1_024 * 1_024 * 1_024
 
-        if let vmId = disk.vmId, await request.vmState.isRunning(vmId) {
-            try await request.qmpDiskService.resizeDisk(vmID: vmId, disk: disk, sizeBytes: newSizeBytes)
-        } else {
+        let snapshot = disk
+        let attachments = try await db.read { db in
+            try attachmentsByDiskId(vms: VM.fetchAll(db), disks: [snapshot])[snapshot.id] ?? []
+        }
+        let running = await request.vmState.allRunningVMs()
+        if let live = attachments.first(where: { running[$0.vmId] != nil }) {
+            try await request.qmpDiskService.resizeDisk(vmID: live.vmId, disk: disk, sizeBytes: newSizeBytes)
+        } else if attachments.isEmpty {
             try resize(path: disk.path, sizeGB: request.sizeGB)
+        } else {
+            throw BarkVisorError.conflict("Disk is attached to a stopped VM")
         }
 
         disk.sizeBytes = try getVirtualSize(path: disk.path)
@@ -586,7 +593,10 @@ public enum DiskService {
         async throws -> Disk {
         let disk = try await db.read { db in try Disk.fetchOne(db, key: id) }
         guard let disk else { throw BarkVisorError.notFound() }
-        guard disk.vmId == nil else {
+        let attachments = try await db.read { db in
+            try attachmentsByDiskId(vms: VM.fetchAll(db), disks: [disk])[disk.id] ?? []
+        }
+        guard attachments.isEmpty else {
             throw BarkVisorError.conflict("Disk is attached to a VM")
         }
 
