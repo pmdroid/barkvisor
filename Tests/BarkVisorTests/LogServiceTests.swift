@@ -214,7 +214,7 @@ struct LogServiceTests {
             "db-2026-01-02T00-00-00Z.sqlite",
             "db-2026-01-03T00-00-00Z.sqlite",
         ] {
-            try Data().write(to: dir.appendingPathComponent(name))
+            try createValidBackup(at: dir.appendingPathComponent(name))
         }
         let deleted = BackupService.pruneOldestBackupsKeepingNewest(1, in: dir)
         #expect(deleted.sorted() == [
@@ -234,12 +234,21 @@ struct LogServiceTests {
         let older = "pre-restore-2026-01-01T00-00-00Z.sqlite"
         let newer = "db-2026-08-15T12-00-00Z.sqlite"
         #expect(newer < older)
-        try Data().write(to: dir.appendingPathComponent(older))
-        try Data().write(to: dir.appendingPathComponent(newer))
+        try createValidBackup(at: dir.appendingPathComponent(older))
+        try createValidBackup(at: dir.appendingPathComponent(newer))
         let deleted = BackupService.pruneOldestBackupsKeepingNewest(1, in: dir)
         #expect(deleted == [older])
         let remaining = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         #expect(remaining == [newer])
+    }
+
+    private func createValidBackup(at url: URL) throws {
+        let source = url.appendingPathExtension("source")
+        let database = try AppDatabase(path: source.path)
+        try database.migrate()
+        try database.pool.vacuum(into: url.path)
+        try database.pool.close()
+        try FileManager.default.removeItem(at: source)
     }
 
     @Test func `log noise window drops oldest signature at cap`() {
