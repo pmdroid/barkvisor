@@ -42,7 +42,7 @@ public enum ComposeRuntime {
     }
 
     public static func composeProjectName(id: String) -> String {
-        let compact = id.replacingOccurrences(of: "-", with: "").lowercased()
+        let compact = id.replacingOccurrences(of: "-", with: "h")
         return "barkvisor-\(compact)"
     }
 
