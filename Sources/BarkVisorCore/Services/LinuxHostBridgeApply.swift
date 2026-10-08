@@ -810,6 +810,9 @@ public enum LinuxHostBridgeApply {
             return refuse(backend: probe.backend, message: "Invalid address plan.")
         }
         let target = addressApplyDevice(request: request, probe: probe)
+        if plan.gateway != nil || !plan.dns.isEmpty {
+            return refuse(backend: probe.backend, message: "Gateway and DNS edits are not applied on an existing interface.")
+        }
         let changes = addressOnlyChanges(
             target: target,
             plan: plan,
@@ -1181,6 +1184,12 @@ public enum LinuxHostBridgeApply {
         liveCIDRs: [String] = [],
         keepCIDRs: [String] = [],
     ) -> [LinuxHostBridgeChange] {
+        if plan.gateway != nil || !plan.dns.isEmpty {
+            return [LinuxHostBridgeChange(
+                description: "Refuse gateway or DNS edits until the backend can restore them",
+                command: "# rejected gateway/dns",
+            )]
+        }
         let cidrs = plan.dhcpEnabled ? plan.staticCIDRs : plan.aliasCIDRs
         return LinuxHostAddressPersist.previewCommands(
             interface: target,
