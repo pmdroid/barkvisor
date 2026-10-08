@@ -237,14 +237,7 @@ public enum WorkloadApplyService {
                 diff: WorkloadApplyDiff(before: nil, after: spec),
             )
         }
-        let taken = try await db.read { db -> Bool in
-            if try VM.fetchOne(db, key: id) != nil { return true }
-            let ids = try VM.fetchAll(db).map(\.id)
-            return ComposeRuntime.composeProjectTaken(id: id, existing: ids)
-        }
-        if taken {
-            throw BarkVisorError.conflict("Workload \(id) already exists")
-        }
+        try await ComposeRuntime.rejectTakenProject(id: id, db: db)
         let now = iso8601.string(from: Date())
         var vm = VM(
             id: id,

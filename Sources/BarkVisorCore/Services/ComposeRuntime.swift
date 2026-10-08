@@ -53,6 +53,16 @@ public enum ComposeRuntime {
         }
     }
 
+    public static func rejectTakenProject(id: String, db: DatabasePool) async throws {
+        let taken = try await db.read { db -> Bool in
+            if try VM.fetchOne(db, key: id) != nil { return true }
+            return try composeProjectTaken(id: id, existing: VM.fetchAll(db).map(\.id))
+        }
+        if taken {
+            throw BarkVisorError.conflict("Workload \(id) already exists")
+        }
+    }
+
     public static func writeProject(
         id: String,
         yaml: String,
