@@ -14,7 +14,7 @@ struct BackupIntegrityTests {
         _ = BackupService.pruneOldestBackupsKeepingNewest(1, in: dir)
         #expect(FileManager.default.fileExists(atPath: valid.path))
         #expect(try marker(at: valid) == "retained")
-        #expect(!FileManager.default.fileExists(atPath: invalid.path))
+        #expect(FileManager.default.fileExists(atPath: invalid.path))
     }
 
     @Test func `reclaim preserves valid content instead of a newer corrupt candidate`() throws {
@@ -27,7 +27,7 @@ struct BackupIntegrityTests {
         _ = BackupService.pruneOldestBackupsKeepingNewest(1, in: dir)
         #expect(FileManager.default.fileExists(atPath: valid.path))
         #expect(try marker(at: valid) == "retained")
-        #expect(!FileManager.default.fileExists(atPath: corrupt.path))
+        #expect(FileManager.default.fileExists(atPath: corrupt.path))
     }
 
     @Test func `failed publication removes partial files and retains recovery selection`() throws {

@@ -163,11 +163,7 @@ public enum BackupService {
             $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-"))
         }
         let backups = candidates.filter { isValidBackup(dir.appendingPathComponent($0)) }
-        let invalid = candidates.filter { !backups.contains($0) }
-        for name in invalid {
-            try? fileManager.removeItem(at: dir.appendingPathComponent(name))
-        }
-        guard backups.count > keepCount else { return invalid }
+        guard backups.count > keepCount else { return [] }
         let ranked = backups.sorted { lhs, rhs in
             let lDate = backupRecency(filename: lhs, in: dir, fileManager: fileManager)
             let rDate = backupRecency(filename: rhs, in: dir, fileManager: fileManager)
@@ -178,7 +174,7 @@ public enum BackupService {
         for filename in toDelete {
             try? fileManager.removeItem(at: dir.appendingPathComponent(filename))
         }
-        return invalid + toDelete
+        return toDelete
     }
 
     // MARK: - Restore
