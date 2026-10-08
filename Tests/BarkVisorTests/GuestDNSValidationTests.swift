@@ -5,7 +5,7 @@ import Testing
 
 struct GuestDNSValidationTests {
     @Test(arguments: ["8.8.8.8", "10.0.2.2", "10.0.2.15", "192.0.2.3"])
-    func isolatedCreateRejectsUnlaunchableDNS(_ dns: String) async throws {
+    func `isolated create rejects unlaunchable DNS`(_ dns: String) async throws {
         let (pool, dir) = try database()
         defer { try? FileManager.default.removeItem(at: dir) }
         await #expect(throws: BarkVisorError.self) {
@@ -21,7 +21,7 @@ struct GuestDNSValidationTests {
     }
 
     @Test(arguments: ["10.0.2.2", "10.0.2.15"])
-    func natCreateRejectsReservedDNS(_ dns: String) async throws {
+    func `nat create rejects reserved DNS`(_ dns: String) async throws {
         let (pool, dir) = try database()
         defer { try? FileManager.default.removeItem(at: dir) }
         await #expect(throws: BarkVisorError.self) {
@@ -36,7 +36,7 @@ struct GuestDNSValidationTests {
         #expect(try await pool.read { try Network.fetchCount($0) } == 0)
     }
 
-    @Test func modeChangeRevalidatesExistingDNSBeforePersistence() async throws {
+    @Test func `mode change revalidates existing DNS before persistence`() async throws {
         let (pool, dir) = try database()
         defer { try? FileManager.default.removeItem(at: dir) }
         let nat = try await NetworkService.create(
@@ -70,7 +70,7 @@ struct GuestDNSValidationTests {
     }
 
     @Test(arguments: ["8.8.8.8", "10.0.2.2", "10.0.2.15"])
-    func isolatedUpdateRetainsPreviousValidValueOnRejection(_ dns: String) async throws {
+    func `isolated update retains previous valid value on rejection`(_ dns: String) async throws {
         let (pool, dir) = try database()
         defer { try? FileManager.default.removeItem(at: dir) }
         let isolated = try await NetworkService.create(
@@ -94,7 +94,7 @@ struct GuestDNSValidationTests {
     }
 
     @Test(arguments: ["8.8.8.8", "10.0.2.2", "10.0.2.15"])
-    func legacyInvalidIsolatedDNSIsRejectedAtLaunch(_ dns: String) {
+    func `legacy invalid isolated DNS is rejected at launch`(_ dns: String) {
         #expect(throws: BarkVisorError.self) {
             _ = try NetworkIntentResolver.resolve(
                 NetworkIntent(publications: [], guestDNS: dns), runtime: .qemu, mode: .isolated,
@@ -102,7 +102,7 @@ struct GuestDNSValidationTests {
         }
     }
 
-    @Test func acceptedDNSStillBuildsLaunchArguments() throws {
+    @Test func `accepted DNS still builds launch arguments`() throws {
         for mode in [NetworkMode.nat, .isolated] {
             let plan = try NetworkIntentResolver.resolve(
                 NetworkIntent(publications: [], guestDNS: "10.0.2.3"), runtime: .qemu, mode: mode,

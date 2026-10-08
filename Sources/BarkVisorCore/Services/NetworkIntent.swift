@@ -148,7 +148,7 @@ public enum NetworkIntentResolver {
                 )
             }
             if let guest = intent.guestDNS {
-                try NetworkIntentBinding.requireIPv4(guest, label: "Guest-visible DNS")
+                try requireGuestDNS(guest, mode: mode)
             }
             return ResolvedNetworkPlan(
                 runtime: runtime.rawValue,
@@ -172,6 +172,21 @@ public enum NetworkIntentResolver {
                 publications: intent.publications,
                 guestDNS: nil,
                 upstreamResolvers: upstream,
+            )
+        }
+    }
+
+    public static func requireGuestDNS(_ address: String, mode: NetworkMode) throws {
+        try validateDNS(address)
+        guard mode != .bridged else { return }
+        guard address != "10.0.2.2", address != "10.0.2.15" else {
+            throw BarkVisorError.badRequest(
+                "Guest-visible DNS must differ from the virtual host (10.0.2.2) and DHCP start (10.0.2.15)",
+            )
+        }
+        if mode == .isolated, !address.hasPrefix("10.0.2.") {
+            throw BarkVisorError.badRequest(
+                "Isolated guest-visible DNS must be in 10.0.2.0/24. Use 10.0.2.3 or leave it empty for the default",
             )
         }
     }
