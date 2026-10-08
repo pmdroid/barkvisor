@@ -41,35 +41,72 @@ public enum BackupService {
     /// Creates a timestamped backup via VACUUM INTO. Returns the backup info or nil on failure.
     @discardableResult
     public static func performBackup(pool: DatabasePool, prefix: String = "db") -> BackupInfo? {
+        performBackup(pool: pool, prefix: prefix, directory: Config.backupDir, now: Date())
+    }
+
+    static func performBackup(
+        pool: DatabasePool,
+        prefix: String = "db",
+        directory: URL,
+        now: Date,
+        vacuum: ((String) throws -> Void)? = nil,
+    ) -> BackupInfo? {
         lock.lock()
         defer { lock.unlock() }
-
-        let dir = Config.backupDir
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        let timestamp = iso8601.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let fm = FileManager.default
+        let timestamp = iso8601.string(from: now).replacingOccurrences(of: ":", with: "-")
         let filename = "\(prefix)-\(timestamp).sqlite"
-        let backupPath = dir.appendingPathComponent(filename)
-
+        let destination = directory.appendingPathComponent(filename)
+        let temporary = directory.appendingPathComponent(".\(UUID().uuidString).backup-pending")
+        defer { try? fm.removeItem(at: temporary) }
         do {
-            try pool.vacuum(into: backupPath.path)
-            let size =
-                (try? FileManager.default.attributesOfItem(atPath: backupPath.path)[.size] as? Int64) ?? 0
+            if Task.isCancelled { throw CancellationError() }
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            if let vacuum {
+                try vacuum(temporary.path)
+            } else {
+                try pool.vacuum(into: temporary.path)
+            }
+            guard isValidBackup(temporary) else {
+                throw BarkVisorError.badRequest("Backup verification failed")
+            }
+            if Task.isCancelled { throw CancellationError() }
+            try PrivateFileAccess.restrict(path: temporary.path)
+            try fm.moveItem(at: temporary, to: destination)
+            let size = try fm.attributesOfItem(atPath: destination.path)[.size] as? Int64 ?? 0
             Log.server.info("Database backup created: \(filename) (\(size) bytes)")
-            return BackupInfo(name: filename, sizeBytes: size, createdAt: iso8601.string(from: Date()))
+            return BackupInfo(name: filename, sizeBytes: size, createdAt: iso8601.string(from: now))
         } catch {
+            try? fm.removeItem(at: temporary)
             if LogService.isSQLiteFullError(error) {
-                _ = pruneOldestBackupsKeepingNewest(1, in: dir)
+                _ = pruneOldestBackupsKeepingNewest(1, in: directory)
             }
             Log.server.error("Database backup failed: \(error)")
             return nil
         }
     }
 
+    static func isValidBackup(_ url: URL) -> Bool {
+        do {
+            guard let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64,
+                  size >= 512 else { return false }
+            var config = Configuration()
+            config.readonly = true
+            let database = try DatabaseQueue(path: url.path, configuration: config)
+            return try database.read { db in
+                let tables = try Set(String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"))
+                guard tables.isSuperset(of: ["vms", "users", "app_settings", "grdb_migrations"]) else { return false }
+                return try String.fetchAll(db, sql: "PRAGMA quick_check") == ["ok"]
+            }
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - List Backups
 
-    public static func listBackups() -> [BackupInfo] {
-        let dir = Config.backupDir
+    public static func listBackups(directory: URL = Config.backupDir) -> [BackupInfo] {
+        let dir = directory
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: dir.path) else { return [] }
 
@@ -78,6 +115,7 @@ public enum BackupService {
                 .filter { $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-")) }
                 .compactMap { filename -> BackupInfo? in
                     let path = dir.appendingPathComponent(filename)
+                    guard isValidBackup(path) else { return nil }
                     let size = (try? fm.attributesOfItem(atPath: path.path)[.size] as? Int64) ?? 0
                     let dateStr = extractTimestamp(from: filename)
                     return BackupInfo(name: filename, sizeBytes: size, createdAt: dateStr ?? "")
@@ -97,6 +135,7 @@ public enum BackupService {
         let backups =
             files
                 .filter { $0.hasSuffix(".sqlite") && $0.hasPrefix("db-") }
+                .filter { isValidBackup(dir.appendingPathComponent($0)) }
                 .sorted()
 
         // Always keep at least 1 backup
@@ -120,9 +159,10 @@ public enum BackupService {
         let keepCount = max(keep, 1)
         let dir = dir ?? Config.backupDir
         guard let files = try? fileManager.contentsOfDirectory(atPath: dir.path) else { return [] }
-        let backups =
-            files
-                .filter { $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-")) }
+        let candidates = files.filter {
+            $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-"))
+        }
+        let backups = candidates.filter { isValidBackup(dir.appendingPathComponent($0)) }
         guard backups.count > keepCount else { return [] }
         let ranked = backups.sorted { lhs, rhs in
             let lDate = backupRecency(filename: lhs, in: dir, fileManager: fileManager)
@@ -151,12 +191,8 @@ public enum BackupService {
             throw BarkVisorError.notFound("Backup not found: \(backupName)")
         }
 
-        // Validate it's a valid SQLite file
-        do {
-            let testPool = try DatabasePool(path: backupPath.path)
-            _ = try testPool.read { db in try Row.fetchOne(db, sql: "SELECT 1") }
-        } catch {
-            throw BarkVisorError.badRequest("Backup file is not a valid database")
+        guard isValidBackup(backupPath) else {
+            throw BarkVisorError.badRequest("Backup file is not a valid BarkVisor database")
         }
 
         // Safety backup of current DB
@@ -187,8 +223,11 @@ public enum BackupService {
     }
 
     /// Finds the most recent backup. Used for startup corruption recovery.
-    public static func mostRecentBackup() -> String? {
-        listBackups().first?.name
+    public static func mostRecentBackup(directory: URL = Config.backupDir) -> String? {
+        listBackups(directory: directory).max {
+            backupRecency(filename: $0.name, in: directory, fileManager: .default)
+                < backupRecency(filename: $1.name, in: directory, fileManager: .default)
+        }?.name
     }
 
     // MARK: - Settings
