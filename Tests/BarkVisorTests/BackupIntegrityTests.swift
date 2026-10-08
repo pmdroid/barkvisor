@@ -92,6 +92,30 @@ struct BackupIntegrityTests {
         #expect(BackupService.mostRecentBackup(directory: dir) == valid.lastPathComponent)
     }
 
+    @Test func `cancellation after a complete temporary write prevents publication`() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let valid = dir.appendingPathComponent("db-2026-10-07T00-00-00Z.sqlite")
+        try createBackup(at: valid)
+        let database = try AppDatabase(path: dir.appendingPathComponent("live.sqlite").path)
+        try database.migrate()
+        let task = Task { () -> BackupInfo? in
+            BackupService.performBackup(
+                pool: database.pool, directory: dir, now: Date(),
+                vacuum: { path in
+                    try database.pool.vacuum(into: path)
+                    withUnsafeCurrentTask { $0?.cancel() }
+                },
+            )
+        }
+        #expect(await task.value == nil)
+        #expect(BackupService.listBackups(directory: dir).map(\.name) == [valid.lastPathComponent])
+        #expect(try marker(at: valid) == "retained")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).contains {
+            $0.hasSuffix(".backup-pending")
+        } == false)
+    }
+
     @Test func `publication validates content before making a final backup visible`() throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
