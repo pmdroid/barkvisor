@@ -14,8 +14,11 @@ args = parser.parse_args()
 repo = pathlib.Path(__file__).resolve().parents[2]
 output = pathlib.Path(args.output).resolve()
 output.mkdir(parents=True, exist_ok=False)
-assert os.geteuid() == 0
-assert pathlib.Path('/proc/self/ns/net').readlink() != pathlib.Path('/proc/1/ns/net').readlink()
+if os.geteuid() != 0:
+    raise RuntimeError('Run only inside a disposable root-mapped user namespace')
+for namespace in ['net', 'mnt', 'user']:
+    if pathlib.Path('/proc/self/ns/' + namespace).readlink() == pathlib.Path('/proc/1/ns/' + namespace).readlink():
+        raise RuntimeError('Refusing host namespace: ' + namespace)
 records = []
 data = output / 'data'
 registry = output / 'registry'
