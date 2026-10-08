@@ -50,6 +50,44 @@ struct BridgePersistenceOwnershipTests {
         #expect(LinuxHostBridgeApply.leftoverHostBridge(bridge: "br0", dir: dir.path))
     }
 
+    @Test func `tagged member persistence does not prove bridge creation without a marker`() throws {
+        let dir = try fixture()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(
+            "# managed-by: barkvisor\n[Match]\nName=eth0\n[Network]\nBridge=br0\n",
+            name: "90-barkvisor-eth0.network", dir: dir,
+        )
+        try "{".write(to: dir.appendingPathComponent("host-bridge-br0.json"), atomically: true, encoding: .utf8)
+        let persistence = LinuxHostBridgeApply.systemdBridgePersist(bridge: "br0", dir: dir.path)
+        let ownership = LinuxHostBridgeApply.ownership(
+            bridge: "br0", marker: nil, acl: nil,
+            leftoverPersist: !persistence.remove.isEmpty || !persistence.rewrite.isEmpty,
+            createdPersist: !persistence.remove.isEmpty,
+        )
+        #expect(persistence.remove.isEmpty)
+        #expect(!persistence.rewrite.isEmpty)
+        #expect(ownership.owned)
+        #expect(!ownership.createdBridge)
+        let writer = RecordingLinuxHostBridgeMutator()
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+            bridges: [HostBridgeSnapshot(name: "br0", enslaved: ["eth0"], createdBridge: ownership.createdBridge)],
+            defaultRouteInterface: "eth0",
+        ))
+        let result = try LinuxHostBridgeApplyLive.run(
+            request: LinuxHostBridgeApplyRequest(action: .delete, bridge: "br0", nic: "eth0", confirm: true),
+            probe: LinuxHostBridgeApplyProbe(
+                facts: facts, backend: .systemdNetworkd,
+                owned: ownership.owned, createdBridge: ownership.createdBridge,
+                existingInterfaces: ["br0", "eth0"],
+            ),
+            mutator: writer,
+        )
+        #expect(result.refused)
+        #expect(writer.steps.isEmpty)
+        let after = try String(contentsOf: dir.appendingPathComponent("90-barkvisor-eth0.network"), encoding: .utf8)
+        #expect(after.contains("Bridge=br0"))
+    }
+
     @Test func `ACL permission alone does not prove BarkVisor created a bridge`() {
         let ownership = LinuxHostBridgeApply.ownership(
             bridge: "br0", marker: nil, acl: "# barkvisor:allow-br0\nallow br0\n",

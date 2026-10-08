@@ -238,12 +238,13 @@ public enum LinuxHostBridgeApply {
         marker: OwnerMarker?,
         acl: String?,
         leftoverPersist: Bool = false,
+        createdPersist: Bool = false,
     ) -> (owned: Bool, createdBridge: Bool) {
         let tagged = aclTagged(bridge: bridge, acl: acl)
-        let leftover = leftoverPersist
+        let markerCreated = marker?.bridge == bridge && marker?.createdBridge == true
         return (
-            owned: marker != nil || tagged || leftover,
-            createdBridge: marker?.createdBridge == true || (marker == nil && leftover),
+            owned: marker != nil || tagged || leftoverPersist,
+            createdBridge: markerCreated || (marker == nil && createdPersist),
         )
     }
 
@@ -501,11 +502,13 @@ public enum LinuxHostBridgeApply {
             encoding: .utf8,
         )
         let marker = readOwnerMarker(bridge: bridge)
+        let persist = systemdBridgePersist(bridge: bridge)
         let claim = ownership(
             bridge: bridge,
             marker: marker,
             acl: acl,
-            leftoverPersist: leftoverHostBridge(bridge: bridge),
+            leftoverPersist: !persist.remove.isEmpty || !persist.rewrite.isEmpty,
+            createdPersist: !persist.remove.isEmpty,
         )
         let target = (nic ?? facts.defaultRouteInterface ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let backend = target.isEmpty

@@ -61,6 +61,7 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
             )
             let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name -> HostBridgeSnapshot in
                 let marker = LinuxHostBridgeApply.readOwnerMarker(bridge: name)
+                let persist = LinuxHostBridgeApply.systemdBridgePersist(bridge: name)
                 return HostBridgeSnapshot(
                     name: name,
                     enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
@@ -68,7 +69,8 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                         bridge: name,
                         marker: marker,
                         acl: acl,
-                        leftoverPersist: LinuxHostBridgeApply.leftoverHostBridge(bridge: name),
+                        leftoverPersist: !persist.remove.isEmpty || !persist.rewrite.isEmpty,
+                        createdPersist: !persist.remove.isEmpty,
                     ).createdBridge,
                 )
             }

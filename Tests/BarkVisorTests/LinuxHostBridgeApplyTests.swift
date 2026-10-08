@@ -525,14 +525,23 @@ struct LinuxHostBridgeApplyTests {
         )
         #expect(attached.owned)
         #expect(!attached.createdBridge)
-        let leftover = LinuxHostBridgeApply.ownership(
+        let memberOnly = LinuxHostBridgeApply.ownership(
             bridge: "br0",
             marker: nil,
             acl: nil,
             leftoverPersist: true,
         )
-        #expect(leftover.owned)
-        #expect(leftover.createdBridge)
+        #expect(memberOnly.owned)
+        #expect(!memberOnly.createdBridge)
+        let created = LinuxHostBridgeApply.ownership(
+            bridge: "br0",
+            marker: nil,
+            acl: nil,
+            leftoverPersist: true,
+            createdPersist: true,
+        )
+        #expect(created.owned)
+        #expect(created.createdBridge)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
