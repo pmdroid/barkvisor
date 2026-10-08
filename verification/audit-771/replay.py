@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -109,21 +110,44 @@ try:
         assert result.returncode == expected
     records.append({'verdict': 'PASS', 'revision': revision})
 finally:
+    cleanup_errors = []
     if meta:
         if workload and token:
-            request('POST', '/vms/' + workload['id'] + '/stop', {'force': True, 'method': 'force'})
-        command(['bash', 'scripts/dev-instance.sh', 'stop', '--name', name, '--keep'], timeout=30)
+            try:
+                request('POST', '/vms/' + workload['id'] + '/stop', {'force': True, 'method': 'force'})
+            except Exception as error:
+                cleanup_errors.append('API stop: ' + str(error))
+        try:
+            command(['bash', 'scripts/dev-instance.sh', 'stop', '--name', name, '--keep'], timeout=30)
+        except Exception as error:
+            cleanup_errors.append('Instance stop: ' + str(error))
     remaining = []
     for process in pathlib.Path('/proc').iterdir():
         if not process.name.isdigit():
             continue
         try:
             raw = (process / 'cmdline').read_bytes()
-            if str(sockets).encode() in raw and raw.split(b'\0')[0].split(b'/')[-1].startswith(b'qemu-system'):
-                remaining.append(int(process.name))
+            executable = raw.split(b'\0')[0].split(b'/')[-1]
+            owned_qemu = str(sockets).encode() in raw and executable.startswith(b'qemu-system')
+            process_env = (process / 'environ').read_bytes().split(b'\0')
+            owned_server = ('BARKVISOR_DATA_DIR=' + str(data)).encode() in process_env and executable == b'BarkVisorApp'
+            if owned_qemu or owned_server:
+                pid = int(process.name)
+                os.kill(pid, signal.SIGKILL)
+                records.append({'forced_owned_cleanup_pid': pid, 'identity': raw.replace(b'\0', b' ').decode()})
+                for _ in range(50):
+                    try:
+                        state = (process / 'stat').read_text().split()[2]
+                        if state == 'Z':
+                            break
+                    except FileNotFoundError:
+                        break
+                    time.sleep(0.1)
+                else:
+                    remaining.append(pid)
         except (FileNotFoundError, PermissionError, ProcessLookupError):
             pass
-    records.append({'teardown': 'PASS' if not remaining else 'FAIL', 'remaining_owned_qemu': remaining})
+    records.append({'teardown': 'PASS' if not remaining else 'FAIL', 'remaining_owned_processes': remaining, 'cleanup_errors': cleanup_errors})
     (output / 'transcript.json').write_text(json.dumps(records, indent=2) + '\n')
     if not remaining:
         shutil.rmtree(data, ignore_errors=True)
