@@ -711,7 +711,7 @@ public enum QEMUBuilder {
         var args: [String] = [
             "-device", "virtio-balloon-pci",
             "-device", "virtio-rng-pci",
-            "-name", sanitizedName, "-uuid", vmID,
+            "-name", sanitizedName, "-uuid", Self.runtimeUUID(vmID),
         ]
         if let dataDir = BundleResolver.qemuDataDir() {
             args += ["-L", dataDir.path]
@@ -973,3 +973,35 @@ public enum QEMUBuilder {
     }
 }
 // swiftlint:enable file_length
+
+extension QEMUBuilder {
+    public static func runtimeUUID(_ vmID: String) -> String {
+        if UUID(uuidString: vmID) != nil { return vmID }
+        let digest = Data(vmID.utf8)
+        var bytes = [UInt8](repeating: 0, count: 16)
+        for (index, byte) in digest.enumerated() {
+            bytes[index % 16] ^= byte
+        }
+        bytes[6] = (bytes[6] & 0x0F) | 0x40
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return String(
+            format: "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+            bytes[0],
+            bytes[1],
+            bytes[2],
+            bytes[3],
+            bytes[4],
+            bytes[5],
+            bytes[6],
+            bytes[7],
+            bytes[8],
+            bytes[9],
+            bytes[10],
+            bytes[11],
+            bytes[12],
+            bytes[13],
+            bytes[14],
+            bytes[15],
+        )
+    }
+}
