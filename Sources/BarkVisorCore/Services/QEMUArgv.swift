@@ -66,7 +66,9 @@ public struct QEMUArgv: Equatable, Sendable {
         guard pidAlive else { return .cleanupDead }
         guard executableIsQEMU else { return .dropStalePidFile }
         guard let argvUUID else { return .adopt }
-        return argvUUID.caseInsensitiveCompare(vmID) == .orderedSame ? .adopt : .dropStalePidFile
+        let expected = QEMUBuilder.runtimeUUID(vmID)
+        return argvUUID.caseInsensitiveCompare(vmID) == .orderedSame || argvUUID
+            .caseInsensitiveCompare(expected) == .orderedSame ? .adopt : .dropStalePidFile
     }
 
     public static func reportsWriteLock(_ stderr: String) -> Bool {
