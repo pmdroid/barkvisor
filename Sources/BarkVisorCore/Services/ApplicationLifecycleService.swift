@@ -532,7 +532,9 @@ public enum ApplicationLifecycleService {
     }
 
     public static func projectName(_ vm: VM) -> String {
-        if let name = vm.composeProject, !name.isEmpty { return name }
+        if let name = vm.composeProject?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
         return ComposeRuntime.composeProjectName(id: vm.id)
     }
 }
