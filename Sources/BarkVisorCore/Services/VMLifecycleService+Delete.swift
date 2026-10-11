@@ -98,7 +98,10 @@ extension VMLifecycleService {
         if !additionalDiskIds.isEmpty {
             _ = try await db.write { db in
                 for diskId in additionalDiskIds {
-                    try db.execute(sql: "UPDATE disks SET vmId = NULL WHERE id = ?", arguments: [diskId])
+                    try db.execute(
+                        sql: "UPDATE disks SET vmId = NULL WHERE id = ? AND vmId = ?",
+                        arguments: [diskId, vm.id],
+                    )
                 }
             }
         }
@@ -148,7 +151,8 @@ extension VMLifecycleService {
         if keepDisk {
             try await db.write { db in
                 try db.execute(
-                    sql: "UPDATE disks SET vmId = NULL WHERE id = ?", arguments: [bootDiskId],
+                    sql: "UPDATE disks SET vmId = NULL WHERE id = ? AND vmId = ?",
+                    arguments: [bootDiskId, vmID],
                 )
             }
             return

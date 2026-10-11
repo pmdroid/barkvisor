@@ -1066,6 +1066,17 @@ extension VMLifecycleService {
             if !missing.isEmpty {
                 throw BarkVisorError.badRequest("Disk(s) not found: \(missing.joined(separator: ", "))")
             }
+            let shared = try existingDisks.filter { disk in
+                if let owner = disk.vmId, owner != vm.id { return true }
+                return try VM.fetchAll(db).contains { other in
+                    other.id != vm.id && (
+                        other.bootDiskId == disk.id || other.decodedAdditionalDiskIds.contains(disk.id)
+                    )
+                }
+            }
+            if !shared.isEmpty {
+                throw BarkVisorError.conflict("Disk is already attached to another VM")
+            }
         }
     }
 }
