@@ -186,6 +186,7 @@ public enum PairingService {
         public var now: Date
         public var jwtSecret: String?
         public var adminUser: PairingAdminUser?
+        public var passkey: PairingPasskey?
 
         public init(
             dataDir: URL,
@@ -194,6 +195,7 @@ public enum PairingService {
             now: Date = Date(),
             jwtSecret: String? = nil,
             adminUser: PairingAdminUser? = nil,
+            passkey: PairingPasskey? = nil,
         ) {
             self.dataDir = dataDir
             self.issuerHostId = issuerHostId
@@ -201,6 +203,7 @@ public enum PairingService {
             self.now = now
             self.jwtSecret = jwtSecret
             self.adminUser = adminUser
+            self.passkey = passkey
         }
     }
 
@@ -384,6 +387,18 @@ public enum PairingService {
         )
     }
 
+    public static func loadPasskey(db: DatabasePool) throws -> PairingPasskey? {
+        try db.read { db in
+            guard let row = try PasskeyCredential.order(PasskeyCredential.Columns.createdAt.asc).fetchOne(db) else {
+                return nil
+            }
+            return PairingPasskey(
+                id: row.id, credentialId: row.credentialId, publicKey: row.publicKey,
+                signCount: row.signCount, name: row.name, createdAt: row.createdAt, transports: row.transports,
+            )
+        }
+    }
+
     public static func resolveJoinPayload(_ request: PairingJoinRequest) throws -> PairingPayload {
         // QR host/port/agentPort are the out-of-band redeem target.
         // Typed host/port on the non-QR path would let an unauthenticated
@@ -466,6 +481,7 @@ public enum PairingService {
         let identity = PairingSharedIdentity(
             jwtSecret: secret,
             adminUser: admin,
+            passkey: input.passkey,
         )
         do {
             copy.identitySeal = try PairingIdentitySealing.seal(

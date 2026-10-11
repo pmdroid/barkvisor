@@ -119,6 +119,7 @@ struct PairingController: RouteCollection {
         }
         do {
             let admin = try PairingService.loadAdminUser(db: req.db)
+            let passkey = try PairingService.loadPasskey(db: req.db)
             let response = try PairingService.redeem(
                 PairingService.RedeemInput(
                     dataDir: Config.dataDir,
@@ -126,6 +127,7 @@ struct PairingController: RouteCollection {
                     request: body,
                     jwtSecret: Config.jwtSecret,
                     adminUser: admin,
+                    passkey: passkey,
                 ),
                 offers: offers,
             )

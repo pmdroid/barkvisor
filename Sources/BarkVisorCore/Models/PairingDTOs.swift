@@ -92,13 +92,38 @@ public struct PairingAdminUser: Codable, Sendable, Equatable {
 
 /// Shared login material copied at pair time (PAS-81). Sealed to the joiner
 /// Device key before it ever goes on the wire.
+public struct PairingPasskey: Codable, Sendable, Equatable {
+    public var id: String
+    public var credentialId: String
+    public var publicKey: Data
+    public var signCount: Int
+    public var name: String
+    public var createdAt: String
+    public var transports: String?
+
+    public init(
+        id: String, credentialId: String, publicKey: Data, signCount: Int,
+        name: String, createdAt: String, transports: String? = nil,
+    ) {
+        self.id = id
+        self.credentialId = credentialId
+        self.publicKey = publicKey
+        self.signCount = signCount
+        self.name = name
+        self.createdAt = createdAt
+        self.transports = transports
+    }
+}
+
 public struct PairingSharedIdentity: Codable, Sendable, Equatable {
     public var jwtSecret: String
     public var adminUser: PairingAdminUser?
+    public var passkey: PairingPasskey?
 
-    public init(jwtSecret: String, adminUser: PairingAdminUser?) {
+    public init(jwtSecret: String, adminUser: PairingAdminUser?, passkey: PairingPasskey? = nil) {
         self.jwtSecret = jwtSecret
         self.adminUser = adminUser
+        self.passkey = passkey
     }
 }
 
@@ -128,6 +153,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var identitySeal: PairingIdentitySeal?
     public var jwtSecret: String?
     public var adminUser: PairingAdminUser?
+    public var passkey: PairingPasskey?
 
     public init(
         hostId: String,
@@ -142,6 +168,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         identitySeal: PairingIdentitySeal? = nil,
         jwtSecret: String? = nil,
         adminUser: PairingAdminUser? = nil,
+        passkey: PairingPasskey? = nil,
     ) {
         self.hostId = hostId
         self.deviceCertificatePEM = deviceCertificatePEM
@@ -155,6 +182,7 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         self.identitySeal = identitySeal
         self.jwtSecret = jwtSecret
         self.adminUser = adminUser
+        self.passkey = passkey
     }
 }
 
