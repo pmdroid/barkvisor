@@ -1962,8 +1962,12 @@ async function doDeleteNetwork() {
       </p>
     </div>
     <div v-if="newMode === 'nat' || newMode === 'isolated'" class="form-group">
-      <label>DNS Server</label>
-      <input v-model="newDns" placeholder="8.8.8.8 (optional)" />
+      <label for="guest-dns">Guest-visible DNS address</label>
+      <input id="guest-dns" v-model="newDns" placeholder="10.0.2.3 (default)" aria-describedby="guest-dns-help" />
+      <p id="guest-dns-help" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        The virtual DNS address given to the guest, not an upstream resolver. Leave empty to use 10.0.2.3.
+        <template v-if="newMode === 'isolated'">Isolated networks use an address in 10.0.2.0/24.</template>
+      </p>
     </div>
     <p v-if="newMode === 'bridged'" style="color:var(--text-dim);font-size:12px;margin:0">
       Bridged Workloads get a LAN address from your router (DHCP). Host bridge Device addressing is on the Host interfaces tab.

@@ -56,7 +56,9 @@ public enum NetworkService {
         }
 
         if let bridge = params.bridge, !bridge.isEmpty { try validateBridgeName(bridge) }
-        if let dns = params.dnsServer, !dns.isEmpty { try validateDNS(dns) }
+        if let dns = params.dnsServer, !dns.isEmpty {
+            try NetworkIntentResolver.requireGuestDNS(dns, mode: mode)
+        }
         if let mac = params.macAddress, !mac.isEmpty { try validateMAC(mac) }
 
         if mode == .bridged, let bridge = params.bridge, !bridge.isEmpty {
@@ -152,6 +154,9 @@ public enum NetworkService {
             }
 
             let mode = try NetworkCapability.parse(network.mode)
+            if let dns = network.dnsServer, !dns.isEmpty {
+                try NetworkIntentResolver.requireGuestDNS(dns, mode: mode)
+            }
             if mode == .bridged {
                 let bridge = network.bridge ?? ""
                 if bridge.isEmpty {
