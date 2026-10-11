@@ -1,0 +1,83 @@
+{
+  "issue": "https://github.com/pmdroid/barkvisor/issues/787",
+  "commit": "95b678cc5da7088ddbfea5b70d792d6a4e158539",
+  "capturedAt": "2026-10-11T02:52:46.412Z",
+  "selectedScreen": "Dashboard after local setup",
+  "url": "http://127.0.0.1:46843/dashboard",
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 2
+  },
+  "health": {
+    "apiVersion": 1,
+    "checks": [
+      {
+        "message": "reachable",
+        "status": "pass",
+        "name": "database"
+      },
+      {
+        "message": "/tmp/barkvisor-dev-issue-787.GFVvU1",
+        "status": "pass",
+        "name": "dataDir"
+      },
+      {
+        "message": "/usr/bin/qemu-system-x86_64",
+        "status": "pass",
+        "name": "qemu"
+      }
+    ],
+    "updatedAt": "2026-10-11T02:52:43Z",
+    "status": "ok"
+  },
+  "setupComplete": true,
+  "authenticated": true,
+  "build": {
+    "version": "0.0.0-dev",
+    "platform": "Linux",
+    "hostArch": "x86_64"
+  },
+  "dashboard": {
+    "sections": [
+      "Needs you",
+      "Running",
+      "Stopped"
+    ],
+    "deviceCards": 1,
+    "tickerCounts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "apiTotals": {
+      "unreachable": 0,
+      "devices": 1,
+      "reachable": 1,
+      "healthCounts": {
+        "stopped": 0,
+        "failed": 0,
+        "unknown": 0,
+        "degraded": 0,
+        "running": 0,
+        "starting": 0,
+        "guest_ready": 0
+      },
+      "workloadCount": 0
+    }
+  },
+  "pageErrors": [],
+  "failedResponses": [],
+  "screenshot": "dashboard.png",
+  "buildChecks": {
+    "swiftProductBuild": "passed",
+    "frontendBuild": "passed"
+  },
+  "cleanup": {
+    "instanceStopped": true,
+    "temporaryDataRemoved": true,
+    "registryEntryRemoved": true
+  },
+  "screenshotSha256": "a4e8db96ff710edebb8a39b670a892afef0262e21a83a3f8d2a68596b1848c58"
+}
