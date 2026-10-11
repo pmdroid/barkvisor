@@ -72,7 +72,7 @@ public enum BlockDeviceService {
             let sizeBytes = sysfsSizeBytes(at: dir, fileManager: fileManager) ?? 0
             let model = sysfsText(at: dir.appendingPathComponent("device/model"), fileManager: fileManager)
             let path = "/dev/\(name)"
-            let reason = hostUseReason(path: path, mounts: mounts, swaps: swaps)
+            let reason = hostUseReason(path: path, mounts: mounts, swaps: swaps, sysfsRoot: root, fileManager: fileManager)
             devices.append(
                 HostBlockDevice(
                     path: path,
@@ -129,7 +129,13 @@ public enum BlockDeviceService {
     }
 
     /// Why this `/dev` node must not be passed through: mounted, swap, or the host root disk.
-    public static func hostUseReason(path: String, mounts: String, swaps: String = "") -> String? {
+    public static func hostUseReason(
+        path: String,
+        mounts: String,
+        swaps: String = "",
+        sysfsRoot: URL = URL(fileURLWithPath: "/sys/class/block"),
+        fileManager: FileManager = .default,
+    ) -> String? {
         let node = URL(fileURLWithPath: path).lastPathComponent
         guard !node.isEmpty else { return nil }
         let whole = wholeDiskName(from: node)
@@ -137,13 +143,45 @@ public enum BlockDeviceService {
             return "Host root disk"
         }
         let used = usedDeviceNames(from: mounts).union(usedDeviceNames(from: swaps))
-        if used.contains(node) {
-            return "Device is mounted on the host"
-        }
-        if used.contains(where: { wholeDiskName(from: $0) == whole }) {
+        if used.contains(node) || used.contains(where: { wholeDiskName(from: $0) == whole }) {
             return "Device is in use by the host"
         }
+        if stackedHostUse(name: node, used: used, sysfsRoot: sysfsRoot, fileManager: fileManager) {
+            return "Device backs host storage"
+        }
         return nil
+    }
+
+    public static func stackedHostUse(
+        name: String,
+        used: Set<String>,
+        sysfsRoot: URL,
+        fileManager: FileManager,
+    ) -> Bool {
+        var seen: Set<String> = []
+        func visit(_ current: String) -> Bool {
+            if !seen.insert(current).inserted { return false }
+            if used.contains(current) || used.contains(where: { wholeDiskName(from: $0) == wholeDiskName(from: current) }) {
+                return true
+            }
+            if let dm = try? String(
+                contentsOfFile: sysfsRoot.appendingPathComponent(current).appendingPathComponent("dm/name").path,
+                encoding: .utf8,
+            ) {
+                if used.contains("mapper/" + dm.trimmingCharacters(in: .whitespacesAndNewlines)) { return true }
+            }
+            let dir = sysfsRoot.appendingPathComponent(current)
+            for child in (try? fileManager.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                if child == "holders" || child == "slaves" {
+                    let nested = dir.appendingPathComponent(child)
+                    for holder in (try? fileManager.contentsOfDirectory(atPath: nested.path)) ?? [] {
+                        if visit(holder) { return true }
+                    }
+                }
+            }
+            return false
+        }
+        return visit(name)
     }
 
     public static func usedDeviceNames(from text: String) -> Set<String> {

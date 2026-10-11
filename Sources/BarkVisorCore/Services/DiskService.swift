@@ -442,7 +442,13 @@ public enum DiskService {
 
         let mountsText = mounts ?? linuxProcFile("/proc/mounts")
         let swapsText = swaps ?? linuxProcFile("/proc/swaps")
-        if let reason = BlockDeviceService.hostUseReason(path: path, mounts: mountsText, swaps: swapsText) {
+        if let reason = BlockDeviceService.hostUseReason(
+            path: path,
+            mounts: mountsText,
+            swaps: swapsText,
+            sysfsRoot: URL(fileURLWithPath: ProcessInfo.processInfo.environment["BARKVISOR_SYSFS_BLOCK"] ?? "/sys/class/block"),
+            fileManager: fileManager,
+        ) {
             throw BarkVisorError.badRequest(reason)
         }
         try BlockDeviceService.requireReadWrite(path: path, openReadWrite: openReadWrite)
