@@ -238,12 +238,13 @@ public enum LinuxHostBridgeApply {
         marker: OwnerMarker?,
         acl: String?,
         leftoverPersist: Bool = false,
+        createdPersist: Bool = false,
     ) -> (owned: Bool, createdBridge: Bool) {
         let tagged = aclTagged(bridge: bridge, acl: acl)
-        let leftover = leftoverPersist
+        let markerCreated = marker?.bridge == bridge && marker?.createdBridge == true
         return (
-            owned: marker != nil || tagged || leftover,
-            createdBridge: marker?.createdBridge == true || (marker == nil && (tagged || leftover)),
+            owned: marker != nil || tagged || leftoverPersist,
+            createdBridge: markerCreated || (marker == nil && createdPersist),
         )
     }
 
@@ -288,7 +289,10 @@ public enum LinuxHostBridgeApply {
         var rewrite: [String] = []
         for name in names.sorted() {
             let path = "\(dir)/\(name)"
-            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8),
+                  text.split(whereSeparator: \.isNewline).contains(where: {
+                      $0.trimmingCharacters(in: .whitespaces) == "# managed-by: barkvisor"
+                  }) else { continue }
             if name.hasSuffix(".netdev"),
                hasNetworkAssignment(text, key: "Name", value: bridge),
                hasNetworkAssignment(text, key: "Kind", value: "bridge") {
@@ -498,11 +502,13 @@ public enum LinuxHostBridgeApply {
             encoding: .utf8,
         )
         let marker = readOwnerMarker(bridge: bridge)
+        let persist = systemdBridgePersist(bridge: bridge)
         let claim = ownership(
             bridge: bridge,
             marker: marker,
             acl: acl,
-            leftoverPersist: leftoverHostBridge(bridge: bridge),
+            leftoverPersist: !persist.remove.isEmpty || !persist.rewrite.isEmpty,
+            createdPersist: !persist.remove.isEmpty,
         )
         let target = (nic ?? facts.defaultRouteInterface ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let backend = target.isEmpty
