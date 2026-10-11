@@ -358,11 +358,29 @@ install_linux() {
   local pkg="$1"
   if [[ "$SKIP_INSTALL" == "1" ]]; then
     echo "SKIP_INSTALL: dpkg -i $pkg"
-    echo "SKIP_INSTALL: systemctl enable --now barkvisor-daemon.service barkvisor-server.service"
+    echo "SKIP_INSTALL: service activation"
     return 0
   fi
+  need_cmd dpkg-deb
+  local contents units disabled unit
+  contents="$(dpkg-deb --contents "$pkg")"
+  if [[ "$contents" == *"/barkvisor-daemon.service"* || "$contents" == *"/barkvisor-server.service"* ]]; then
+    [[ "$contents" == *"/barkvisor-daemon.service"* && "$contents" == *"/barkvisor-server.service"* ]] || die "package needs both daemon and server services"
+    units=(barkvisor-daemon.service barkvisor-server.service)
+    disabled=(barkvisor.service barkvisor-agent.service)
+  elif [[ "$contents" == *"/barkvisor.service"* ]]; then
+    units=(barkvisor.service)
+    disabled=(barkvisor-daemon.service barkvisor-server.service barkvisor-agent.service)
+  else
+    die "package has no BarkVisor console service"
+  fi
+  for unit in "${disabled[@]}"; do
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+      as_root systemctl disable --now "$unit"
+    fi
+  done
   as_root dpkg -i "$pkg" || as_root apt-get install -f -y
-  as_root systemctl enable --now barkvisor-daemon.service barkvisor-server.service
+  as_root systemctl enable --now "${units[@]}"
 }
 
 install_macos() {
@@ -411,7 +429,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: channel=${CHANNEL} arch=$(host_arch) suffix=${ASSET_SUFFIX}"
   if [[ "$CHANNEL" == "linux" ]]; then
     echo "DRY_RUN: dpkg -i <release-deb>"
-    echo "DRY_RUN: systemctl enable --now barkvisor-daemon.service barkvisor-server.service"
+    echo "DRY_RUN: select and enable systemd services from <release-deb>"
   else
     echo "DRY_RUN: installer -pkg <release-pkg> -target /"
     print_macos_runtime_hint
@@ -459,4 +477,4 @@ poll_health
 
 echo
 echo "BarkVisor is installed on this Device."
-echo "Open http://127.0.0.1:${PORT} to finish setup."
+echo "Open http://localhost:${PORT} to finish setup."
