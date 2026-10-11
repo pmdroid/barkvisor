@@ -37,7 +37,12 @@ struct BlockDeviceServiceTests {
         #expect(BlockDeviceService.rootDiskName(from: mounts) == "nvme0n1")
     }
 
-    @Test func `host use reason rejects root mounted and swap devices`() {
+    @Test func `host use reason rejects root mounted and swap devices`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("block-host-use-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for path in ["nvme0n1/nvme0n1p2", "nvme0n1/slaves", "sdb/sdb1", "sdb/slaves", "sdc/sdc1", "sdc/slaves", "sdd"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
         let mounts = """
         /dev/nvme0n1p2 / ext4 rw 0 0
         /dev/sdb1 /mnt/data ext4 rw 0 0
@@ -46,12 +51,12 @@ struct BlockDeviceServiceTests {
         Filename Type Size Used Priority
         /dev/sdc1 partition 1 0 -2
         """
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1", mounts: mounts) == "Host root disk")
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1p2", mounts: mounts) == "Host root disk")
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb1", mounts: mounts) == "Device is mounted on the host")
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb", mounts: mounts) == "Device is in use by the host")
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdc", mounts: mounts, swaps: swaps) == "Device is in use by the host")
-        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdd", mounts: mounts, swaps: swaps) == nil)
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1", mounts: mounts, root: root) == "Host root disk")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1p2", mounts: mounts, root: root) == "Host root disk")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb1", mounts: mounts, root: root) == "Device is mounted on the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb", mounts: mounts, root: root) == "Device is in use by the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdc", mounts: mounts, swaps: swaps, root: root) == "Device is in use by the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdd", mounts: mounts, swaps: swaps, root: root) == nil)
     }
 
     @Test func `sysfs listing skips loop and marks the root disk`() throws {
@@ -61,7 +66,7 @@ struct BlockDeviceServiceTests {
 
         func addDisk(_ name: String, sectors: String, model: String) throws {
             let dir = root.appendingPathComponent(name)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: dir.appendingPathComponent("slaves"), withIntermediateDirectories: true)
             try sectors.write(
                 to: dir.appendingPathComponent("size"), atomically: true, encoding: .utf8,
             )
@@ -74,6 +79,9 @@ struct BlockDeviceServiceTests {
         try addDisk("sda", sectors: "1953525168", model: "Samsung SSD")
         try addDisk("sdb", sectors: "976773168", model: "WD Disk")
         try addDisk("loop0", sectors: "0", model: "loop")
+        for path in ["sda/sda2", "sdb/sdb1"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
 
         let mounts = "/dev/sda2 / ext4 rw 0 0\n"
         let devices = BlockDeviceService.listSysfsDevices(root: root, mounts: mounts)
@@ -169,6 +177,7 @@ struct BlockDeviceServiceTests {
                 openReadWrite: { _ in
                     throw NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.EACCES.rawValue))
                 },
+                hostUse: { _ in nil },
             )
             Issue.record("expected additionalDiskArgs to throw")
         } catch let BarkVisorError.badRequest(msg) {
@@ -192,8 +201,27 @@ struct BlockDeviceServiceTests {
             status: "ready",
             createdAt: "2026-01-01T00:00:00Z",
         )
-        let args = try QEMUBuilder.additionalDiskArgs([disk], openReadWrite: { _ in })
+        let args = try QEMUBuilder.additionalDiskArgs([disk], openReadWrite: { _ in }, hostUse: { _ in nil })
         #expect(args.contains("-drive"))
         #expect(args.contains { $0.contains("file=/dev/sdb") })
+    }
+    @Test func `additionalDiskArgs rejects fresh host use before opening the device`() {
+        let disk = Disk(
+            id: "d1", name: "passthrough", path: "/dev/sdb", sizeBytes: 1_024,
+            format: "raw", vmId: "vm-1", autoCreated: false, status: "ready",
+            createdAt: "2026-01-01T00:00:00Z",
+        )
+        do {
+            _ = try QEMUBuilder.additionalDiskArgs(
+                [disk],
+                openReadWrite: { _ in Issue.record("must reject host use before opening the device") },
+                hostUse: { _ in "Device is in use by the host" },
+            )
+            Issue.record("expected host use rejection")
+        } catch let BarkVisorError.badRequest(reason) {
+            #expect(reason == "Device is in use by the host")
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
     }
 }

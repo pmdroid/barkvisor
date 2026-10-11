@@ -440,9 +440,9 @@ public enum DiskService {
             throw BarkVisorError.badRequest("Could not determine size of block device \(path)")
         }
 
-        let mountsText = mounts ?? linuxProcFile("/proc/mounts")
-        let swapsText = swaps ?? linuxProcFile("/proc/swaps")
-        if let reason = BlockDeviceService.hostUseReason(path: path, mounts: mountsText, swaps: swapsText) {
+        if let reason = BlockDeviceService.liveHostUseReason(
+            path: path, mounts: mounts, swaps: swaps, fileManager: fileManager,
+        ) {
             throw BarkVisorError.badRequest(reason)
         }
         try BlockDeviceService.requireReadWrite(path: path, openReadWrite: openReadWrite)
@@ -467,15 +467,6 @@ public enum DiskService {
             throw BarkVisorError.conflict("Block device is already attached as a disk")
         }
         return disk
-    }
-
-    private static func linuxProcFile(_ path: String) -> String {
-        #if os(Linux)
-            (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-        #else
-            _ = path
-            return ""
-        #endif
     }
 
     private static func resolvedCreateDirectory(_ directory: String?, db: DatabasePool) async throws

@@ -443,6 +443,7 @@ public enum QEMUBuilder {
     package static func additionalDiskArgs(
         _ disks: [Disk],
         openReadWrite: ((String) throws -> Void)? = nil,
+        hostUse: ((String) -> String?)? = nil,
     ) throws -> [String] {
         var args: [String] = []
         for (i, extraDisk) in disks.enumerated() {
@@ -451,6 +452,7 @@ public enum QEMUBuilder {
             try BlockDeviceService.requireHostDeviceReadWrite(
                 paths: [sanitizedPath],
                 openReadWrite: openReadWrite,
+                hostUse: hostUse,
             )
             try WorkloadPrivilegeDrop.handoffWritable(URL(fileURLWithPath: sanitizedPath))
             args += [
