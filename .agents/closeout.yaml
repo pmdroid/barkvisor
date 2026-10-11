@@ -1,0 +1,33 @@
+specVersion: "0.1"
+description: BarkVisor checks using mise, Swift, and Bun.
+retry:
+  maxFailedAttemptsPerItem: 5
+  scope: task
+setup:
+  - id: frontend-install
+    exec: ["mise", "exec", "--", "bun", "install", "--cwd", "frontend", "--frozen-lockfile"]
+    timeoutSeconds: 600
+items:
+  - id: lint
+    kind: command
+    gate: beforePR
+    exec: ["mise", "run", "lint"]
+    timeoutSeconds: 600
+  - id: swift-tests
+    kind: command
+    gate: beforePR
+    exec: ["mise", "run", "test"]
+    timeoutSeconds: 2700
+  - id: frontend-tests
+    kind: command
+    gate: beforePR
+    exec: ["mise", "exec", "--", "bun", "--cwd", "frontend", "test"]
+    timeoutSeconds: 120
+  - id: independent-review
+    kind: review
+    gate: beforePR
+    skill: .agents/skills/review-barkvisor/SKILL.md
+    independence:
+      differentSession: true
+      differentModel: true
+    failOn: P1
