@@ -321,6 +321,26 @@ public enum LinuxHostBridgeApply {
         return body
     }
 
+    public static func networkdBridgeUnit(bridge: String, plan: HostInterfaceAddressApplyPlan) -> String {
+        var lines = [
+            "# managed-by: barkvisor",
+            "[Match]",
+            "Name=\(bridge)",
+            "",
+            "[Network]",
+        ]
+        if plan.dhcpEnabled {
+            lines.append("DHCP=yes")
+        }
+        lines.append(contentsOf: plan.staticCIDRs.map { "Address=\($0)" })
+        if let gateway = plan.gateway, !gateway.isEmpty, !plan.dhcpEnabled {
+            lines.append("Gateway=\(gateway)")
+        }
+        lines.append(contentsOf: plan.dns.map { "DNS=\($0)" })
+        lines.append(contentsOf: ["", "[Bridge]", ""])
+        return lines.joined(separator: "\n")
+    }
+
     public static func hasNetworkAssignment(_ text: String, key: String, value: String) -> Bool {
         let want = "\(key)=\(value)"
         for raw in text.split(whereSeparator: \.isNewline) {

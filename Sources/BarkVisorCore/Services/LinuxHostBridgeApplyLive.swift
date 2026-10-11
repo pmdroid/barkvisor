@@ -861,26 +861,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             Name=\(request.bridge)
             Kind=bridge
             """
-            var network = """
-            # managed-by: barkvisor
-            [Match]
-            Name=\(request.bridge)
-
-            [Network]
-            """
-            if plan.dhcpEnabled {
-                network += "\nDHCP=yes\n"
-            }
-            for cidr in plan.staticCIDRs {
-                network += "Address=\(cidr)\n"
-            }
-            if let gateway = plan.gateway, !plan.dhcpEnabled {
-                network += "Gateway=\(gateway)\n"
-            }
-            for dns in plan.dns {
-                network += "DNS=\(dns)\n"
-            }
-            network += "\n[Bridge]\n"
+            let network = LinuxHostBridgeApply.networkdBridgeUnit(bridge: request.bridge, plan: plan)
             try writeAtomically(LinuxHostBridgeApply.networkdNetdevPath(bridge: request.bridge), netdev)
             try writeAtomically(LinuxHostBridgeApply.networkdNetworkPath(bridge: request.bridge), network)
             let portNetwork = """
