@@ -1,19 +1,54 @@
 import Foundation
 
 public enum LinuxHostAddressPersist {
+    public static func networkdSearchDirectories(
+        etc: String = LinuxHostBridgeApply.systemdNetworkDir,
+        run: String = "/run/systemd/network",
+        lib: String = "/lib/systemd/network",
+    ) -> [String] {
+        [run, etc, lib, "/usr/lib/systemd/network"]
+    }
+
+    public static func networkdMatches(text: String, interface: String) -> Bool {
+        if LinuxHostBridgeApply.hasNetworkAssignment(text, key: "Name", value: interface) {
+            return true
+        }
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard line.hasPrefix("Name=") else { continue }
+            let pattern = String(line.dropFirst("Name=".count))
+            if pattern == "*" || pattern == "en*" || pattern == "eth*" {
+                if pattern == "*" { return true }
+                if interface.hasPrefix(String(pattern.dropLast())) { return true }
+            }
+        }
+        return false
+    }
+
+    public static func networkdMatchingNetworkFile(
+        interface: String,
+        directories: [String],
+    ) -> String? {
+        var matches: [String] = []
+        for dir in directories {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+            for name in names where name.hasSuffix(".network") {
+                let path = "\(dir)/\(name)"
+                guard let text = try? String(contentsOfFile: path, encoding: .utf8),
+                      networkdMatches(text: text, interface: interface) else { continue }
+                matches.append(path)
+            }
+        }
+        return matches.min { lhs, rhs in
+            URL(fileURLWithPath: lhs).lastPathComponent < URL(fileURLWithPath: rhs).lastPathComponent
+        }
+    }
+
     public static func networkdMatchingNetworkFile(
         interface: String,
         dir: String = LinuxHostBridgeApply.systemdNetworkDir,
     ) -> String? {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        for name in names.sorted() where name.hasSuffix(".network") {
-            let path = "\(dir)/\(name)"
-            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
-            if LinuxHostBridgeApply.hasNetworkAssignment(text, key: "Name", value: interface) {
-                return path
-            }
-        }
-        return nil
+        networkdMatchingNetworkFile(interface: interface, directories: [dir])
     }
 
     public static func networkdAliasDropInPath(matchFile: String) -> String {
@@ -66,12 +101,13 @@ public enum LinuxHostAddressPersist {
         cidrs: [String],
         backend: LinuxNetworkBackend,
         dir: String = LinuxHostBridgeApply.systemdNetworkDir,
+        directories: [String]? = nil,
     ) -> [(path: String, body: String)] {
         switch backend {
         case .networkManager, .ifupdown, .unknown:
             return []
         case .systemdNetworkd:
-            if let match = networkdMatchingNetworkFile(interface: interface, dir: dir) {
+            if let match = networkdMatchingNetworkFile(interface: interface, directories: directories ?? networkdSearchDirectories(etc: dir)) {
                 return [(networkdAliasDropInPath(matchFile: match), networkdAliasDropInBody(cidrs: cidrs))]
             }
             return [(
