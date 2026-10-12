@@ -41,6 +41,10 @@ public struct UpdateInfo: Codable, Sendable, Equatable {
 public enum UpdateChannel: String, Codable, Sendable {
     case stable
     case beta
+
+    public static func defaultChannel(for version: String) -> Self {
+        version.split(separator: "+", maxSplits: 1).first?.contains("-") == true ? .beta : .stable
+    }
 }
 
 public struct PackageInstallPlan: Sendable, Equatable {
