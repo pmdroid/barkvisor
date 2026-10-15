@@ -118,7 +118,7 @@ let package = Package(
     name: "BarkVisor",
     platforms: [.macOS(.v26)],
     dependencies: [
-        .package(url: "https://github.com/vapor/vapor.git", from: "4.99.0"),
+        .package(url: "https://github.com/vapor/vapor.git", from: "4.122.2"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.0.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
